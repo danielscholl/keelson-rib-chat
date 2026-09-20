@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# The rib uses Biome (see biome.json) for lint + format. CodeRabbit's default
+# ESLint hook can't find an eslint config and emits a "tool skipped" warning on
+# every PR, so it is disabled here. The LLM review and other tools still run.
+
+tone_instructions: >-
+  Chat: a Keelson rib (Bun TS) for agent swarms over ClickClack. Be terse; cite
+  file:line. Comments are optional and one-line soft-wraps are fine — do not
+  flag them. Do not push docstrings or narrate what just changed. No poems,
+  jokes, or emoji.
+
+reviews:
+  poem: false
+  in_progress_fortune: false
+
+  path_instructions:
+    - path: "**/*.test.ts"
+      instructions: >-
+        Bun's test runner (bun:test) against the in-memory ClickClack in
+        test/fakes.ts. Do not flag mock-vs-real tradeoffs. Do not require
+        docstrings on test helpers.
+
+  tools:
+    eslint:
+      enabled: false
+
+  # CONTRIBUTING.md sets a "no-narration" comment policy, and the
+  # docstring-coverage check pushes the opposite direction.
+  pre_merge_checks:
+    docstrings:
+      mode: "off"

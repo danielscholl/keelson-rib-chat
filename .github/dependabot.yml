@@ -1,0 +1,49 @@
+# Dependabot configuration.
+#
+# The `bun` ecosystem updates package.json and bun.lock together, so a
+# Dependabot PR passes CI's frozen install with no lockfile sync step.
+#
+# @keelson/shared is pinned to a release tarball URL, which Dependabot does not
+# track. Bump it by hand when the harness contract the rib needs moves; the
+# "Harness main canary" CI job says when that is.
+#
+# The explicit commit-message prefix keeps Dependabot's PR titles passing the
+# required conventional-commit title check.
+
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: "/"
+    cooldown:
+      default-days: 7
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+    groups:
+      types:
+        patterns:
+          - "@types/*"
+      dev-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions pinned in .github/workflows/
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
