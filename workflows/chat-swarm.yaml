@@ -1,0 +1,42 @@
+name: chat-swarm
+description: |
+  Use when: a problem is worth several agents investigating in parallel and talking it through
+  Triggers: "swarm on this", "have a few agents investigate", "spin up a swarm"
+  Does: starts a ClickClack agent swarm on the task, holds until it concludes, reports the answer
+  NOT for: a single-agent question, or a fixed-roster discussion (use a Chamber room)
+mutates_checkout: false
+tags: [chat, swarm]
+nodes:
+  - id: start
+    prompt: |
+      Start an agent swarm by calling chat_swarm_start exactly once, passing this
+      text as `task`:
+
+      $ARGUMENTS
+
+      Reply with ONLY the swarm id the tool returned (for example: s3fk), nothing else.
+    allowed_tools: [chat_swarm_start]
+    require_tool_call: [chat_swarm_start]
+    context: fresh
+
+  - id: wait
+    prompt: |
+      Hold until swarm "$start.output" ends. Call chat_swarm_wait with that swarm id
+      and timeout_s 600. If the result begins with RUNNING, call it again, at most
+      four times in total. Then reply with ENDED or RUNNING to match the last result.
+    allowed_tools: [chat_swarm_wait]
+    require_tool_call: [chat_swarm_wait]
+    idle_timeout: 660000
+    context: fresh
+    depends_on: [start]
+
+  - id: report
+    prompt: |
+      Call chat_swarm_status for swarm "$start.output" and report the outcome: its
+      status, the conclusion, which agents took part and what each was for, and how
+      many turns it cost. If it did not end as "done", say so plainly and give the
+      reason. If it is still running, say that and name the channel to watch.
+    allowed_tools: [chat_swarm_status]
+    require_tool_call: [chat_swarm_status]
+    context: fresh
+    depends_on: [wait]

@@ -1,0 +1,46 @@
+{
+  "name": "@keelson/rib-chat",
+  "version": "0.1.0",
+  "description": "Keelson rib for agent swarms that coordinate over ClickClack: each agent is a real chat bot, a dispatcher wakes agents when they are addressed, and a swarm runs as one durable, steerable op.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "workflows",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "link:keelson": "bun dev/link.ts"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.3",
+    "@keelson/shared": "https://github.com/danielscholl/keelson/releases/download/v0.104.1/keelson-shared.tgz",
+    "@types/bun": "^1.1.14",
+    "typescript": "^7.0.2"
+  },
+  "peerDependencies": {
+    "@keelson/shared": ">=0.103.0"
+  },
+  "peerDependenciesMeta": {
+    "@keelson/shared": {
+      "optional": true
+    }
+  }
+}
