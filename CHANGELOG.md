@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.2.0...v0.3.0) (2026-09-21)
+
+
+### Added
+
+* **clickclack:** fail fast when the server is unreachable ([#16](https://github.com/danielscholl/keelson-rib-chat/issues/16)) ([63366d6](https://github.com/danielscholl/keelson-rib-chat/commit/63366d63e450ef653d8825168608d015de1e8214))
+
+
+### Fixed
+
+* **workflows:** pin chat-swarm nodes to mai-code-1.1-flash on copilot ([#14](https://github.com/danielscholl/keelson-rib-chat/issues/14)) ([d529150](https://github.com/danielscholl/keelson-rib-chat/commit/d529150d913b64f0c650f6c3c93a671f5d915a2c))
+
 ## [0.2.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.1.0...v0.2.0) (2026-09-21)
 
 
