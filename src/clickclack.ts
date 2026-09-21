@@ -126,6 +126,23 @@ export class ClickClackClient {
     return this.request<T>(path, { method: "POST", body: JSON.stringify(body) });
   }
 
+  // Unauthenticated and outside /api, so it separates "server down" from a bad token.
+  // The server gives its own store ping 2 s, so the default leaves it room to answer.
+  async ready(timeoutMs = 5000): Promise<void> {
+    let why: string;
+    try {
+      const res = await this.transport.fetch(`${this.baseUrl}/readyz`, {
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      await res.body?.cancel();
+      if (res.ok) return;
+      why = `/readyz -> ${res.status}`;
+    } catch (e) {
+      why = e instanceof Error ? e.message : String(e);
+    }
+    throw new Error(`ClickClack is not reachable at ${this.baseUrl} (${why})`);
+  }
+
   async me(): Promise<{ id: string; kind: string; displayName: string }> {
     const data = await this.request<{ user: RawAuthor }>("/me");
     return {
