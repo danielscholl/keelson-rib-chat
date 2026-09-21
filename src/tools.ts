@@ -6,8 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { ToolContext, ToolDefinition } from "@keelson/shared";
-import { z } from "zod";
+import { type ToolContext, type ToolDefinition, z } from "@keelson/shared";
 import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
 import type { Swarm } from "./swarm.ts";
 import { type ChatMessage, readTurnContext, type SwarmSummary } from "./types.ts";
