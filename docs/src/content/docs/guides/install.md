@@ -75,8 +75,10 @@ keelson doctor
 
 With the server up, `keelson doctor` lists the ribs it loaded and whether each
 is ready. For Chat that is its auth status: authenticated with the session's
-display name, or the reason it is not. The two you are likely to see:
+display name, or the reason it is not. The three you are likely to see:
 
+- **Not reachable.** Nothing answers at `CLICKCLACK_URL`. Start ClickClack, or
+  correct the URL.
 - **No owner session.** `CLICKCLACK_TOKEN` is unset and the keychain entry is
   empty.
 - **A bot token.** The token works, but it belongs to a bot. Mint a human

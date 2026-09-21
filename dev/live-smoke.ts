@@ -20,6 +20,7 @@ if (!token) {
 }
 
 const owner = new ClickClackClient(url, token);
+await owner.ready();
 const me = await owner.me();
 const workspace = (await owner.listWorkspaces())[0];
 if (!workspace) throw new Error("no workspace visible to this session");

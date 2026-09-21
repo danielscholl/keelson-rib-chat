@@ -14,6 +14,14 @@ process, each time a swarm starts. It has no config file.
 | `CLICKCLACK_TOKEN` | keychain `rib_chat_token` | The owner session used to create and revoke the agents' bots. |
 | `CLICKCLACK_WORKSPACE` | the only visible workspace | The workspace swarms run in. Required when the session sees several. |
 
+## Reachability
+
+Before it starts a swarm, and whenever it reports auth status, the rib asks the
+server's unauthenticated `/readyz` and waits up to two seconds. A refused
+connection, a timeout, or a store that is unavailable all fail the same way:
+`ClickClack is not reachable at <url>`. The check runs before the run is
+registered, so a server that is down leaves no run behind.
+
 ## The owner session
 
 The token must be a **human** session. A bot token cannot create bots, and the

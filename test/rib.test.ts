@@ -34,4 +34,21 @@ describe("rib contract", () => {
       if (saved !== undefined) process.env.CLICKCLACK_TOKEN = saved;
     }
   });
+
+  test("authStatus names the url of a server that is not running", async () => {
+    const saved = { url: process.env.CLICKCLACK_URL, token: process.env.CLICKCLACK_TOKEN };
+    // Port 1 is reserved and refuses at once, so this needs no server and no wait.
+    process.env.CLICKCLACK_URL = "http://127.0.0.1:1";
+    process.env.CLICKCLACK_TOKEN = "sst_unused";
+    try {
+      const status = await rib.authStatus?.({ getExec: () => ({}) as never });
+      expect(status?.authenticated).toBe(false);
+      expect(status?.statusMessage).toBe("ClickClack is not reachable at http://127.0.0.1:1");
+    } finally {
+      if (saved.url === undefined) delete process.env.CLICKCLACK_URL;
+      else process.env.CLICKCLACK_URL = saved.url;
+      if (saved.token === undefined) delete process.env.CLICKCLACK_TOKEN;
+      else process.env.CLICKCLACK_TOKEN = saved.token;
+    }
+  });
 });

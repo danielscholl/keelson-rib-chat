@@ -226,6 +226,10 @@ session, because a bot token cannot create bots.
 | \`CLICKCLACK_URL\` | \`http://localhost:8080\` | The ClickClack server. |
 | \`CLICKCLACK_TOKEN\` | keychain \`rib_chat_token\` | Owner session used to mint and revoke the agents' bots. |
 | \`CLICKCLACK_WORKSPACE\` | the only visible workspace | Required when the session sees several. |
+
+The rib checks the server's \`/readyz\` before it starts a swarm and when it
+reports auth status. A server that is down fails with
+\`ClickClack is not reachable at <url>\`, and no run is registered.
 `;
 }
 

@@ -41,6 +41,9 @@ export class FakeClickClack {
   readonly sockets = new Set<FakeSocket>();
   // When false the socket never echoes, proving local ingestion alone suffices.
   echo = true;
+  // A refused connection, and a server that is up with its store unavailable.
+  down = false;
+  ready = true;
   private seq = 0;
 
   private next(prefix: string): string {
@@ -108,7 +111,13 @@ export class FakeClickClack {
   }
 
   private async handle(url: string, init: RequestInit): Promise<Response> {
+    if (this.down) throw new TypeError("fetch failed");
     const { pathname } = new URL(url);
+    if (pathname === "/readyz") {
+      return this.ready
+        ? this.json(200, { status: "ready" })
+        : this.json(503, { status: "unavailable" });
+    }
     const path = pathname.replace(/^\/api/, "");
     const method = (init.method ?? "GET").toUpperCase();
     const bearer = new Headers(init.headers).get("Authorization")?.replace("Bearer ", "") ?? "";

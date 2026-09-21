@@ -63,6 +63,7 @@ async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?
     cwd = project.rootPath;
   }
   const owner = await ownerClient();
+  await owner.ready();
   const workspaceId = await resolveWorkspace(owner);
 
   // Registered before the swarm boots so its startup is on the record too.
@@ -137,7 +138,9 @@ const rib: Rib = {
   async authStatus(ctx: RibContext): Promise<RibAuthStatus> {
     getCredential = ctx.getCredential ?? getCredential;
     try {
-      const me = await (await ownerClient()).me();
+      const owner = await ownerClient();
+      await owner.ready();
+      const me = await owner.me();
       if (me.kind !== "human") {
         return {
           authenticated: false,
