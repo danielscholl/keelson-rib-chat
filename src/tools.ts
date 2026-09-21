@@ -30,7 +30,12 @@ export interface ToolDeps {
   startSwarm: (input: StartSwarmInput) => Promise<{ swarm: Swarm; opId?: string }>;
 }
 
-const BODY_MAX = 8_000;
+export const BODY_MAX = 8_000;
+export const START_BOUNDS = { maxAgents: 12, maxTurns: 200 } as const;
+export const WAIT_BOUNDS = { defaultS: 120, maxS: 600 } as const;
+export const READ_BOUNDS = { defaultLimit: 20, maxLimit: 50 } as const;
+// Ended swarms whose summary chat_swarm_status still answers for.
+export const ENDED_KEPT = 20;
 const body = z.string().min(1).max(BODY_MAX).describe("Markdown message body.");
 
 function emitText(ctx: ToolContext, content: string, isError = false): void {
@@ -86,7 +91,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .string()
         .optional()
         .describe("A thread's root message id. Omit to read the channel's latest messages."),
-      limit: z.number().int().min(1).max(50).optional(),
+      limit: z.number().int().min(1).max(READ_BOUNDS.maxLimit).optional(),
     })
     .strict();
   const spawnSchema = z
@@ -106,8 +111,8 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .string()
         .optional()
         .describe("A registered keelson project; agents read its checkout."),
-      max_agents: z.number().int().min(1).max(12).optional(),
-      max_turns: z.number().int().min(1).max(200).optional(),
+      max_agents: z.number().int().min(1).max(START_BOUNDS.maxAgents).optional(),
+      max_turns: z.number().int().min(1).max(START_BOUNDS.maxTurns).optional(),
       work_tools: z
         .enum(["none", "read"])
         .optional()
@@ -121,7 +126,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
   const waitSchema = z
     .object({
       swarm: z.string().min(1),
-      timeout_s: z.number().int().min(1).max(600).optional(),
+      timeout_s: z.number().int().min(1).max(WAIT_BOUNDS.maxS).optional(),
     })
     .strict();
 
@@ -165,7 +170,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         const { swarm, agentId } = caller(ctx);
         const messages = await swarm.read(agentId, {
           ...(args.thread_id ? { threadId: args.thread_id } : {}),
-          limit: args.limit ?? 20,
+          limit: args.limit ?? READ_BOUNDS.defaultLimit,
         });
         emitText(ctx, renderMessages(messages));
       }),
@@ -261,8 +266,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     },
     {
       name: "chat_swarm_wait",
-      description:
-        "Block until a swarm ends or timeout_s (default 120) passes, then report its status. For a workflow that must hold until the swarm concludes; from chat, prefer chat_swarm_status.",
+      description: `Block until a swarm ends or timeout_s (default ${WAIT_BOUNDS.defaultS}) passes, then report its status. For a workflow that must hold until the swarm concludes; from chat, prefer chat_swarm_status.`,
       inputSchema: waitSchema,
       execute: guarded(async (input, ctx) => {
         const args = waitSchema.parse(input);
@@ -270,7 +274,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         if (live) {
           let timer: ReturnType<typeof setTimeout> | undefined;
           const timeout = new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, (args.timeout_s ?? 120) * 1_000);
+            timer = setTimeout(resolve, (args.timeout_s ?? WAIT_BOUNDS.defaultS) * 1_000);
           });
           const aborted = new Promise<void>((resolve) =>
             ctx.abortSignal.addEventListener("abort", () => resolve(), { once: true }),

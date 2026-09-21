@@ -8,12 +8,12 @@
 
 import type { Rib, RibAuthStatus, RibContext } from "@keelson/shared";
 import { ClickClackClient } from "./clickclack.ts";
+import { chatDocsSource } from "./docs.ts";
 import { Swarm } from "./swarm.ts";
-import { makeChatTools, type StartSwarmInput } from "./tools.ts";
+import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
 import type { SwarmSummary } from "./types.ts";
 
 const READ_TOOLS = ["Read", "Grep", "Glob"] as const;
-const ENDED_KEPT = 20;
 
 // Seams captured in registerTools (the only hook with the full ctx) and cleared
 // in dispose.
@@ -122,6 +122,8 @@ async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?
 const rib: Rib = {
   id: "chat",
   displayName: "Chat",
+
+  contributeDocs: () => [chatDocsSource()],
 
   registerTools: (ctx: RibContext) => {
     runAgentTurn = ctx.runAgentTurn;
