@@ -12,6 +12,12 @@ import {
   type ClickClackEvent,
   type Subscription,
 } from "./clickclack.ts";
+import {
+  type ContextItem,
+  contextIndex,
+  renderContextIndex,
+  renderContextItem,
+} from "./context.ts";
 import { nudgeText, renderInbox, systemPrompt } from "./prompts.ts";
 import { route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
@@ -34,6 +40,7 @@ export const AGENT_TOOLS = [
   "chat_reply",
   "chat_read",
   "chat_roster",
+  "chat_context",
   "chat_spawn",
   "chat_done",
 ] as const;
@@ -49,6 +56,8 @@ export interface SwarmOptions {
   limits?: Partial<SwarmLimits>;
   // Built-in tools granted beside the chat_* set (e.g. Read, Grep, Glob).
   workTools?: readonly string[];
+  // Evidence snapshotted by the caller; immutable for the life of the swarm.
+  context?: readonly ContextItem[];
   cwd?: string;
   provider?: string;
   model?: string;
@@ -333,6 +342,7 @@ export class Swarm {
           task: this.task,
           channelName: this.channel.name,
           limits: this.limits,
+          contextIndex: renderContextIndex(this.opts.context ?? []),
         }),
         prompt,
         tools,
@@ -455,6 +465,24 @@ export class Swarm {
     return agent;
   }
 
+  context(agentId: string, opts: { id?: string; offset: number }): string {
+    this.as(agentId);
+    const items = this.opts.context ?? [];
+    if (!opts.id) return renderContextIndex(items);
+    const item = items.find((i) => i.id === opts.id);
+    if (!item) {
+      throw new Error(
+        `no context item '${opts.id}'. It was not supplied to this swarm: report it as missing evidence. Items:\n${renderContextIndex(items)}`,
+      );
+    }
+    if (opts.offset >= item.body.length) {
+      throw new Error(
+        `offset ${opts.offset} is past the end of '${item.id}' (${item.body.length} chars)`,
+      );
+    }
+    return renderContextItem(item, opts.offset);
+  }
+
   roster(): SwarmSummary["agents"] {
     return [...this.agents.values()].map(({ tokenId: _t, sessionId: _s, ...rest }) => rest);
   }
@@ -494,6 +522,7 @@ export class Swarm {
       turnsUsed: this.turnsUsed,
       limits: this.limits,
       agents: this.roster(),
+      ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.conclusion !== undefined ? { conclusion: this.conclusion } : {}),
       ...(this.error ? { error: this.error } : {}),
     };

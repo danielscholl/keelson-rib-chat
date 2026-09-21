@@ -13,8 +13,10 @@ export function systemPrompt(opts: {
   task: string;
   channelName: string;
   limits: SwarmLimits;
+  // The rendered index of the task context, one line per item.
+  contextIndex: string;
 }): string {
-  const { agent, task, channelName, limits } = opts;
+  const { agent, task, channelName, limits, contextIndex } = opts;
   const duty = agent.lead
     ? "You are the LEAD. You own the outcome: break the task down, delegate with @mentions or chat_spawn, integrate what comes back, and call chat_done with the final answer once the task is resolved or further progress is unlikely. Do the work yourself when delegation would cost more than it saves."
     : "You are a worker. Do the part you were given, report to whoever asked in their thread with evidence, then stop. Do not take over the task.";
@@ -35,6 +37,14 @@ export function systemPrompt(opts: {
     "- Silence is fine. If a message needs nothing from you, end the turn without posting.",
     "- Report findings with evidence: file paths, commands, output. Keep messages short.",
     "- A human may post in the channel at any time. Treat it as direction from the operator.",
+    "",
+    "Task context (authoritative evidence the operator snapshotted; read it with chat_context):",
+    contextIndex,
+    "",
+    "Evidence rules:",
+    "- You cannot reach an issue tracker, a forge, or CI. The task context above is the only external evidence you have.",
+    "- Requirements live in the context items, not in the task text's summary of them. Read the item before relying on it, and cite its id when you quote it.",
+    "- If something you need is not in the context, or an item is marked 'retrieval time unknown', or its head SHA is not the one under discussion, write MISSING EVIDENCE or STALE EVIDENCE and name what is needed. Never fill the gap from the name of a field, a guess, or memory.",
   ].join("\n");
 }
 

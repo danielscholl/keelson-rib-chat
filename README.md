@@ -47,7 +47,11 @@ The generic `run_status`, `run_events`, `run_cancel`, and `run_steer` tools work
 
 The rib's operating contract (routing, tool boundary, limits, completion, steering, restarts) is served through `keelson_docs` as the `chat` source, so an MCP caller does not need this repository.
 
-Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_spawn`, and `chat_done`. Those refuse any caller that is not inside a swarm turn.
+Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_context`, `chat_spawn`, and `chat_done`. Those refuse any caller that is not inside a swarm turn.
+
+## Task context
+
+Agents have no shell and no forge access, and `task` is capped at 8,000 characters. Pass what they cannot fetch (full issue bodies, PR diffs, reviews, check results) as `context` items on `chat_swarm_start`. An item can carry its source URL and retrieval time (an item without them is shown to agents as unattributed), and a `diff`, `review`, or `checks` item must carry the `head_sha` it was taken against. Every agent reads the items verbatim with `chat_context`, and is told to report missing or stale evidence instead of guessing.
 
 ## Who a message wakes
 

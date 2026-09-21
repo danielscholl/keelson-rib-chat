@@ -7,6 +7,7 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { RibDocsSource } from "@keelson/shared";
+import { CONTEXT_BOUNDS } from "./context.ts";
 import { BODY_MAX, ENDED_KEPT, READ_BOUNDS, START_BOUNDS, WAIT_BOUNDS } from "./tools.ts";
 import { DEFAULT_LIMITS } from "./types.ts";
 
@@ -36,7 +37,7 @@ lease workspaces, or reach a forge. No prompt can grant those. To implement what
 a swarm recommends, the caller runs an implementation workflow from
 \`workflow_list\` itself, and carries the swarm's conclusion into it. Anything an
 agent needs to know that is not in the checkout (an issue body, a PR diff, review
-comments, CI results) must be put in the \`task\` text by the caller.
+comments, CI results) must be supplied by the caller as task context.
 
 # Starting a swarm
 
@@ -52,6 +53,7 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`work_tools\` | \`read\` | \`read\` grants Read, Grep, and Glob. \`none\` is chat only. |
 | \`max_agents\` | ${l.maxAgents} | Agent cap, lead included. 1 to ${START_BOUNDS.maxAgents}. |
 | \`max_turns\` | ${l.maxTurns} | Total turns across the swarm. 1 to ${START_BOUNDS.maxTurns}. |
+| \`context\` | none | Evidence the agents cannot fetch themselves. See Task context. |
 | \`provider\` | host default | Provider id used for every agent's turns. |
 | \`model\` | host default | Model id used for every agent's turns. |
 
@@ -61,6 +63,39 @@ there is nothing to confine reads to, so \`work_tools: read\` grants nothing and
 the swarm is chat only.
 
 One provider and model apply to the whole swarm. There is no per-agent choice.
+
+# Task context
+
+> How to give a swarm full issue bodies, diffs, reviews, and check results it cannot fetch.
+
+Agents have no shell, no token, and no forge access, and \`task\` is capped at
+${BODY_MAX} characters. A short summary in \`task\` loses acceptance criteria, and
+agents then infer requirements from field names. So snapshot the evidence before
+delegating and pass it as \`context\`: up to ${CONTEXT_BOUNDS.maxItems} items, each body at most
+${CONTEXT_BOUNDS.maxItemChars} characters, ${CONTEXT_BOUNDS.maxTotalChars} in total. Bodies are stored verbatim and
+cannot change for the life of the swarm.
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| \`id\` | yes | Short kebab-case key the agents cite, for example \`issue-874\`. Unique. |
+| \`kind\` | yes | \`issue\`, \`pr\`, \`diff\`, \`review\`, \`checks\`, or \`note\`. |
+| \`title\` | yes | One line. |
+| \`body\` | yes | The full text. Do not summarize it. |
+| \`source_url\` | no | Where it was retrieved from. |
+| \`retrieved_at\` | no | ISO 8601 time of retrieval. |
+| \`head_sha\` | for \`diff\`, \`review\`, \`checks\` | The commit the evidence was taken against. The start is refused without it. |
+| \`base_sha\` | no | The base the diff was taken against. |
+
+Every agent, spawned workers included, sees the item index in its system prompt
+and reads bodies with \`chat_context\`. Each read is headed by the item's source,
+retrieval time, and SHAs, so a quote stays attributable. Items longer than
+${CONTEXT_BOUNDS.pageChars} characters page by \`offset\`.
+
+Agents are told that the context is their only external evidence, and to write
+MISSING EVIDENCE or STALE EVIDENCE, naming what is needed, when an item is
+absent, has no retrieval time, or is bound to a different head SHA. A swarm
+started with no context says so in every agent's prompt. The item index, without
+bodies, is kept in the swarm's status and durable result.
 
 # Routing
 
@@ -88,6 +123,7 @@ agent with pending messages runs one turn with all of them batched in.
 | \`chat_reply\` | An answer inside a thread. |
 | \`chat_read\` | Re-read the channel's latest messages, or one thread. ${READ_BOUNDS.defaultLimit} messages by default, at most ${READ_BOUNDS.maxLimit}. |
 | \`chat_roster\` | The agents, their roles, and their turn counts. |
+| \`chat_context\` | List the task context items, or read one verbatim with its attribution. |
 | \`chat_spawn\` | Add a worker with a handle, a role, and a narrow brief. Fails at the agent cap. |
 | \`chat_done\` | Lead only. Conclude the swarm with its final answer. |
 

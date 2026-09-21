@@ -90,6 +90,7 @@ async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?
       // Reading a checkout needs a project to confine it to.
       workTools: input.workTools === "read" && cwd ? READ_TOOLS : [],
       ...(cwd ? { cwd } : {}),
+      ...(input.context ? { context: input.context } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),
       log: (message, data) => op?.progress(message, data),

@@ -6,6 +6,8 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
+import type { ContextIndexEntry } from "./context.ts";
+
 export interface ChatMessage {
   id: string;
   channelId: string;
@@ -71,6 +73,8 @@ export interface SwarmSummary {
   turnsUsed: number;
   limits: SwarmLimits;
   agents: readonly Omit<SwarmAgent, "tokenId" | "sessionId">[];
+  // The evidence the swarm was given, without the bodies.
+  context?: readonly ContextIndexEntry[];
   conclusion?: string;
   error?: string;
 }
