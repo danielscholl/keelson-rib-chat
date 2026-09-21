@@ -8,6 +8,7 @@
 
 import type { RibDocsSource } from "@keelson/shared";
 import { CONTEXT_BOUNDS } from "./context.ts";
+import { DEFAULT_PORT } from "./server.ts";
 import { BODY_MAX, ENDED_KEPT, READ_BOUNDS, START_BOUNDS, WAIT_BOUNDS } from "./tools.ts";
 import { DEFAULT_LIMITS } from "./types.ts";
 
@@ -150,6 +151,8 @@ a project and \`work_tools: read\`. It holds nothing else.
 The generic \`run_status\`, \`run_events\`, \`run_cancel\`, and \`run_steer\` tools
 work on the run id. The \`chat-swarm\` workflow wraps start, wait, and report.
 
+Four more tools act on the ClickClack server itself. See Managed server.
+
 # Limits and completion
 
 > The budgets that bound a swarm, and the status it ends with.
@@ -214,9 +217,51 @@ A clean shutdown stops each swarm and revokes its tokens; a crash leaves the
 tokens unrevoked. \`chat_swarm_status\` answers for the last ${ENDED_KEPT} ended swarms of
 the current process only; after a restart use \`run_status\` on the run id.
 
+A managed ClickClack stops with Keelson, after the swarms have revoked their
+tokens, and starts again with the next swarm. Its channels and transcripts are
+on disk and return with it. If Keelson is killed, the server is left running and
+the next start adopts it.
+
+# Managed server
+
+> The local ClickClack the rib runs when it is pointed at none, and the tools that start, stop, and wipe it.
+
+With \`CLICKCLACK_URL\` unset and no owner session in \`CLICKCLACK_TOKEN\` or the
+keychain, the rib runs its own ClickClack. With either one set the server is
+external: the rib uses it and never starts, stops, or wipes it.
+
+The managed server starts with the first \`chat_swarm_start\`, or on
+\`chat_server_start\`. It listens on \`127.0.0.1\` only, keeps its data under the
+rib's data directory, and needs a \`clickclack\` binary. The rib mints a fresh
+human owner session for each swarm over the loopback API, so there is no token
+to configure. Not supported on Windows.
+
+| Tool | For |
+| --- | --- |
+| \`chat_server_status\` | Mode (\`managed\` or \`external\`), URL, whether it is running, pid, data directory, and live swarms. Starts nothing. |
+| \`chat_server_start\` | Start the managed server, or confirm it is running. Returns the URL; the web UI is at \`<url>/app\`. |
+| \`chat_server_stop\` | Stop the managed server. Channels and transcripts stay on disk. |
+| \`chat_server_reset\` | Stop it, delete every channel, transcript, bot, and session, and start it empty. Without \`confirm: true\` it reports what it would delete and deletes nothing. |
+
+Stop and reset refuse while any swarm is running or starting: stop the swarms
+with \`chat_swarm_stop\` first. Start, stop, and reset refuse when the server is
+external. A reset also forgets the ended swarms \`chat_swarm_status\` would list,
+since their channels no longer exist. Swarm agents cannot call these tools.
+
+If something the rib did not start already listens on the port, the start fails
+and names the port. The rib never signals a process it cannot prove is its own.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| \`CLICKCLACK_BIN\` | \`clickclack\` on \`PATH\` | The binary to run. |
+| \`CLICKCLACK_PORT\` | \`${DEFAULT_PORT}\` | The loopback port the managed server listens on. |
+
 # Setup
 
-> The ClickClack session and environment the rib needs.
+> The ClickClack session and environment an external server needs.
+
+With none of these set the rib runs its own server and needs only a
+\`clickclack\` binary. See Managed server. To use a server you run yourself:
 
 The rib mints each agent's bot with an owner session. It must be a human
 session, because a bot token cannot create bots.

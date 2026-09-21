@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: The three ClickClack variables the Chat rib reads, and the credential fallback.
+description: The ClickClack variables the Chat rib reads, the credential fallback, and the server it runs when none are set.
 sidebar:
   order: 5
 ---
@@ -13,6 +13,10 @@ process, each time a swarm starts. It has no config file.
 | `CLICKCLACK_URL` | `http://localhost:8080` | The ClickClack server. |
 | `CLICKCLACK_TOKEN` | keychain `rib_chat_token` | The owner session used to create and revoke the agents' bots. |
 | `CLICKCLACK_WORKSPACE` | the only visible workspace | The workspace swarms run in. Required when the session sees several. |
+
+With `CLICKCLACK_URL` unset and no owner session in `CLICKCLACK_TOKEN` or the
+keychain, the rib runs [a server of its own](#managed-server). Setting either
+one makes the server external, and the rib then only connects to it.
 
 ## Reachability
 
@@ -38,6 +42,35 @@ for `token`, which resolves to the OS keychain entry `rib_chat_token`.
 
 Agents never see this token. Each agent posts with its own bot token, which the
 rib holds in memory and revokes when the swarm ends.
+
+## Managed server
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CLICKCLACK_BIN` | `clickclack` on `PATH` | The binary the rib runs. |
+| `CLICKCLACK_PORT` | `18080` | The loopback port it listens on. |
+
+The rib starts `clickclack serve --addr 127.0.0.1:<port> --data <rib data dir>/clickclack/data --dev-bootstrap=true`
+with the first swarm, or on `chat_server_start`, and stops it when Keelson shuts
+down. `--dev-bootstrap` creates a `Local Captain` user who owns the one
+workspace, and lets a loopback client mint a session for that user. The rib
+mints one per swarm, so a managed server needs no token. None of the rib's
+`CLICKCLACK_` variables are passed to the server process.
+
+The port is fixed because ClickClack doesn't report an ephemeral one. If
+something the rib didn't start already listens there, the start fails and names
+the port. Set `CLICKCLACK_PORT` to a free one.
+
+Build the binary from a ClickClack checkout. The web UI is embedded, so this is
+the whole install:
+
+```bash
+go build -o ~/bin/clickclack ./apps/api/cmd/clickclack
+```
+
+A managed server is not supported on Windows, and needs a Keelson that gives
+ribs a data directory. See [Durability](../durability/#a-managed-server) for
+what it writes and how a server left running is adopted.
 
 ## Workspace resolution
 

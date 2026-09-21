@@ -22,6 +22,33 @@ Durable cursors, replay after a dropped socket, threads, scoped and revocable
 bot tokens, and a human UI already exist in ClickClack. The rib talks to it only
 over the public HTTP and WebSocket API.
 
+## The rib may run ClickClack, and still only talks to its API
+
+A swarm is useless without a server, and standing one up by hand (run it, create
+an owner, mint a session, export it) was most of the install. With nothing
+configured the rib spawns `clickclack serve` itself. Everything after the spawn
+goes through the public API, the owner session included: `--dev-bootstrap`
+lets a loopback client mint one, so the rib never opens the database.
+
+The rule for which server the rib owns is that it owns none it was pointed at. A
+URL or a token means somebody else runs it, and start, stop, and reset all
+refuse. That keeps a wipe away from any server with a name.
+
+Ownership of a process is proved by its command line carrying the rib's data
+directory, never by a recorded pid alone, because the OS reuses pids and the
+record outlives a crash. The check needs no HTTP, so it also identifies a server
+that has stopped answering, which is the one that most needs killing.
+
+The server runs in its own process group. A terminal's Ctrl-C would otherwise
+reach it at the same moment as Keelson, and the swarms' token revocations would
+hit a closed port.
+
+Reset is a tool with a `confirm` input because the harness's slash commands must
+not mutate state, and board actions need a surface the rib doesn't have. Swarm
+agents hold an explicit tool list that never includes it. Keelson's rule that a
+rib never opens its own port is about serving UI: the port here belongs to
+ClickClack, and the rib still renders nothing.
+
 ## An agent is an identity, an inbox, and a resumable session
 
 The rib holds no long-lived agent loops. A message addressed to an agent lands

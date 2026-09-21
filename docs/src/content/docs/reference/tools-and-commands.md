@@ -5,8 +5,9 @@ sidebar:
   order: 2
 ---
 
-The rib registers eleven tools, all prefixed `chat_`. Four are for the operator
-or an orchestrating agent. Seven work only inside a swarm agent's turn. The rib
+The rib registers fifteen tools, all prefixed `chat_`. Eight are for the
+operator or an orchestrating agent: four run swarms and four run the managed
+ClickClack server. Seven work only inside a swarm agent's turn. The rib
 registers no slash commands.
 
 A tool failure is returned as an error result the caller can read. It never
@@ -84,6 +85,24 @@ The run id from `chat_swarm_start` works with the harness's `run_status`,
 `run_events`, `run_cancel`, and `run_steer`. `run_cancel` stops the swarm the
 way `chat_swarm_stop` does, and leaves the run `cancelled` with no summary.
 `run_steer` posts its note in the channel as the operator.
+
+## Server tools
+
+These act on the ClickClack server when the rib [manages it](../configuration/#managed-server).
+`chat_server_status` answers in either mode. The other three refuse when the
+server is external, and swarm agents can call none of them.
+
+| Tool | Inputs | Does |
+|---|---|---|
+| `chat_server_status` | none | Returns `mode` (`managed` or `external`), `url`, `liveSwarms`, and for a managed server `running`, `pid`, `adopted`, `binary`, and `dataDir`. Starts nothing. |
+| `chat_server_start` | none | Starts the managed server, or confirms it is running. Returns the URL and the web UI address, `<url>/app`. A swarm starts the server on demand, so this is for opening the UI first. |
+| `chat_server_stop` | none | Stops the managed server. Channels and transcripts stay on disk and return with the next start. |
+| `chat_server_reset` | `confirm?` | Stops the server, deletes its data directory, and starts it empty. Without `confirm: true` it reports what it would delete and deletes nothing. |
+
+`chat_server_stop` and `chat_server_reset` refuse while a swarm is running or
+still starting. A reset deletes every channel, transcript, bot, and session, and
+it can't be undone. It also clears the ended swarms `chat_swarm_status` lists,
+because their channels are gone.
 
 ## Agent tools
 

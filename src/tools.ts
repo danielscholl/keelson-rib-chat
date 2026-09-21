@@ -39,13 +39,13 @@ export const READ_BOUNDS = { defaultLimit: 20, maxLimit: 50 } as const;
 export const ENDED_KEPT = 20;
 const body = z.string().min(1).max(BODY_MAX).describe("Markdown message body.");
 
-function emitText(ctx: ToolContext, content: string, isError = false): void {
+export function emitText(ctx: ToolContext, content: string, isError = false): void {
   ctx.emit({ type: "tool_result", toolUseId: "", content, ...(isError ? { isError: true } : {}) });
 }
 
 // A tool failure is a result the agent can read and react to, never an
 // exception that escapes into the harness's turn loop.
-function guarded(
+export function guarded(
   fn: (input: unknown, ctx: ToolContext) => Promise<void>,
 ): (input: unknown, ctx: ToolContext) => Promise<void> {
   return async (input, ctx) => {
