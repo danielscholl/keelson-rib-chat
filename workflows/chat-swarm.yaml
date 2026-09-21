@@ -8,6 +8,9 @@ mutates_checkout: false
 tags: [chat, swarm]
 nodes:
   - id: start
+    model: balanced
+    model_by_provider:
+      copilot: mai-code-1.1-flash
     prompt: |
       Start an agent swarm by calling chat_swarm_start exactly once, passing this
       text as `task`:
@@ -20,6 +23,9 @@ nodes:
     context: fresh
 
   - id: wait
+    model: balanced
+    model_by_provider:
+      copilot: mai-code-1.1-flash
     prompt: |
       Hold until swarm "$start.output" ends. Call chat_swarm_wait with that swarm id
       and timeout_s 600. If the result begins with RUNNING, call it again, at most
@@ -31,6 +37,9 @@ nodes:
     depends_on: [start]
 
   - id: report
+    model: balanced
+    model_by_provider:
+      copilot: mai-code-1.1-flash
     prompt: |
       Call chat_swarm_status for swarm "$start.output" and report the outcome: its
       status, the conclusion, which agents took part and what each was for, and how
