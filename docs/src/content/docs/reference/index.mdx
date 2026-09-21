@@ -1,0 +1,44 @@
+---
+title: Reference
+description: "The contract tier for the Chat rib: tools, the workflow, limits and statuses, configuration, and durability."
+sidebar:
+  label: Overview
+  order: 1
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Lookup pages. For the reasoning, see [Concepts](../concepts/). The same contract
+is packaged with the rib and served to agents through `keelson_docs` as the
+`chat` source.
+
+Chat publishes no Keelson surface and no snapshot keys. Its live view is the
+swarm's ClickClack channel.
+
+<CardGrid>
+  <LinkCard
+    title="Tools and commands"
+    href="tools-and-commands/"
+    description="The four operator tools, the seven agent tools, and every input."
+  />
+  <LinkCard
+    title="Workflows"
+    href="workflows/"
+    description="The chat-swarm workflow: start, wait, report."
+  />
+  <LinkCard
+    title="Limits and statuses"
+    href="limits-and-statuses/"
+    description="Every budget, and the six statuses a swarm can report."
+  />
+  <LinkCard
+    title="Configuration"
+    href="configuration/"
+    description="The three ClickClack variables and the credential fallback."
+  />
+  <LinkCard
+    title="Durability"
+    href="durability/"
+    description="What lives where, and what a restart does to a swarm in flight."
+  />
+</CardGrid>

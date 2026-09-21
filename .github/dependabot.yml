@@ -34,6 +34,37 @@ updates:
           - minor
           - patch
 
+  # Docs site (Astro Starlight), a standalone Bun project under docs/
+  - package-ecosystem: bun
+    directory: "/docs"
+    cooldown:
+      default-days: 7
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+      - documentation
+    # astro check drives the docs typecheck through TypeScript's programmatic
+    # LanguageService API, which the TS7 native compiler does not expose yet.
+    ignore:
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
+    groups:
+      astro:
+        patterns:
+          - "astro"
+          - "@astrojs/*"
+      dev-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
   # GitHub Actions pinned in .github/workflows/
   - package-ecosystem: github-actions
     directory: "/"

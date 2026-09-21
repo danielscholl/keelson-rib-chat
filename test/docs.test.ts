@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { ribDocsSourceSchema } from "@keelson/shared";
 import pkg from "../package.json" with { type: "json" };
 import rib from "../src/index.ts";
@@ -101,5 +102,16 @@ describe("contributed docs", () => {
     expect(content).toContain(`| Turns per worker | ${DEFAULT_LIMITS.maxTurnsPerAgent} |`);
     expect(content).toContain(`| Turns running at once | ${DEFAULT_LIMITS.maxConcurrent} |`);
     expect(content).toContain(`| Wall clock | ${DEFAULT_LIMITS.wallClockMs / 60_000} minutes |`);
+  });
+
+  test("the site's tool reference names exactly the registered tools", () => {
+    const page = readFileSync(
+      new URL("../docs/src/content/docs/reference/tools-and-commands.md", import.meta.url),
+      "utf8",
+    );
+    const registered = new Set(tools.map((t) => t.name));
+    const mentioned = new Set(page.match(/\bchat_[a-z_]+\b/g) ?? []);
+    for (const name of registered) expect(mentioned.has(name)).toBe(true);
+    for (const name of mentioned) expect(registered.has(name)).toBe(true);
   });
 });

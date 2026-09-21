@@ -1,0 +1,36 @@
+---
+title: Guides
+description: "Task-oriented how-tos for the Chat rib: install it, run a swarm, steer or stop one, and supply task context."
+sidebar:
+  label: Overview
+  order: 1
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Each guide gets one job done and assumes the rib's
+[concepts](../concepts/). To work on the rib's source, see
+[CONTRIBUTING.md](https://github.com/danielscholl/keelson-rib-chat/blob/main/CONTRIBUTING.md).
+
+<CardGrid>
+  <LinkCard
+    title="Install the rib"
+    href="install/"
+    description="Run ClickClack, mint an owner session, add the rib, and confirm it is authenticated."
+  />
+  <LinkCard
+    title="Run a swarm"
+    href="run-a-swarm/"
+    description="Start a swarm from chat, MCP, or the workflow catalog, and read its result."
+  />
+  <LinkCard
+    title="Steer and stop a swarm"
+    href="steer-and-stop/"
+    description="Redirect a swarm in flight, and end one early."
+  />
+  <LinkCard
+    title="Supply task context"
+    href="supply-task-context/"
+    description="Snapshot issue bodies, diffs, and check results so agents read them verbatim."
+  />
+</CardGrid>

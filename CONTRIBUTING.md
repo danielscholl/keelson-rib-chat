@@ -58,6 +58,7 @@ CLICKCLACK_TOKEN=<owner session> bun dev/live-smoke.ts
 | CI / Harness main canary | The same typecheck and tests against keelson `main`. Informational: red means the harness contract moved and the rib needs to follow before the next harness release. |
 | PR Title | The title must be a conventional commit. Required. |
 | Security | CodeQL over the source and the workflow files, plus dependency review on PRs. Both stand down while the repo is private. |
+| Docs | Type-checks and builds the site on any `docs/**` change, and deploys it to GitHub Pages from `main`. |
 | Release | release-please keeps a release PR open on `main`; merging it tags the release. |
 
 Dependabot opens weekly PRs for npm packages (through its `bun` ecosystem, so
@@ -86,8 +87,8 @@ publish.
 
 ## Architecture rules
 
-[docs/design.md](docs/design.md) records the decisions. The ones a PR is most
-likely to trip over:
+The docs site's [design tier](docs/src/content/docs/design/decisions.md) records
+the decisions. The ones a PR is most likely to trip over:
 
 - `route()` stays pure: no I/O, no clock, no provider. The swarm engine owns
   every side effect.
@@ -95,8 +96,26 @@ likely to trip over:
   can speak as another.
 - The rib talks to ClickClack only over its public HTTP and WebSocket API.
 - Bot tokens live in memory only. The swarm revokes them when it ends; a
-  harness restart mid-swarm loses them unrevoked (see Deferred in the design
-  doc).
+  harness restart mid-swarm loses them unrevoked (see
+  [Deferred](docs/src/content/docs/design/deferred.md)).
+
+## Documentation
+
+The site under `docs/` is a standalone Bun project (Astro Starlight). Read
+[docs/STYLE.md](docs/STYLE.md) before writing a page.
+
+```bash
+cd docs
+bun install
+bun run dev      # local preview
+bun run check    # astro check
+bun run build
+```
+
+A change to a tool's name, inputs, or limits updates three places: the schema,
+the packaged `keelson_docs` corpus in `src/docs.ts`, and the site's reference
+tier. `bun test` fails when the first two disagree, or when the reference page
+names a tool that is not registered or misses one that is.
 
 ## License and attribution
 
