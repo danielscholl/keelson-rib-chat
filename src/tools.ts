@@ -28,7 +28,8 @@ export interface ToolDeps {
   swarms: Map<string, Swarm>;
   // Summaries of swarms that have ended, kept so status still answers.
   ended: Map<string, SwarmSummary>;
-  startSwarm: (input: StartSwarmInput) => Promise<{ swarm: Swarm; opId?: string }>;
+  // `url` is the ClickClack server the swarm runs on, for pointing a human at its UI.
+  startSwarm: (input: StartSwarmInput) => Promise<{ swarm: Swarm; opId?: string; url?: string }>;
 }
 
 export const BODY_MAX = 8_000;
@@ -39,13 +40,13 @@ export const READ_BOUNDS = { defaultLimit: 20, maxLimit: 50 } as const;
 export const ENDED_KEPT = 20;
 const body = z.string().min(1).max(BODY_MAX).describe("Markdown message body.");
 
-function emitText(ctx: ToolContext, content: string, isError = false): void {
+export function emitText(ctx: ToolContext, content: string, isError = false): void {
   ctx.emit({ type: "tool_result", toolUseId: "", content, ...(isError ? { isError: true } : {}) });
 }
 
 // A tool failure is a result the agent can read and react to, never an
 // exception that escapes into the harness's turn loop.
-function guarded(
+export function guarded(
   fn: (input: unknown, ctx: ToolContext) => Promise<void>,
 ): (input: unknown, ctx: ToolContext) => Promise<void> {
   return async (input, ctx) => {
@@ -250,7 +251,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
       state_changing: true,
       execute: guarded(async (input, ctx) => {
         const args = startSchema.parse(input);
-        const { swarm, opId } = await deps.startSwarm({
+        const { swarm, opId, url } = await deps.startSwarm({
           task: args.task,
           workTools: args.work_tools ?? "read",
           ...(args.project ? { project: args.project } : {}),
@@ -263,7 +264,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         const s = swarm.summary();
         emitText(
           ctx,
-          `swarm ${s.id} started in #${s.channelName}${opId ? ` (run ${opId})` : ""}. Poll chat_swarm_status("${s.id}")${opId ? ` or run_status("${opId}")` : ""}.`,
+          `swarm ${s.id} started in #${s.channelName}${opId ? ` (run ${opId})` : ""}. Poll chat_swarm_status("${s.id}")${opId ? ` or run_status("${opId}")` : ""}.${url ? ` Watch at ${url}/app.` : ""}`,
         );
       }),
     },

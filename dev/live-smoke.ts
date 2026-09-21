@@ -6,14 +6,38 @@
  * single model token.
  *
  *   CLICKCLACK_TOKEN=<owner session> bun dev/live-smoke.ts
+ *
+ * With no URL and no token it takes the managed path instead: it spawns the
+ * binary, mints its own session, and afterwards proves adoption, reset, and stop.
+ *
+ *   CLICKCLACK_BIN=<clickclack binary> bun dev/live-smoke.ts
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ClickClackClient } from "../src/clickclack.ts";
+import { ManagedServer, realServerDeps } from "../src/server.ts";
 import { Swarm } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
 import { type Script, scriptedProvider } from "../test/fakes.ts";
 
-const url = process.env.CLICKCLACK_URL ?? "http://localhost:8080";
-const token = process.env.CLICKCLACK_TOKEN;
+let url = process.env.CLICKCLACK_URL ?? "http://localhost:8080";
+let token = process.env.CLICKCLACK_TOKEN;
+let managed: { server: ManagedServer; home: string } | undefined;
+if (!token && !process.env.CLICKCLACK_URL) {
+  const home = mkdtempSync(join(tmpdir(), "rib-chat-smoke-"));
+  const server = new ManagedServer(realServerDeps(() => home));
+  const why = server.unavailable();
+  if (why) {
+    console.error(why);
+    process.exit(1);
+  }
+  const running = await server.ensure();
+  console.log(`managed: pid ${running.pid} at ${running.url}, data under ${home}`);
+  url = running.url;
+  token = await server.ownerSession();
+  managed = { server, home };
+}
 if (!token) {
   console.error("set CLICKCLACK_TOKEN to an owner session (clickclack login --magic-token ...)");
   process.exit(1);
@@ -100,5 +124,49 @@ const mine = listed.bots.filter((b) => b.bot.handle.startsWith(`${summary.id}-`)
 const live = mine.filter((b) => b.tokens.some((t) => !t.revoked_at));
 console.log(`revocation: ${mine.length} swarm bots, ${live.length} with a live token`);
 
-const ok = summary.status === "done" && mine.length === summary.agents.length && live.length === 0;
+let ok = summary.status === "done" && mine.length === summary.agents.length && live.length === 0;
+
+if (managed) {
+  const { server, home } = managed;
+  const check = (label: string, pass: boolean): void => {
+    console.log(`managed: ${pass ? "ok  " : "FAIL"} ${label}`);
+    ok &&= pass;
+  };
+  const { pid } = await server.ensure();
+  const alive = (p: number): boolean => {
+    try {
+      process.kill(p, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // A second instance stands in for a harness that restarted and found the server up.
+  const successor = new ManagedServer(realServerDeps(() => home));
+  const adopted = await successor.ensure();
+  check("a new process adopts the running server", adopted.adopted && adopted.pid === pid);
+
+  const fresh = await successor.reset();
+  check("reset replaces the process", fresh.pid !== pid && !alive(pid));
+  const after = new ClickClackClient(fresh.url, await successor.ownerSession());
+  const workspaces = await after.listWorkspaces();
+  const channels = workspaces[0] ? await after.listChannels(workspaces[0].id) : [];
+  check(
+    "reset leaves one workspace and no swarm channel",
+    workspaces.length === 1 && !channels.some((c) => c.name === summary.channelName),
+  );
+  let stale = false;
+  try {
+    await owner.me();
+  } catch {
+    stale = true;
+  }
+  check("the session minted before the reset no longer works", stale);
+
+  check("stop reports a running server", await successor.stop());
+  check("the process is gone", !alive(fresh.pid));
+  check("status sees nothing running", !(await successor.status()).running);
+  rmSync(home, { recursive: true, force: true });
+}
 process.exit(ok ? 0 : 1);

@@ -23,15 +23,73 @@ describe("rib contract", () => {
     for (const tool of AGENT_TOOLS) expect(names.has(tool)).toBe(true);
   });
 
-  test("authStatus reports a missing credential instead of throwing", async () => {
-    const saved = process.env.CLICKCLACK_TOKEN;
+  test("authStatus reports a missing credential for a server the operator pointed it at", async () => {
+    const saved = {
+      CLICKCLACK_URL: process.env.CLICKCLACK_URL,
+      CLICKCLACK_TOKEN: process.env.CLICKCLACK_TOKEN,
+    };
+    process.env.CLICKCLACK_URL = "http://127.0.0.1:1";
     delete process.env.CLICKCLACK_TOKEN;
     try {
       const status = await rib.authStatus?.({ getExec: () => ({}) as never });
       expect(status?.authenticated).toBe(false);
-      expect(status?.statusMessage).toContain("CLICKCLACK_TOKEN");
+      expect(status?.statusMessage).toContain("no ClickClack owner session");
     } finally {
-      if (saved !== undefined) process.env.CLICKCLACK_TOKEN = saved;
+      restore(saved);
+    }
+  });
+
+  test("with no url and no token the rib manages its own server, and says what it lacks", async () => {
+    const saved = {
+      CLICKCLACK_URL: process.env.CLICKCLACK_URL,
+      CLICKCLACK_TOKEN: process.env.CLICKCLACK_TOKEN,
+      CLICKCLACK_BIN: process.env.CLICKCLACK_BIN,
+    };
+    delete process.env.CLICKCLACK_URL;
+    delete process.env.CLICKCLACK_TOKEN;
+    process.env.CLICKCLACK_BIN = "/opt/clickclack";
+    try {
+      // This host offers no data directory, so nothing can be spawned from here.
+      const status = await rib.authStatus?.({ getExec: () => ({}) as never });
+      expect(status?.authenticated).toBe(false);
+      expect(status?.statusMessage).toContain("rib data directory");
+      expect(status?.statusMessage).toContain("CLICKCLACK_URL and CLICKCLACK_TOKEN");
+    } finally {
+      restore(saved);
+      await rib.dispose?.();
+    }
+  });
+
+  test("a token alone keeps today's default url, so an existing setup is not replaced", async () => {
+    const saved = {
+      CLICKCLACK_URL: process.env.CLICKCLACK_URL,
+      CLICKCLACK_TOKEN: process.env.CLICKCLACK_TOKEN,
+    };
+    delete process.env.CLICKCLACK_URL;
+    process.env.CLICKCLACK_TOKEN = "sst_unused";
+    try {
+      const tools = rib.registerTools?.({ getExec: () => ({}) as never }) ?? [];
+      const results: { content: string }[] = [];
+      await tools
+        .find((t) => t.name === "chat_server_status")
+        ?.execute(
+          {},
+          {
+            cwd: "/",
+            abortSignal: new AbortController().signal,
+            emit: (chunk) => {
+              if (chunk.type === "tool_result") results.push(chunk);
+            },
+          },
+        );
+      expect(JSON.parse(results[0]?.content ?? "{}")).toEqual({
+        mode: "external",
+        url: "http://localhost:8080",
+        liveSwarms: 0,
+      });
+    } finally {
+      restore(saved);
+      await rib.dispose?.();
     }
   });
 

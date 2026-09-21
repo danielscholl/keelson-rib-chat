@@ -32,6 +32,18 @@ solve none of ownership, isolation, or approvals.
 ClickClack's own UI is the live view. A board showing roster, budget, and status
 per swarm is the natural next step.
 
+## A managed server on Windows
+
+The managed server relies on POSIX process groups and `ps`. On Windows the rib
+says so and asks for an external server.
+
+## An operator-only reset
+
+`chat_server_reset` is a tool, so an MCP client can call it, held back only by
+its `confirm` input and the live-swarm check. A board action with a confirm
+dialog would keep it to the operator. That waits on
+[a Keelson surface](#a-keelson-surface).
+
 ## Surviving a server restart
 
 Swarm state and bot tokens are in memory. The op registry keeps the terminal

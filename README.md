@@ -12,6 +12,18 @@ Chamber mediates every turn through one driver and deliberately has no bus. That
 
 ## Setup
 
+Link the rib into a Keelson checkout and start it:
+
+```sh
+bun install
+bun run link:keelson
+cd ../keelson && KEELSON_RIBS=chat bun dev
+```
+
+With a `clickclack` binary on `PATH` (or `CLICKCLACK_BIN` set) that is all. The rib starts a local ClickClack with the first swarm, mints its own owner session, and stops the server when Keelson shuts down. Build the binary from a ClickClack checkout with `go build -o ~/bin/clickclack ./apps/api/cmd/clickclack`.
+
+To use a ClickClack you run yourself, point the rib at it. It then never starts, stops, or wipes that server.
+
 1. Run ClickClack and create an owner, following its quickstart.
 2. Mint an owner session. It must be a human session, because a bot token cannot create bots:
 
@@ -20,19 +32,15 @@ Chamber mediates every turn through one driver and deliberately has no bus. That
    export CLICKCLACK_TOKEN=$(clickclack login --magic-token "$TOKEN" --plain --no-store)
    ```
 
-3. Link the rib into a Keelson checkout and start it:
-
-   ```sh
-   bun install
-   bun run link:keelson
-   cd ../keelson && KEELSON_RIBS=chat bun dev
-   ```
-
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `CLICKCLACK_URL` | `http://localhost:8080` | The ClickClack server. |
 | `CLICKCLACK_TOKEN` | keychain `rib_chat_token` | Owner session used to mint and revoke the agents' bots. |
 | `CLICKCLACK_WORKSPACE` | the only visible workspace | Required when the session sees several. |
+| `CLICKCLACK_BIN` | `clickclack` on `PATH` | The binary a managed server runs. |
+| `CLICKCLACK_PORT` | `18080` | The loopback port a managed server listens on. |
+
+The rib manages a server only when `CLICKCLACK_URL` is unset and no owner session is configured.
 
 ## Use
 
@@ -44,6 +52,10 @@ From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swa
 | `chat_swarm_status` | One swarm's agents, turns, status, and conclusion, or a list of all. |
 | `chat_swarm_wait` | Block until a swarm ends. For workflows. |
 | `chat_swarm_stop` | Stop a swarm and revoke its credentials. |
+| `chat_server_status` | Whether the server is managed or external, its URL, and whether it is running. |
+| `chat_server_start` | Start the managed server ahead of a swarm. Returns the web UI address. |
+| `chat_server_stop` | Stop the managed server. Transcripts stay on disk. |
+| `chat_server_reset` | Wipe the managed server and start it empty. Needs `confirm: true`. |
 
 The generic `run_status`, `run_events`, `run_cancel`, and `run_steer` tools work on the run id too. The `chat-swarm` workflow wraps start, wait, and report for the catalog.
 
@@ -77,6 +89,8 @@ bun test            # unit tests against an in-memory ClickClack
 bun run typecheck
 bun run check
 CLICKCLACK_TOKEN=<owner session> bun dev/live-smoke.ts   # a real server, scripted agents, no model spend
+CLICKCLACK_BIN=<binary> bun dev/live-smoke.ts            # the same through a managed server, plus adopt, reset, stop
+bun dev/server.ts start | status | stop                  # run the managed server by hand; prints the UI address
 ```
 
 The docs site lives in `docs/` (Astro Starlight): `cd docs && bun install && bun run dev`. See its [design tier](https://danielscholl.github.io/keelson-rib-chat/design/) for the decisions behind the rib and what is deferred.

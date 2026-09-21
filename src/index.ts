@@ -9,11 +9,16 @@
 import type { Rib, RibAuthStatus, RibContext } from "@keelson/shared";
 import { ClickClackClient } from "./clickclack.ts";
 import { chatDocsSource } from "./docs.ts";
+import { ManagedServer, realServerDeps } from "./server.ts";
+import { makeServerTools } from "./server-tools.ts";
 import { Swarm } from "./swarm.ts";
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
 import type { SwarmSummary } from "./types.ts";
 
 const READ_TOOLS = ["Read", "Grep", "Glob"] as const;
+const DEFAULT_URL = "http://localhost:8080";
+// keelson stop escalates to a signal after 12 s; the server's own stop takes up to 8.
+const SWARM_STOP_BUDGET_MS = 3_000;
 
 // Seams captured in registerTools (the only hook with the full ctx) and cleared
 // in dispose.
@@ -21,6 +26,12 @@ let runAgentTurn: RibContext["runAgentTurn"];
 let registerOp: RibContext["registerOp"];
 let getProjects: RibContext["getProjects"];
 let getCredential: RibContext["getCredential"];
+let getDataDir: RibContext["getDataDir"];
+
+let server: ManagedServer | undefined;
+// Swarms between the start call and the registry, so stop and reset see them too.
+let starting = 0;
+let disposed = false;
 
 const swarms = new Map<string, Swarm>();
 const ended = new Map<string, SwarmSummary>();
@@ -29,17 +40,37 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// The rib manages a local ClickClack only when nothing points at one: no URL
+// and no owner session. Anything else is a server somebody else runs.
+type Target =
+  | { mode: "managed"; server: ManagedServer }
+  | { mode: "external"; url: string; token?: string };
+
+async function target(): Promise<Target> {
+  const url = process.env.CLICKCLACK_URL;
+  const token = process.env.CLICKCLACK_TOKEN || (await getCredential?.("token")) || undefined;
+  if (url || token)
+    return { mode: "external", url: url || DEFAULT_URL, ...(token ? { token } : {}) };
+  server ??= new ManagedServer(realServerDeps(() => getDataDir?.()));
+  return { mode: "managed", server };
+}
+
 // The owner session a swarm mints its bots with. A bot token cannot create
 // bots, so this must be a human session (`clickclack login --magic-token`).
 async function ownerClient(): Promise<ClickClackClient> {
-  const url = process.env.CLICKCLACK_URL ?? "http://localhost:8080";
-  const token = process.env.CLICKCLACK_TOKEN ?? (await getCredential?.("token"));
-  if (!token) {
+  const t = await target();
+  if (t.mode === "managed") {
+    const { url } = await t.server.ensure();
+    return new ClickClackClient(url, await t.server.ownerSession());
+  }
+  if (!t.token) {
     throw new Error(
       "no ClickClack owner session: set CLICKCLACK_TOKEN, or store one in the keychain as rib_chat_token",
     );
   }
-  return new ClickClackClient(url, token);
+  const owner = new ClickClackClient(t.url, t.token);
+  await owner.ready();
+  return owner;
 }
 
 async function resolveWorkspace(owner: ClickClackClient): Promise<string> {
@@ -54,7 +85,20 @@ async function resolveWorkspace(owner: ClickClackClient): Promise<string> {
   );
 }
 
-async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?: string }> {
+async function startSwarm(
+  input: StartSwarmInput,
+): Promise<{ swarm: Swarm; opId?: string; url: string }> {
+  starting++;
+  try {
+    return await launchSwarm(input);
+  } finally {
+    starting--;
+  }
+}
+
+async function launchSwarm(
+  input: StartSwarmInput,
+): Promise<{ swarm: Swarm; opId?: string; url: string }> {
   if (!runAgentTurn) throw new Error("this keelson host cannot run agent turns for a rib");
   let cwd: string | undefined;
   if (input.project) {
@@ -63,7 +107,6 @@ async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?
     cwd = project.rootPath;
   }
   const owner = await ownerClient();
-  await owner.ready();
   const workspaceId = await resolveWorkspace(owner);
 
   // Registered before the swarm boots so its startup is on the record too.
@@ -102,6 +145,12 @@ async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?
   }
 
   const live = swarm;
+  if (disposed) {
+    // Shutdown overtook the start: nothing would ever stop this swarm or revoke its bots.
+    await live.stop("keelson is shutting down");
+    op?.error("keelson is shutting down");
+    throw new Error("keelson is shutting down");
+  }
   swarms.set(live.id, live);
   for (const note of pendingSteers) void live.steer(note);
   op?.signal.addEventListener("abort", () => void live.stop("cancelled"), { once: true });
@@ -118,7 +167,7 @@ async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?
     else op?.done(summary);
   });
 
-  return { swarm: live, ...(op ? { opId: op.id } : {}) };
+  return { swarm: live, url: owner.baseUrl, ...(op ? { opId: op.id } : {}) };
 }
 
 const rib: Rib = {
@@ -132,14 +181,37 @@ const rib: Rib = {
     registerOp = ctx.registerOp;
     getProjects = ctx.getProjects;
     getCredential = ctx.getCredential;
-    return makeChatTools({ swarms, ended, startSwarm });
+    getDataDir = ctx.getDataDir;
+    disposed = false;
+    return [
+      ...makeChatTools({ swarms, ended, startSwarm }),
+      ...makeServerTools({
+        target,
+        liveCount: () => swarms.size + starting,
+        clearEnded: () => ended.clear(),
+        endedCount: () => ended.size,
+      }),
+    ];
   },
 
   async authStatus(ctx: RibContext): Promise<RibAuthStatus> {
     getCredential = ctx.getCredential ?? getCredential;
+    getDataDir = ctx.getDataDir ?? getDataDir;
     try {
+      const t = await target();
+      if (t.mode === "managed") {
+        // Never starts the server and never mints a session: doctor polls this.
+        const why = t.server.unavailable();
+        if (why) return { authenticated: false, statusMessage: why };
+        const status = await t.server.status();
+        return {
+          authenticated: true,
+          statusMessage: status.running
+            ? `managed ClickClack running at ${status.url}`
+            : `managed ClickClack starts with the first swarm (${status.binary})`,
+        };
+      }
       const owner = await ownerClient();
-      await owner.ready();
       const me = await owner.me();
       if (me.kind !== "human") {
         return {
@@ -154,12 +226,26 @@ const rib: Rib = {
   },
 
   async dispose(): Promise<void> {
-    await Promise.all([...swarms.values()].map((s) => s.stop("keelson is shutting down")));
+    disposed = true;
+    // Swarms first: revoking their bots needs the server still up.
+    if (swarms.size > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        Promise.all([...swarms.values()].map((s) => s.stop("keelson is shutting down"))),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, SWARM_STOP_BUDGET_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+    }
     swarms.clear();
+    await server?.dispose().catch(() => undefined);
+    server = undefined;
     runAgentTurn = undefined;
     registerOp = undefined;
     getProjects = undefined;
     getCredential = undefined;
+    getDataDir = undefined;
   },
 };
 

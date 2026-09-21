@@ -5,7 +5,8 @@ sidebar:
   order: 6
 ---
 
-The rib writes nothing to disk. State lives in three places.
+The rib keeps no swarm state on disk. State lives in three places, and a
+[managed server](../configuration/#managed-server) adds a fourth.
 
 | State | Lives in | Survives a Keelson restart |
 |---|---|---|
@@ -17,6 +18,7 @@ The rib writes nothing to disk. State lives in three places.
 | Bot tokens | memory | no |
 | Task context bodies | memory | no |
 | Summaries of ended swarms (last 20) | memory | no |
+| A managed server's database, log, and process record | the rib's data directory | yes |
 
 ## A restart ends a swarm in flight
 
@@ -47,3 +49,22 @@ released with the swarm; the item list, without bodies, stays in the summary.
 - [Deferred](../../design/deferred/): surviving a restart is on the list.
 - [Configuration](../configuration/): the owner session the tokens are minted
   with.
+
+## A managed server
+
+When the rib runs its own ClickClack, everything it writes is under
+`<keelson home>/rib-chat/clickclack/`:
+
+| Path | Holds |
+|---|---|
+| `data/` | ClickClack's database and uploads. The only thing `chat_server_reset` deletes. |
+| `server.log`, `server.log.old` | The server's output, rotated once per start. |
+| `state.json` | The pid and URL of the running server, and whether a person started it. |
+
+On a clean shutdown the rib stops its swarms first, so they can revoke their
+tokens, then stops the server, unless a person
+[started it by hand](../configuration/#starting-it-by-hand). If Keelson is killed, or reloads in `bun dev`,
+the server keeps running. The next start reads `state.json` and adopts the
+process, but only when that pid is alive and its command line carries this
+`data/` path. A pid alone proves nothing, since the OS reuses them. A record
+that fails the check is dropped and its pid is never signalled.
