@@ -127,17 +127,20 @@ export class ClickClackClient {
   }
 
   // Unauthenticated and outside /api, so it separates "server down" from a bad token.
-  async ready(timeoutMs = 2000): Promise<void> {
-    let ok = false;
+  // The server gives its own store ping 2 s, so the default leaves it room to answer.
+  async ready(timeoutMs = 5000): Promise<void> {
+    let why: string;
     try {
       const res = await this.transport.fetch(`${this.baseUrl}/readyz`, {
         signal: AbortSignal.timeout(timeoutMs),
       });
-      ok = res.ok;
-    } catch {
-      // refused, timed out, or unresolvable: all read as unreachable
+      await res.body?.cancel();
+      if (res.ok) return;
+      why = `/readyz -> ${res.status}`;
+    } catch (e) {
+      why = e instanceof Error ? e.message : String(e);
     }
-    if (!ok) throw new Error(`ClickClack is not reachable at ${this.baseUrl}`);
+    throw new Error(`ClickClack is not reachable at ${this.baseUrl} (${why})`);
   }
 
   async me(): Promise<{ id: string; kind: string; displayName: string }> {

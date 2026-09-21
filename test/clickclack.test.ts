@@ -22,7 +22,9 @@ describe("ready", () => {
   test("treats a server whose store is unavailable as unreachable", async () => {
     const server = new FakeClickClack();
     server.ready = false;
-    await expect(client(server).ready()).rejects.toThrow("not reachable");
+    await expect(client(server).ready()).rejects.toThrow(
+      "ClickClack is not reachable at http://fake (/readyz -> 503)",
+    );
   });
 
   test("gives up on a server that never answers", async () => {

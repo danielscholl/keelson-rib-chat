@@ -17,10 +17,11 @@ process, each time a swarm starts. It has no config file.
 ## Reachability
 
 Before it starts a swarm, and whenever it reports auth status, the rib asks the
-server's unauthenticated `/readyz` and waits up to two seconds. A refused
-connection, a timeout, or a store that is unavailable all fail the same way:
-`ClickClack is not reachable at <url>`. The check runs before the run is
-registered, so a server that is down leaves no run behind.
+server's unauthenticated `/readyz` and waits up to five seconds. A refused
+connection, a timeout, or a store that is unavailable all fail as
+`ClickClack is not reachable at <url>`, followed by the reason in parentheses,
+such as `/readyz -> 503`. The check runs before the swarm's run is registered,
+so a server that is down leaves no swarm run behind.
 
 ## The owner session
 

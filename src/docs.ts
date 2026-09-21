@@ -229,7 +229,8 @@ session, because a bot token cannot create bots.
 
 The rib checks the server's \`/readyz\` before it starts a swarm and when it
 reports auth status. A server that is down fails with
-\`ClickClack is not reachable at <url>\`, and no run is registered.
+\`ClickClack is not reachable at <url>\` and the reason, before the swarm's run is
+registered.
 `;
 }
 
