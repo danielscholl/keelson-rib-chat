@@ -40,6 +40,8 @@ export interface ManagedServerDeps {
   env: Record<string, string | undefined>;
   platform: string;
   dataDir(): string | undefined;
+  // True when a person starts the server by hand: it then outlives the harness.
+  operator?: boolean;
   timings?: Partial<ServerTimings>;
 }
 
@@ -72,6 +74,7 @@ interface ServerState {
   url: string;
   startedAt: string;
   binary: string;
+  operator?: boolean;
 }
 
 export interface RunningServer {
@@ -84,6 +87,8 @@ export interface RunningServer {
 export interface ServerStatus {
   url: string;
   running: boolean;
+  // Started by hand, so it stays up when the harness shuts down.
+  operator?: boolean;
   pid?: number;
   adopted?: boolean;
   binary?: string;
@@ -130,14 +135,22 @@ export class ManagedServer {
   reset(): Promise<RunningServer> {
     return this.serial(async () => {
       await this.stopInner();
+      if (await this.answers("/healthz", this.timings.probeMs)) {
+        throw new Error(
+          `a server the rib has no record of is still listening at ${this.url}; nothing was deleted. Find it with 'lsof -i :${this.port()}'`,
+        );
+      }
       rmSync(this.paths().data, { recursive: true, force: true });
       return this.ensureInner();
     });
   }
 
+  // A server a person started is theirs to stop, so shutdown leaves it running.
   async dispose(): Promise<void> {
     this.disposed = true;
-    await this.stop();
+    await this.serial(async () => {
+      if (!this.readState()?.operator) await this.stopInner();
+    });
   }
 
   // Never spawns and never mints: safe to call from a status probe.
@@ -154,6 +167,7 @@ export class ManagedServer {
       dataDir: paths.data,
       pid,
       adopted: pid !== this.spawnedPid,
+      ...(this.readState()?.operator ? { operator: true } : {}),
       running: await this.answers("/readyz", this.timings.probeMs),
     };
   }
@@ -203,11 +217,24 @@ export class ManagedServer {
   private readState(): ServerState | undefined {
     try {
       const raw = JSON.parse(readFileSync(this.paths().state, "utf8")) as Partial<ServerState>;
-      if (typeof raw.pid === "number" && typeof raw.url === "string") return raw as ServerState;
+      // 0 and negatives address process groups, so they are never a server's pid.
+      if (Number.isInteger(raw.pid) && (raw.pid as number) > 1 && typeof raw.url === "string") {
+        return raw as ServerState;
+      }
     } catch {
       // absent or unreadable: there is no record
     }
     return undefined;
+  }
+
+  private record(pid: number, url: string, binary: string): void {
+    this.writeState({
+      pid,
+      url,
+      startedAt: new Date().toISOString(),
+      binary,
+      ...(this.deps.operator ? { operator: true } : {}),
+    });
   }
 
   private writeState(state: ServerState): void {
@@ -222,13 +249,14 @@ export class ManagedServer {
   private async ownedPid(dropStale: boolean): Promise<number | undefined> {
     const state = this.readState();
     if (!state) return undefined;
-    const { data, state: statePath } = this.paths();
-    if (this.deps.isPidAlive(state.pid)) {
-      const command = await this.deps.pidCommand(state.pid);
-      if (command.includes(`--data ${data} `)) return state.pid;
-    }
-    if (dropStale) rmSync(statePath, { force: true });
+    if (await this.isOurs(state.pid)) return state.pid;
+    if (dropStale) rmSync(this.paths().state, { force: true });
     return undefined;
+  }
+
+  private async isOurs(pid: number): Promise<boolean> {
+    if (!this.deps.isPidAlive(pid)) return false;
+    return (await this.deps.pidCommand(pid)).includes(`--data ${this.paths().data} `);
   }
 
   private async answers(path: string, timeoutMs: number): Promise<boolean> {
@@ -244,7 +272,7 @@ export class ManagedServer {
 
   private async waitReady(timeoutMs: number, exited?: () => boolean): Promise<boolean> {
     for (let waited = 0; waited <= timeoutMs; waited += this.timings.pollMs) {
-      if (exited?.()) return false;
+      if (this.disposed || exited?.()) return false;
       if (await this.answers("/readyz", this.timings.probeMs)) return true;
       await this.deps.sleep(this.timings.pollMs);
     }
@@ -307,7 +335,7 @@ export class ManagedServer {
     // start whose server holds the port. Leave it for the adoption below.
     const prior = this.readState();
     if (!prior || !this.deps.isPidAlive(prior.pid)) {
-      this.writeState({ pid: child.pid, url, startedAt: new Date().toISOString(), binary });
+      this.record(child.pid, url, binary);
     }
     this.spawnedPid = child.pid;
     const life = { exited: false };
@@ -322,12 +350,20 @@ export class ManagedServer {
       await this.stopPid(child.pid);
       throw new Error("keelson is shutting down");
     }
-    if (ready && !gone()) return { url, pid: child.pid, adopted: false };
+    if (ready && !gone()) {
+      // It holds the port, so the record is its own whatever was there before.
+      this.record(child.pid, url, binary);
+      return { url, pid: child.pid, adopted: false };
+    }
 
     if (gone()) {
       // Lost the port to another process of ours that spawned at the same moment.
       const winner = await this.ownedPid(false);
-      if (winner !== undefined && winner !== child.pid && (await this.waitReady(0))) {
+      if (
+        winner !== undefined &&
+        winner !== child.pid &&
+        (await this.waitReady(this.timings.adoptWaitMs))
+      ) {
         return { url, pid: winner, adopted: true };
       }
       if (this.readState()?.pid === child.pid) rmSync(paths.state, { force: true });
@@ -348,19 +384,20 @@ export class ManagedServer {
     return true;
   }
 
-  // Only ever called with a pid that passed ownedPid or that this process spawned.
+  // Ownership is proved again before each signal: seconds pass between them, and
+  // the pid could have gone to another process in that time.
   private async stopPid(pid: number): Promise<void> {
     for (const [signal, budget] of [
       ["SIGTERM", this.timings.termMs],
       ["SIGKILL", this.timings.killMs],
     ] as const) {
-      if (!this.deps.isPidAlive(pid)) break;
+      if (!(await this.isOurs(pid))) break;
       this.deps.kill(pid, signal);
       for (let waited = 0; waited < budget && this.deps.isPidAlive(pid); waited += 100) {
         await this.deps.sleep(100);
       }
     }
-    if (this.deps.isPidAlive(pid)) throw new Error(`clickclack (pid ${pid}) did not exit`);
+    if (await this.isOurs(pid)) throw new Error(`clickclack (pid ${pid}) did not exit`);
     if (this.readState()?.pid === pid) rmSync(this.paths().state, { force: true });
     if (this.spawnedPid === pid) this.spawnedPid = undefined;
   }
@@ -397,8 +434,12 @@ export class ManagedServer {
   }
 }
 
-export function realServerDeps(dataDir: () => string | undefined): ManagedServerDeps {
+export function realServerDeps(
+  dataDir: () => string | undefined,
+  opts: { operator?: boolean } = {},
+): ManagedServerDeps {
   return {
+    ...(opts.operator ? { operator: true } : {}),
     spawn: (cmd, { logPath, env }) => {
       // A file, not a pipe: the server must survive this process being killed.
       const fd = openSync(logPath, "a");

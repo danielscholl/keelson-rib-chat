@@ -59,10 +59,11 @@ When the rib runs its own ClickClack, everything it writes is under
 |---|---|
 | `data/` | ClickClack's database and uploads. The only thing `chat_server_reset` deletes. |
 | `server.log`, `server.log.old` | The server's output, rotated once per start. |
-| `state.json` | The pid and URL of the running server. |
+| `state.json` | The pid and URL of the running server, and whether a person started it. |
 
 On a clean shutdown the rib stops its swarms first, so they can revoke their
-tokens, then stops the server. If Keelson is killed, or reloads in `bun dev`,
+tokens, then stops the server, unless a person
+[started it by hand](../configuration/#starting-it-by-hand). If Keelson is killed, or reloads in `bun dev`,
 the server keeps running. The next start reads `state.json` and adopts the
 process, but only when that pid is alive and its command line carries this
 `data/` path. A pid alone proves nothing, since the OS reuses them. A record

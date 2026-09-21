@@ -18,7 +18,7 @@ import type { SwarmSummary } from "./types.ts";
 const READ_TOOLS = ["Read", "Grep", "Glob"] as const;
 const DEFAULT_URL = "http://localhost:8080";
 // keelson stop escalates to a signal after 12 s; the server's own stop takes up to 8.
-const SWARM_STOP_BUDGET_MS = 4_000;
+const SWARM_STOP_BUDGET_MS = 3_000;
 
 // Seams captured in registerTools (the only hook with the full ctx) and cleared
 // in dispose.
@@ -31,6 +31,7 @@ let getDataDir: RibContext["getDataDir"];
 let server: ManagedServer | undefined;
 // Swarms between the start call and the registry, so stop and reset see them too.
 let starting = 0;
+let disposed = false;
 
 const swarms = new Map<string, Swarm>();
 const ended = new Map<string, SwarmSummary>();
@@ -84,7 +85,9 @@ async function resolveWorkspace(owner: ClickClackClient): Promise<string> {
   );
 }
 
-async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?: string }> {
+async function startSwarm(
+  input: StartSwarmInput,
+): Promise<{ swarm: Swarm; opId?: string; url: string }> {
   starting++;
   try {
     return await launchSwarm(input);
@@ -93,7 +96,9 @@ async function startSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?
   }
 }
 
-async function launchSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId?: string }> {
+async function launchSwarm(
+  input: StartSwarmInput,
+): Promise<{ swarm: Swarm; opId?: string; url: string }> {
   if (!runAgentTurn) throw new Error("this keelson host cannot run agent turns for a rib");
   let cwd: string | undefined;
   if (input.project) {
@@ -140,6 +145,12 @@ async function launchSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId
   }
 
   const live = swarm;
+  if (disposed) {
+    // Shutdown overtook the start: nothing would ever stop this swarm or revoke its bots.
+    await live.stop("keelson is shutting down");
+    op?.error("keelson is shutting down");
+    throw new Error("keelson is shutting down");
+  }
   swarms.set(live.id, live);
   for (const note of pendingSteers) void live.steer(note);
   op?.signal.addEventListener("abort", () => void live.stop("cancelled"), { once: true });
@@ -156,7 +167,7 @@ async function launchSwarm(input: StartSwarmInput): Promise<{ swarm: Swarm; opId
     else op?.done(summary);
   });
 
-  return { swarm: live, ...(op ? { opId: op.id } : {}) };
+  return { swarm: live, url: owner.baseUrl, ...(op ? { opId: op.id } : {}) };
 }
 
 const rib: Rib = {
@@ -171,6 +182,7 @@ const rib: Rib = {
     getProjects = ctx.getProjects;
     getCredential = ctx.getCredential;
     getDataDir = ctx.getDataDir;
+    disposed = false;
     return [
       ...makeChatTools({ swarms, ended, startSwarm }),
       ...makeServerTools({
@@ -214,6 +226,7 @@ const rib: Rib = {
   },
 
   async dispose(): Promise<void> {
+    disposed = true;
     // Swarms first: revoking their bots needs the server still up.
     if (swarms.size > 0) {
       let timer: ReturnType<typeof setTimeout> | undefined;

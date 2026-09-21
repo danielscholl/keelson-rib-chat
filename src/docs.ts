@@ -218,7 +218,8 @@ tokens unrevoked. \`chat_swarm_status\` answers for the last ${ENDED_KEPT} ended
 the current process only; after a restart use \`run_status\` on the run id.
 
 A managed ClickClack stops with Keelson, after the swarms have revoked their
-tokens, and starts again with the next swarm. Its channels and transcripts are
+tokens, and starts again with the next swarm. One a person started by hand is
+left running. Its channels and transcripts are
 on disk and return with it. If Keelson is killed, the server is left running and
 the next start adopts it.
 
@@ -247,6 +248,12 @@ Stop and reset refuse while any swarm is running or starting: stop the swarms
 with \`chat_swarm_stop\` first. Start, stop, and reset refuse when the server is
 external. A reset also forgets the ended swarms \`chat_swarm_status\` would list,
 since their channels no longer exist. Swarm agents cannot call these tools.
+
+A person can start the same server by hand with \`bun dev/server.ts start\` from
+the rib's checkout, which prints the web UI address. The rib adopts it, and
+leaves it running when Keelson shuts down: only \`chat_server_stop\`,
+\`chat_server_reset\`, or \`bun dev/server.ts stop\` end it.
+\`chat_swarm_start\` also reports the web UI address of the server it used.
 
 If something the rib did not start already listens on the port, the start fails
 and names the port. The rib never signals a process it cannot prove is its own.

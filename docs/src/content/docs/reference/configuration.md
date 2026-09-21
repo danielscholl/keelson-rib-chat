@@ -57,6 +57,21 @@ workspace, and lets a loopback client mint a session for that user. The rib
 mints one per swarm, so a managed server needs no token. None of the rib's
 `CLICKCLACK_` variables are passed to the server process.
 
+### Starting it by hand
+
+```bash
+bun dev/server.ts start    # prints the URL and the web UI address
+bun dev/server.ts status
+bun dev/server.ts stop
+```
+
+Run from the rib's checkout, this starts the same server the rib would: same
+data directory, same port, same record. A running Keelson adopts it with the
+next swarm. A server started this way is yours: Keelson leaves it running at
+shutdown, and it ends with `bun dev/server.ts stop`, `chat_server_stop`, or
+`chat_server_reset`. Set `KEELSON_HOME` when your Keelson doesn't use the
+default home, since the data directory is resolved from it.
+
 The port is fixed because ClickClack doesn't report an ephemeral one. If
 something the rib didn't start already listens there, the start fails and names
 the port. Set `CLICKCLACK_PORT` to a free one.

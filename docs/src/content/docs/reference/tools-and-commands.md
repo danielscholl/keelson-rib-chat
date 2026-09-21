@@ -94,7 +94,7 @@ server is external, and swarm agents can call none of them.
 
 | Tool | Inputs | Does |
 |---|---|---|
-| `chat_server_status` | none | Returns `mode` (`managed` or `external`), `url`, `liveSwarms`, and for a managed server `running`, `pid`, `adopted`, `binary`, and `dataDir`. Starts nothing. |
+| `chat_server_status` | none | Returns `mode` (`managed` or `external`), `url`, `liveSwarms`, and for a managed server `running`, `pid`, `adopted`, `operator` (started by hand), `binary`, and `dataDir`. Starts nothing. |
 | `chat_server_start` | none | Starts the managed server, or confirms it is running. Returns the URL and the web UI address, `<url>/app`. A swarm starts the server on demand, so this is for opening the UI first. |
 | `chat_server_stop` | none | Stops the managed server. Channels and transcripts stay on disk and return with the next start. |
 | `chat_server_reset` | `confirm?` | Stops the server, deletes its data directory, and starts it empty. Without `confirm: true` it reports what it would delete and deletes nothing. |

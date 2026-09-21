@@ -22,6 +22,7 @@ class World {
   onSpawn: "ready" | "exit" | "hang" = "ready";
   beforeSpawnReturns: (() => void) | undefined;
   env: Record<string, string | undefined> = { CLICKCLACK_BIN: "/opt/clickclack" };
+  probes = 0;
   private nextPid = 4000;
 
   get root(): string {
@@ -75,6 +76,7 @@ class World {
         return { pid, exited };
       },
       fetch: (async (input: string | URL | Request) => {
+        this.probes++;
         const { pathname } = new URL(String(input));
         const up =
           this.serving === "foreign" ||
@@ -247,6 +249,52 @@ describe("ensure", () => {
     expect(w.state()?.pid).toBe(winner);
   });
 
+  test("a child that wins the port is recorded even when another start recorded first", async () => {
+    const w = fresh();
+    let other = 0;
+    w.beforeSpawnReturns = () => {
+      // The other process's child is recorded and alive, but this one took the port.
+      const serving = w.serving;
+      other = w.leave({ serving: false });
+      w.serving = serving;
+    };
+    const server = new ManagedServer(w.deps());
+    const running = await server.ensure();
+    expect(running.pid).not.toBe(other);
+    expect(w.state()?.pid).toBe(running.pid);
+    expect(await server.stop()).toBe(true);
+    expect(w.procs.get(running.pid)?.alive).toBe(false);
+  });
+
+  test("a record with a pid that addresses a process group is ignored", async () => {
+    const w = fresh();
+    mkdirSync(w.root, { recursive: true });
+    for (const pid of [0, -1, 1, 4.5]) {
+      writeFileSync(w.statePath, JSON.stringify({ pid, url: "http://127.0.0.1:18080" }));
+      expect(await new ManagedServer(w.deps({ isPidAlive: () => true })).stop()).toBe(false);
+    }
+    expect(w.signals).toEqual([]);
+  });
+
+  test("a pid that changes hands between signals is not killed", async () => {
+    const w = fresh();
+    await new ManagedServer(w.deps()).ensure();
+    const proc = w.procs.get(4000) as FakeProc;
+    proc.ignoresTerm = true;
+    const deps = w.deps();
+    const kill = deps.kill;
+    const server = new ManagedServer({
+      ...deps,
+      kill: (pid, signal) => {
+        kill(pid, signal);
+        proc.command = "/usr/bin/vim notes.txt ";
+      },
+    });
+    await server.stop();
+    expect(w.signals).toEqual([[4000, "SIGTERM"]]);
+    expect(proc.alive).toBe(true);
+  });
+
   test("a child that never becomes ready is stopped, not left running", async () => {
     const w = fresh();
     w.onSpawn = "hang";
@@ -329,6 +377,44 @@ describe("stop", () => {
     expect(w.procs.get(4000)?.alive).toBe(false);
     expect(w.state()).toBeUndefined();
   });
+
+  test("dispose ends the wait for a child that is not ready yet", async () => {
+    const w = fresh();
+    w.onSpawn = "hang";
+    const server = new ManagedServer(w.deps());
+    let disposing: Promise<void> | undefined;
+    w.beforeSpawnReturns = () => {
+      disposing = server.dispose();
+    };
+    await expect(server.ensure()).rejects.toThrow("shutting down");
+    await disposing;
+    // Left alone it would have probed until the ready timeout.
+    expect(w.probes).toBeLessThan(3);
+    expect(w.procs.get(4000)?.alive).toBe(false);
+  });
+});
+
+describe("a server a person started", () => {
+  test("is adopted by the harness and left running when the harness shuts down", async () => {
+    const w = fresh();
+    const byHand = await new ManagedServer(w.deps({ operator: true })).ensure();
+    const harness = new ManagedServer(w.deps());
+    expect(await harness.ensure()).toMatchObject({ pid: byHand.pid, adopted: true });
+    expect(await harness.status()).toMatchObject({ running: true, operator: true });
+    await harness.dispose();
+    expect(w.procs.get(byHand.pid)?.alive).toBe(true);
+    expect(w.state()?.pid).toBe(byHand.pid);
+  });
+
+  test("still stops when asked to, and a reset hands it to the harness", async () => {
+    const w = fresh();
+    await new ManagedServer(w.deps({ operator: true })).ensure();
+    const harness = new ManagedServer(w.deps());
+    const fresh2 = await harness.reset();
+    expect(w.procs.get(4000)?.alive).toBe(false);
+    await harness.dispose();
+    expect(w.procs.get(fresh2.pid)?.alive).toBe(false);
+  });
 });
 
 describe("reset", () => {
@@ -337,15 +423,25 @@ describe("reset", () => {
     const server = new ManagedServer(w.deps());
     await server.ensure();
     writeFileSync(join(w.root, "data", "clickclack.db"), "rows");
+    writeFileSync(join(w.root, "sentinel.txt"), "keep");
     writeFileSync(join(w.home, "neighbour.txt"), "keep");
     const running = await server.reset();
     expect(existsSync(join(w.root, "data", "clickclack.db"))).toBe(false);
+    expect(readFileSync(join(w.root, "sentinel.txt"), "utf8")).toBe("keep");
     expect(readFileSync(join(w.home, "neighbour.txt"), "utf8")).toBe("keep");
-    expect(existsSync(join(w.root, "server.log.old")) || existsSync(join(w.root, "data"))).toBe(
-      true,
-    );
     expect(running).toMatchObject({ pid: 4001, adopted: false });
+    expect(w.state()?.pid).toBe(4001);
     expect(w.procs.get(4000)?.alive).toBe(false);
+  });
+
+  test("deletes nothing while a server it has no record of still answers", async () => {
+    const w = fresh();
+    const server = new ManagedServer(w.deps());
+    mkdirSync(join(w.root, "data"), { recursive: true });
+    writeFileSync(join(w.root, "data", "clickclack.db"), "rows");
+    w.serving = "foreign";
+    await expect(server.reset()).rejects.toThrow("nothing was deleted");
+    expect(readFileSync(join(w.root, "data", "clickclack.db"), "utf8")).toBe("rows");
   });
 
   test("a start requested during a reset waits for it and shares the new server", async () => {

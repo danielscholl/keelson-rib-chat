@@ -89,6 +89,8 @@ bun test            # unit tests against an in-memory ClickClack
 bun run typecheck
 bun run check
 CLICKCLACK_TOKEN=<owner session> bun dev/live-smoke.ts   # a real server, scripted agents, no model spend
+CLICKCLACK_BIN=<binary> bun dev/live-smoke.ts            # the same through a managed server, plus adopt, reset, stop
+bun dev/server.ts start | status | stop                  # run the managed server by hand; prints the UI address
 ```
 
 The docs site lives in `docs/` (Astro Starlight): `cd docs && bun install && bun run dev`. See its [design tier](https://danielscholl.github.io/keelson-rib-chat/design/) for the decisions behind the rib and what is deferred.

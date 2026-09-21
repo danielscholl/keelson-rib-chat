@@ -28,7 +28,8 @@ export interface ToolDeps {
   swarms: Map<string, Swarm>;
   // Summaries of swarms that have ended, kept so status still answers.
   ended: Map<string, SwarmSummary>;
-  startSwarm: (input: StartSwarmInput) => Promise<{ swarm: Swarm; opId?: string }>;
+  // `url` is the ClickClack server the swarm runs on, for pointing a human at its UI.
+  startSwarm: (input: StartSwarmInput) => Promise<{ swarm: Swarm; opId?: string; url?: string }>;
 }
 
 export const BODY_MAX = 8_000;
@@ -250,7 +251,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
       state_changing: true,
       execute: guarded(async (input, ctx) => {
         const args = startSchema.parse(input);
-        const { swarm, opId } = await deps.startSwarm({
+        const { swarm, opId, url } = await deps.startSwarm({
           task: args.task,
           workTools: args.work_tools ?? "read",
           ...(args.project ? { project: args.project } : {}),
@@ -263,7 +264,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         const s = swarm.summary();
         emitText(
           ctx,
-          `swarm ${s.id} started in #${s.channelName}${opId ? ` (run ${opId})` : ""}. Poll chat_swarm_status("${s.id}")${opId ? ` or run_status("${opId}")` : ""}.`,
+          `swarm ${s.id} started in #${s.channelName}${opId ? ` (run ${opId})` : ""}. Poll chat_swarm_status("${s.id}")${opId ? ` or run_status("${opId}")` : ""}.${url ? ` Watch at ${url}/app.` : ""}`,
         );
       }),
     },

@@ -14,11 +14,14 @@ over, and the session the rib uses to create its bots.
 
 With a `clickclack` binary on `PATH` (or `CLICKCLACK_BIN` set) and nothing else
 configured, the rib starts a local server with the first swarm and mints its own
-owner session. Skip to [Add the rib](#add-the-rib). `chat_server_start` brings
-the server up ahead of a swarm and returns the address of its web UI. See
+owner session. Skip to [Add the rib](#add-the-rib), and skip
+[Point it at your server](#point-it-at-your-server) after it.
+`chat_server_start` brings the server up ahead of a swarm and returns the
+address of its web UI, and so does each `chat_swarm_start`. See
 [Managed server](../../reference/configuration/#managed-server).
 
-The next two sections are for a ClickClack you run yourself.
+The next two sections, and Point it at your server, are for a ClickClack you
+run yourself.
 
 ## Run ClickClack
 
