@@ -45,6 +45,8 @@ From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swa
 
 The generic `run_status`, `run_events`, `run_cancel`, and `run_steer` tools work on the run id too. The `chat-swarm` workflow wraps start, wait, and report for the catalog.
 
+The rib's operating contract (routing, tool boundary, limits, completion, steering, restarts) is served through `keelson_docs` as the `chat` source, so an MCP caller does not need this repository.
+
 Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_spawn`, and `chat_done`. Those refuse any caller that is not inside a swarm turn.
 
 ## Who a message wakes
