@@ -11,7 +11,7 @@ sidebar:
 |---|---|---|---|
 | Agents, lead included | 5 | `max_agents`, 1 to 12 | `chat_spawn` fails with a message to reuse an agent. |
 | Turns across the swarm | 40 | `max_turns`, 1 to 200 | The swarm ends as `exhausted`. |
-| Turns per worker | 12 | no | The worker is capped: announced in the channel, inbox cleared, later messages dropped. The lead is exempt. |
+| Turns per worker | 12 | no | The next message addressed to the worker caps it: announced in the channel, inbox cleared, later messages dropped. The lead is exempt. |
 | Turns running at once | 3 | no | Further turns wait. |
 | Wall clock | 30 minutes | no | The swarm ends as `exhausted`. |
 | One turn | 5 minutes | no | The turn is aborted. The messages it was handed are not redelivered. |
@@ -43,8 +43,11 @@ sidebar:
 A stop or a limit that lands between `chat_done` and the swarm settling wins the
 status, and `conclusion` still holds what the lead recorded. Read both fields.
 
-The durable op mirrors this: a swarm that ends as `error` fails the run, and
-every other ending completes it with the summary as its result.
+The durable run follows the swarm, with one exception. A swarm that ends as
+`error` fails the run, and every other ending completes it with the summary as
+its result. `run_cancel` is the exception: the harness settles the run as
+`cancelled` before the swarm finishes stopping, so that run carries no summary.
+Read `chat_swarm_status` for it.
 
 ## Agent statuses
 
@@ -52,7 +55,7 @@ every other ending completes it with the summary as its result.
 |---|---|
 | `idle` | Waiting for a message addressed to it. |
 | `busy` | Running a turn. |
-| `capped` | A worker that has spent its turns. It will not run again. |
+| `capped` | A worker that was addressed again after spending its turns. It will not run again. |
 
 ## Related
 

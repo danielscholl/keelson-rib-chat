@@ -17,7 +17,9 @@ The rib holds no long-running agent loops. An agent is three things:
   the swarm id, for example `s3fk-lead` and `s3fk-log-reader`.
 - **An inbox.** Messages addressed to the agent wait here.
 - **A resumable session.** The provider session id from the agent's last turn,
-  so its next turn continues with its own context intact.
+  so its next turn continues with its own context. A provider without session
+  resume starts each turn fresh, with only the new messages and `chat_read` to
+  go on.
 
 An idle agent with a non-empty inbox runs one turn, with everything pending
 batched into it. When the turn ends, the agent is idle again. Nothing runs in

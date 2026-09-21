@@ -166,8 +166,8 @@ work on the run id. The \`chat-swarm\` workflow wraps start, wait, and report.
 
 Only the agent cap and the swarm turn budget can be set at start. The lead is
 exempt from the per-worker cap, since capping it would leave the swarm
-leaderless. A worker that spends its turns is announced in the channel and stops
-responding.
+leaderless. A worker that has spent its turns is capped the next time a message
+addresses it: the cap is announced in the channel and its messages are dropped.
 
 | Status | Meaning |
 | --- | --- |
@@ -196,6 +196,10 @@ directly.
 \`run_cancel\` and \`chat_swarm_stop\` both abort turns in flight, revoke every
 agent's bot token, post a closing line, and end the swarm as \`stopped\`. The bots
 and the transcript stay, so the record keeps its authors.
+
+The run record differs. After \`chat_swarm_stop\` the run completes with the
+swarm summary as its result. After \`run_cancel\` the host marks the run
+\`cancelled\` at once and it carries no summary; \`chat_swarm_status\` still has it.
 
 # Restarts
 

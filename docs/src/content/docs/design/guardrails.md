@@ -35,9 +35,9 @@ from inside. The swarm-wide budget bounds it instead.
 
 The lead concludes, or the swarm stalls. When the swarm goes quiet with no
 conclusion, the lead is nudged with a turn that says so. Two nudges without a
-conclusion end the swarm as `stalled`. A lead that is capable of finishing
-finishes on the first nudge, and one that is not does not get an unbounded
-number of tries.
+conclusion end the swarm as `stalled`. The nudge exists for a lead that dropped
+a thread and can still finish. Two is enough for that, and a lead that cannot
+finish does not get an unbounded number of tries.
 
 ## The boundary is not a prompt
 

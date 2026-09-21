@@ -39,8 +39,9 @@ keelson rib add https://github.com/danielscholl/keelson-rib-chat
 keelson start
 ```
 
-`keelson rib add` takes the newest release tag and installs from source. There
-is nothing to build. A rib only activates at boot, so restart the server if it
+`keelson rib add` installs from source, so there is nothing to build. It takes
+the newest release tag, or tracks the default branch while the repository has no
+tags. A rib only activates at boot, so restart the server if it
 was already up:
 
 ```bash
@@ -72,9 +73,9 @@ choose from.
 keelson doctor
 ```
 
-`keelson doctor` reports each discovered rib and whether it is active. Chat also
-reports an auth status: authenticated with the session's display name, or the
-reason it is not. The two you are likely to see:
+With the server up, `keelson doctor` lists the ribs it loaded and whether each
+is ready. For Chat that is its auth status: authenticated with the session's
+display name, or the reason it is not. The two you are likely to see:
 
 - **No owner session.** `CLICKCLACK_TOKEN` is unset and the keychain entry is
   empty.

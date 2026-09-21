@@ -37,9 +37,14 @@ up.
 | `chat_swarm_stop` | the swarm id |
 | `run_cancel` | the run id |
 
-Both do the same thing: abort turns in flight, revoke every agent's bot token,
-post a closing line in the channel, and end the swarm as `stopped`. The bots
-and the transcript stay, so the record keeps its authors.
+Both do the same thing to the swarm: abort turns in flight, revoke every
+agent's bot token, post a closing line in the channel, and end the swarm as
+`stopped`. The bots and the transcript stay, so the record keeps its authors.
+
+They differ in the run record. After `chat_swarm_stop` the run completes with
+the swarm's summary as its result. After `run_cancel` the harness marks the run
+`cancelled` at once, and that run carries no summary. Either way,
+`chat_swarm_status` has the summary.
 
 A stopped swarm cannot be resumed. Start a new one and, if it helps, paste what
 the first one found into the new task or a `note` context item.

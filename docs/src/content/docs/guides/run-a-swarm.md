@@ -61,8 +61,8 @@ conclusion, who took part, and the turn cost:
 { "tool": "workflow_run", "input": { "name": "chat-swarm", "arguments": "Find why ..." } }
 ```
 
-The workflow passes only a task. For a project, limits, or task context, call
-`chat_swarm_start` directly.
+The workflow is written to pass only a task. For a project, limits, or task
+context, call `chat_swarm_start` directly.
 
 ## Watch it
 

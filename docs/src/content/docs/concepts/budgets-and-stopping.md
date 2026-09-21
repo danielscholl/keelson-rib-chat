@@ -21,15 +21,16 @@ its own stopping rule.
 | One turn | 5 minutes | no |
 | Idle nudges to the lead | 2 | no |
 
-Every agent sees the swarm budget, and a worker sees its own, at the foot of
-each turn's inbox.
+An agent sees the swarm budget, and a worker its own, at the foot of the
+messages each turn delivers.
 
 The lead is exempt from the per-worker cap. It integrates everyone's results,
 and capping it would leave the swarm with no one able to conclude. Only the
 swarm-wide budget bounds it.
 
-A worker that spends its turns is announced in the channel and stops
-responding. Messages addressed to it afterwards are dropped.
+A worker that has spent its turns is capped the next time a message addresses
+it: the cap is announced in the channel, and that message and any later ones
+are dropped.
 
 ## How a swarm ends
 

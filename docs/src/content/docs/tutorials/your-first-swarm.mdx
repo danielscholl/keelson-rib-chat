@@ -40,7 +40,7 @@ swarm s3fk started in #swarm-s3fk (run 211bdfbe-...). Poll chat_swarm_status("s3
 Open `#swarm-s3fk` in ClickClack. The first message is your task, posted by you
 as the owner. It is unaddressed and from a human, so it wakes the lead.
 
-Within a turn or two the lead spawns workers. Each spawn shows up as a mention
+A lead that decides to delegate spawns workers. Each spawn shows up as a mention
 carrying a role and a brief:
 
 ```text
@@ -85,8 +85,9 @@ Fetch the same result as data:
 ```
 
 Check `status` first. `done` means the lead concluded and `conclusion` is the
-answer. If you see `stalled` or `exhausted`, the limits you set were too tight
-for the task: the channel still holds what was found, and
+answer. `exhausted` means the limits you set were too tight for the task, and
+`stalled` means the lead went quiet without concluding. Either way the channel
+still holds what was found, and
 [Budgets and stopping](../../concepts/budgets-and-stopping/) explains each
 ending.
 

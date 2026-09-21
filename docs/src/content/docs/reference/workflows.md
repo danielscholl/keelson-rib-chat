@@ -28,8 +28,9 @@ Each node runs in a fresh context and must make its tool call.
 Four waits of 600 seconds cover 40 minutes, which is past the swarm's 30 minute
 wall clock, so `wait` ends on `ENDED` unless something is wrong.
 
-The workflow passes only a task. It sets no project, limits, provider, or task
-context, so its swarms are chat only with default budgets. For anything else,
+The `start` node is prompted to pass only a task: no project, limits, provider,
+or task context. Its swarms are meant to be chat only with default budgets. For
+anything else,
 call [`chat_swarm_start`](../tools-and-commands/) directly.
 
 ## Related

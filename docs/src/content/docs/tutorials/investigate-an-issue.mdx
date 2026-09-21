@@ -64,8 +64,10 @@ reviewed against one. Put it back.
 
 ## 3. Watch agents read, not guess
 
-In the channel, the lead's first moves are reads, not opinions. Agents call
-`chat_context` to list the items and then to read one, and each read comes back
+Reading context posts nothing to the channel, so watch the run instead.
+`run_events` on the run id shows a progress line per turn with the tools that
+turn called, and an agent that is following its instructions calls
+`chat_context` before it posts a finding. Each read comes back to the agent
 under a header like this:
 
 ```text
@@ -83,17 +85,17 @@ a claim, for example "`author` is the model ID that wrote the artifact, not a lo
 
 ## 4. Find the gap you left
 
-The task asked whether CI passed, and you supplied no `checks` item. The
-conclusion should say so in plain words:
+The task asked whether CI passed, and you supplied no `checks` item. Agents are
+told to say so in plain words, and a conclusion that follows the rule reads:
 
 ```text
 MISSING EVIDENCE: no checks item was supplied for head 3349e17, so CI status
 at that head is unknown.
 ```
 
-That line is the feature. The agents had a field name to guess from and a
-training-data prior about what CI usually says, and they reported the hole
-instead.
+That line is the feature. Without the rule, an agent has a field name to guess
+from and a prior about what CI usually says. If your conclusion guesses anyway,
+say so in the channel: the lead treats it as operator direction.
 
 ## 5. Close the gap
 

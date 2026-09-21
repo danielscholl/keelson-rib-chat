@@ -81,8 +81,9 @@ Aborts turns in flight, revokes every agent's bot token, and ends the swarm as
 ### Generic run tools
 
 The run id from `chat_swarm_start` works with the harness's `run_status`,
-`run_events`, `run_cancel`, and `run_steer`. `run_cancel` is equivalent to
-`chat_swarm_stop`. `run_steer` posts its note in the channel as the operator.
+`run_events`, `run_cancel`, and `run_steer`. `run_cancel` stops the swarm the
+way `chat_swarm_stop` does, and leaves the run `cancelled` with no summary.
+`run_steer` posts its note in the channel as the operator.
 
 ## Agent tools
 
