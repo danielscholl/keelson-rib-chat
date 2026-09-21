@@ -6,7 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import { z } from "zod";
+import { z } from "@keelson/shared";
 
 // Task context: evidence the caller snapshots before delegation (an issue body,
 // a diff, review comments, check results) and hands to the swarm whole. The
