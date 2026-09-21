@@ -8,6 +8,7 @@
 
 import type { ToolContext, ToolDefinition } from "@keelson/shared";
 import { z } from "zod";
+import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
 import type { Swarm } from "./swarm.ts";
 import { type ChatMessage, readTurnContext, type SwarmSummary } from "./types.ts";
 
@@ -19,6 +20,7 @@ export interface StartSwarmInput {
   maxAgents?: number;
   maxTurns?: number;
   workTools: "none" | "read";
+  context?: ContextItem[];
   provider?: string;
   model?: string;
 }
@@ -94,6 +96,17 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
       limit: z.number().int().min(1).max(READ_BOUNDS.maxLimit).optional(),
     })
     .strict();
+  const contextReadSchema = z
+    .object({
+      id: z.string().optional().describe("A context item id. Omit to list the items."),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("Character offset to continue a long item from."),
+    })
+    .strict();
   const spawnSchema = z
     .object({
       handle: z.string().min(1).max(20).describe("Short kebab-case name, e.g. 'log-reader'."),
@@ -119,6 +132,11 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .describe("'read' (default) grants Read/Grep/Glob; 'none' is chat only."),
       provider: z.string().optional(),
       model: z.string().optional(),
+      context: contextSchema
+        .optional()
+        .describe(
+          "Evidence agents cannot fetch themselves: full issue bodies, PR diffs, reviews, check results. Snapshot it before starting; agents read it verbatim with chat_context.",
+        ),
     })
     .strict();
   const swarmRef = z.object({ swarm: z.string().min(1).describe("The swarm id.") }).strict();
@@ -186,6 +204,20 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
       }),
     },
     {
+      name: "chat_context",
+      description:
+        "Swarm agents only. Read the task context the operator supplied: with no id, list the items; with an id, read that item verbatim with its source, retrieval time, and SHAs. Long items page by offset. NOT for the chat transcript (chat_read).",
+      inputSchema: contextReadSchema,
+      execute: guarded(async (input, ctx) => {
+        const args = contextReadSchema.parse(input);
+        const { swarm, agentId } = caller(ctx);
+        emitText(
+          ctx,
+          swarm.context(agentId, { ...(args.id ? { id: args.id } : {}), offset: args.offset ?? 0 }),
+        );
+      }),
+    },
+    {
       name: "chat_spawn",
       description:
         "Swarm agents only. Add a worker agent with its own context for a line of inquiry worth separating out. Posts the brief as an @mention so the new agent starts at once. Fails once the swarm's agent cap is reached. NOT for reaching an agent that already exists (@mention it).",
@@ -227,6 +259,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           ...(args.max_turns ? { maxTurns: args.max_turns } : {}),
           ...(args.provider ? { provider: args.provider } : {}),
           ...(args.model ? { model: args.model } : {}),
+          ...(args.context?.length ? { context: toContextItems(args.context) } : {}),
         });
         const s = swarm.summary();
         emitText(
