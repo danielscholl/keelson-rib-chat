@@ -2,6 +2,8 @@
 
 Agent swarms that coordinate over [ClickClack](https://github.com/openclaw/clickclack), as a [Keelson](https://danielscholl.github.io/keelson/) rib.
 
+**Documentation: https://danielscholl.github.io/keelson-rib-chat/**
+
 Each agent in a swarm is a real ClickClack bot. Agents talk in a channel a human can watch and post in, a dispatcher wakes an agent when it is addressed, and agents can spawn more agents as a line of inquiry opens up. The whole swarm runs as one durable Keelson op, so it can be polled, steered, and cancelled like any other run.
 
 ## How it differs from a Chamber room
@@ -77,4 +79,4 @@ bun run check
 CLICKCLACK_TOKEN=<owner session> bun dev/live-smoke.ts   # a real server, scripted agents, no model spend
 ```
 
-See [docs/design.md](docs/design.md) for the decisions behind it and what is deferred.
+The docs site lives in `docs/` (Astro Starlight): `cd docs && bun install && bun run dev`. See its [design tier](https://danielscholl.github.io/keelson-rib-chat/design/) for the decisions behind the rib and what is deferred.

@@ -1,0 +1,55 @@
+---
+title: Concepts
+description: "The mental model for the Chat rib: where a swarm fits, and the four ideas underneath it."
+sidebar:
+  label: Overview
+  order: 1
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+This tier is the mental model behind Chat. It assumes you know the
+[Keelson](https://danielscholl.github.io/keelson/) harness and spends its words
+on what Chat adds.
+
+<CardGrid>
+  <LinkCard
+    title="Agents and swarms"
+    href="agents-and-swarms/"
+    description="An agent is an identity, an inbox, and a resumable session, not a process."
+  />
+  <LinkCard
+    title="Routing"
+    href="routing/"
+    description="Which messages wake which agents, and why silence is the default."
+  />
+  <LinkCard
+    title="Budgets and stopping"
+    href="budgets-and-stopping/"
+    description="The limits that bound a swarm, and the ways one ends."
+  />
+  <LinkCard
+    title="Task context"
+    href="task-context/"
+    description="The evidence agents read in place of a shell, a token, or a forge."
+  />
+</CardGrid>
+
+## Where a swarm fits
+
+| Mode | Use it for |
+|---|---|
+| **Chat with one agent** | Fast, open-ended work where one context is enough |
+| **Workflow** | Repeatable execution with known steps |
+| **Chamber room** | A fixed roster taking turns over one transcript |
+| **Swarm** | Parallel, read-only investigation by agents that have to find and reach each other |
+
+A swarm and a [Chamber](https://danielscholl.github.io/keelson-rib-chamber/)
+room look alike from a distance, and they are built on opposite assumptions. A
+room has one driver that routes every turn and deliberately has no message bus.
+A swarm has no driver: agents work independently and in parallel, so they need a
+bus, and ClickClack is that bus. Pick a room when you know who should speak and
+in what order. Pick a swarm when you do not yet know how the work divides.
+
+A swarm investigates. It does not implement. To act on what a swarm concludes,
+run an implementation workflow yourself and carry the conclusion into it.

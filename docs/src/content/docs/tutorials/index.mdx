@@ -1,0 +1,26 @@
+---
+title: Tutorials
+description: "A problem-first learning rail for the Chat rib, from a first swarm to an evidence-backed investigation."
+sidebar:
+  label: Overview
+  order: 1
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Each tutorial starts from a problem and ends with something you ran. They build
+on each other, so take them in order. You need the rib
+[installed and authenticated](../guides/install/) first.
+
+<CardGrid>
+  <LinkCard
+    title="Your first swarm"
+    href="your-first-swarm/"
+    description="Start a swarm on a registered project, watch it divide the work, and read what it concluded."
+  />
+  <LinkCard
+    title="Investigate an issue with evidence"
+    href="investigate-an-issue/"
+    description="Snapshot an issue and a PR, hand them to a swarm, and see agents cite them instead of guessing."
+  />
+</CardGrid>

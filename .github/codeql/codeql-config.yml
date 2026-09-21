@@ -1,7 +1,8 @@
 name: CodeQL config
 
 # Keep CodeQL on the rib's shipped surface (src/, dev/). Tests are noise for
-# security analysis.
+# security analysis, and docs/ is a separate Astro site.
 paths-ignore:
   - "**/*.test.ts"
   - "test/**"
+  - "docs/**"

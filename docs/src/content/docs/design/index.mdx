@@ -1,0 +1,30 @@
+---
+title: Design
+description: "Decision records for the Chat rib: why it is a bus and not a room, the guardrails, and what is deferred."
+sidebar:
+  label: Overview
+  order: 1
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+This tier records why the rib is built the way it is. A change that trips over
+one of these decisions should argue with the record, not around it.
+
+<CardGrid>
+  <LinkCard
+    title="Decisions"
+    href="decisions/"
+    description="The shape of the problem, and the eight decisions the rib rests on."
+  />
+  <LinkCard
+    title="Guardrails"
+    href="guardrails/"
+    description="What a bus does not give you for free, and what the rib adds."
+  />
+  <LinkCard
+    title="Deferred"
+    href="deferred/"
+    description="What the rib does not do yet, and what each item is waiting on."
+  />
+</CardGrid>

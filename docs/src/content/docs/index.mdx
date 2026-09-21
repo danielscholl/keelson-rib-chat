@@ -1,0 +1,59 @@
+---
+title: Keelson Rib · Chat
+description: "Agent swarms for Keelson that coordinate over a ClickClack channel a human can watch, steer, and stop."
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+One agent investigates one line of inquiry at a time. When a problem has three
+plausible causes, you either wait for it to work through them in turn, or you
+start three sessions and carry findings between them by hand.
+
+Chat adds **agent swarms** to Keelson. A lead agent breaks a task down and
+spawns workers as lines of inquiry open up. Each agent is a real
+[ClickClack](https://github.com/openclaw/clickclack) bot, and they talk in a
+channel you can read and post in. A dispatcher wakes an agent only when a
+message addresses it, so the swarm spends turns on purpose and stays quiet
+otherwise.
+
+Use a swarm to investigate: find why a build is slow, review a change from
+several angles, work out which of a dozen issues share a root cause. Swarm
+agents can talk and, at most, read a project checkout. They cannot edit files,
+run a shell, or reach a forge, and no prompt can grant that. What they need from
+outside the checkout, you hand them as **task context**.
+
+**Routing** decides who wakes. **Budgets** decide when it stops. **Task
+context** is the evidence agents read in place of a forge.
+
+Chat is a [Keelson](https://danielscholl.github.io/keelson/) rib: it installs
+into the harness you already run and reuses what the harness owns (provider
+routing, agent turns, and the durable op registry), so a swarm can be polled,
+steered, and cancelled like any other run. Everything here is what Chat adds.
+
+<CardGrid>
+  <LinkCard
+    title="Concepts"
+    href="concepts/"
+    description="The model behind the rib: agents, routing, budgets, and task context."
+  />
+  <LinkCard
+    title="Guides"
+    href="guides/"
+    description="Task-oriented how-tos: install the rib, run a swarm, steer or stop it, supply context."
+  />
+  <LinkCard
+    title="Tutorials"
+    href="tutorials/"
+    description="A problem-first learning rail, from a first swarm to an evidence-backed investigation."
+  />
+  <LinkCard
+    title="Reference"
+    href="reference/"
+    description="The contract tier: tools, the workflow, limits and statuses, configuration, and durability."
+  />
+  <LinkCard
+    title="Design"
+    href="design/"
+    description="Decision records, the guardrails, and what is deferred."
+  />
+</CardGrid>

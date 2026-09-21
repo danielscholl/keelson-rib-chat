@@ -1,0 +1,102 @@
+---
+title: Your first swarm
+description: Start a swarm on a registered project, watch it divide the work in ClickClack, steer it once, and read what it concluded.
+sidebar:
+  order: 2
+---
+
+**The problem.** You have a question about a codebase that splits three ways,
+and you would rather not walk one agent through all three in turn.
+
+**What you will do.** Start a swarm, watch the lead spawn workers, steer it
+once, and read its conclusion.
+
+**You need.** Keelson running with the Chat rib
+[authenticated](../../guides/install/), ClickClack open in a browser, and one
+registered Keelson project. This tutorial calls it `keelson`; use your own.
+
+## 1. Start the swarm
+
+From a Keelson chat session or an MCP client, call `chat_swarm_start`. Keep the
+ceilings low for a first run:
+
+```json
+{
+  "task": "Map how this repo handles configuration. Report: where config is loaded, which environment variables are read and where, and any setting that is read but never documented. Cite files and lines.",
+  "project": "keelson",
+  "max_agents": 3,
+  "max_turns": 15
+}
+```
+
+The call returns at once:
+
+```text
+swarm s3fk started in #swarm-s3fk (run 211bdfbe-...). Poll chat_swarm_status("s3fk") or run_status("211bdfbe-...").
+```
+
+## 2. Watch the channel
+
+Open `#swarm-s3fk` in ClickClack. The first message is your task, posted by you
+as the owner. It is unaddressed and from a human, so it wakes the lead.
+
+Within a turn or two the lead spawns workers. Each spawn shows up as a mention
+carrying a role and a brief:
+
+```text
+@s3fk-env-reader joining as **finds every environment variable read**.
+
+Grep for process.env and Bun.env. Report each variable, the file and line, and
+whether README or docs mention it.
+```
+
+The worker answers **in that thread**. The lead is already in the thread, so the
+reply wakes it. That is the whole delegation loop, and nothing else tracks it.
+
+Notice what does not happen: a worker that posts a top-level note without a
+mention wakes nobody. The note is on the board for anyone to read, and no turn
+was spent.
+
+## 3. Steer it once
+
+Post a top-level message in the channel:
+
+```text
+Skip anything under docs/. Only shipped code counts.
+```
+
+You did not address anyone, and you are human, so the lead gets it on its next
+turn and treats it as direction from the operator. To reach one worker instead,
+mention its handle.
+
+## 4. Read the conclusion
+
+When the lead has what it needs it calls `chat_done`. The conclusion is posted
+in the channel, followed by a closing line:
+
+```text
+Swarm s3fk done. 9 turns, 3 agents.
+```
+
+Fetch the same result as data:
+
+```json
+{ "tool": "chat_swarm_status", "input": { "swarm": "s3fk" } }
+```
+
+Check `status` first. `done` means the lead concluded and `conclusion` is the
+answer. If you see `stalled` or `exhausted`, the limits you set were too tight
+for the task: the channel still holds what was found, and
+[Budgets and stopping](../../concepts/budgets-and-stopping/) explains each
+ending.
+
+## What you learned
+
+- A swarm is one tool call, and it returns before any work is done.
+- The channel is the live view, and you are a participant in it.
+- Mentions and threads move work between agents. The board is free.
+- `status` tells you whether `conclusion` is a real answer.
+
+**Next:** the agents could read the checkout, and nothing else. In
+[Investigate an issue with evidence](../investigate-an-issue/) you hand them
+what lives outside it.

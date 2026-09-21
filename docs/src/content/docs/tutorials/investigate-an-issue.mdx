@@ -1,0 +1,128 @@
+---
+title: Investigate an issue with evidence
+description: Snapshot an issue and its pull request, hand them to a swarm as task context, and see agents cite the text and flag what is missing.
+sidebar:
+  order: 3
+---
+
+**The problem.** You want a swarm to check a pull request against the issue it
+claims to close. The agents can read the checkout. They cannot read the issue,
+the diff, or the check results, and a summary in the task loses the acceptance
+criteria.
+
+**What you will do.** Snapshot the evidence, start a swarm with it, and watch
+agents read it verbatim, cite it, and report a gap you left on purpose.
+
+**You need.** Everything from [Your first swarm](../your-first-swarm/), the
+GitHub CLI, and an issue with a pull request against a registered project. This
+tutorial uses issue 874 and PR 880; use your own numbers.
+
+## 1. Snapshot the evidence
+
+Retrieve each piece whole, and record the PR's head commit:
+
+```bash
+gh issue view 874 --json title,body,url
+gh pr diff 880
+gh pr view 880 --json headRefOid --jq .headRefOid
+date -u +%Y-%m-%dT%H:%M:%SZ
+```
+
+Leave the check results out for now. That is the gap.
+
+## 2. Start the swarm with context
+
+```json
+{
+  "task": "Review PR 880 against issue 874, at head 3349e17. For each acceptance criterion in the issue, say whether the diff meets it and cite the hunk. Then say whether CI passed at that head.",
+  "project": "keelson",
+  "context": [
+    {
+      "id": "issue-874",
+      "kind": "issue",
+      "title": "Record who authored an artifact",
+      "source_url": "https://github.com/danielscholl/keelson/issues/874",
+      "retrieved_at": "2026-09-20T18:00:00Z",
+      "body": "<the full issue body>"
+    },
+    {
+      "id": "pr-880-diff",
+      "kind": "diff",
+      "title": "PR 880 diff",
+      "source_url": "https://github.com/danielscholl/keelson/pull/880",
+      "retrieved_at": "2026-09-20T18:00:00Z",
+      "head_sha": "3349e173782bedbe87fee14c42eab281b6b3028a",
+      "body": "<the full diff>"
+    }
+  ]
+}
+```
+
+Try one thing before you send it: delete `head_sha` from the diff item. The
+start is refused, because a diff that is not bound to a commit cannot be
+reviewed against one. Put it back.
+
+## 3. Watch agents read, not guess
+
+In the channel, the lead's first moves are reads, not opinions. Agents call
+`chat_context` to list the items and then to read one, and each read comes back
+under a header like this:
+
+```text
+--- issue-874 [issue] Record who authored an artifact
+--- source https://github.com/danielscholl/keelson/issues/874, retrieved 2026-09-20T18:00:00Z; chars 0-1840 of 1840
+```
+
+When the lead spawns a worker for the diff, that worker sees the same item list
+in its own prompt and reads the same text. Nothing was pasted into a brief and
+nothing was paraphrased on the way.
+
+Look at how findings are written. Agents are told to cite the item id next to
+a claim, for example "`author` is the model ID that wrote the artifact, not a login
+(issue-874)".
+
+## 4. Find the gap you left
+
+The task asked whether CI passed, and you supplied no `checks` item. The
+conclusion should say so in plain words:
+
+```text
+MISSING EVIDENCE: no checks item was supplied for head 3349e17, so CI status
+at that head is unknown.
+```
+
+That line is the feature. The agents had a field name to guess from and a
+training-data prior about what CI usually says, and they reported the hole
+instead.
+
+## 5. Close the gap
+
+A running swarm's context cannot change, so start a new swarm with a third item:
+
+```json
+{
+  "id": "pr-880-checks",
+  "kind": "checks",
+  "title": "PR 880 check runs",
+  "retrieved_at": "2026-09-20T18:20:00Z",
+  "head_sha": "3349e173782bedbe87fee14c42eab281b6b3028a",
+  "body": "<the output of gh pr checks 880>"
+}
+```
+
+If the PR moved in the meantime, the checks carry a newer head than the diff.
+Agents are told to report that as STALE EVIDENCE. Snapshot both again at the
+same head.
+
+## What you learned
+
+- Agents read what you hand them, whole, and nothing else from outside the
+  checkout.
+- A `diff`, `review`, or `checks` item is bound to a head commit, and the start
+  is refused without one.
+- A gap in the evidence surfaces as MISSING EVIDENCE in the conclusion.
+- The swarm's status keeps the list of items, so the record shows what a
+  conclusion rested on.
+
+**Next:** the swarm told you what is wrong. It will not fix it. Carry the
+conclusion into an implementation workflow from `workflow_list`.
