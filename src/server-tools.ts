@@ -23,6 +23,8 @@ export interface ServerToolDeps {
   liveCount: () => number;
   endedCount: () => number;
   clearEnded: () => void;
+  // Called after the server may have started, stopped, or been wiped.
+  onServerChange?: () => void;
 }
 
 const none = z.object({}).strict();
@@ -78,6 +80,7 @@ export function makeServerTools(deps: ServerToolDeps): ToolDefinition[] {
         const server = await managed(ctx);
         if (!server) return;
         const { url, pid, adopted } = await server.ensure();
+        deps.onServerChange?.();
         emitText(
           ctx,
           `ClickClack running at ${url} (pid ${pid}, ${adopted ? "adopted" : "started"}). Watch at ${url}/app.`,
@@ -94,10 +97,9 @@ export function makeServerTools(deps: ServerToolDeps): ToolDefinition[] {
         none.parse(input);
         const server = await managed(ctx);
         if (!server || busy(ctx, "stop")) return;
-        emitText(
-          ctx,
-          (await server.stop()) ? "ClickClack stopped." : "ClickClack was not running.",
-        );
+        const stopped = await server.stop();
+        deps.onServerChange?.();
+        emitText(ctx, stopped ? "ClickClack stopped." : "ClickClack was not running.");
       }),
     },
     {
@@ -121,6 +123,7 @@ export function makeServerTools(deps: ServerToolDeps): ToolDefinition[] {
         const { url } = await server.reset();
         // Their channels are gone, so their summaries would point at nothing.
         deps.clearEnded();
+        deps.onServerChange?.();
         emitText(ctx, `ClickClack reset; running empty at ${url}.`);
       }),
     },
