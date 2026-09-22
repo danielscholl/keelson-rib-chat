@@ -88,27 +88,28 @@ describe("server tools", () => {
     );
   });
 
-  test.each(["chat_server_start", "chat_server_stop", "chat_server_reset"])(
-    "%s leaves an external server alone",
-    async (name) => {
-      const h = harness({ external: true });
-      const result = await h.run(name, name === "chat_server_reset" ? { confirm: true } : {});
-      expect(result.isError).toBe(true);
-      expect(result.content).toContain("external (http://chat.example)");
-      expect(h.calls).toEqual([]);
-    },
-  );
+  test.each([
+    "chat_server_start",
+    "chat_server_stop",
+    "chat_server_reset",
+  ])("%s leaves an external server alone", async (name) => {
+    const h = harness({ external: true });
+    const result = await h.run(name, name === "chat_server_reset" ? { confirm: true } : {});
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("external (http://chat.example)");
+    expect(h.calls).toEqual([]);
+  });
 
-  test.each(["chat_server_stop", "chat_server_reset"])(
-    "%s refuses while a swarm is live or starting",
-    async (name) => {
-      const h = harness({ live: 1 });
-      const result = await h.run(name, name === "chat_server_reset" ? { confirm: true } : {});
-      expect(result.isError).toBe(true);
-      expect(result.content).toContain("1 swarm(s) live");
-      expect(h.calls).toEqual([]);
-    },
-  );
+  test.each([
+    "chat_server_stop",
+    "chat_server_reset",
+  ])("%s refuses while a swarm is live or starting", async (name) => {
+    const h = harness({ live: 1 });
+    const result = await h.run(name, name === "chat_server_reset" ? { confirm: true } : {});
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("1 swarm(s) live");
+    expect(h.calls).toEqual([]);
+  });
 
   test("reset without confirm names what it would delete and deletes nothing", async () => {
     const h = harness({ ended: 3 });

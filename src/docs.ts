@@ -11,6 +11,7 @@ import { CONTEXT_BOUNDS } from "./context.ts";
 import { DEFAULT_PORT } from "./server.ts";
 import { MAX_TURN_FAILURES } from "./swarm.ts";
 import { ENDED_KEPT, READ_BOUNDS, START_BOUNDS, TRANSCRIPT_PAGE, WAIT_BOUNDS } from "./tools.ts";
+import { SETTLE_GRACE_MS } from "./turn-runner.ts";
 import { BODY_MAX, CONCLUSION_MAX, DEFAULT_LIMITS } from "./types.ts";
 
 // The corpus is a source module, not a file read at runtime, so an installed
@@ -198,7 +199,9 @@ A turn that times out or errors may never have shown the agent its messages, so
 they go back to the front of its inbox, and its next turn says they are
 repeated. After ${MAX_TURN_FAILURES} failed turns in a row a worker is retired as \`failed\` and
 the channel is told. The same run of failures in the lead ends the swarm as
-\`error\`, rather than spending a turn timeout on every wake.
+\`error\`, rather than spending a turn timeout on every wake. A timed-out turn
+first waits up to ${SETTLE_GRACE_MS / 1_000} seconds for the provider to release the agent's session,
+since the next turn resumes that same session.
 
 | Status | Meaning |
 | --- | --- |

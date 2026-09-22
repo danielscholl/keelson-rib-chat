@@ -307,19 +307,16 @@ describe("ensure", () => {
     ["win32", undefined, "not supported on Windows"],
     ["darwin", "no-data-dir", "rib data directory"],
     ["darwin", "no-binary", "no clickclack binary"],
-  ] as const)(
-    "%s %s fails closed, pointing at an external server",
-    async (platform, missing, text) => {
-      const w = fresh();
-      if (missing === "no-binary") w.env = {};
-      const server = new ManagedServer(
-        w.deps({ platform, ...(missing === "no-data-dir" ? { dataDir: () => undefined } : {}) }),
-      );
-      expect(server.unavailable()).toContain(text);
-      await expect(server.ensure()).rejects.toThrow("CLICKCLACK_URL and CLICKCLACK_TOKEN");
-      expect(w.spawned).toHaveLength(0);
-    },
-  );
+  ] as const)("%s %s fails closed, pointing at an external server", async (platform, missing, text) => {
+    const w = fresh();
+    if (missing === "no-binary") w.env = {};
+    const server = new ManagedServer(
+      w.deps({ platform, ...(missing === "no-data-dir" ? { dataDir: () => undefined } : {}) }),
+    );
+    expect(server.unavailable()).toContain(text);
+    await expect(server.ensure()).rejects.toThrow("CLICKCLACK_URL and CLICKCLACK_TOKEN");
+    expect(w.spawned).toHaveLength(0);
+  });
 
   test("finds the binary on PATH when CLICKCLACK_BIN is unset", async () => {
     const w = fresh();

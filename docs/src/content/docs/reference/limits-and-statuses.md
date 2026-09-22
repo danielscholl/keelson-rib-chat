@@ -20,6 +20,8 @@ sidebar:
 
 A failed turn is one that timed out or errored. Its messages go back to the
 front of the agent's inbox, and the agent's next turn says they are repeated.
+A timed-out turn first waits up to 15 seconds for the provider to release the
+agent's session, since the next turn resumes that same session.
 
 ## Sizes
 

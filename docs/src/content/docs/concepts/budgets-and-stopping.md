@@ -39,7 +39,9 @@ A turn that times out or errors may never have shown the agent its messages.
 They go back to the front of its inbox, and its next turn says they are
 repeated. After three failed turns in a row a worker is retired as `failed`,
 and the channel is told. The same run of failures in the lead ends the swarm as
-`error`, rather than spending a turn timeout on every wake.
+`error`, rather than spending a turn timeout on every wake. A timed-out turn
+first waits up to 15 seconds for the provider to release the agent's session,
+since the next turn resumes that same session.
 
 ## How a swarm ends
 
