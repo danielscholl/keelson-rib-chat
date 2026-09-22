@@ -24,6 +24,8 @@ export interface RouteInput {
   agents: readonly RoutableAgent[];
   // Agent ids already taking part in the message's thread.
   threadParticipants: ReadonlySet<string>;
+  // The agent that started the message's thread, when an agent did.
+  threadStarter?: string;
 }
 
 const MENTION = /(^|[^\w@/])@([a-z0-9][a-z0-9-]*)/gi;
@@ -38,7 +40,7 @@ export function mentionedHandles(body: string): string[] {
 }
 
 export function route(input: RouteInput): string[] {
-  const { message, agents, threadParticipants } = input;
+  const { message, agents, threadParticipants, threadStarter } = input;
   const author = agents.find((a) => a.botUserId === message.authorId);
   const recipients = new Set<string>();
 
@@ -47,9 +49,15 @@ export function route(input: RouteInput): string[] {
     if (handles.has(agent.handle.toLowerCase())) recipients.add(agent.id);
   }
 
+  // A reply from the thread's starter, or from a human, addresses the whole
+  // thread. Anyone else's reply answers the starter; peers join by @mention.
   const isReply = message.threadRootId !== message.id;
   if (isReply) {
-    for (const id of threadParticipants) recipients.add(id);
+    if (!author || !threadStarter || author.id === threadStarter) {
+      for (const id of threadParticipants) recipients.add(id);
+    } else {
+      recipients.add(threadStarter);
+    }
   }
 
   // An unaddressed top-level post wakes the lead only when a human wrote it. An

@@ -78,6 +78,51 @@ describe("route", () => {
     expect(woken.sort()).toEqual(["critic", "scout"]);
   });
 
+  test("another agent's reply wakes only the thread's starter", () => {
+    const message = msg({
+      id: "msg_3",
+      threadRootId: "msg_1",
+      authorId: "usr_scout",
+      authorKind: "bot",
+      body: "my finding",
+    });
+    const threadParticipants = new Set(["lead", "scout", "critic"]);
+    expect(route({ message, agents, threadParticipants, threadStarter: "lead" })).toEqual(["lead"]);
+  });
+
+  test("a peer joins a starter's thread only by mention", () => {
+    const message = msg({
+      id: "msg_3",
+      threadRootId: "msg_1",
+      authorId: "usr_scout",
+      authorKind: "bot",
+      body: "@s1-critic this contradicts you",
+    });
+    const threadParticipants = new Set(["lead", "scout", "critic"]);
+    const woken = route({ message, agents, threadParticipants, threadStarter: "lead" });
+    expect(woken.sort()).toEqual(["critic", "lead"]);
+  });
+
+  test("the starter's own reply addresses the whole thread", () => {
+    const message = msg({
+      id: "msg_3",
+      threadRootId: "msg_1",
+      authorId: "usr_lead",
+      authorKind: "bot",
+      body: "one more thing",
+    });
+    const threadParticipants = new Set(["lead", "scout", "critic"]);
+    const woken = route({ message, agents, threadParticipants, threadStarter: "lead" });
+    expect(woken.sort()).toEqual(["critic", "scout"]);
+  });
+
+  test("a human's reply addresses the whole thread", () => {
+    const message = msg({ id: "msg_3", threadRootId: "msg_1", body: "operator note" });
+    const threadParticipants = new Set(["lead", "scout"]);
+    const woken = route({ message, agents, threadParticipants, threadStarter: "scout" });
+    expect(woken.sort()).toEqual(["lead", "scout"]);
+  });
+
   test("self-mention does not wake the author", () => {
     const message = msg({
       authorId: "usr_scout",

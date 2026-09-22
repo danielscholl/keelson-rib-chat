@@ -18,11 +18,13 @@ import {
   renderContextIndex,
   renderContextItem,
 } from "./context.ts";
-import { nudgeText, renderInbox, systemPrompt } from "./prompts.ts";
+import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
 import { route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
+  BODY_MAX,
   type ChatMessage,
+  CONCLUSION_MAX,
   DEFAULT_LIMITS,
   type SwarmAgent,
   type SwarmLimits,
@@ -47,6 +49,10 @@ export const AGENT_TOOLS = [
 
 const MESSAGE_EVENTS = new Set(["message.created", "thread.reply_created"]);
 const AUTH_REVOKED = 1008;
+// Consecutive failed turns before an agent is retired (or, for the lead, the swarm ends).
+export const MAX_TURN_FAILURES = 3;
+// Thread replies an agent was not woken for, kept for its next turn.
+const BACKGROUND_KEPT = 12;
 
 export interface SwarmOptions {
   task: string;
@@ -61,6 +67,8 @@ export interface SwarmOptions {
   cwd?: string;
   provider?: string;
   model?: string;
+  // Model for workers; the lead always uses `model`.
+  workerModel?: string;
   log?: (message: string, data?: unknown) => void;
   // How long the swarm must sit idle before that counts as quiescent.
   quiesceMs?: number;
@@ -89,6 +97,23 @@ export function newSwarmId(): string {
   return `s${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// Splits a long body into parts of at most `max` characters, preferring a
+// paragraph break, then a line break, so a part rarely ends mid-sentence.
+export function splitBody(text: string, max: number): string[] {
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > max) {
+    const window = rest.slice(0, max);
+    let cut = window.lastIndexOf("\n\n");
+    if (cut < max / 2) cut = window.lastIndexOf("\n");
+    if (cut < max / 2) cut = max;
+    parts.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest.length > 0) parts.push(rest);
+  return parts;
+}
+
 export function sanitizeHandle(raw: string): string {
   const cleaned = raw
     .toLowerCase()
@@ -110,7 +135,13 @@ export class Swarm {
   private readonly agents = new Map<string, SwarmAgent>();
   private readonly tokens = new Map<string, string>();
   private readonly inboxes = new Map<string, ChatMessage[]>();
+  private readonly background = new Map<string, ChatMessage[]>();
   private readonly threadParticipants = new Map<string, Set<string>>();
+  // Thread root id to the agent that started it; absent for a human's thread.
+  private readonly threadStarters = new Map<string, string>();
+  private readonly failures = new Map<string, number>();
+  // Agents whose last turn failed, so their next prompt says why messages repeat.
+  private readonly redelivery = new Map<string, string>();
   private readonly seen = new Set<string>();
   private readonly controller = new AbortController();
   private readonly done = deferred<SwarmSummary>();
@@ -126,6 +157,9 @@ export class Swarm {
   private nudges = 0;
   private kickedOff = false;
   private conclusion: string | undefined;
+  private draftConclusion: string | undefined;
+  private refusedConclusions = 0;
+  private lastLeadFailure: string | undefined;
   private error: string | undefined;
   private endedAt: string | undefined;
   private quiesceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -235,20 +269,43 @@ export class Swarm {
     if (this.status !== "running" || this.seen.has(message.id)) return;
     this.seen.add(message.id);
     const roster = [...this.agents.values()];
-    const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
-    const recipients = route({ message, agents: roster, threadParticipants: participants });
-
     const author = roster.find((a) => a.botUserId === message.authorId);
+    const isRoot = message.threadRootId === message.id;
+    if (isRoot && author) this.threadStarters.set(message.id, author.id);
+    const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
+    const starter = this.threadStarters.get(message.threadRootId);
+    const recipients = route({
+      message,
+      agents: roster,
+      threadParticipants: participants,
+      ...(starter ? { threadStarter: starter } : {}),
+    });
+
+    // Participants a reply did not wake still see it, as background on their next turn.
+    if (!isRoot) {
+      for (const id of participants) {
+        if (id === author?.id || recipients.includes(id) || !this.canWork(id)) continue;
+        const kept = this.background.get(id) ?? [];
+        kept.push(message);
+        this.background.set(id, kept.slice(-BACKGROUND_KEPT));
+      }
+    }
+
     if (author) participants.add(author.id);
     for (const id of recipients) participants.add(id);
     this.threadParticipants.set(message.threadRootId, participants);
 
     for (const id of recipients) {
       const agent = this.agents.get(id);
-      if (!agent || agent.status === "capped") continue;
+      if (!agent || !this.canWork(id)) continue;
       this.inboxes.get(id)?.push(message);
       if (agent.lead) this.kickedOff = true;
     }
+  }
+
+  private canWork(agentId: string): boolean {
+    const status = this.agents.get(agentId)?.status;
+    return status === "idle" || status === "busy";
   }
 
   private pump(): void {
@@ -282,14 +339,20 @@ export class Swarm {
   }
 
   private capAgent(agent: SwarmAgent): void {
-    agent.status = "capped";
-    this.inboxes.set(agent.id, []);
+    this.retire(
+      agent,
+      "capped",
+      `@${agent.handle} has used all ${this.limits.maxTurnsPerAgent} of its turns and will not respond further.`,
+    );
     this.log(`@${agent.handle} reached its turn cap`);
+  }
+
+  private retire(agent: SwarmAgent, status: "capped" | "failed", notice: string): void {
+    agent.status = status;
+    this.inboxes.set(agent.id, []);
+    this.background.delete(agent.id);
     void this.owner
-      .postMessage(
-        this.channel.id,
-        `@${agent.handle} has used all ${this.limits.maxTurnsPerAgent} of its turns and will not respond further.`,
-      )
+      .postMessage(this.channel.id, notice)
       .then((m) => this.enqueueMessage(m))
       .catch(() => {});
   }
@@ -304,8 +367,8 @@ export class Swarm {
     const waiting = [...this.inboxes.values()].some((inbox) => inbox.length > 0);
     if (waiting || !this.kickedOff) return;
     const lead = [...this.agents.values()].find((a) => a.lead);
-    if (!lead || lead.status === "capped" || this.nudges >= this.limits.maxNudges) {
-      void this.finish("stalled", "the swarm went idle without a conclusion");
+    if (!lead || !this.canWork(lead.id) || this.nudges >= this.limits.maxNudges) {
+      void this.finish("stalled", this.stallReason());
       return;
     }
     if (this.turnsUsed >= this.limits.maxTurns) {
@@ -314,7 +377,22 @@ export class Swarm {
     }
     this.nudges++;
     this.log(`swarm idle; nudging the lead (${this.nudges}/${this.limits.maxNudges})`);
-    void this.runAgent(lead, [], nudgeText());
+    void this.runAgent(lead, [], nudgeText(CONCLUSION_MAX));
+  }
+
+  // Says what actually kept the swarm from concluding, not just that it went quiet.
+  private stallReason(): string {
+    if (this.refusedConclusions > 0) {
+      return `the lead's conclusion was refused ${this.refusedConclusions} time(s) for exceeding ${CONCLUSION_MAX} characters; its last draft is kept as draftConclusion`;
+    }
+    if (this.lastLeadFailure) return `the lead's last turn failed: ${this.lastLeadFailure}`;
+    return "the swarm went idle without a conclusion";
+  }
+
+  private team(): TeamMember[] {
+    return [...this.agents.values()]
+      .filter((a) => !a.lead)
+      .map((a) => ({ handle: a.handle, status: a.status, turns: a.turns }));
   }
 
   private async runAgent(agent: SwarmAgent, messages: ChatMessage[], note?: string): Promise<void> {
@@ -328,12 +406,23 @@ export class Swarm {
       agentTurns: agent.turns,
       ...(agent.lead ? {} : { maxTurnsPerAgent: this.limits.maxTurnsPerAgent }),
     };
-    const prompt = [note, messages.length > 0 ? renderInbox(messages, budget) : undefined]
-      .filter(Boolean)
-      .join("\n\n");
+    const background = this.background.get(agent.id) ?? [];
+    this.background.delete(agent.id);
+    const redelivered = this.redelivery.get(agent.id);
+    this.redelivery.delete(agent.id);
+    const prompt = renderTurn({
+      ...(note ? { note } : {}),
+      ...(redelivered ? { redelivered } : {}),
+      messages,
+      background,
+      budget,
+      ...(agent.lead ? { team: this.team() } : {}),
+    });
     this.log(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
 
-    const tools = [...AGENT_TOOLS, ...(this.opts.workTools ?? [])].map((name) => ({ name }));
+    const workTools = this.opts.workTools ?? [];
+    const tools = [...AGENT_TOOLS, ...workTools].map((name) => ({ name }));
+    const model = agent.lead ? this.opts.model : (this.opts.workerModel ?? this.opts.model);
     const outcome = await runTurn(
       this.opts.runAgentTurn,
       {
@@ -342,6 +431,7 @@ export class Swarm {
           task: this.task,
           channelName: this.channel.name,
           limits: this.limits,
+          workTools,
           contextIndex: renderContextIndex(this.opts.context ?? []),
         }),
         prompt,
@@ -349,7 +439,7 @@ export class Swarm {
         turnContext: { swarmId: this.id, agentId: agent.id },
         ...(this.opts.cwd ? { cwd: this.opts.cwd, allowedDirectories: [this.opts.cwd] } : {}),
         ...(this.opts.provider ? { provider: this.opts.provider } : {}),
-        ...(this.opts.model ? { model: this.opts.model } : {}),
+        ...(model ? { model } : {}),
         ...(agent.sessionId ? { resumeSessionId: agent.sessionId } : {}),
       },
       this.limits.turnTimeoutMs,
@@ -364,7 +454,47 @@ export class Swarm {
       durationMs: outcome.durationMs,
       ...(outcome.error ? { error: outcome.error } : {}),
     });
+    if (outcome.status === "timeout" || outcome.status === "error") {
+      this.onTurnFailed(agent, messages, background, `${outcome.status}: ${outcome.error ?? ""}`);
+    } else if (outcome.status === "ok") {
+      this.failures.delete(agent.id);
+      if (agent.lead) this.lastLeadFailure = undefined;
+    }
     this.pump();
+  }
+
+  // A failed turn may never have shown the agent its messages, so they go back
+  // to the front of its inbox. Repeated failures retire the agent instead of
+  // letting it burn a turn timeout on every wake.
+  private onTurnFailed(
+    agent: SwarmAgent,
+    messages: ChatMessage[],
+    background: ChatMessage[],
+    reason: string,
+  ): void {
+    if (this.status !== "running" || this.conclusion !== undefined) return;
+    const failures = (this.failures.get(agent.id) ?? 0) + 1;
+    this.failures.set(agent.id, failures);
+    if (agent.lead) this.lastLeadFailure = reason;
+    if (failures >= MAX_TURN_FAILURES) {
+      if (agent.lead) {
+        void this.finish("error", `the lead's last ${failures} turns failed; last: ${reason}`);
+        return;
+      }
+      this.retire(
+        agent,
+        "failed",
+        `@${agent.handle} will not respond further: its last ${failures} turns failed (${reason}).`,
+      );
+      this.log(`@${agent.handle} retired after ${failures} failed turns`);
+      return;
+    }
+    if (!this.canWork(agent.id)) return;
+    this.inboxes.get(agent.id)?.unshift(...messages);
+    if (background.length > 0) {
+      this.background.set(agent.id, [...background, ...(this.background.get(agent.id) ?? [])]);
+    }
+    if (messages.length > 0) this.redelivery.set(agent.id, reason);
   }
 
   private async addAgent(input: {
@@ -397,6 +527,7 @@ export class Swarm {
     this.agents.set(agent.id, agent);
     this.tokens.set(agent.id, bot.token);
     this.inboxes.set(agent.id, []);
+    this.background.set(agent.id, []);
     return agent;
   }
 
@@ -490,9 +621,23 @@ export class Swarm {
   async conclude(agentId: string, summary: string): Promise<void> {
     const { agent, client } = this.as(agentId);
     if (!agent.lead) throw new Error("only the lead may conclude the swarm");
-    await client.postMessage(this.channel.id, `**Conclusion**\n\n${summary}`);
+    if (summary.length > CONCLUSION_MAX) {
+      this.draftConclusion = summary;
+      this.refusedConclusions++;
+      throw new Error(
+        `conclusion refused: it is ${summary.length} characters and the limit is ${CONCLUSION_MAX}. Cut at least ${summary.length - CONCLUSION_MAX} characters and call chat_done again. Detail that does not fit can go in a chat_post first.`,
+      );
+    }
+    const parts = splitBody(summary, BODY_MAX - 32);
+    for (const [i, part] of parts.entries()) {
+      const heading =
+        parts.length > 1 ? `**Conclusion (${i + 1}/${parts.length})**` : "**Conclusion**";
+      await client.postMessage(this.channel.id, `${heading}\n\n${part}`);
+    }
     this.conclusion = summary;
+    this.draftConclusion = undefined;
     for (const id of this.inboxes.keys()) this.inboxes.set(id, []);
+    this.background.clear();
     this.log(`@${agent.handle} concluded the swarm`);
   }
 
@@ -524,6 +669,9 @@ export class Swarm {
       agents: this.roster(),
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.conclusion !== undefined ? { conclusion: this.conclusion } : {}),
+      ...(this.conclusion === undefined && this.draftConclusion !== undefined
+        ? { draftConclusion: this.draftConclusion }
+        : {}),
       ...(this.error ? { error: this.error } : {}),
     };
   }

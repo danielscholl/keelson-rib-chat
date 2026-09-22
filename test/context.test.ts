@@ -2,8 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { CONTEXT_BOUNDS, contextSchema, toContextItems } from "../src/context.ts";
 import { Swarm } from "../src/swarm.ts";
-import { BODY_MAX, makeChatTools } from "../src/tools.ts";
+import { makeChatTools } from "../src/tools.ts";
 import type { SwarmSummary } from "../src/types.ts";
+import { BODY_MAX } from "../src/types.ts";
 import { FakeClickClack, OWNER_TOKEN, type Script, scriptedProvider, WORKSPACE } from "./fakes.ts";
 
 const HEAD = "3349e173782bedbe87fee14c42eab281b6b3028a";

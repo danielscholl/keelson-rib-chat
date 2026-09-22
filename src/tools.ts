@@ -9,7 +9,13 @@
 import { type ToolContext, type ToolDefinition, z } from "@keelson/shared";
 import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
 import type { Swarm } from "./swarm.ts";
-import { type ChatMessage, readTurnContext, type SwarmSummary } from "./types.ts";
+import {
+  BODY_MAX,
+  type ChatMessage,
+  CONCLUSION_MAX,
+  readTurnContext,
+  type SwarmSummary,
+} from "./types.ts";
 
 // The tool layer's seams, injected so the module stays testable: index.ts
 // passes the live registry and launcher, tests pass fakes.
@@ -18,10 +24,14 @@ export interface StartSwarmInput {
   project?: string;
   maxAgents?: number;
   maxTurns?: number;
+  maxTurnsPerAgent?: number;
+  turnTimeoutMs?: number;
+  wallClockMs?: number;
   workTools: "none" | "read";
   context?: ContextItem[];
   provider?: string;
   model?: string;
+  workerModel?: string;
 }
 
 export interface ToolDeps {
@@ -30,15 +40,36 @@ export interface ToolDeps {
   ended: Map<string, SwarmSummary>;
   // `url` is the ClickClack server the swarm runs on, for pointing a human at its UI.
   startSwarm: (input: StartSwarmInput) => Promise<{ swarm: Swarm; opId?: string; url?: string }>;
+  // Reads a swarm's channel as the owner, ended swarms included. Absent in tests
+  // that never read a transcript.
+  readChannel?: (channelId: string, threadId?: string) => Promise<ChatMessage[]>;
 }
 
-export const BODY_MAX = 8_000;
-export const START_BOUNDS = { maxAgents: 12, maxTurns: 200 } as const;
+export const START_BOUNDS = {
+  maxAgents: 12,
+  maxTurns: 200,
+  maxTurnsPerAgent: 100,
+  turnTimeoutS: { min: 30, max: 1_800 },
+  maxMinutes: 240,
+} as const;
 export const WAIT_BOUNDS = { defaultS: 120, maxS: 600 } as const;
 export const READ_BOUNDS = { defaultLimit: 20, maxLimit: 50 } as const;
+export const TRANSCRIPT_PAGE = 40_000;
+// Refuses runaway input outright; the engine enforces CONCLUSION_MAX with a
+// message the lead can act on, and keeps the refused draft.
+const CONCLUSION_HARD_MAX = 200_000;
 // Ended swarms whose summary chat_swarm_status still answers for.
 export const ENDED_KEPT = 20;
-const body = z.string().min(1).max(BODY_MAX).describe("Markdown message body.");
+function tooLong(max: number) {
+  return {
+    error: (issue: { input?: unknown }) => {
+      const length = typeof issue.input === "string" ? issue.input.length : 0;
+      return `Too long: ${length} characters, and the limit is ${max}. Cut at least ${length - max} characters and call again.`;
+    },
+  };
+}
+
+const body = z.string().min(1).max(BODY_MAX, tooLong(BODY_MAX)).describe("Markdown message body.");
 
 export function emitText(ctx: ToolContext, content: string, isError = false): void {
   ctx.emit({ type: "tool_result", toolUseId: "", content, ...(isError ? { isError: true } : {}) });
@@ -111,27 +142,66 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     .object({
       handle: z.string().min(1).max(20).describe("Short kebab-case name, e.g. 'log-reader'."),
       role: z.string().min(1).max(200).describe("One line: what this agent is for."),
-      brief: z.string().min(1).max(BODY_MAX).describe("The narrow task, with what to report."),
+      brief: z
+        .string()
+        .min(1)
+        .max(BODY_MAX, tooLong(BODY_MAX))
+        .describe("The narrow task, with what to report."),
     })
     .strict();
   const doneSchema = z
-    .object({ summary: z.string().min(1).max(BODY_MAX).describe("The swarm's final answer.") })
+    .object({
+      summary: z
+        .string()
+        .min(1)
+        .max(CONCLUSION_HARD_MAX)
+        .describe(`The swarm's final answer, at most ${CONCLUSION_MAX} characters.`),
+    })
     .strict();
   const startSchema = z
     .object({
-      task: z.string().min(1).max(BODY_MAX).describe("What the swarm should work out."),
+      task: z
+        .string()
+        .min(1)
+        .max(BODY_MAX, tooLong(BODY_MAX))
+        .describe("What the swarm should work out."),
       project: z
         .string()
         .optional()
         .describe("A registered keelson project; agents read its checkout."),
       max_agents: z.number().int().min(1).max(START_BOUNDS.maxAgents).optional(),
       max_turns: z.number().int().min(1).max(START_BOUNDS.maxTurns).optional(),
+      max_turns_per_agent: z
+        .number()
+        .int()
+        .min(1)
+        .max(START_BOUNDS.maxTurnsPerAgent)
+        .optional()
+        .describe("Turns each worker may take. The lead is bounded by max_turns only."),
+      turn_timeout_s: z
+        .number()
+        .int()
+        .min(START_BOUNDS.turnTimeoutS.min)
+        .max(START_BOUNDS.turnTimeoutS.max)
+        .optional()
+        .describe("Seconds one agent turn may run before it is abandoned."),
+      max_minutes: z
+        .number()
+        .int()
+        .min(1)
+        .max(START_BOUNDS.maxMinutes)
+        .optional()
+        .describe("Wall clock for the whole swarm."),
       work_tools: z
         .enum(["none", "read"])
         .optional()
         .describe("'read' (default) grants Read/Grep/Glob; 'none' is chat only."),
       provider: z.string().optional(),
-      model: z.string().optional(),
+      model: z
+        .string()
+        .optional()
+        .describe("Model for every agent, or for the lead alone when worker_model is set."),
+      worker_model: z.string().optional().describe("Model for workers. Defaults to model."),
       context: contextSchema
         .optional()
         .describe(
@@ -140,6 +210,18 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     })
     .strict();
   const swarmRef = z.object({ swarm: z.string().min(1).describe("The swarm id.") }).strict();
+  const transcriptSchema = z
+    .object({
+      swarm: z.string().min(1).describe("The swarm id."),
+      thread: z.string().optional().describe("A thread's root message id, to read one thread."),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("Character offset to continue a long transcript from."),
+    })
+    .strict();
   const statusSchema = z.object({ swarm: z.string().optional() }).strict();
   const waitSchema = z
     .object({
@@ -168,7 +250,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     {
       name: "chat_reply",
       description:
-        "Swarm agents only. Answer inside a message's thread. Wakes the agents already in that thread, plus anyone @mentioned. NOT for starting a new topic (chat_post).",
+        "Swarm agents only. Answer inside a message's thread. Wakes the agent that started the thread, plus anyone @mentioned; when you started the thread, it wakes everyone in it. NOT for starting a new topic (chat_post).",
       inputSchema: replySchema,
       state_changing: true,
       execute: guarded(async (input, ctx) => {
@@ -232,8 +314,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     },
     {
       name: "chat_done",
-      description:
-        "Lead agent only. Conclude the swarm with its final answer. Posts the conclusion to the channel and ends the run; no further turns start.",
+      description: `Lead agent only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. Posts the conclusion to the channel and ends the run; no further turns start.`,
       inputSchema: doneSchema,
       state_changing: true,
       execute: guarded(async (input, ctx) => {
@@ -257,8 +338,12 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           ...(args.project ? { project: args.project } : {}),
           ...(args.max_agents ? { maxAgents: args.max_agents } : {}),
           ...(args.max_turns ? { maxTurns: args.max_turns } : {}),
+          ...(args.max_turns_per_agent ? { maxTurnsPerAgent: args.max_turns_per_agent } : {}),
+          ...(args.turn_timeout_s ? { turnTimeoutMs: args.turn_timeout_s * 1_000 } : {}),
+          ...(args.max_minutes ? { wallClockMs: args.max_minutes * 60_000 } : {}),
           ...(args.provider ? { provider: args.provider } : {}),
           ...(args.model ? { model: args.model } : {}),
+          ...(args.worker_model ? { workerModel: args.worker_model } : {}),
           ...(args.context?.length ? { context: toContextItems(args.context) } : {}),
         });
         const s = swarm.summary();
@@ -319,6 +404,31 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         if (!summary) return emitText(ctx, `no swarm '${args.swarm}'`, true);
         const state = summary.status === "running" ? "RUNNING" : "ENDED";
         emitText(ctx, `${state}\n${JSON.stringify(summary, null, 1)}`);
+      }),
+    },
+    {
+      name: "chat_swarm_transcript",
+      description: `Read a swarm's channel as the operator, running or ended: every message in order, thread replies included, or one thread. Pages by ${TRANSCRIPT_PAGE} characters. NOT for swarm agents (chat_read).`,
+      inputSchema: transcriptSchema,
+      execute: guarded(async (input, ctx) => {
+        const args = transcriptSchema.parse(input);
+        const summary = summaryOf(args.swarm);
+        if (!summary) return emitText(ctx, `no swarm '${args.swarm}'`, true);
+        if (!deps.readChannel) return emitText(ctx, "transcripts are not available here", true);
+        const messages = await deps.readChannel(summary.channelId, args.thread);
+        const text = renderMessages(messages);
+        const offset = args.offset ?? 0;
+        if (offset > 0 && offset >= text.length) {
+          return emitText(
+            ctx,
+            `offset ${offset} is past the end (${text.length} characters)`,
+            true,
+          );
+        }
+        const end = Math.min(text.length, offset + TRANSCRIPT_PAGE);
+        const head = `#${summary.channelName}${args.thread ? ` thread ${args.thread}` : ""}: ${messages.length} messages, ${text.length} characters. Showing ${offset}-${end}.`;
+        const more = end < text.length ? `\n\nMore: call again with offset ${end}.` : "";
+        emitText(ctx, `${head}\n\n${text.slice(offset, end)}${more}`);
       }),
     },
     {

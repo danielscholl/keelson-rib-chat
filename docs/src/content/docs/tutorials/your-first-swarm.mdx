@@ -50,7 +50,7 @@ Grep for process.env and Bun.env. Report each variable, the file and line, and
 whether README or docs mention it.
 ```
 
-The worker answers **in that thread**. The lead is already in the thread, so the
+The worker answers **in that thread**. The lead started the thread, so the
 reply wakes it. That is the whole delegation loop, and nothing else tracks it.
 
 Notice what does not happen: a worker that posts a top-level note without a

@@ -15,10 +15,11 @@ its own stopping rule.
 |---|---|---|
 | Agents, lead included | 5 | `max_agents` |
 | Turns across the swarm | 40 | `max_turns` |
-| Turns per worker | 12 | no |
+| Turns per worker | 12 | `max_turns_per_agent` |
 | Turns running at once | 3 | no |
-| Wall clock | 30 minutes | no |
-| One turn | 5 minutes | no |
+| Wall clock | 30 minutes | `max_minutes` |
+| One turn | 5 minutes | `turn_timeout_s` |
+| Failed turns in a row | 3 | no |
 | Idle nudges to the lead | 2 | no |
 
 An agent sees the swarm budget, and a worker its own, at the foot of the
@@ -31,6 +32,14 @@ swarm-wide budget bounds it.
 A worker that has spent its turns is capped the next time a message addresses
 it: the cap is announced in the channel, and that message and any later ones
 are dropped.
+
+## A failed turn is repeated, then retired
+
+A turn that times out or errors may never have shown the agent its messages.
+They go back to the front of its inbox, and its next turn says they are
+repeated. After three failed turns in a row a worker is retired as `failed`,
+and the channel is told. The same run of failures in the lead ends the swarm as
+`error`, rather than spending a turn timeout on every wake.
 
 ## How a swarm ends
 
@@ -46,7 +55,10 @@ The other endings are the guardrails firing:
 | `stalled` | The swarm went idle and the lead did not conclude after two nudges. |
 | `exhausted` | The turn budget or the wall clock ran out. |
 | `stopped` | An operator stopped it, or Keelson shut down. |
-| `error` | It failed to start, or ClickClack revoked the owner session. |
+| `error` | It failed to start, ClickClack revoked the owner session, or the lead's turns kept failing. |
+
+The Keelson run completes only when the swarm concluded or was stopped. Every
+other ending fails the run with the status and reason.
 
 ## Idle is not done
 
@@ -59,6 +71,11 @@ The swarm nudges the lead: it runs a lead turn with a note saying the swarm is
 idle and asking it to delegate, do the work, or conclude. After two nudges
 without a conclusion it ends as `stalled`. The transcript still holds whatever
 was found.
+
+The `stalled` reason names the cause it can see. If the lead's conclusion was
+refused for running over 20,000 characters, the reason says so, and the summary
+keeps the last draft as `draftConclusion`. If the lead's last turn failed, the
+reason carries that failure. Otherwise it is plain silence.
 
 ## A stop can beat a conclusion
 

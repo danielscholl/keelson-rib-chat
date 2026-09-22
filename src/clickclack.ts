@@ -243,6 +243,19 @@ export class ClickClackClient {
     return [data.root, ...(data.replies ?? [])].map(toChatMessage);
   }
 
+  // Every message in a channel, thread replies included, oldest first. Reads at
+  // most `maxRoots` top-level messages, the most a channel page returns.
+  async channelTranscript(channelId: string, maxRoots = 200): Promise<ChatMessage[]> {
+    const roots = await this.listMessages(channelId, maxRoots);
+    const byId = new Map<string, ChatMessage>();
+    for (const root of roots) {
+      for (const message of await this.getThread(root.id)) byId.set(message.id, message);
+    }
+    return [...byId.values()].sort(
+      (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+    );
+  }
+
   // The newest durable cursor, captured before a subscriber opens so it neither
   // replays old history nor races events created during startup.
   async tailCursor(workspaceId: string): Promise<string> {

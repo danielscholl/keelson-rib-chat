@@ -23,7 +23,9 @@ Starts a swarm on a task, holds until it ends, and reports the outcome.
 | `wait` | `chat_swarm_wait` | Waits with `timeout_s` 600, up to four times in a row. Outputs `ENDED` or `RUNNING`. |
 | `report` | `chat_swarm_status` | Reports status, conclusion, agents and their roles, and turn cost. Says so plainly when the swarm did not end as `done`. |
 
-Each node runs in a fresh context and must make its tool call.
+Each node runs in a fresh context and must make its tool call. Each pins its own
+model, `balanced`, or `mai-code-1.1-flash` on the `copilot` provider. The pin
+covers these three steps only, not the swarm's agents.
 
 Four waits of 600 seconds cover 40 minutes, which is past the swarm's 30 minute
 wall clock, so `wait` ends on `ENDED` unless something is wrong.

@@ -13,7 +13,7 @@ import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
 import { Swarm } from "./swarm.ts";
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
-import type { SwarmSummary } from "./types.ts";
+import type { ChatMessage, SwarmSummary } from "./types.ts";
 
 const READ_TOOLS = ["Read", "Grep", "Glob"] as const;
 const DEFAULT_URL = "http://localhost:8080";
@@ -73,6 +73,29 @@ async function ownerClient(): Promise<ClickClackClient> {
   return owner;
 }
 
+// Reads never start a managed server: a stopped one has to be started on purpose.
+async function readerClient(): Promise<ClickClackClient> {
+  const t = await target();
+  if (t.mode === "managed") {
+    const status = await t.server.status();
+    if (!status.running) {
+      throw new Error("the managed ClickClack is stopped; start it with chat_server_start");
+    }
+    return new ClickClackClient(status.url, await t.server.ownerSession());
+  }
+  return ownerClient();
+}
+
+async function readChannel(channelId: string, threadId?: string): Promise<ChatMessage[]> {
+  const owner = await readerClient();
+  if (!threadId) return owner.channelTranscript(channelId);
+  const thread = await owner.getThread(threadId);
+  if (thread[0] && thread[0].channelId !== channelId) {
+    throw new Error(`thread ${threadId} is not in this swarm's channel`);
+  }
+  return thread;
+}
+
 async function resolveWorkspace(owner: ClickClackClient): Promise<string> {
   const pinned = process.env.CLICKCLACK_WORKSPACE;
   if (pinned) return pinned;
@@ -130,6 +153,9 @@ async function launchSwarm(
       limits: {
         ...(input.maxAgents ? { maxAgents: input.maxAgents } : {}),
         ...(input.maxTurns ? { maxTurns: input.maxTurns } : {}),
+        ...(input.maxTurnsPerAgent ? { maxTurnsPerAgent: input.maxTurnsPerAgent } : {}),
+        ...(input.turnTimeoutMs ? { turnTimeoutMs: input.turnTimeoutMs } : {}),
+        ...(input.wallClockMs ? { wallClockMs: input.wallClockMs } : {}),
       },
       // Reading a checkout needs a project to confine it to.
       workTools: input.workTools === "read" && cwd ? READ_TOOLS : [],
@@ -137,6 +163,7 @@ async function launchSwarm(
       ...(input.context ? { context: input.context } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),
+      ...(input.workerModel ? { workerModel: input.workerModel } : {}),
       log: (message, data) => op?.progress(message, data),
     });
   } catch (e) {
@@ -163,8 +190,15 @@ async function launchSwarm(
       if (oldest === undefined) break;
       ended.delete(oldest);
     }
-    if (summary.status === "error") op?.error(summary.error ?? "swarm failed");
-    else op?.done(summary);
+    // The run succeeds when the swarm delivered an answer, or the operator stopped
+    // it. Anything else failed at its job, and the run says so; the summary stays
+    // on the record as the last progress frame.
+    if (summary.conclusion !== undefined || summary.status === "stopped") {
+      op?.done(summary);
+    } else {
+      op?.progress(`swarm ${summary.status}`, summary);
+      op?.error(`swarm ${summary.id} ${summary.status}: ${summary.error ?? "no conclusion"}`);
+    }
   });
 
   return { swarm: live, url: owner.baseUrl, ...(op ? { opId: op.id } : {}) };
@@ -184,7 +218,7 @@ const rib: Rib = {
     getDataDir = ctx.getDataDir;
     disposed = false;
     return [
-      ...makeChatTools({ swarms, ended, startSwarm }),
+      ...makeChatTools({ swarms, ended, startSwarm, readChannel }),
       ...makeServerTools({
         target,
         liveCount: () => swarms.size + starting,

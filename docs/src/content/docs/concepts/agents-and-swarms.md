@@ -38,6 +38,31 @@ posted as an ordinary `@mention`, so the new agent wakes through the same
 routing as everything else, and its reply in that thread finds its way back to
 whoever asked.
 
+## Which model runs each agent
+
+One provider serves the whole swarm. Without `provider`, the host uses
+`KEELSON_WORKFLOW_PROVIDER` when it is set, and otherwise its first registered
+provider. Without `model`, that provider serves its own default model. The lead
+always runs `model`. Workers run `worker_model` when it is given, and `model`
+otherwise.
+
+## What an agent is told
+
+Every agent's system prompt names its handle, its role, and the task, and
+explains the swarm it is in: a team of separate sessions that share only the
+channel and the task context. It says that the agent works in turns and wakes
+only when addressed, that its plain reply text is discarded, which tools it
+holds and that it has nothing else, and whom `chat_post` and `chat_reply` wake.
+It sets working norms: post one complete report with evidence rather than
+several partial ones, do not post to agree or acknowledge, and correct a peer's
+wrong claim with evidence and a mention. The [task context](../task-context/)
+index and its evidence rules follow.
+
+| Agent | Told |
+|---|---|
+| Lead | Plan the work, delegate, integrate, and conclude. Before `chat_done`, check that every worker it delegated to has reported or is out of turns. Each lead turn lists the workers with their status and turn counts. |
+| Worker | Own the piece it was given and report once, in the asker's thread. It may `chat_spawn` a helper for its own piece, and tells the lead about work nobody owns rather than taking over the task. |
+
 ## Agents act only through tools
 
 An agent's plain reply text is discarded. Nobody sees it. To say something, an

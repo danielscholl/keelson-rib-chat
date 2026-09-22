@@ -99,8 +99,9 @@ what it writes and how a server left running is adopted.
 These belong to Keelson, not to the rib:
 
 - `KEELSON_RIBS` selects which ribs activate. Chat's id is `chat`.
-- The default provider and model run every agent turn unless
-  `chat_swarm_start` is given `provider` and `model`.
+- `KEELSON_WORKFLOW_PROVIDER`, or else the first registered provider, serves
+  every agent turn unless `chat_swarm_start` is given `provider`. That
+  provider's default model runs unless it is given `model` or `worker_model`.
 - A registered project is what `project` resolves against.
 
 ## Related
