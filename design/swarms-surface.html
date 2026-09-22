@@ -359,9 +359,9 @@ ul.plain li{margin:3px 0}
             <div class="kx-sec">
               <div class="kx-sectitle">Ended</div>
               <div class="kx-rows">
-                <div class="kx-row act"><span class="kx-glyph" data-t="ok"></span><span class="kx-chip mono">s8pln</span><span class="kx-rtext">Fix issue #24: deploy smoke flakes on first run</span><span class="kx-trail">Sep 22 10:02 → 10:31 · PR #28 verified</span></div>
-                <div class="kx-row act"><span class="kx-glyph" data-t="ok"></span><span class="kx-chip mono">s2wrd</span><span class="kx-rtext">Summarize open deploy issues for the weekly sync</span><span class="kx-trail">Sep 22 09:10 → 09:34 · done</span></div>
-                <div class="kx-row act"><span class="kx-glyph" data-t="warn"></span><span class="kx-chip mono">s5tcx</span><span class="kx-rtext">Audit the ribWorkflowGrants docs against config</span><span class="kx-trail">Sep 21 15:02 → 15:41 · stalled</span></div>
+                <div class="kx-row act"><span class="kx-glyph" data-t="ok"></span><span class="kx-chip mono">s8pln</span><span class="kx-rtext">Fix issue #24: deploy smoke flakes on first run · gpt-6-astra · workers gpt-5.6-sol</span><span class="kx-trail">Sep 22 10:02 → 10:31 · PR #28 verified</span></div>
+                <div class="kx-row act"><span class="kx-glyph" data-t="ok"></span><span class="kx-chip mono">s2wrd</span><span class="kx-rtext">Summarize open deploy issues for the weekly sync · mai-code-1.1-flash</span><span class="kx-trail">Sep 22 09:10 → 09:34 · done</span></div>
+                <div class="kx-row act"><span class="kx-glyph" data-t="warn"></span><span class="kx-chip mono">s5tcx</span><span class="kx-rtext">Audit the ribWorkflowGrants docs against config · copilot default</span><span class="kx-trail">Sep 21 15:02 → 15:41 · stalled</span></div>
                 <div class="kx-row act"><span class="kx-icon">…</span><span class="kx-rtext">12 earlier ended swarms</span></div>
               </div>
             </div>
@@ -772,7 +772,7 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
                   <div><span class="kx-flabel">Agents may</span><span class="kx-segs"><span class="kx-seg">chat only</span><span class="kx-seg on">read the project</span></span></div>
                 </div>
                 <div class="kx-frow">
-                  <div><span class="kx-flabel">Size</span><span class="kx-segs"><span class="kx-seg">small</span><span class="kx-seg on">medium</span><span class="kx-tipwrap"><span class="kx-seg hov">large</span><span class="kx-tip" data-group="launch" data-state="next" hidden>8 agents · 80 turns, 16 per worker · 4 at once · 60 min wall clock · 10 min a turn</span></span></span></div>
+                  <div><span class="kx-flabel">Size</span><span class="kx-segs"><span class="kx-seg">small</span><span class="kx-seg on">medium</span><span class="kx-tipwrap"><span class="kx-seg hov">large</span><span class="kx-tip" data-group="launch" data-state="next" hidden>8 agents · 80 turns, 16 per worker · 4 at once · 60 min wall clock</span></span></span></div>
                   <div data-group="launch" data-state="now"><span class="kx-flabel">Model</span><span class="kx-input">provider default ▾</span></div>
                   <div data-group="launch" data-state="next" hidden><span class="kx-flabel">Power</span><span class="kx-segs"><span class="kx-seg">fast</span><span class="kx-seg on">balanced</span><span class="kx-seg">deep</span></span></div>
                 </div>
@@ -787,7 +787,7 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
         </div>
       </div>
     </div>
-    <p class="note">On 0.110.0 the sizes are words, the region byline carries the numbers, and Model is the host's model picker. With the host changes in appendix D, hovering a size or power shows its detail, as the tooltip on <b>large</b> does, and Power joins the form with the picker as an override.</p>
+    <p class="note">On 0.110.0 the sizes are words, the region byline and the Start button's hover carry the numbers, and Model is the host's model picker. With the host changes in appendix D, hovering a size or power shows its detail, as the tooltip on <b>large</b> does, and Power joins the form with the picker as an override.</p>
     <p class="note">Start returns at once: the rib mints the swarm id, registers its keys, shows a <code>starting</code> card and boots in the background. A failure after that point becomes an ended <code>error</code> row with the reason, where today it leaves no record. Dispatch is disabled with a reason when no project is registered or the host cannot start workflows for a rib.</p>
     <p>Tier 2 also adds a collapsed <b>ClickClack</b> footer: mode, address, process, binary, data directory, and the workflow grants the rib has seen refused. Its Start, Stop and Reset verbs run in the background, because stopping can take 8 s and a reset up to 30 s, and the host puts no timeout on a board action. Reset needs a typed confirm and is refused while a swarm is live. It adds a reset for the operator but does not make reset operator-only, since the <code>chat_server_reset</code> tool stays callable over MCP.</p>
   </section>
@@ -797,18 +797,19 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
     <p>A swarm starts with two choices. <b>Size</b> bounds how much it may do: agents, turns, time and how many turns run at once. <b>Power</b> picks the model its agents run on. Both appear as words on the tab and in the form. The numbers and model ids show in the drawer, and on hover once the host carries option hints.</p>
     <div class="tblwrap">
       <table class="tbl compact">
-        <thead><tr><th>Size</th><th>Agents</th><th>Turns</th><th>Per worker</th><th>At once</th><th>Wall clock</th><th>Per turn</th><th>Suited to</th></tr></thead>
+        <thead><tr><th>Size</th><th>Agents</th><th>Turns</th><th>Per worker</th><th>At once</th><th>Wall clock</th><th>Suited to</th></tr></thead>
         <tbody>
-          <tr><td><b>small</b></td><td class="mono">3</td><td class="mono">20</td><td class="mono">8</td><td class="mono">2</td><td class="mono">15 min</td><td class="mono">5 min</td><td>A question, a doc check, a review of one change</td></tr>
-          <tr><td><b>medium</b></td><td class="mono">5</td><td class="mono">40</td><td class="mono">12</td><td class="mono">3</td><td class="mono">30 min</td><td class="mono">5 min</td><td>An issue investigation, or a fix with one dispatched run</td></tr>
-          <tr><td><b>large</b></td><td class="mono">8</td><td class="mono">80</td><td class="mono">16</td><td class="mono">4</td><td class="mono">60 min</td><td class="mono">10 min</td><td>Several dispatched runs, or wide reading across a project</td></tr>
+          <tr><td><b>small</b></td><td class="mono">3</td><td class="mono">20</td><td class="mono">8</td><td class="mono">3</td><td class="mono">15 min</td><td>A question, a doc check, a review of one change</td></tr>
+          <tr><td><b>medium</b></td><td class="mono">5</td><td class="mono">40</td><td class="mono">12</td><td class="mono">3</td><td class="mono">30 min</td><td>An issue investigation, or a fix with one dispatched run</td></tr>
+          <tr><td><b>large</b></td><td class="mono">8</td><td class="mono">80</td><td class="mono">16</td><td class="mono">4</td><td class="mono">60 min</td><td>Several dispatched runs, or wide reading across a project</td></tr>
         </tbody>
       </table>
     </div>
     <ul class="plain">
       <li><b>Medium is today's defaults.</b> A start with no size behaves exactly as it does now, so existing callers and the <code>chat-swarm</code> workflow see no change.</li>
-      <li><b>Size is the base, explicit limits override it.</b> <code>chat_swarm_start</code> gains <code>size</code>, and <code>max_agents</code>, <code>max_turns</code> and the other limits still set single numbers on top of it. The label is worked out from the effective limits, so a swarm whose limits match no size shows <b>custom</b> and the drawer lists its numbers.</li>
-      <li><b>Size also sets concurrency.</b> Today three turns run at once at every size, so a larger swarm adds breadth but not speed. Concurrency stays off the tool inputs and moves only with size.</li>
+      <li><b>Size is the base, explicit limits override it.</b> <code>chat_swarm_start</code> gains <code>size</code>, and <code>max_agents</code>, <code>max_turns</code> and the other limits still set single numbers on top of it. The swarm records the size it started from; when an override moves a number off that size, the card shows <b>custom</b> and the drawer reads <b>custom, from medium</b> with every number.</li>
+      <li><b>Large also runs four turns at once.</b> Today three run at once at every size, so eight agents would queue behind three slots. Small and medium keep three. Concurrency stays off the tool inputs and moves only with size.</li>
+      <li><b>A turn may run 5 minutes at every size.</b> The timeout guards against a hung provider call, and one turn's work does not grow with the team. <code>turn_timeout_s</code> still overrides it.</li>
       <li><b>The chat-swarm workflow stays medium.</b> Its wait loop covers 40 minutes, less than a large swarm's hour, and it takes no inputs.</li>
     </ul>
 
@@ -835,16 +836,21 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
       <table class="tbl compact">
         <thead><tr><th>Place</th><th>Size</th><th>Model</th><th>Tier</th></tr></thead>
         <tbody>
-          <tr><td><b>Index card</b></td><td><code>size</code> field: <b>medium</b>, or <b>custom</b></td><td><code>model</code> field: the lead's model id. The class word until the first turn reports, <b>copilot default</b> when none was asked for</td><td class="mono">1a</td></tr>
+          <tr><td><b>Index card</b></td><td><code>size</code> field: <b>medium</b>, or <b>custom</b></td><td><code>model</code> field, labeled as below</td><td class="mono">1a</td></tr>
+          <tr><td><b>Card Open button</b></td><td colspan="2">Hover: the size spelled out and the model per role, through the action's <code>hint</code></td><td class="mono">1a</td></tr>
+          <tr><td><b>Ended rows</b></td><td></td><td>The model label after the task</td><td class="mono">1a</td></tr>
           <tr><td><b>Drawer head</b></td><td>Chip: <b>medium · 11/40 turns</b></td><td>Chip: the lead's model id</td><td class="mono">1a</td></tr>
           <tr><td><b>Drawer vitals</b></td><td>A row with every number</td><td>A row: power, provider, and the model per role</td><td class="mono">1a</td></tr>
           <tr><td><b>Agents column</b></td><td></td><td>The model in place of the role text, only when lead and workers differ</td><td class="mono">1a</td></tr>
-          <tr><td><b>Launch form</b></td><td>Segmented <b>small · medium · large</b>, with the numbers in the region byline</td><td>The host's model picker</td><td class="mono">2</td></tr>
+          <tr><td><b>Launch form</b></td><td>Segmented <b>small · medium · large</b>. The numbers are in the region byline and in the Start button's hover</td><td>The host's model picker</td><td class="mono">2</td></tr>
+          <tr><td><b>Ended drawer</b></td><td colspan="2"><b>Run again</b>: the same task, project, workflows and context, with size and model seeded from this swarm and open to change</td><td class="mono">2</td></tr>
           <tr><td><b>Launch form</b></td><td>Hover on a size: its numbers</td><td>Segmented <b>fast · balanced · deep</b>, hover shows the model it resolves to; the picker becomes an override</td><td class="mono">3</td></tr>
         </tbody>
       </table>
     </div>
-    <p>Hover per option is a host change because an option is only a value and a label, and a segment renders no title. An action's <code>hint</code> already becomes the button's title, and the same line on an option would carry a size's numbers or a power's model. A card field and a chip carry no hover at all, which is why the card shows the word and the drawer shows the numbers.</p>
+    <p>The model label is the model id when one was asked for or a turn reported it, <b>gpt-6-astra · workers gpt-5.6-sol</b> when lead and workers differ, <b>copilot default</b> once a turn reports its provider, and <b>provider default</b> before that.</p>
+    <p>On 0.110.0 an action's <code>hint</code> is the only hover a rib can write, so it carries the detail today: the Start button lists the three sizes, and a card's Open button spells out that swarm's size and model. Hover on a size or power itself is a host change, because an option is only a value and a label and a segment renders no title. A card field and a chip carry no hover at all, which is why the card shows the word and the drawer shows the numbers.</p>
+    <p>A live swarm keeps the model it started with. Its agents resume their provider sessions each turn, and on 0.110.0 a resumed Copilot session stays on its first model. So setting the model from the list is <b>Run again</b> on an ended swarm, whose form arrives seeded with that swarm's size and models.</p>
     <p>Before the host reports the model a turn ran on, the card and drawer show what was asked for: the power's class word, an exact id, or the provider's default. Keelson already reads the served model from the provider and writes it to its usage ledger, and returning it on the turn result lets the card show <b>gpt-5.6-sol</b> where it would otherwise say <b>copilot default</b> or <b>balanced</b>.</p>
   </section>
 
@@ -856,7 +862,7 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
         <tbody>
           <tr><td class="mono">1a</td><td>Index, swarm drawer, reading pane, history, ClickClack row, Start in Chat, context rows. Size and model on cards and in the drawer; <code>size</code> on <code>chat_swarm_start</code>. Verbs: open, history, read, steer, stop, start in chat. Needs-you N1, N2, N4.</td><td>Rib changes 1 to 7, 9 to 15 (appendix C)</td><td>All boards pass <code>expectView</code>; a fix-issue gate goes in review → answered row; removing the grant raises N1 by the next gate.</td></tr>
           <tr><td class="mono">1b</td><td>Asks: N3 from <code>@operator</code></td><td>Change 8, after D2</td><td>A question to the operator raises needs-you in managed mode, where the owner has no handle.</td></tr>
-          <tr><td class="mono">2</td><td>Launch tabs with size and model picker · reply in the gate thread · recent activity rows · ClickClack footer · token counts · copy and explore the conclusion</td><td>Tier 2 changes (appendix C)</td><td>Start folds the header on the first live swarm; a reset completes in the background with its outcome on the footer.</td></tr>
+          <tr><td class="mono">2</td><td>Launch tabs with size and model picker · Run again on ended swarms · reply in the gate thread · recent activity rows · ClickClack footer · token counts · copy and explore the conclusion</td><td>Tier 2 changes (appendix C)</td><td>Start folds the header on the first live swarm; a reset completes in the background with its outcome on the footer.</td></tr>
           <tr><td class="mono">3</td><td>Power on the tool and the form; hover on each size and power; the served model on cards. Open a run from its gate card; a needs-you badge on the tab</td><td>Host changes (appendix D), and rib change T3</td><td>A swarm started at deep power runs gpt-6-astra on Copilot and its card says so; a gate card opens the run drawer with its approval composer.</td></tr>
         </tbody>
       </table>
@@ -920,6 +926,7 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
           <tr><td class="mono">stop-swarm</td><td>Card ⋯, drawer controls</td><td>Stops in the background after a confirm naming the runs it cancels</td><td>ok</td></tr>
           <tr><td class="mono">start-in-chat</td><td>Index</td><td>Seeds a chat that gathers context and calls <code>chat_swarm_start</code></td><td><code>open-chat</code></td></tr>
           <tr><td class="mono">start-swarm <span class="tier">2</span></td><td>Launch tabs</td><td>Checks, mints the id, registers keys, boots in the background. Reads <code>task</code>, <code>project</code>, <code>tools</code>, <code>size</code>, and <code>model</code> with its <code>provider</code> companion from the picker; <code>power</code> joins in tier 3</td><td><code>open-surface</code> to the index, no toast</td></tr>
+          <tr><td class="mono">run-again <span class="tier">2</span></td><td>Ended drawer</td><td>Starts a new swarm from the stored launch config, with size, model and provider seeded from the old one; same checks as start-swarm</td><td><code>open-surface</code> to the index, no toast</td></tr>
           <tr><td class="mono">reply <span class="tier">2</span></td><td>Gate card</td><td>Posts in the gate thread as the owner, waking the thread's agents</td><td>ok</td></tr>
           <tr><td class="mono">server-start, server-stop, server-reset <span class="tier">2</span></td><td>ClickClack footer</td><td>Same guards as the tools; runs in the background and reports on the footer</td><td>ok, meaning requested</td></tr>
           <tr><td class="mono">server-log <span class="tier">2</span></td><td>ClickClack footer</td><td>Tails the current <code>server.log</code> into the log key</td><td><code>open-canvas</code></td></tr>
@@ -945,7 +952,7 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
           <tr><td class="mono">11</td><td>Persist ended summaries, up to 50, to <code>swarms.json</code> in the rib's data directory; cleared on reset</td><td>History across restarts</td><td class="mono">1a</td></tr>
           <tr><td class="mono">12</td><td>A <code>src/surface/</code> module: builders, a markdown flattener, publishers, key registry, actions</td><td>Everything</td><td class="mono">1a</td></tr>
           <tr><td class="mono">13</td><td>A cached server status, refreshed on swarm start and end, server tools, and every 60 s while a swarm is live</td><td>ClickClack row, start gating</td><td class="mono">1a</td></tr>
-          <tr><td class="mono">14</td><td>Provider, model, worker model and power as asked, on the summary; a model on each agent; the provider id each turn reports, which the turn runner drops today</td><td>Card and drawer model</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">14</td><td>Size, provider, model, worker model and power as asked, on the summary; a model on each agent; the provider id each turn reports, which the turn runner drops today. <code>chat_swarm_status</code> rows gain size and model. The launch path refuses an unregistered provider, and the host's <code>workflow</code> and <code>stub</code> providers, before any channel exists, where today a bad provider costs three failed lead turns</td><td>Card and drawer model</td><td class="mono">1a</td></tr>
           <tr><td class="mono">15</td><td>Size presets; a <code>size</code> input on <code>chat_swarm_start</code> under the explicit limits; a label worked out from the effective limits; concurrency set by size. The docs corpus, the site pages that list start inputs, and the docs test rows follow</td><td>Size everywhere</td><td class="mono">1a</td></tr>
           <tr><td class="mono">T3</td><td>A <code>power</code> input passed as the class name, with the peer floor raised to the host that resolves it; the served model stored per agent</td><td>Power, served model</td><td class="mono">3</td></tr>
           <tr><td class="mono">T2</td><td>Stored launch config; gate files kept while pending; owner posts into a thread; an activity ring; summed token usage; server start time, log tail, background stop and reset</td><td>Tier 2 boards</td><td class="mono">2</td></tr>
@@ -963,7 +970,8 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
           <tr><td><b>Model classes resolved on rib turns</b></td><td>Power: <code>fast</code>, <code>balanced</code> and <code>deep</code> resolve through <code>config.json</code> and the provider's classes, as they do for workflow nodes</td><td>The model picker only</td></tr>
           <tr><td><b>The served model on the turn result</b></td><td>The card names the model that ran, not <b>copilot default</b> or the class word</td><td>What was asked for</td></tr>
           <tr><td><b>Model classes and the default model from <code>getProviders</code></b></td><td>A power's hover names its model before the swarm starts</td><td>The class word; the model once a turn reports it</td></tr>
-          <tr><td><b>A <code>hint</code> on select and segmented options</b></td><td>Hover on each size and power</td><td>The Launch byline and the drawer rows</td></tr>
+          <tr><td><b>A <code>hint</code> on select and segmented options</b></td><td>Hover on each size and power</td><td>The Launch byline, the Start and Open hovers, and the drawer rows</td></tr>
+          <tr><td><b>Rib turns honor <code>defaultProvider</code></b></td><td>A swarm with no provider runs where Chat and workflows run</td><td>The first registered provider, which the card names after one turn</td></tr>
           <tr><td><b>Reasoning effort on rib turns</b></td><td>Deep power can also raise effort, as workflow nodes do</td><td>Power sets the model only</td></tr>
           <tr><td><b>An <code>open-run</code> client effect</b></td><td>A gate card opens the run drawer with its trace and approval composer</td><td>"Answer it in the Workflows tab" and a copyable run id</td></tr>
           <tr><td><b>A badge on rib tabs</b></td><td>Needs-you visible from any tab</td><td>The Workflows pip, which counts every paused run</td></tr>
@@ -998,6 +1006,9 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
           <tr><td><b>A power map owned by the rib</b></td><td>A second place to configure what <code>config.json</code> already holds for workflows, and the rib cannot check ids against the live catalog.</td></tr>
           <tr><td><b>Model ids built into the rib</b></td><td>Copilot retires concrete ids, which is why its provider publishes only <code>auto</code>.</td></tr>
           <tr><td><b>Power that runs the lead a class above workers</b></td><td>A single word would then mean two models; the tool's <code>model</code> and <code>worker_model</code> already cover a split.</td></tr>
+          <tr><td><b>A model picker on a live card</b></td><td>Agents resume their sessions each turn, and on 0.110.0 a resumed Copilot session keeps its first model, so the change would look applied and not be. Run again sets the model on a new swarm.</td></tr>
+          <tr><td><b>Separate lead and worker pickers in the form</b></td><td>Two pickers need two provider keys while a swarm runs on one provider, so a mismatch could only fail on submit. The tool keeps the split.</td></tr>
+          <tr><td><b>A longer turn timeout for large</b></td><td>It guards against a hung call, and a stuck turn would hold its slot longer.</td></tr>
           <tr><td><b>The lead picks a worker's model at spawn</b></td><td>The operator's power bounds what a swarm spends, and workers can spawn helpers too.</td></tr>
         </tbody>
       </table></div>
@@ -1029,6 +1040,7 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
           <tr><td>A rib turn passes its model to the provider unchanged; class names resolve only in workflow prompt nodes</td><td class="mono cite">apps/server/src/rib-agent-turn.ts:254;<br>packages/workflows/src/handlers/prompt.ts:617-657</td></tr>
           <tr><td>A rib turn's result carries the provider id but no model; the served model goes only to the usage ledger</td><td class="mono cite">packages/shared/src/rib.ts:119-137;<br>rib-agent-turn.ts:269-283, 336-342</td></tr>
           <tr><td>Copilot publishes fast, balanced and deep as <code>auto</code>; <code>config.json</code> overrides them per provider, read at boot</td><td class="mono cite">packages/providers/src/copilot/provider.ts:68-73;<br>packages/shared/src/config.ts:230-242;<br>apps/server/src/bootstrap.ts:1621</td></tr>
+          <tr><td>A resumed Copilot session keeps its first model on 0.110.0</td><td class="mono cite">packages/providers/src/copilot/provider.ts:626 at v0.110.0</td></tr>
           <tr><td><code>getProviders</code> gives a rib only each provider's id and name</td><td class="mono cite">apps/server/src/ribs.ts:423-430</td></tr>
         </tbody>
       </table></div>
