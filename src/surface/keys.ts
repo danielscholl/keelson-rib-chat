@@ -23,3 +23,7 @@ export function docKey(id: string): string {
 export const LAUNCH_KEY = "rib:chat:launch";
 export const SERVER_KEY = "rib:chat:server";
 export const SERVER_LOG_KEY = "rib:chat:server-log";
+
+export function reportKey(id: string): string {
+  return `rib:chat:report:${id}`;
+}

@@ -10,7 +10,7 @@ import {
   type SnapshotManager,
 } from "@keelson/shared";
 import rib from "../src/index.ts";
-import { createLaunchStore } from "../src/launches.ts";
+import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import { buildHistory, buildIndex, type SurfaceState } from "../src/surface/index-board.ts";
@@ -425,6 +425,7 @@ describe("publishing", () => {
       rerunnable: () => false,
       server: () => ({ live: 0, refused: [] }),
       readLog: async () => "log",
+      report: () => undefined,
       views,
       invalidateManifest: () => refreshes++,
       windowMs: 1,
@@ -805,20 +806,27 @@ describe("the ClickClack footer", () => {
   });
 });
 
+const launchStore = (dir: string) =>
+  createSwarmFileStore(
+    dir === "" ? () => undefined : () => dir,
+    "launches",
+    (v): v is StartSwarmInput => typeof v === "object" && v !== null && "task" in v,
+  );
+
 describe("the launch store", () => {
   test("keeps each launch on disk until its swarm is forgotten", () => {
     const dir = mkdtempSync(join(tmpdir(), "chat-launches-"));
     try {
-      const store = createLaunchStore(() => dir);
+      const store = launchStore(dir);
       store.save("s1abc", oldLaunch);
       store.save("s2abc", { task: "other", workTools: "none" });
-      expect(createLaunchStore(() => dir).load("s1abc")).toEqual(oldLaunch);
+      expect(launchStore(dir).load("s1abc")).toEqual(oldLaunch);
       store.keepOnly(new Set(["s2abc"]));
-      const fresh = createLaunchStore(() => dir);
+      const fresh = launchStore(dir);
       expect(fresh.has("s1abc")).toBe(false);
       expect(fresh.has("s2abc")).toBe(true);
       fresh.clear();
-      expect(createLaunchStore(() => dir).has("s2abc")).toBe(false);
+      expect(launchStore(dir).has("s2abc")).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

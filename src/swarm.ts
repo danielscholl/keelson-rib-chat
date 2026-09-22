@@ -30,6 +30,7 @@ import {
   withoutFileHints,
 } from "./dispatch.ts";
 import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
+import { checkReport, reportMeta, type SwarmReport, unwrapReport } from "./report.ts";
 import { route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
@@ -65,6 +66,9 @@ export const AGENT_TOOLS = [
   "chat_spawn",
   "chat_done",
 ] as const;
+
+// Granted to the lead only: its designed report, and Keelson's design guide for it.
+export const REPORT_TOOLS = ["chat_report", "canvas_design_guide"] as const;
 
 // Granted to the lead only, and only when the operator gave the swarm workflows.
 export const DISPATCH_TOOLS = [
@@ -138,6 +142,7 @@ export type SwarmChange =
   | "run"
   | "gate"
   | "conclusion"
+  | "report"
   | "health"
   | "end";
 
@@ -229,6 +234,7 @@ export class Swarm {
   private kickedOff = false;
   private conclusion: string | undefined;
   private draftConclusion: string | undefined;
+  private report: SwarmReport | undefined;
   private refusedConclusions = 0;
   private socketDrops = 0;
   private quietSince: string | undefined;
@@ -542,7 +548,12 @@ export class Swarm {
     const dispatchTools = dispatch
       ? [...DISPATCH_TOOLS, ...(answersGates ? [RESPOND_TOOL] : [])]
       : [];
-    const tools = [...AGENT_TOOLS, ...dispatchTools, ...workTools].map((name) => ({ name }));
+    const tools = [
+      ...AGENT_TOOLS,
+      ...(agent.lead ? REPORT_TOOLS : []),
+      ...dispatchTools,
+      ...workTools,
+    ].map((name) => ({ name }));
     const model = agent.model;
     const outcome = await runTurn(
       this.opts.runAgentTurn,
@@ -1135,6 +1146,24 @@ export class Swarm {
     }
   }
 
+  // The lead's designed report. Publishing again replaces it.
+  publishReport(agentId: string, title: string, html: string): SwarmReport {
+    const { agent } = this.as(agentId);
+    if (!agent.lead) throw new Error("only the lead publishes the swarm's report");
+    const page = unwrapReport(html);
+    const problem = checkReport(page);
+    if (problem) throw new Error(problem);
+    const report = { title, html: page, at: new Date().toISOString() };
+    this.report = report;
+    this.log(`@${agent.handle} published the report "${title}"`);
+    this.changed("report");
+    return report;
+  }
+
+  reportPage(): SwarmReport | undefined {
+    return this.report;
+  }
+
   // Bot tokens finish() could not revoke, for the host to retry later.
   unrevokedTokens(): readonly string[] {
     return this.unrevoked;
@@ -1194,6 +1223,7 @@ export class Swarm {
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
       ...(this.conclusion !== undefined ? { conclusion: this.conclusion } : {}),
+      ...(this.report ? { report: reportMeta(this.report) } : {}),
       ...(this.conclusion === undefined && this.draftConclusion !== undefined
         ? { draftConclusion: this.draftConclusion }
         : {}),

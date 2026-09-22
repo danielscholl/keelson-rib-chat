@@ -60,6 +60,15 @@ the plan in the gate thread.
 **Stop swarm** ends the swarm and cancels any live runs after you confirm.
 Steer goes away once the lead concludes, since no new turn would read the note.
 
+**Open the report** opens the swarm's report: a designed page the lead
+publishes with `chat_report` before it concludes, with the answer first and the
+evidence behind it, and tables, charts, or diagrams where they help. The lead
+reads Keelson's canvas design guide first, and the page follows the same rules
+as Keelson's canvas artifacts, so it matches the app's theme in light and dark.
+A card shows **Report** once the page exists, even while the swarm is still
+running, and an ended row marks it with ◧. The lead skips the report when the
+whole answer fits in a sentence or two.
+
 **Read in full** and **Read the gate** open the reading pane. It shows the
 conclusion, a refused draft, or an open gate's prompt, with formatting.
 
