@@ -219,6 +219,10 @@ export class FakeSocket {
     for (const fn of this.listeners.get("message") ?? []) fn({ data: JSON.stringify(event) });
   }
 
+  open(): void {
+    for (const fn of this.listeners.get("open") ?? []) fn({});
+  }
+
   drop(code: number): void {
     this.server.sockets.delete(this);
     for (const fn of this.listeners.get("close") ?? []) fn({ code });

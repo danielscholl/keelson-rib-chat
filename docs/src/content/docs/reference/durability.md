@@ -18,6 +18,7 @@ The rib keeps no swarm state on disk. State lives in three places, and a
 | Bot tokens | memory | no |
 | Task context bodies | memory | no |
 | Summaries of ended swarms (last 50) | `swarms.json` in the rib's data directory | yes |
+| Workflows whose gates the host refused to let a swarm answer | `swarms.json` | yes |
 | A managed server's database, log, and process record | the rib's data directory | yes |
 
 ## A restart ends a swarm in flight

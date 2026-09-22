@@ -13,7 +13,7 @@ import { chatDocsSource } from "./docs.ts";
 import { historyPath, loadHistory, saveHistory } from "./history.ts";
 import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
-import { newSwarmId, Swarm, SwarmStartError } from "./swarm.ts";
+import { type ApprovalRefusals, newSwarmId, Swarm, SwarmStartError } from "./swarm.ts";
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
 import {
   type ChatMessage,
@@ -50,6 +50,16 @@ let disposed = false;
 
 const swarms = new Map<string, Swarm>();
 const ended = new Map<string, SwarmSummary>();
+const refusedApprovals = new Set<string>();
+const approvalRefusals: ApprovalRefusals = {
+  has: (workflow) => refusedApprovals.has(workflow),
+  set: (workflow, refused) => {
+    if (refused === refusedApprovals.has(workflow)) return;
+    if (refused) refusedApprovals.add(workflow);
+    else refusedApprovals.delete(workflow);
+    persistHistory();
+  },
+};
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -188,7 +198,10 @@ function persistHistory(): void {
   const dir = getDataDir?.();
   if (!dir) return;
   try {
-    saveHistory(historyPath(dir), ended.values());
+    saveHistory(historyPath(dir), {
+      ended: [...ended.values()],
+      refusedApprovals: [...refusedApprovals],
+    });
   } catch {
     // the in-memory history still answers; the next end retries the write
   }
@@ -334,6 +347,7 @@ async function launchSwarm(
       ...(cwd ? { cwd } : {}),
       ...(project ? { project } : {}),
       ...(op ? { opId: op.id } : {}),
+      approvalRefusals,
       ...(input.context ? { context: input.context } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),
@@ -402,9 +416,9 @@ const rib: Rib = {
     disposed = false;
     const dir = getDataDir?.();
     if (dir && ended.size === 0) {
-      for (const summary of loadHistory(historyPath(dir)).slice(-ENDED_KEPT)) {
-        ended.set(summary.id, summary);
-      }
+      const history = loadHistory(historyPath(dir));
+      for (const summary of history.ended.slice(-ENDED_KEPT)) ended.set(summary.id, summary);
+      for (const workflow of history.refusedApprovals) refusedApprovals.add(workflow);
     }
     return [
       ...makeChatTools({ swarms, starting, ended, startSwarm, readChannel }),
@@ -466,7 +480,10 @@ const rib: Rib = {
     }
     swarms.clear();
     // Kept on disk, so the next activation reads it back.
-    if (getDataDir?.()) ended.clear();
+    if (getDataDir?.()) {
+      ended.clear();
+      refusedApprovals.clear();
+    }
     await server?.dispose().catch(() => undefined);
     server = undefined;
     runAgentTurn = undefined;

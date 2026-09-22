@@ -129,6 +129,8 @@ export interface ChildRun {
   checkout?: { path: string | null; branch: string | null; worktreeEstablished: boolean };
   // Nodes that have finished or paused.
   nodesDone: number;
+  // The node the run reached last.
+  lastNode?: string;
   // `threadId` is the channel thread holding the gate's prompt and files.
   pendingApproval?: {
     nodeId: string;
@@ -136,6 +138,9 @@ export interface ChildRun {
     pauseId?: string;
     threadId?: string;
     openedAt?: string;
+    // `operator` when this swarm cannot answer the gate: the host offers no
+    // respond, or refused one on this workflow under ribApprovalGrants.
+    answerer?: "swarm" | "operator";
   };
   // Gates the swarm answered for the operator.
   approvals?: GateAnswer[];
@@ -182,6 +187,9 @@ export interface SwarmSummary {
   project?: SwarmProject;
   // The durable op the swarm reports to.
   opId?: string;
+  clickclack?: { url: string; workspaceId: string };
+  // Present only while something is wrong or was.
+  health?: SwarmHealth;
   agents: readonly Omit<SwarmAgent, "tokenId" | "sessionId">[];
   // The evidence the swarm was given, without the bodies.
   context?: readonly ContextIndexEntry[];
@@ -191,6 +199,18 @@ export interface SwarmSummary {
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;
   error?: string;
+}
+
+export interface SwarmHealth {
+  // Socket closes since it last opened; two means ClickClack stopped answering.
+  socketDrops?: number;
+  channelFault?: string;
+  leadFailures?: number;
+  lastLeadFailure?: string;
+  nudges?: number;
+  refusedConclusions?: number;
+  // When the swarm went idle with a run paused at a gate; the next turn clears it.
+  quietSince?: string;
 }
 
 export interface SwarmProject {

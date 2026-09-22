@@ -41,6 +41,7 @@ import {
   type GateAnswer,
   SIZE_PRESETS,
   type SwarmAgent,
+  type SwarmHealth,
   type SwarmLimits,
   type SwarmProject,
   type SwarmSize,
@@ -100,6 +101,9 @@ export interface SwarmOptions {
   model?: string;
   // Model for workers; the lead always uses `model`.
   workerModel?: string;
+  // Workflows whose gates the host refused to let a swarm answer, shared across
+  // swarms so the next gate on one is flagged for the operator at once.
+  approvalRefusals?: ApprovalRefusals;
   // Catalog workflows the lead may start on the project, and the seams to do it.
   dispatch?: { grants: readonly DispatchGrant[]; dispatcher: WorkflowDispatcher; pollMs?: number };
   log?: (message: string, data?: unknown) => void;
@@ -122,7 +126,20 @@ export class SwarmStartError extends Error {
   }
 }
 
-export type SwarmChange = "start" | "turn" | "agent" | "run" | "gate" | "conclusion" | "end";
+export interface ApprovalRefusals {
+  has(workflow: string): boolean;
+  set(workflow: string, refused: boolean): void;
+}
+
+export type SwarmChange =
+  | "start"
+  | "turn"
+  | "agent"
+  | "run"
+  | "gate"
+  | "conclusion"
+  | "health"
+  | "end";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -213,6 +230,8 @@ export class Swarm {
   private conclusion: string | undefined;
   private draftConclusion: string | undefined;
   private refusedConclusions = 0;
+  private socketDrops = 0;
+  private quietSince: string | undefined;
   private lastLeadFailure: string | undefined;
   // The last time an agent's channel call failed because ClickClack itself did.
   private channelFault: string | undefined;
@@ -287,12 +306,19 @@ export class Swarm {
       afterCursor: this.cursor,
       onEvent: (event) => this.onEvent(event),
       onClose: (code) => this.onSocketClose(code),
+      onOpen: () => {
+        if (this.socketDrops === 0) return;
+        this.socketDrops = 0;
+        this.changed("health");
+      },
     });
   }
 
   private onSocketClose(code: number): void {
     this.subscription = undefined;
     if (this.status !== "running") return;
+    this.socketDrops++;
+    this.changed("health");
     if (code === AUTH_REVOKED) {
       void this.finish("error", "ClickClack closed the socket: credential revoked");
       return;
@@ -435,7 +461,14 @@ export class Swarm {
     const waiting = [...this.inboxes.values()].some((inbox) => inbox.length > 0);
     if (waiting || this.notes.length > 0 || !this.kickedOff) return;
     // A run in flight will wake the lead when it moves; waiting on it is not idleness.
-    if (this.liveRuns().length > 0) return;
+    // A gate nobody is working on is, though, and only the operator can move it.
+    if (this.liveRuns().length > 0) {
+      if (!this.quietSince && this.liveRuns().some((r) => r.status === "paused")) {
+        this.quietSince = new Date().toISOString();
+        this.changed("health");
+      }
+      return;
+    }
     const lead = [...this.agents.values()].find((a) => a.lead);
     if (!lead || !this.canWork(lead.id) || this.nudges >= this.limits.maxNudges) {
       void this.finish("stalled", this.stallReason());
@@ -447,6 +480,7 @@ export class Swarm {
     }
     this.nudges++;
     this.log(`swarm idle; nudging the lead (${this.nudges}/${this.limits.maxNudges})`);
+    this.changed("health");
     void this.runAgent(lead, [], nudgeText(CONCLUSION_MAX));
   }
 
@@ -499,6 +533,7 @@ export class Swarm {
         : {}),
     });
     this.log(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
+    this.quietSince = undefined;
     this.changed("turn");
 
     const workTools = this.opts.workTools ?? [];
@@ -745,10 +780,19 @@ export class Swarm {
   }
 
   runLedger(): readonly ChildRun[] {
+    const answers = Boolean(this.opts.dispatch?.dispatcher.respond);
     return [...this.runs.values()].map((r) => ({
       ...r,
       prUrls: [...r.prUrls],
-      ...(r.pendingApproval ? { pendingApproval: { ...r.pendingApproval } } : {}),
+      ...(r.pendingApproval
+        ? {
+            pendingApproval: {
+              ...r.pendingApproval,
+              answerer:
+                answers && !this.opts.approvalRefusals?.has(r.workflow) ? "swarm" : "operator",
+            },
+          }
+        : {}),
       ...(r.approvals ? { approvals: [...r.approvals] } : {}),
     }));
   }
@@ -976,6 +1020,10 @@ export class Swarm {
       gate.pauseId,
     );
     if (!result.ok) {
+      if (/ribApprovalGrants/.test(result.error)) {
+        this.opts.approvalRefusals?.set(run.workflow, true);
+        this.changed("gate");
+      }
       const refused = /ribApprovalGrants/.test(result.error)
         ? " The operator has not let this swarm answer this workflow's gates: tell them in the channel what the run is waiting for, then wait."
         : "";
@@ -993,6 +1041,7 @@ export class Swarm {
       at: new Date().toISOString(),
     };
     run.approvals = [...(run.approvals ?? []), answer];
+    this.opts.approvalRefusals?.set(run.workflow, false);
     this.log(`answered ${gate.nodeId} on run ${run.runId}: ${input.decision}`);
     this.changed("gate");
     const record = [
@@ -1105,7 +1154,23 @@ export class Swarm {
     return this.finished;
   }
 
+  private health(): SwarmHealth | undefined {
+    const lead = [...this.agents.values()].find((a) => a.lead);
+    const leadFailures = lead ? (this.failures.get(lead.id) ?? 0) : 0;
+    const health: SwarmHealth = {
+      ...(this.socketDrops > 0 ? { socketDrops: this.socketDrops } : {}),
+      ...(this.channelFault ? { channelFault: this.channelFault } : {}),
+      ...(leadFailures > 0 ? { leadFailures } : {}),
+      ...(this.lastLeadFailure ? { lastLeadFailure: this.lastLeadFailure } : {}),
+      ...(this.nudges > 0 ? { nudges: this.nudges } : {}),
+      ...(this.refusedConclusions > 0 ? { refusedConclusions: this.refusedConclusions } : {}),
+      ...(this.quietSince ? { quietSince: this.quietSince } : {}),
+    };
+    return Object.keys(health).length > 0 ? health : undefined;
+  }
+
   summary(): SwarmSummary {
+    const health = this.health();
     return {
       id: this.id,
       task: this.task,
@@ -1123,6 +1188,8 @@ export class Swarm {
       ...(this.opts.workerModel ? { workerModel: this.opts.workerModel } : {}),
       ...(this.opts.project ? { project: this.opts.project } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
+      clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
+      ...(health ? { health } : {}),
       agents: this.roster(),
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),

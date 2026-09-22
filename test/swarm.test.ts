@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RibRunStatus } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
+import { needsYou } from "../src/needs.ts";
 import {
   MAX_TURN_FAILURES,
   Swarm,
@@ -1024,5 +1025,170 @@ describe("changes and records", () => {
       opId: "op1",
     });
     expect(summary.error).toContain("fetch failed");
+  });
+});
+
+describe("health and needs", () => {
+  const until = async (check: () => boolean) => {
+    for (let i = 0; i < 200 && !check(); i++) await Bun.sleep(5);
+    expect(check()).toBe(true);
+  };
+
+  test("two socket closes with no open between count as ClickClack gone; an open clears it", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    const h = harness(async ({ agentId, turn, call }) => {
+      if (agentId === "s1-lead" && turn === 1) {
+        await held;
+        await call("chat_done", { summary: "ok" });
+      }
+    });
+    const swarm = await h.start();
+    const dropAll = () => {
+      for (const socket of [...h.server.sockets]) socket.drop(1006);
+    };
+    dropAll();
+    await until(() => h.server.sockets.size === 1);
+    expect(needsYou(swarm.summary())).toEqual([]);
+    dropAll();
+    await until(() => h.server.sockets.size === 1);
+    expect(swarm.summary().health?.socketDrops).toBe(2);
+    expect(needsYou(swarm.summary()).map((n) => n.kind)).toEqual(["clickclack"]);
+    for (const socket of h.server.sockets) socket.open();
+    expect(swarm.summary().health).toBeUndefined();
+    release();
+    expect((await swarm.finished).status).toBe("done");
+  });
+
+  test("a refused answer is remembered, and the next gate on that workflow is the operator's", async () => {
+    const fake = fakeDispatcher({
+      refuseAnswers:
+        "rib 'chat' is not granted approvals for workflow 'fix-issue' (config.json ribApprovalGrants)",
+    });
+    const refused = new Set<string>();
+    const memory = {
+      has: (w: string) => refused.has(w),
+      set: (w: string, r: boolean) => void (r ? refused.add(w) : refused.delete(w)),
+    };
+    let swarmRef: Swarm | undefined;
+    const answerers: (string | undefined)[] = [];
+    const { start } = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "fix issue 1" });
+          later(40, () => {
+            fake.set("run_1", {
+              status: "paused",
+              pendingApproval: { nodeId: "approve-plan", prompt: "Approve the plan?" },
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else if (turn === 2) {
+          answerers.push(swarmRef?.summary().runs?.[0]?.pendingApproval?.answerer);
+          later(10, () => void swarmRef?.steer("approve the plan"));
+        } else if (turn === 3) {
+          const review = [...prompt.matchAll(/\[human\] \(top-level (msg_\d+)\)/g)].at(-1)?.[1];
+          await call("chat_workflow_respond", {
+            run_id: "run_1",
+            decision: "approve",
+            review,
+            reason: "r",
+          });
+          answerers.push(swarmRef?.summary().runs?.[0]?.pendingApproval?.answerer);
+          await call("chat_workflow_cancel", { run_id: "run_1" });
+          await call("chat_done", { summary: "handed back" });
+        }
+      },
+      {},
+      {
+        approvalRefusals: memory,
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    await swarmRef.finished;
+    expect(answerers[0]).toBe("swarm");
+    expect(refused.has("fix-issue")).toBe(true);
+    expect(answerers[1]).toBe("operator");
+  });
+
+  test("a gate with no respond seam is the operator's", async () => {
+    const fake = fakeDispatcher();
+    let swarmRef: Swarm | undefined;
+    let answerer: string | undefined;
+    const { start } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "p" });
+          later(40, () => {
+            fake.set("run_1", {
+              status: "paused",
+              pendingApproval: { nodeId: "approve-plan", prompt: "Approve?" },
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else if (turn === 2) {
+          answerer = swarmRef?.summary().runs?.[0]?.pendingApproval?.answerer;
+          await call("chat_workflow_cancel", { run_id: "run_1" });
+          await call("chat_done", { summary: "ok" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    await swarmRef.finished;
+    expect(answerer).toBe("operator");
+  });
+
+  test("a swarm idle at an open gate is quiet until its next turn", async () => {
+    const fake = fakeDispatcher({ answers: true });
+    let swarmRef: Swarm | undefined;
+    const { start } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "p" });
+          later(40, () => {
+            fake.set("run_1", {
+              status: "paused",
+              pendingApproval: { nodeId: "approve-plan", prompt: "Approve?" },
+              nodes: [{ nodeId: "approve-plan", status: "paused" }],
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else if (turn === 3) {
+          await call("chat_workflow_cancel", { run_id: "run_1" });
+          await call("chat_done", { summary: "ok" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    const swarm = await start();
+    swarmRef = swarm;
+    await until(() => swarm.summary().health?.quietSince !== undefined);
+    const needs = needsYou(swarm.summary());
+    expect(needs.map((n) => n.kind)).toEqual(["quiet"]);
+    expect(needs[0]?.run?.lastNode).toBe("approve-plan");
+    await swarm.steer("cancel it and conclude");
+    await until(() => swarm.summary().health?.quietSince === undefined);
+    expect((await swarm.finished).status).toBe("done");
+  });
+
+  test("a live summary names its ClickClack", async () => {
+    const h = harness(async ({ call }) => {
+      await call("chat_done", { summary: "ok" });
+    });
+    const summary = await (await h.start()).finished;
+    expect(summary.clickclack).toEqual({ url: "http://fake", workspaceId: WORKSPACE });
   });
 });
