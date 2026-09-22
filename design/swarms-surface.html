@@ -1,0 +1,1062 @@
+<title>Swarms Surface</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --surface-2:#e9eeec; --line:#d2dad6; --line-strong:#98a6a0;
+  --ink:#1a2320; --ink-2:#48554f; --ink-3:#78857f;
+  --o1:#3d5aa8;  --o1-bg:#e6ebf8;  --o1-ink:#2b4180;
+  --o2:#7a4aa6; --o2-bg:#efe6f7; --o2-ink:#5a3380;
+  --o3:#0e7c7c;   --o3-bg:#dcf2f1;   --o3-ink:#0a5a5a;
+  --o4:#5f6f7a; --o4-bg:#eaeef0; --o4-ink:#45535c;
+  --ok:#2c7a4e; --ok-bg:#dff0e5; --bad:#a83a2f; --bad-bg:#f5dcd8;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  /* Keelson host tokens (apps/web/src/app.css), light theme */
+  --k-bg:#f3f0fa; --k-bg-soft:#eeeaf7; --k-card:#ffffff; --k-card-2:#eeeaf7; --k-border:#c8bfdc; --k-border-soft:#d9d1e8;
+  --k-fg:#161b31; --k-fg-strong:#0b0f1e; --k-muted:#5d5876; --k-dim:#7e7896; --k-accent:#6d4fe0;
+  --k-green:#15834f; --k-yellow:#b57a00; --k-red:#d9385e; --k-magenta:#804bc1; --k-cyan:#2e6fd8; --k-orange:#b66229;
+  --k-id-blue:#2457c5; --k-id-amber:#b45309; --k-id-teal:#11b3a5; --k-id-rose:#992558; --k-id-olive:#6b7f1a;
+  --k-shadow:0 10px 28px rgba(57,43,92,0.08);
+  --k-font:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+  --k-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#121817; --surface:#1a2220; --surface-2:#222d2a; --line:#31403c; --line-strong:#5a6c66;
+    --ink:#e6ecea; --ink-2:#b3bfba; --ink-3:#7f8d88;
+    --o1:#8b9ae6;  --o1-bg:#232b49;  --o1-ink:#c3cbf5;
+    --o2:#b08ad9; --o2-bg:#2c2140; --o2-ink:#d9c6f0;
+    --o3:#45bdbd;   --o3-bg:#123636;   --o3-ink:#a3e3e3;
+    --o4:#93a3ad; --o4-bg:#242d33; --o4-ink:#c4cfd6;
+    --ok:#7fd1a0; --ok-bg:#173226; --bad:#f08a7e; --bad-bg:#3d1f1b;
+    --k-bg:#0d1429; --k-bg-soft:#131a30; --k-card:#161e3b; --k-card-2:#1f2a4d; --k-border:#2a3258; --k-border-soft:#1f2746;
+    --k-fg:#d8def0; --k-fg-strong:#f0f3ff; --k-muted:#8993b2; --k-dim:#5e6789; --k-accent:#9b8eff;
+    --k-green:#6dd28d; --k-yellow:#f5c352; --k-red:#f08793; --k-magenta:#c7a8f0; --k-cyan:#7cc0ff; --k-orange:#f59f6c;
+    --k-id-blue:#4f7df0; --k-id-amber:#c27718; --k-id-teal:#0e9d8f; --k-id-rose:#ba3d78; --k-id-olive:#5f6e0a;
+    --k-shadow:0 2px 6px rgba(0,0,0,0.4);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121817; --surface:#1a2220; --surface-2:#222d2a; --line:#31403c; --line-strong:#5a6c66;
+  --ink:#e6ecea; --ink-2:#b3bfba; --ink-3:#7f8d88;
+  --o1:#8b9ae6;  --o1-bg:#232b49;  --o1-ink:#c3cbf5;
+  --o2:#b08ad9; --o2-bg:#2c2140; --o2-ink:#d9c6f0;
+  --o3:#45bdbd;   --o3-bg:#123636;   --o3-ink:#a3e3e3;
+  --o4:#93a3ad; --o4-bg:#242d33; --o4-ink:#c4cfd6;
+  --ok:#7fd1a0; --ok-bg:#173226; --bad:#f08a7e; --bad-bg:#3d1f1b;
+  --k-bg:#0d1429; --k-bg-soft:#131a30; --k-card:#161e3b; --k-card-2:#1f2a4d; --k-border:#2a3258; --k-border-soft:#1f2746;
+  --k-fg:#d8def0; --k-fg-strong:#f0f3ff; --k-muted:#8993b2; --k-dim:#5e6789; --k-accent:#9b8eff;
+  --k-green:#6dd28d; --k-yellow:#f5c352; --k-red:#f08793; --k-magenta:#c7a8f0; --k-cyan:#7cc0ff; --k-orange:#f59f6c;
+  --k-id-blue:#4f7df0; --k-id-amber:#c27718; --k-id-teal:#0e9d8f; --k-id-rose:#ba3d78; --k-id-olive:#5f6e0a;
+  --k-shadow:0 2px 6px rgba(0,0,0,0.4);
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
+.wrap{max-width:1120px;margin:0 auto;padding-block:32px 64px;padding-inline:20px}
+h1{font-size:clamp(26px,4vw,36px);font-weight:600;letter-spacing:-.01em;margin:0 0 10px;text-wrap:balance}
+h2{font-size:22px;font-weight:600;margin:0 0 8px;text-wrap:balance}
+h3{font-size:15px;font-weight:600;margin:22px 0 6px}
+p{margin:0 0 10px;max-width:72ch;color:var(--ink-2)}
+p.lead{font-size:17px;color:var(--ink);max-width:66ch}
+.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
+section{margin-top:48px;padding-top:30px;border-top:1px solid var(--line)}
+code{font-family:var(--mono);font-size:.9em}
+pre.code{font-family:var(--mono);font-size:12.5px;line-height:1.5;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;color:var(--ink);margin:12px 0}
+ul.plain{margin:6px 0 10px;padding-left:20px;color:var(--ink-2);max-width:72ch}
+ul.plain li{margin:3px 0}
+.problem{margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.problem p{max-width:78ch}
+.problem p:last-child{margin-bottom:0}
+.problem p b{color:var(--ink);font-weight:500}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:16px;font-size:13.5px}
+.owner{display:inline-flex;align-items:center;gap:7px;font-weight:600}
+.owner::before{content:"";width:10px;height:10px;border-radius:2px;background:var(--c);flex:none}
+.owner span{font-weight:400;color:var(--ink-2)}
+.o-o1{--c:var(--o1);color:var(--o1-ink)} .o-o2{--c:var(--o2);color:var(--o2-ink)} .o-o3{--c:var(--o3);color:var(--o3-ink)} .o-o4{--c:var(--o4);color:var(--o4-ink)}
+.tier{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:var(--surface-2);color:var(--ink-2);white-space:nowrap;font-family:var(--mono)}
+
+.flow{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 16px;overflow-x:auto}
+.flow svg{display:block;width:100%;height:auto;min-width:820px}
+.flow text{font-family:var(--sans);fill:var(--ink);font-size:12px}
+.flow .t{font-size:14px;font-weight:600}
+.flow .mono{font-family:var(--mono)}
+.flow .sub{fill:var(--ink-2)}
+.flow .tiny{fill:var(--ink-3);font-size:11px}
+.flow .box{rx:8;stroke-width:1.3}
+.flow .b-o1{fill:var(--o1-bg);stroke:var(--o1)}
+.flow .b-o2{fill:var(--o2-bg);stroke:var(--o2)}
+.flow .b-o3{fill:var(--o3-bg);stroke:var(--o3)}
+.flow .b-o4{fill:var(--o4-bg);stroke:var(--o4)}
+.flow .b-ok{fill:var(--ok-bg);stroke:var(--ok)}
+.flow .b-bad{fill:var(--bad-bg);stroke:var(--bad)}
+.flow .arrow{stroke:var(--line-strong);stroke-width:1.5;fill:none;marker-end:url(#ah)}
+.flow .arrow.ok{stroke:var(--ok);marker-end:url(#ah-ok)}
+.flow .arrow.bad{stroke:var(--bad);stroke-dasharray:5 4;marker-end:url(#ah-bad)}
+.flow .lanebg{fill:none;stroke:var(--line);stroke-dasharray:3 4}
+.flow .lanelbl{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;fill:var(--ink-3)}
+.note{font-size:13px;color:var(--ink-3);margin-top:10px;max-width:80ch}
+
+.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14px}
+.tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.tbl td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2);overflow-wrap:anywhere}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td b{color:var(--ink);font-weight:500}
+.tblwrap{overflow-x:auto;margin-top:16px}
+.tblwrap .tbl{min-width:640px}
+.tbl.compact td{padding:8px 12px;font-size:13.5px}
+.tbl td.mono{font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap}
+.tbl td.mono.cite{white-space:normal;overflow-wrap:anywhere;width:44%}
+.callout{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--ink-2);border-radius:10px;padding:12px 16px;margin-top:14px;font-size:14px;color:var(--ink-2);max-width:80ch}
+.callout b{color:var(--ink);font-weight:500}
+.appendix{margin-top:56px;padding-top:30px;border-top:3px solid var(--line)}
+.appendix h2{font-size:18px}
+.appendix section{margin-top:32px;padding-top:22px}
+
+/* mock state switcher */
+.mockbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:18px}
+.mockbar .lbl{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.mockbar button{font:inherit;font-size:13px;cursor:pointer;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:4px 11px}
+.mockbar button[aria-pressed="true"]{color:var(--ink);border-color:var(--ink-2);background:var(--surface-2);font-weight:500}
+.mockbar button:focus-visible{outline:2px solid var(--o1);outline-offset:2px}
+
+/* ===== Keelson host mockup: reproduces app.css board primitives ===== */
+.kx{margin-top:10px;font:13px/1.5 var(--k-font);color:var(--k-fg);background:var(--k-bg);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.kx *{box-sizing:border-box}
+.kx-top{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--k-border-soft);flex-wrap:wrap}
+.kx-brand{font-weight:700;color:var(--k-fg-strong);font-size:14px}
+.kx-nav{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
+.kx-tab{font-size:13px;color:var(--k-muted);padding:4px 10px;border-radius:7px;display:inline-flex;gap:6px;align-items:center}
+.kx-tab.on{color:var(--k-fg-strong);background:var(--k-card-2)}
+.kx-pip{background:var(--k-magenta);color:var(--k-bg);font-size:10px;font-weight:700;border-radius:999px;min-width:16px;text-align:center;padding:0 4px;line-height:16px}
+.kx-divider{width:1px;height:16px;background:var(--k-border);margin:0 6px}
+.kx-gear{margin-left:auto;color:var(--k-muted);font-size:14px}
+.kx-page{padding:18px 16px 22px;display:flex;flex-direction:column;gap:16px}
+.kx-region{border:1px solid var(--k-border);border-radius:12px;background:var(--k-card);box-shadow:var(--k-shadow);overflow:hidden}
+.kx-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 16px 10px;border-bottom:1px solid var(--k-border-soft);background:linear-gradient(180deg,var(--k-card-2) 0%,var(--k-card) 100%)}
+.kx-region.collapsed .kx-head{border-bottom:none}
+.kx-toggle{color:var(--k-muted);font-size:12px}
+.kx-glyphchip{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;border:1px solid var(--k-border-soft);background:var(--k-bg-soft);font-size:13px;color:var(--tc,var(--k-fg));flex:none}
+.kx-rtitle{font-size:15px;font-weight:600;color:var(--k-fg)}
+.kx-byline{font-size:11px;color:var(--k-muted)}
+.kx-hstatus{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;border:1px solid color-mix(in srgb,var(--tc,var(--k-border)) 45%,transparent);background:var(--k-bg-soft);color:var(--tc,var(--k-muted));font-size:12px;font-weight:600;white-space:nowrap}
+.kx-hchip{font-size:11px;color:var(--k-muted);border:1px solid var(--k-border);border-radius:999px;padding:2px 9px;font-family:var(--k-mono);white-space:nowrap}
+.kx-spacer{flex:1 1 auto}
+.kx-live{width:7px;height:7px;border-radius:50%;background:var(--k-cyan);box-shadow:0 0 6px var(--k-cyan);animation:kxpulse 1.6s ease-in-out infinite;flex:none}
+@keyframes kxpulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion: reduce){.kx-live{animation:none}}
+.kx-body{padding:14px 16px;display:flex;flex-direction:column;gap:16px}
+.kx-sec{display:flex;flex-direction:column;gap:8px;min-width:0}
+.kx-sectitle{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--k-muted)}
+.kx-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;align-items:stretch}
+.kx-card{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--k-card-2);border:1px solid var(--k-border);border-radius:8px;min-width:0}
+.kx-chead{display:flex;align-items:center;gap:8px}
+.kx-cdot{width:9px;height:9px;border-radius:50%;background:var(--tc,var(--k-muted));flex:none}
+.kx-ctitle{font-size:13px;font-weight:600;color:var(--k-fg-strong);flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.kx-ctitle.mono{font-family:var(--k-mono);font-size:12px}
+.kx-rtext.mono{font-family:var(--k-mono);font-size:12px}
+.kx-pill{font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid color-mix(in srgb,var(--tc,var(--k-border)) 40%,transparent);color:var(--tc,var(--k-muted));white-space:nowrap;flex:none}
+.kx-more{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:var(--k-muted);border:1px solid transparent;flex:none;font-size:14px;line-height:1}
+.kx-cbar{height:4px;border-radius:999px;background:var(--k-bg-soft);overflow:hidden;margin:2px 0}
+.kx-cbar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--k-magenta),var(--k-accent))}
+.kx-fields{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px}
+.kx-f{display:inline-flex;align-items:baseline;gap:5px}
+.kx-f + .kx-f::before{content:"·";color:var(--k-dim);margin-right:5px}
+.kx-fl{color:var(--k-muted)}
+.kx-fv{font-family:var(--k-mono);color:var(--k-fg)}
+.kx-link{color:var(--k-cyan);text-decoration:none;font-family:var(--k-mono)}
+.kx-people{display:inline-flex;gap:8px;flex-wrap:wrap}
+.kx-person{display:inline-flex;align-items:center;gap:4px;color:var(--k-fg)}
+.kx-person::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--tc,var(--k-muted))}
+.kx-reason{margin-top:4px;padding-top:6px;border-top:1px dashed var(--k-border-soft);font-size:11px;color:var(--k-muted);font-style:italic}
+.kx-reason b{color:var(--k-dim);font-style:normal;font-weight:400;margin-right:4px}
+.kx-foot{font-size:11px;color:var(--k-muted);font-style:italic}
+.kx-cactions{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.kx-btn{background:var(--k-bg-soft);color:var(--k-fg);border:1px solid var(--k-border);border-radius:8px;padding:6px 12px;font-size:12px;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.kx-btn.brand{background:var(--k-accent);border-color:var(--k-accent);color:#fff}
+.kx-btn.warn{color:var(--k-red)}
+.kx-rows{display:flex;flex-direction:column}
+.kx-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--k-border-soft);font-size:12px;min-width:0}
+.kx-rows .kx-row:last-child{border-bottom:none}
+.kx-row.act{cursor:pointer;border-radius:6px}
+.kx-row.act:hover{background:var(--k-card-2)}
+.kx-glyph{width:8px;height:8px;border-radius:999px;background:var(--tc,var(--k-muted));flex:none}
+.kx-glyph.none{background:transparent}
+.kx-icon{flex:none;width:16px;text-align:center;color:var(--k-muted);font-size:12px;line-height:1}
+.kx-caret{flex:none;color:var(--k-muted);font-size:10px}
+.kx-chip{font-size:10px;font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:999px;border:1px solid color-mix(in srgb,var(--tc,var(--k-border)) 40%,transparent);background:color-mix(in srgb,var(--tc,var(--k-card)) 14%,transparent);color:var(--k-fg);white-space:nowrap;flex:none;display:inline-flex;align-items:center;gap:5px}
+.kx-chip.id::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--tc)}
+.kx-chip.mono{font-family:var(--k-mono);letter-spacing:0;font-weight:500}
+.kx-rtext{color:var(--k-fg);flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.kx-rtext a{color:var(--k-cyan);text-decoration:none}
+.kx-trail{color:var(--k-muted);font-family:var(--k-mono);flex:none;white-space:nowrap;font-size:11.5px}
+.kx-rowbar{flex:none;width:96px;display:flex;gap:2px;height:4px}
+.kx-rowbar i{flex:1 1 0;border-radius:999px;background:var(--tc,var(--k-dim))}
+.kx-rowbar i.hatch{flex:0 0 18px;background:repeating-linear-gradient(135deg,var(--k-dim) 0 2px,transparent 2px 4px)}
+.kx-rowbar.fill{background:color-mix(in srgb,var(--k-border) 70%,transparent);border-radius:999px;overflow:hidden}
+.kx-rowbar.fill i{flex:none;background:var(--tc,var(--k-accent))}
+.kx-cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:640px){.kx-cols{grid-template-columns:1fr}}
+.kx-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
+.kx-form{display:flex;flex-direction:column;gap:8px;flex:1 1 100%;padding:10px 12px;border:1px solid var(--k-border);border-radius:8px;background:var(--k-bg-soft)}
+.kx-flabel{font-size:11px;color:var(--k-muted)}
+.kx-input{background:var(--k-bg);color:var(--k-dim);border:1px solid var(--k-border);border-radius:6px;padding:6px 8px;font-size:12px;min-height:30px}
+.kx-input.area{min-height:56px}
+.kx-frow{display:flex;gap:8px;flex-wrap:wrap}
+.kx-frow > div{flex:1 1 200px;display:flex;flex-direction:column;gap:4px}
+.kx-segs{display:flex;gap:4px;flex-wrap:wrap}
+.kx-seg{font-size:12px;border:1px solid var(--k-border);border-radius:6px;padding:4px 9px;color:var(--k-muted);background:var(--k-bg)}
+.kx-seg.on{color:var(--k-fg-strong);border-color:var(--k-magenta)}
+.kx-inline{display:flex;gap:6px;align-items:center;flex:1 1 360px;min-width:0}
+.kx-inline .kx-input{flex:1 1 auto;min-width:0}
+.kx-tipwrap{position:relative;display:inline-flex}
+.kx-seg.hov{border-color:var(--k-border-strong,var(--k-border));color:var(--k-fg)}
+.kx-tip{position:absolute;left:0;top:calc(100% + 6px);z-index:2;width:max-content;max-width:260px;font-size:11px;line-height:1.35;color:var(--k-fg);background:var(--k-card-2);border:1px solid var(--k-border);border-radius:6px;padding:5px 8px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.kx-tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px}
+.kx-tabbtn{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px solid var(--k-border);border-radius:8px;background:var(--k-bg-soft)}
+.kx-tabbtn b{font-size:12px;font-weight:600;color:var(--k-fg)}
+.kx-tabbtn span{font-size:11px;color:var(--k-muted)}
+.kx-tabbtn.on{border-color:var(--k-accent);background:var(--k-card-2)}
+.kx-boxed .kx-row{border:1px solid var(--k-border-soft);border-radius:8px;padding:7px 10px;margin-bottom:6px;background:var(--k-card-2)}
+.kx-boxed .kx-rlabel{width:120px;flex:none;color:var(--k-muted)}
+.kx-drawerbar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--k-border-soft);background:var(--k-bg)}
+.kx-drawerbar b{font-size:14px;color:var(--k-fg-strong)}
+.kx-drawerbar .x{margin-left:auto;color:var(--k-muted);font-size:14px}
+.kx-bhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 18px 4px}
+.kx-bhead .ttl{font-size:16px;font-weight:600;color:var(--k-fg-strong);flex:1 1 280px;min-width:0}
+.kx-dbody{padding:10px 18px 20px;display:flex;flex-direction:column;gap:16px}
+.kx-prose{font-size:12px;line-height:1.55;color:var(--k-fg);white-space:pre-wrap;max-height:150px;overflow:hidden;position:relative}
+[data-t="ok"]{--tc:var(--k-green)} [data-t="warn"]{--tc:var(--k-yellow)} [data-t="error"]{--tc:var(--k-red)}
+[data-t="info"]{--tc:var(--k-cyan)} [data-t="caution"]{--tc:var(--k-orange)} [data-t="brand"]{--tc:var(--k-magenta)}
+[data-t="accent"]{--tc:var(--k-accent)} [data-t="neutral"]{--tc:var(--k-dim)}
+[data-t="id-blue"]{--tc:var(--k-id-blue)} [data-t="id-amber"]{--tc:var(--k-id-amber)} [data-t="id-teal"]{--tc:var(--k-id-teal)} [data-t="id-rose"]{--tc:var(--k-id-rose)}
+.variants .cap{font-size:11px;color:var(--k-muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.variants > div{display:flex;flex-direction:column;min-width:0}
+.variants > div > .kx-card{flex:1 1 auto}
+@media (max-width:520px){ .wrap{padding-inline:16px} .kx-page,.kx-dbody{padding-inline:10px} }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">keelson-rib-chat · swarms surface · design for review</p>
+  <h1>A Swarms tab for the chat rib</h1>
+  <p class="lead">What the chat rib shows inside Keelson: one tab that says which swarm needs you, what each swarm is doing, and what it produced. The conversation stays in ClickClack.</p>
+
+  <div class="problem">
+    <p>Today a swarm has no home in Keelson. The rib publishes no surface, and Keelson renders nothing for durable ops, so the only live view is the swarm's ClickClack channel. An operator running three swarms finds the one waiting on a gate, or the one that went quiet, by walking channels one at a time. Only the last 20 ended swarms are kept, in memory, and a restart loses them.</p>
+    <p>This change adds one Keelson tab, <b>Swarms</b>. A live index sorts swarm cards by whether they need you. A drawer board per swarm shows its gate, dispatched runs with their evidence, and its agents, with steer and stop. A markdown reading pane shows a conclusion or a gate prompt, and a history drawer reads ended swarms from disk. Each swarm starts with a <b>size</b> (small, medium or large) and a <b>power</b> (fast, balanced or deep), and every card names both along with the model its agents run. Tiers 1 and 2 use only board primitives in <code>@keelson/shared</code> 0.110.0, so they are rib-side only.</p>
+    <p>The tab does not copy the transcript, answer approval gates, or open a run's trace. Every channel, gate thread and ask links out to ClickClack. A gate only you can answer is flagged here and answered in the Workflows tab until Keelson gains an effect that opens an existing run. Power, and hover text on each size and power, wait on small host changes. Five decisions are open at <a href="#decisions">the end of the page</a>.</p>
+  </div>
+
+  <p class="eyebrow" style="margin-top:28px">Colors in the diagrams identify who owns each part</p>
+  <div class="legend">
+    <span class="owner o-o1">Keelson host <span>· renders tabs, the drawer, runs and approvals</span></span>
+    <span class="owner o-o2">Chat rib <span>· tracks swarms, publishes boards, handles actions</span></span>
+    <span class="owner o-o3">ClickClack <span>· holds the conversation, threads and bots</span></span>
+    <span class="owner o-o4">Operator <span>· reads, steers, answers what needs them</span></span>
+  </div>
+  <p class="note">The mockups use Keelson's own palette and reproduce its board primitives from <code>apps/web/src/app.css</code>. Every element maps to a section kind in <code>packages/shared/src/canvas.ts</code>; identifiers and times are example values.</p>
+
+  <section>
+    <h2>What the tab is for</h2>
+    <p>ClickClack holds the conversation, one channel at a time, and knows nothing about runs, gates or verification. Keelson's Workflows tab already inspects runs node by node. The Swarms tab covers what neither does, which is the state of every swarm at once and what each one produced.</p>
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th>What you need</th><th>Where it is answered</th></tr></thead>
+        <tbody>
+          <tr><td><b>Read or write the conversation</b></td><td>ClickClack. Every channel, gate thread and ask on the tab is a link into it.</td></tr>
+          <tr><td><b>Which swarm needs me</b></td><td>The Swarms index: the head says how many, and those cards sort first.</td></tr>
+          <tr><td><b>What a swarm is doing and what it produced</b></td><td>The swarm drawer: gate, runs with worktree, PR and CI evidence, agents, conclusion.</td></tr>
+          <tr><td><b>How big a swarm may get, and which model it runs</b></td><td>The card's size and model fields; the drawer spells out both. Chosen at start as a size and a power.</td></tr>
+          <tr><td><b>A conclusion or gate prompt with formatting</b></td><td>The reading pane, a markdown drawer view.</td></tr>
+          <tr><td><b>A run's trace and its approval composer</b></td><td>The Workflows tab. A gate card names the run and carries its id to copy.</td></tr>
+          <tr><td><b>Start a swarm</b></td><td>Chat today, through <code>chat_swarm_start</code>; the Launch header on the tab in tier 2.</td></tr>
+          <tr><td><b>Start, stop or reset the managed ClickClack</b></td><td>The <code>chat_server_*</code> tools today; a ClickClack footer on the tab in tier 2.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>The Swarms index</h2>
+    <p>The tab has one region, the index. Its head carries the only count on the page: <b>2 need you</b> when any swarm needs the operator, otherwise <b>3 live</b>, otherwise nothing. Live swarms are cards, sorted with the ones that need you first (oldest need first), then starting, then running. Ended swarms are rows, newest first, capped at eight with a row that opens the rest. The tab is titled Swarms because Keelson already has a Chat tab.</p>
+
+    <div class="mockbar" data-switch="index" role="group" aria-label="Index mockup state">
+      <span class="lbl">State</span>
+      <button type="button" data-state="live" aria-pressed="true">Three live</button>
+      <button type="button" data-state="first" aria-pressed="false">First run</button>
+    </div>
+    <div class="kx" role="img" aria-label="Mockup of the Keelson Swarms tab">
+      <div class="kx-top">
+        <span class="kx-brand">Keelson</span>
+        <div class="kx-nav">
+          <span class="kx-tab">Chat</span>
+          <span class="kx-tab">Workflows <span class="kx-pip" data-group="index" data-state="live">2</span></span>
+          <span class="kx-divider"></span>
+          <span class="kx-tab">Beads</span>
+          <span class="kx-tab on">Swarms</span>
+        </div>
+        <span class="kx-gear">⚙</span>
+      </div>
+      <div class="kx-page">
+        <div class="kx-region">
+          <div class="kx-head">
+            <span class="kx-glyphchip" data-t="brand">#</span>
+            <span class="kx-rtitle">Swarms</span>
+            <span class="kx-hstatus" data-t="caution" data-group="index" data-state="live">2 need you</span>
+            <span class="kx-spacer"></span>
+            <span class="kx-live" title="live"></span>
+          </div>
+
+          <div class="kx-body" data-group="index" data-state="live">
+            <div class="kx-sec">
+              <div class="kx-sectitle">Live</div>
+              <div class="kx-cards">
+                <div class="kx-card">
+                  <div class="kx-chead"><span class="kx-ctitle">Fix issue #31: smoke test times out on cold start · s7k1p</span><span class="kx-pill" data-t="caution">needs you</span><span class="kx-more">⋯</span></div>
+                  <div class="kx-cbar"><i style="width:45%"></i></div>
+                  <div class="kx-fields">
+                    <span class="kx-f"><span class="kx-fl">channel</span><a class="kx-link">#swarm-s7k1p</a></span>
+                    <span class="kx-f"><span class="kx-fl">with</span><span class="kx-people"><span class="kx-person" data-t="brand">lead</span><span class="kx-person" data-t="id-blue">reviewer</span></span></span>
+                    <span class="kx-f"><span class="kx-fl">on</span><span class="kx-fv">keelson-sample</span></span>
+                    <span class="kx-f"><span class="kx-fl">size</span><span class="kx-fv">large</span></span>
+                    <span class="kx-f"><span class="kx-fl">model</span><span class="kx-fv">gpt-6-astra</span></span>
+                    <span class="kx-f"><span class="kx-fl">started</span><span class="kx-fv">13:58</span></span>
+                  </div>
+                  <div class="kx-reason"><b>needs you</b>fix-issue 3f9c2a1e waits at approve-plan since 14:11. This swarm can't answer fix-issue gates: answer it in the Workflows tab.</div>
+                  <div class="kx-cactions"><span class="kx-btn">Open →</span></div>
+                </div>
+                <div class="kx-card">
+                  <div class="kx-chead"><span class="kx-ctitle">Review the retry change in PR #33 · s4m2q</span><span class="kx-pill" data-t="caution">needs you</span><span class="kx-more">⋯</span></div>
+                  <div class="kx-cbar"><i style="width:35%"></i></div>
+                  <div class="kx-fields">
+                    <span class="kx-f"><span class="kx-fl">channel</span><a class="kx-link">#swarm-s4m2q</a></span>
+                    <span class="kx-f"><span class="kx-fl">with</span><span class="kx-people"><span class="kx-person" data-t="brand">lead</span><span class="kx-person" data-t="id-blue">critic</span><span class="kx-person" data-t="id-amber">skeptic</span></span></span>
+                    <span class="kx-f"><span class="kx-fl">size</span><span class="kx-fv">small</span></span>
+                    <span class="kx-f"><span class="kx-fl">model</span><span class="kx-fv">mai-code-1.1-flash</span></span>
+                    <span class="kx-f"><span class="kx-fl">started</span><span class="kx-fv">14:22</span></span>
+                  </div>
+                  <div class="kx-reason"><b>needs you</b>@s4m2q-lead asked at 14:33: is the 30 s backoff cap a product decision or a guess?</div>
+                  <div class="kx-cactions"><span class="kx-btn">Open →</span></div>
+                </div>
+                <div class="kx-card">
+                  <div class="kx-chead"><span class="kx-ctitle">Fix issue #27: README undercounts frontend-mix nodes · s9hjx</span><span class="kx-pill" data-t="info">running</span><span class="kx-more">⋯</span></div>
+                  <div class="kx-cbar"><i style="width:28%"></i></div>
+                  <div class="kx-fields">
+                    <span class="kx-f"><span class="kx-fl">channel</span><a class="kx-link">#swarm-s9hjx</a></span>
+                    <span class="kx-f"><span class="kx-fl">with</span><span class="kx-people"><span class="kx-person" data-t="brand">lead</span><span class="kx-person" data-t="id-blue">plan-reviewer</span></span></span>
+                    <span class="kx-f"><span class="kx-fl">on</span><span class="kx-fv">keelson-sample</span></span>
+                    <span class="kx-f"><span class="kx-fl">size</span><span class="kx-fv">medium</span></span>
+                    <span class="kx-f"><span class="kx-fl">model</span><span class="kx-fv">gpt-5.6-sol</span></span>
+                    <span class="kx-f"><span class="kx-fl">started</span><span class="kx-fv">14:19</span></span>
+                  </div>
+                  <div class="kx-reason"><b>gate</b>approve-plan on fix-issue 8d41b07c, in peer review since 14:31</div>
+                  <div class="kx-cactions"><span class="kx-btn">Open →</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="kx-sec">
+              <div class="kx-sectitle">Ended</div>
+              <div class="kx-rows">
+                <div class="kx-row act"><span class="kx-glyph" data-t="ok"></span><span class="kx-chip mono">s8pln</span><span class="kx-rtext">Fix issue #24: deploy smoke flakes on first run</span><span class="kx-trail">Sep 22 10:02 → 10:31 · PR #28 verified</span></div>
+                <div class="kx-row act"><span class="kx-glyph" data-t="ok"></span><span class="kx-chip mono">s2wrd</span><span class="kx-rtext">Summarize open deploy issues for the weekly sync</span><span class="kx-trail">Sep 22 09:10 → 09:34 · done</span></div>
+                <div class="kx-row act"><span class="kx-glyph" data-t="warn"></span><span class="kx-chip mono">s5tcx</span><span class="kx-rtext">Audit the ribWorkflowGrants docs against config</span><span class="kx-trail">Sep 21 15:02 → 15:41 · stalled</span></div>
+                <div class="kx-row act"><span class="kx-icon">…</span><span class="kx-rtext">12 earlier ended swarms</span></div>
+              </div>
+            </div>
+            <div class="kx-rows">
+              <div class="kx-row"><span class="kx-icon">↗</span><span class="kx-glyph" data-t="ok"></span><span class="kx-rtext"><a>ClickClack at 127.0.0.1:18080</a></span><span class="kx-trail">managed</span></div>
+            </div>
+            <div class="kx-actions"><span class="kx-btn">✦ Start a swarm in Chat</span></div>
+          </div>
+
+          <div class="kx-body" data-group="index" data-state="first" hidden>
+            <div class="kx-rows">
+              <div class="kx-row"><span class="kx-icon">◌</span><span class="kx-rtext">No swarms yet.</span></div>
+              <div class="kx-row"><span class="kx-icon"></span><span class="kx-glyph" data-t="neutral"></span><span class="kx-rtext">ClickClack is stopped; the next swarm starts it</span><span class="kx-trail">managed</span></div>
+            </div>
+            <div class="kx-actions"><span class="kx-btn">✦ Start a swarm in Chat</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">The Workflows pip reads 2 because it counts every paused run: s9hjx's gate is paused while its reviewer works, and only s7k1p's needs you. The needs-you reason on s4m2q is an ask, which ships in tier 1b.</p>
+
+    <h3>Card anatomy</h3>
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th>Part</th><th>Primitive</th><th>Shows</th></tr></thead>
+        <tbody>
+          <tr><td><b>Title</b></td><td><code>title</code></td><td>First line of the task, up to 72 characters, then the swarm id. Cards are keyed by title, so it never changes while the swarm lives.</td></tr>
+          <tr><td><b>Pill</b></td><td><code>pill</code></td><td><code>needs you</code> in caution, <code>starting</code> neutral, <code>running</code> info. Caution appears nowhere else on the tab.</td></tr>
+          <tr><td><b>Bar</b></td><td><code>bar {value, total}</code></td><td>Turns used against the swarm's turn budget. The number itself is in the drawer head.</td></tr>
+          <tr><td><b>Fields</b></td><td><code>fields</code>, a <code>people</code> field</td><td>Channel link, the cast in identity colors, project, size, model, start time, and a PR link once one exists. Size and model read as one word and one id; the drawer spells them out (see <a href="#size-power">Size and power</a>).</td></tr>
+          <tr><td><b>Reason</b></td><td><code>reason</code></td><td>One line: the first needs-you condition, else the gate in review, a ClickClack fault, a failed lead turn, idle nudging, or the last turn.</td></tr>
+          <tr><td><b>Actions</b></td><td><code>actions</code></td><td><b>Open</b> into the drawer. <b>Stop swarm…</b> sits in the ⋯ menu behind a confirm that says which runs it cancels.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Ended rows carry a glyph, the id, the task and a short trailing date and state; clicking one opens its drawer. Trailing text is monospace and never wraps in the host, so it holds dates and a word or two, never a sentence.</p>
+  </section>
+
+  <section>
+    <h2>Needs you</h2>
+    <p>A swarm needs you when it cannot make progress without the operator. Four conditions raise it, in this order of precedence on the card; the drawer lists every one that holds.</p>
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th></th><th>Condition</th><th>Raised when</th><th>Clears when</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">N4</td><td><b>ClickClack stopped answering</b></td><td>The swarm's socket closes twice with no open in between, at least 4 s at the 2 s retry.</td><td>The socket opens.</td></tr>
+          <tr><td class="mono">N1</td><td><b>A gate only you can answer</b></td><td>The lead's <code>respondToRun</code> on this workflow was refused under <code>ribApprovalGrants</code>. The refusal is remembered per workflow, so the next gate raises it at once.</td><td>The run resumes or ends; a later successful answer on that workflow forgets the refusal.</td></tr>
+          <tr><td class="mono">N2</td><td><b>A gate nobody is working on</b></td><td>A run is paused and the swarm went fully idle after the gate opened, with no turn since.</td><td>Any turn starts or the gate closes.</td></tr>
+          <tr><td class="mono">N3</td><td><b>An agent asked you</b> <span class="tier">1b</span></td><td>A bot message contains <code>@operator</code>, or the owner's handle when one is set.</td><td>You post in the channel, steer the lead, or the swarm ends.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The gate is the case that matters most, because a paused run holds the whole swarm open. When the swarm is granted approvals for the workflow, the gate never needs you: a peer reviews the plan in the gate thread and the lead answers.</p>
+
+    <div class="flow">
+      <svg viewBox="0 0 1100 274" role="img" aria-label="A dispatched run pauses at approve-plan; the rib opens a gate thread, a peer reviews, the lead answers. If the grant covers the workflow the run resumes; if not, the swarm needs you (N1). If the swarm goes quiet with the gate open, it needs you (N2).">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--line-strong)"/></marker>
+          <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--ok)"/></marker>
+          <marker id="ah-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--bad)"/></marker>
+        </defs>
+        <rect x="20" y="40" width="190" height="96" class="box b-o1"/>
+        <text x="32" y="64" class="t">Run pauses</text>
+        <text x="32" y="84" class="sub mono">fix-issue 8d41b07c</text>
+        <text x="32" y="101" class="sub">at approve-plan</text>
+        <text x="32" y="122" class="tiny">Keelson workflow run</text>
+        <path d="M210 88 L232 88" class="arrow"/>
+
+        <rect x="234" y="40" width="200" height="96" class="box b-o2"/>
+        <text x="246" y="64" class="t">Gate opens</text>
+        <text x="246" y="84" class="sub">rib posts Approval needed,</text>
+        <text x="246" y="101" class="sub">prompt and files in a thread</text>
+        <text x="246" y="122" class="tiny">gate card: in review</text>
+        <path d="M434 88 L456 88" class="arrow"/>
+
+        <rect x="458" y="40" width="200" height="96" class="box b-o3"/>
+        <text x="470" y="64" class="t">Peer review</text>
+        <text x="470" y="84" class="sub mono">@s9hjx-plan-reviewer</text>
+        <text x="470" y="101" class="sub">replies with evidence</text>
+        <text x="470" y="122" class="tiny">in the gate thread</text>
+        <path d="M658 88 L680 88" class="arrow"/>
+
+        <rect x="682" y="40" width="200" height="96" class="box b-o2"/>
+        <text x="694" y="64" class="t">Lead answers</text>
+        <text x="694" y="84" class="sub mono">respondToRun(approve)</text>
+        <text x="694" y="101" class="sub">citing the review</text>
+        <text x="694" y="122" class="tiny">chat_workflow_respond</text>
+
+        <path d="M782 136 L782 166" class="arrow"/>
+        <polygon points="782,168 900,214 782,260 664,214" fill="var(--surface-2)" stroke="var(--line-strong)" stroke-width="1.3"/>
+        <text x="782" y="209" text-anchor="middle" class="t" font-size="13">grant covers it?</text>
+        <text x="782" y="227" text-anchor="middle" class="sub mono" font-size="11">ribApprovalGrants.chat</text>
+
+        <path d="M900 214 L936 214" class="arrow ok"/>
+        <text x="906" y="206" class="tiny">yes</text>
+        <rect x="938" y="170" width="150" height="88" class="box b-ok"/>
+        <text x="950" y="194" class="t">Run resumes</text>
+        <text x="950" y="214" class="sub">✓ answer row added</text>
+        <text x="950" y="244" class="tiny">reason back to last</text>
+
+        <path d="M664 214 L630 214" class="arrow bad"/>
+        <text x="640" y="206" class="tiny">no</text>
+        <rect x="446" y="170" width="182" height="88" class="box b-bad"/>
+        <text x="458" y="194" class="t">Needs you · N1</text>
+        <text x="458" y="214" class="sub">answer in Workflows tab</text>
+        <text x="458" y="244" class="tiny">clears on the run event</text>
+
+        <path d="M334 136 L334 166" class="arrow"/>
+        <polygon points="334,168 434,214 334,260 234,214" fill="var(--surface-2)" stroke="var(--line-strong)" stroke-width="1.3"/>
+        <text x="334" y="209" text-anchor="middle" class="t" font-size="13">swarm quiet?</text>
+        <text x="334" y="227" text-anchor="middle" class="sub mono" font-size="11">quietSince set</text>
+        <path d="M234 214 L212 214" class="arrow bad"/>
+        <text x="214" y="205" class="tiny">yes</text>
+        <rect x="20" y="170" width="190" height="88" class="box b-bad"/>
+        <text x="32" y="194" class="t">Needs you · N2</text>
+        <text x="32" y="214" class="sub">no turn since the gate</text>
+        <text x="32" y="244" class="tiny">clears when a turn starts</text>
+      </svg>
+    </div>
+    <p class="note">N2 watches the whole time a gate is open. The swarm does not nudge its lead while any run is live, and a paused run counts as live, so without N2 a reviewer that never replies would hold the swarm silently until the wall clock ends it.</p>
+
+    <p style="margin-top:18px">The drawer shows the gate as a card. Its title, pill and reason change with the condition; the thread link and the run id are always there.</p>
+    <div class="kx" role="img" aria-label="Gate and ask card variants">
+      <div class="kx-page">
+        <div class="kx-cards variants">
+          <div><div class="cap">In review</div>
+            <div class="kx-card">
+              <div class="kx-chead"><span class="kx-ctitle mono">approve-plan · fix-issue 8d41b07c</span><span class="kx-pill" data-t="info">in review</span></div>
+              <div class="kx-fields"><span class="kx-f"><span class="kx-fl">opened</span><span class="kx-fv">14:31</span></span><span class="kx-f"><span class="kx-fl">thread</span><a class="kx-link">gate thread</a></span><span class="kx-f"><span class="kx-fl">run</span><span class="kx-fv">8d41b07c ⧉</span></span></div>
+              <div class="kx-foot">Plan: set the README node count to 12 and add both gates to the chain table.</div>
+              <div class="kx-reason"><b>reviewing</b>@s9hjx-plan-reviewer is checking the plan against the issue's criteria</div>
+            </div></div>
+          <div><div class="cap">N1 · only you</div>
+            <div class="kx-card">
+              <div class="kx-chead"><span class="kx-ctitle mono">approve-plan · fix-issue 3f9c2a1e</span><span class="kx-pill" data-t="caution">needs you</span></div>
+              <div class="kx-fields"><span class="kx-f"><span class="kx-fl">opened</span><span class="kx-fv">14:11</span></span><span class="kx-f"><span class="kx-fl">thread</span><a class="kx-link">gate thread</a></span><span class="kx-f"><span class="kx-fl">run</span><span class="kx-fv">3f9c2a1e ⧉</span></span></div>
+              <div class="kx-reason"><b>why you</b>This swarm isn't granted fix-issue approvals (ribApprovalGrants.chat). Answer it in the Workflows tab, whose pip counts it.</div>
+            </div></div>
+          <div><div class="cap">N2 · quiet</div>
+            <div class="kx-card">
+              <div class="kx-chead"><span class="kx-ctitle mono">approve-plan · fix-issue 5c07aa94</span><span class="kx-pill" data-t="caution">needs you</span></div>
+              <div class="kx-fields"><span class="kx-f"><span class="kx-fl">opened</span><span class="kx-fv">14:05</span></span><span class="kx-f"><span class="kx-fl">thread</span><a class="kx-link">gate thread</a></span><span class="kx-f"><span class="kx-fl">run</span><span class="kx-fv">5c07aa94 ⧉</span></span></div>
+              <div class="kx-reason"><b>quiet</b>No agent has worked since 14:19 and the gate is still open. Reply in the gate thread, steer the lead, or answer it in the Workflows tab.</div>
+            </div></div>
+          <div><div class="cap">N3 · ask <span class="tier">1b</span></div>
+            <div class="kx-card">
+              <div class="kx-chead"><span class="kx-ctitle mono">@s4m2q-lead asked you · 14:33</span><span class="kx-pill" data-t="caution">needs you</span></div>
+              <div class="kx-fields"><span class="kx-f"><span class="kx-fl">message</span><a class="kx-link">in #swarm-s4m2q</a></span></div>
+              <div class="kx-foot">Is the 30 s backoff cap a product decision or a guess?</div>
+              <div class="kx-reason"><b>clears</b>when you post in #swarm-s4m2q or steer the lead</div>
+            </div></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">There is no Approve button. The host gates <code>respondToRun</code> on <code>ribApprovalGrants</code> alone, the same grant that lets the lead approve without you, and a policy ASK on it would leave the button pending with no timeout. Decision D1 covers the options.</p>
+  </section>
+
+  <section>
+    <h2>Swarm drawer</h2>
+    <p><b>Open</b> on a card or a row returns <code>open-canvas</code> to the swarm's own board key, <code>rib:chat:swarm:&lt;id&gt;</code>, which Keelson shows in its full-screen drawer. The board is live over the same snapshot socket as the index. It has exactly one <code>actions</code> section, so the steer field keeps what you typed while frames arrive.</p>
+
+    <div class="mockbar" data-switch="drawer" role="group" aria-label="Drawer mockup state">
+      <span class="lbl">Swarm</span>
+      <button type="button" data-state="live" aria-pressed="true">Live · s9hjx at a gate</button>
+      <button type="button" data-state="ended" aria-pressed="false">Ended · s8pln verified</button>
+    </div>
+    <div class="kx" role="img" aria-label="Mockup of the swarm drawer board">
+      <div data-group="drawer" data-state="live">
+        <div class="kx-drawerbar"><b>Swarm s9hjx</b><span class="x">✕</span></div>
+        <div class="kx-bhead"><span class="ttl">Fix issue #27: README undercounts frontend-mix nodes</span><span class="kx-hstatus" data-t="info">running</span><span class="kx-hchip">medium · 11/40 turns</span><span class="kx-hchip">gpt-5.6-sol</span></div>
+        <div class="kx-dbody">
+          <div class="kx-rows">
+            <div class="kx-row"><span class="kx-icon">↗</span><span class="kx-rtext"><a>#swarm-s9hjx in ClickClack</a></span></div>
+            <div class="kx-row"><span class="kx-icon">◷</span><span class="kx-rtext">started 14:19 · wall clock ends 14:49 · on keelson-sample</span></div>
+            <div class="kx-row"><span class="kx-icon">◫</span><span class="kx-rtext">medium: up to 5 agents · 40 turns, 12 per worker · 3 at once · 5 min a turn</span></div>
+            <div class="kx-row"><span class="kx-icon">◆</span><span class="kx-rtext">balanced power on copilot · every agent on gpt-5.6-sol</span></div>
+          </div>
+          <div class="kx-sec"><div class="kx-sectitle">Context</div>
+            <div class="kx-rows">
+              <div class="kx-row"><span class="kx-icon">◇</span><span class="kx-chip mono">issue</span><span class="kx-rtext"><a>Issue #27: README undercounts frontend-mix nodes (10 vs 12)</a></span><span class="kx-trail">3.1k chars</span></div>
+            </div>
+          </div>
+          <div class="kx-sec"><div class="kx-sectitle">Gate</div>
+            <div class="kx-cards" style="grid-template-columns:minmax(0,560px)">
+              <div class="kx-card">
+                <div class="kx-chead"><span class="kx-ctitle mono">approve-plan · fix-issue 8d41b07c</span><span class="kx-pill" data-t="info">in review</span></div>
+                <div class="kx-fields"><span class="kx-f"><span class="kx-fl">opened</span><span class="kx-fv">14:31</span></span><span class="kx-f"><span class="kx-fl">thread</span><a class="kx-link">gate thread</a></span><span class="kx-f"><span class="kx-fl">run</span><span class="kx-fv">8d41b07c ⧉</span></span></div>
+                <div class="kx-foot">Plan: set the README node count to 12 and add both gates to the chain table.</div>
+                <div class="kx-reason"><b>reviewing</b>@s9hjx-plan-reviewer is checking the plan against the issue's criteria</div>
+                <div class="kx-cactions"><span class="kx-btn">▤ Read the gate</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="kx-sec">
+            <div class="kx-actions">
+              <div class="kx-inline"><span class="kx-flabel">Steer</span><span class="kx-input">A note for @s9hjx-lead · Enter sends</span><span class="kx-btn">Send</span></div>
+              <span class="kx-btn warn">Stop swarm…</span>
+            </div>
+          </div>
+          <div class="kx-cols">
+            <div class="kx-sec"><div class="kx-sectitle">Runs</div>
+              <div class="kx-rows">
+                <div class="kx-row"><span class="kx-glyph" data-t="info"></span><span class="kx-chip" data-t="accent">fix-issue</span><span class="kx-rtext">Fix issue #27, isolated worktree</span><span class="kx-rowbar"><i data-t="ok"></i><i data-t="neutral"></i><i data-t="neutral"></i></span><span class="kx-trail">paused at approve-plan · 6 settled</span></div>
+                <div class="kx-row"><span class="kx-glyph" data-t="neutral"></span><span class="kx-chip" data-t="accent">fix-issue</span><span class="kx-rtext">Fix issue #27, first attempt</span><span class="kx-rowbar"><i data-t="error"></i><i data-t="neutral"></i><i data-t="neutral"></i></span><span class="kx-trail">cancelled · live checkout</span></div>
+              </div>
+            </div>
+            <div class="kx-sec"><div class="kx-sectitle">Agents · 2 of 5</div>
+              <div class="kx-rows">
+                <div class="kx-row"><span class="kx-glyph none"></span><span class="kx-chip id" data-t="brand">lead</span><span class="kx-rtext">lead</span><span class="kx-trail">idle · 8 turns</span></div>
+                <div class="kx-row"><span class="kx-glyph" data-t="info"></span><span class="kx-chip id" data-t="id-blue">plan-reviewer</span><span class="kx-rtext">plan review</span><span class="kx-rowbar fill"><i data-t="id-blue" style="width:25%"></i></span><span class="kx-trail">busy · 3/12</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div data-group="drawer" data-state="ended" hidden>
+        <div class="kx-drawerbar"><b>Swarm s8pln</b><span class="x">✕</span></div>
+        <div class="kx-bhead"><span class="ttl">Fix issue #24: deploy smoke flakes on first run</span><span class="kx-hstatus" data-t="ok">done</span><span class="kx-hchip">medium · 27/40 turns</span><span class="kx-hchip">gpt-6-astra</span></div>
+        <div class="kx-dbody">
+          <div class="kx-rows">
+            <div class="kx-row act"><span class="kx-icon">←</span><span class="kx-rtext">Ended swarms</span><span class="kx-trail">back</span></div>
+            <div class="kx-row"><span class="kx-icon">↗</span><span class="kx-rtext"><a>#swarm-s8pln in ClickClack</a></span></div>
+            <div class="kx-row"><span class="kx-icon">◷</span><span class="kx-rtext">ran Sep 22 10:02 → 10:31 · on keelson-sample</span></div>
+            <div class="kx-row"><span class="kx-icon">◫</span><span class="kx-rtext">medium: up to 5 agents · 40 turns, 12 per worker · 3 at once · 5 min a turn</span></div>
+            <div class="kx-row"><span class="kx-icon">◆</span><span class="kx-rtext">exact models on copilot · lead gpt-6-astra · workers gpt-5.6-sol</span></div>
+          </div>
+          <div class="kx-sec"><div class="kx-sectitle">Outcome</div>
+            <div class="kx-cards" style="grid-template-columns:minmax(0,1fr)">
+              <div class="kx-card">
+                <div class="kx-chead"><span class="kx-cdot" data-t="ok"></span><span class="kx-ctitle">Conclusion</span></div>
+                <div class="kx-prose">Verified. fix-issue 71ae3d02 opened PR #28 from an isolated worktree, and CI passed on the head commit.
+
+The smoke test raced the readiness probe on a cold node. The fix waits on /readyz with a 60 s budget instead of a fixed 10 s sleep, and the test now logs the probe's last status when it gives up.
+
+Not covered: the same race in the staging smoke job, which uses its own script. Filed as a follow-up in the PR description.</div>
+                <div class="kx-reason"><b>by</b>@s8pln-lead · Sep 22 10:31 · 1,284 characters</div>
+                <div class="kx-cactions"><span class="kx-btn">▤ Read in full</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="kx-cols">
+            <div class="kx-sec"><div class="kx-sectitle">Runs</div>
+              <div class="kx-rows">
+                <div class="kx-row"><span class="kx-glyph" data-t="ok"></span><span class="kx-chip" data-t="accent">fix-issue</span><span class="kx-rtext">Fix issue #24, isolated worktree</span><span class="kx-rowbar"><i data-t="ok"></i><i data-t="ok"></i><i data-t="ok"></i></span><span class="kx-trail">PR #28 · verified</span></div>
+                <div class="kx-row"><span class="kx-icon">✓</span><span class="kx-rtext">approve-plan approved on @s8pln-plan-reviewer's review</span><span class="kx-caret">▸</span><span class="kx-trail">10:19</span></div>
+              </div>
+            </div>
+            <div class="kx-sec"><div class="kx-sectitle">Agents · 2 of 5</div>
+              <div class="kx-rows">
+                <div class="kx-row"><span class="kx-glyph none"></span><span class="kx-chip id" data-t="brand">lead</span><span class="kx-rtext mono">gpt-6-astra</span><span class="kx-trail">19 turns</span></div>
+                <div class="kx-row"><span class="kx-glyph none"></span><span class="kx-chip id" data-t="id-blue">plan-reviewer</span><span class="kx-rtext mono">gpt-5.6-sol</span><span class="kx-rowbar fill"><i data-t="id-blue" style="width:67%"></i></span><span class="kx-trail">8/12</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Sections</h3>
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th>Section</th><th>Primitive</th><th>Present when</th></tr></thead>
+        <tbody>
+          <tr><td><b>Vitals</b></td><td><code>rows</code></td><td>Always: channel link, start and wall-clock end, project, then one row that spells out the size and one that names the power, provider and model per role. Health rows appear only when something is wrong: a lost socket, a failed lead turn, idle nudging, or a refused conclusion with its cause.</td></tr>
+          <tr><td><b>Context</b></td><td><code>rows</code></td><td>The swarm was started with context items. Each row is the item's kind, title, source link and size; bodies stay out of the board.</td></tr>
+          <tr><td><b>Gate</b>, or <b>Waiting on you</b></td><td><code>cards</code></td><td>A gate or an ask is open. Titled Waiting on you when any card needs you.</td></tr>
+          <tr><td><b>Steer and Stop</b></td><td><code>actions</code>, a single-line <code>expanded</code> field</td><td>The swarm is live and no conclusion is filed. Once the lead concludes, no new turns start, so a steer would post and never be read.</td></tr>
+          <tr><td><b>Runs and Agents</b></td><td><code>columns</code> 1.6 : 1</td><td>Always. One column under 640 px.</td></tr>
+          <tr><td><b>Outcome</b></td><td><code>cards</code> with <code>prose</code></td><td>A conclusion is filed, or the swarm ended. Without a conclusion the card names the ending and why; a refused draft gets its own card and the reason it was refused.</td></tr>
+          <tr><td><b>Back to Ended swarms</b></td><td><code>rows</code> with an action</td><td>The swarm ended. The drawer is a single slot and cannot switch tabs, so this row reopens the history board.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Evidence strip</h3>
+    <p>Each run row carries a three-part strip that follows the rib's own <code>verified</code> rule. An isolated run shows worktree, PR and CI: green once each holds, red on an isolation breach or failing CI, and hatched when the run settled without a readable CI verdict. A run in the live checkout needs no PR, and only failing CI blocks it, so it shows a single CI segment that is never hatched. Run rows link to the gate thread while paused and to the first PR after; they carry no disclosure, because a row whose text changes closes any disclosure the reader had open.</p>
+    <p>Agents get identity colors in spawn order: the lead is brand, workers take the five identity hues, and a sixth worker onward is neutral with its name. Inside a drawer the chips drop the swarm-id prefix from each handle, since the head already names the swarm, and the role text stays short so the column holds at half width. Busy, capped and failed show as the row glyph. When the lead and workers run different models, each agent row shows its model in place of its role text; otherwise the model row in the vitals covers them all. The host does not render a roster peek in the drawer head, so the Agents column is the roster.</p>
+  </section>
+
+  <section>
+    <h2>Reading pane</h2>
+    <p>Board text is plain: row details and card fields render markdown source as literal characters. A formatted conclusion or gate prompt therefore opens in a markdown drawer view, <code>rib:chat:doc:&lt;id&gt;</code>, one per swarm, reached from <b>Read in full</b> and <b>Read the gate</b>. Its content depends only on that swarm's state, so two viewers reading different swarms never race on one key.</p>
+    <ul class="plain">
+      <li><b>Conclusion filed or swarm ended:</b> the task as a heading, a byline, then the conclusion. With no conclusion, the refused draft under a quote that names why it was refused.</li>
+      <li><b>Live with a gate open:</b> each open gate's prompt as a quote, plus its files in tier 2.</li>
+      <li><b>Otherwise:</b> one line pointing to the channel.</li>
+    </ul>
+    <p>The markdown drawer has no buttons, so the pane is read-only. Its view entry is declared once when the swarm registers, which costs one manifest refresh per swarm start.</p>
+  </section>
+
+  <section>
+    <h2>How the tab stays live</h2>
+    <p>Every region is push: the rib holds all swarm state in process, so there is no collector workflow and no cadence. A swarm reports each change, and the rib recomposes the keys that change touches: always the index, always that swarm's board, the reading pane on a gate, conclusion or end, and history on an end.</p>
+    <div class="flow">
+      <svg viewBox="0 0 1100 334" role="img" aria-label="State flows from ClickClack and workflow runs through the swarm and per-key publishers to the snapshot socket and the Swarms tab. Actions flow back from the operator through a board action and onAction to an owner post in ClickClack.">
+        <rect x="8" y="8" width="220" height="318" class="lanebg" rx="10"/>
+        <text x="22" y="28" class="lanelbl">ClickClack</text>
+        <rect x="236" y="8" width="400" height="318" class="lanebg" rx="10"/>
+        <text x="250" y="28" class="lanelbl">Chat rib</text>
+        <rect x="644" y="8" width="448" height="318" class="lanebg" rx="10"/>
+        <text x="658" y="28" class="lanelbl">Keelson host</text>
+
+        <rect x="24" y="40" width="188" height="96" class="box b-o3"/>
+        <text x="36" y="64" class="t mono" font-size="13">#swarm-s9hjx</text>
+        <text x="36" y="84" class="sub">posts, replies, bots</text>
+        <text x="36" y="101" class="sub">socket sends ids only</text>
+        <text x="36" y="122" class="tiny">replays from its cursor</text>
+        <path d="M212 88 L250 88" class="arrow"/>
+
+        <rect x="252" y="40" width="176" height="96" class="box b-o2"/>
+        <text x="264" y="64" class="t">Swarm</text>
+        <text x="264" y="84" class="sub">ingest, turns, run ledger</text>
+        <text x="264" y="101" class="sub mono">onChange(kind)</text>
+        <text x="264" y="122" class="tiny">one per live swarm</text>
+        <path d="M428 88 L442 88" class="arrow"/>
+
+        <rect x="444" y="40" width="176" height="96" class="box b-o2"/>
+        <text x="456" y="64" class="t">Publishers</text>
+        <text x="456" y="84" class="sub">one per snapshot key</text>
+        <text x="456" y="101" class="sub">dirty flag, 250 ms window</text>
+        <text x="456" y="122" class="tiny">expectView before send</text>
+        <path d="M620 88 L658 88" class="arrow"/>
+
+        <rect x="660" y="40" width="200" height="96" class="box b-o1"/>
+        <text x="672" y="64" class="t">Snapshot socket</text>
+        <text x="672" y="84" class="sub">whole frame per version</text>
+        <text x="672" y="101" class="sub mono" font-size="11">/api/snapshots/:key/ws</text>
+        <text x="672" y="122" class="tiny">no deltas, no replay</text>
+        <path d="M860 88 L874 88" class="arrow"/>
+
+        <rect x="876" y="40" width="200" height="96" class="box b-o1"/>
+        <text x="888" y="64" class="t">Swarms tab</text>
+        <text x="888" y="84" class="sub">index region and drawer</text>
+        <text x="888" y="101" class="sub">live dot pulses per frame</text>
+        <text x="888" y="122" class="tiny">times shown as HH:MM</text>
+        <path d="M976 136 L976 240" class="arrow"/>
+
+        <rect x="660" y="150" width="200" height="76" class="box b-o1"/>
+        <text x="672" y="174" class="t">Workflow runs</text>
+        <text x="672" y="194" class="sub">onRunEvent, 20 s poll</text>
+        <text x="672" y="214" class="tiny">fix-issue, paused at gates</text>
+        <path d="M660 188 L340 188 L340 140" class="arrow"/>
+
+        <rect x="876" y="242" width="200" height="76" class="box b-o4"/>
+        <text x="888" y="266" class="t">Operator</text>
+        <text x="888" y="286" class="sub">Open, Read, Steer, Stop</text>
+        <text x="888" y="306" class="tiny">one shared view per rib</text>
+        <path d="M876 280 L862 280" class="arrow"/>
+
+        <rect x="660" y="242" width="200" height="76" class="box b-o1"/>
+        <text x="672" y="266" class="t">Board action</text>
+        <text x="672" y="286" class="sub mono" font-size="11">POST …/ribs/chat/action</text>
+        <text x="672" y="306" class="tiny">type, payload, binding</text>
+        <path d="M660 280 L622 280" class="arrow"/>
+
+        <rect x="252" y="242" width="368" height="76" class="box b-o2"/>
+        <text x="264" y="266" class="t">onAction</text>
+        <text x="264" y="286" class="sub">steer posts a note; stop cancels live runs</text>
+        <text x="264" y="306" class="tiny">open and read return open-canvas to the rib's own key</text>
+        <path d="M252 280 L214 280" class="arrow"/>
+
+        <rect x="24" y="242" width="188" height="76" class="box b-o3"/>
+        <text x="36" y="266" class="t">Owner post</text>
+        <text x="36" y="286" class="sub mono" font-size="11">**Operator:** &lt;note&gt;</text>
+        <text x="36" y="306" class="tiny">wakes the lead</text>
+      </svg>
+    </div>
+    <p class="note">Top: state flows from ClickClack and workflow runs to the tab. Bottom: actions flow back. A recompose requested while one is in flight is dropped by the host, so each key's publisher keeps a dirty flag and loops until the latest state has landed.</p>
+    <ul class="plain">
+      <li><b>Keys outlive swarms.</b> A client that gets a 404 on a key stops listening for good, so a swarm's keys stay registered after it ends. One that ages out of history recomposes to a notice pointing at its channel, and keys are released only at dispose or past a cap of 100.</li>
+      <li><b>Frames are whole.</b> Each version replaces the payload, so the boards are bounded: the index under 16 KB, a swarm board under 48 KB (12 agents, 12 runs), the reading pane under 96 KB.</li>
+      <li><b>Times are absolute.</b> Push regions get no "updated 2m ago" label and a relative time would freeze between frames, so the tab shows <code>HH:MM</code>, with a date on ended swarms.</li>
+      <li><b>State is shared.</b> Actions carry no viewer identity, so the tab keeps no per-viewer selection, and anything one viewer clears clears for all.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Starting a swarm and running the server</h2>
+    <p>In tier 1 the tab starts nothing itself: <b>Start a swarm in Chat</b> opens a seeded chat that can gather issue and PR context before it calls <code>chat_swarm_start</code>. Swarms started from Chat or over MCP get a card like any other, because the keys are registered inside the rib's launch path. Tier 2 adds a Launch header above the index that folds itself once a swarm is live.</p>
+    <div class="mockbar" data-switch="launch" role="group" aria-label="Launch mockup state">
+      <span class="lbl">Host</span>
+      <button type="button" data-state="now" aria-pressed="true">0.110.0 · tier 2</button>
+      <button type="button" data-state="next" aria-pressed="false">With host changes · tier 3</button>
+    </div>
+    <div class="kx" role="img" aria-label="Mockup of the Launch header with size and power">
+      <div class="kx-page">
+        <div class="kx-region">
+          <div class="kx-head">
+            <span class="kx-toggle">▾</span>
+            <span class="kx-glyphchip" data-t="brand">▶</span>
+            <span class="kx-rtitle">Start a swarm</span>
+            <span class="kx-byline" data-group="launch" data-state="now">small 3 agents · 15 min &nbsp;·&nbsp; medium 5 · 30 min &nbsp;·&nbsp; large 8 · 60 min</span>
+            <span class="kx-spacer"></span>
+          </div>
+          <div class="kx-body">
+            <div class="kx-sec">
+              <div class="kx-tabs">
+                <div class="kx-tabbtn on"><b>Discuss</b><span>Agents talk it through in #swarm-&lt;id&gt; and conclude.</span></div>
+                <div class="kx-tabbtn"><b>Dispatch</b><span>The lead may start the named workflows in isolated worktrees.</span></div>
+                <div class="kx-tabbtn"><b>In chat</b><span>Talk it through first; attach issue and PR context.</span></div>
+              </div>
+              <div class="kx-form">
+                <div class="kx-flabel">Task (required)</div>
+                <div class="kx-input area">What should the swarm work out? Name the issue, PR or question.</div>
+                <div class="kx-frow">
+                  <div><span class="kx-flabel">Project</span><span class="kx-input">keelson-sample ▾</span></div>
+                  <div><span class="kx-flabel">Agents may</span><span class="kx-segs"><span class="kx-seg">chat only</span><span class="kx-seg on">read the project</span></span></div>
+                </div>
+                <div class="kx-frow">
+                  <div><span class="kx-flabel">Size</span><span class="kx-segs"><span class="kx-seg">small</span><span class="kx-seg on">medium</span><span class="kx-tipwrap"><span class="kx-seg hov">large</span><span class="kx-tip" data-group="launch" data-state="next" hidden>8 agents · 80 turns, 16 per worker · 4 at once · 60 min wall clock · 10 min a turn</span></span></span></div>
+                  <div data-group="launch" data-state="now"><span class="kx-flabel">Model</span><span class="kx-input">provider default ▾</span></div>
+                  <div data-group="launch" data-state="next" hidden><span class="kx-flabel">Power</span><span class="kx-segs"><span class="kx-seg">fast</span><span class="kx-seg on">balanced</span><span class="kx-seg">deep</span></span></div>
+                </div>
+                <div class="kx-frow" data-group="launch" data-state="next" hidden>
+                  <div><span class="kx-flabel">Exact model</span><span class="kx-input">use power ▾</span></div>
+                  <div></div>
+                </div>
+                <div><span class="kx-btn brand">Start swarm</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="note">On 0.110.0 the sizes are words, the region byline carries the numbers, and Model is the host's model picker. With the host changes in appendix D, hovering a size or power shows its detail, as the tooltip on <b>large</b> does, and Power joins the form with the picker as an override.</p>
+    <p class="note">Start returns at once: the rib mints the swarm id, registers its keys, shows a <code>starting</code> card and boots in the background. A failure after that point becomes an ended <code>error</code> row with the reason, where today it leaves no record. Dispatch is disabled with a reason when no project is registered or the host cannot start workflows for a rib.</p>
+    <p>Tier 2 also adds a collapsed <b>ClickClack</b> footer: mode, address, process, binary, data directory, and the workflow grants the rib has seen refused. Its Start, Stop and Reset verbs run in the background, because stopping can take 8 s and a reset up to 30 s, and the host puts no timeout on a board action. Reset needs a typed confirm and is refused while a swarm is live. It adds a reset for the operator but does not make reset operator-only, since the <code>chat_server_reset</code> tool stays callable over MCP.</p>
+  </section>
+
+  <section id="size-power">
+    <h2>Size and power</h2>
+    <p>A swarm starts with two choices. <b>Size</b> bounds how much it may do: agents, turns, time and how many turns run at once. <b>Power</b> picks the model its agents run on. Both appear as words on the tab and in the form. The numbers and model ids show in the drawer, and on hover once the host carries option hints.</p>
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th>Size</th><th>Agents</th><th>Turns</th><th>Per worker</th><th>At once</th><th>Wall clock</th><th>Per turn</th><th>Suited to</th></tr></thead>
+        <tbody>
+          <tr><td><b>small</b></td><td class="mono">3</td><td class="mono">20</td><td class="mono">8</td><td class="mono">2</td><td class="mono">15 min</td><td class="mono">5 min</td><td>A question, a doc check, a review of one change</td></tr>
+          <tr><td><b>medium</b></td><td class="mono">5</td><td class="mono">40</td><td class="mono">12</td><td class="mono">3</td><td class="mono">30 min</td><td class="mono">5 min</td><td>An issue investigation, or a fix with one dispatched run</td></tr>
+          <tr><td><b>large</b></td><td class="mono">8</td><td class="mono">80</td><td class="mono">16</td><td class="mono">4</td><td class="mono">60 min</td><td class="mono">10 min</td><td>Several dispatched runs, or wide reading across a project</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul class="plain">
+      <li><b>Medium is today's defaults.</b> A start with no size behaves exactly as it does now, so existing callers and the <code>chat-swarm</code> workflow see no change.</li>
+      <li><b>Size is the base, explicit limits override it.</b> <code>chat_swarm_start</code> gains <code>size</code>, and <code>max_agents</code>, <code>max_turns</code> and the other limits still set single numbers on top of it. The label is worked out from the effective limits, so a swarm whose limits match no size shows <b>custom</b> and the drawer lists its numbers.</li>
+      <li><b>Size also sets concurrency.</b> Today three turns run at once at every size, so a larger swarm adds breadth but not speed. Concurrency stays off the tool inputs and moves only with size.</li>
+      <li><b>The chat-swarm workflow stays medium.</b> Its wait loop covers 40 minutes, less than a large swarm's hour, and it takes no inputs.</li>
+    </ul>
+
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th>Power</th><th>Keelson model class</th><th>On Copilot, with the map below</th><th>Suited to</th></tr></thead>
+        <tbody>
+          <tr><td><b>fast</b></td><td class="mono">fast</td><td class="mono">mai-code-1.1-flash</td><td>Summaries, triage, checks against a list</td></tr>
+          <tr><td><b>balanced</b></td><td class="mono">balanced</td><td class="mono">gpt-5.6-sol</td><td>Most investigations and plan reviews</td></tr>
+          <tr><td><b>deep</b></td><td class="mono">deep</td><td class="mono">gpt-6-astra</td><td>Root-cause work and adversarial review</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul class="plain">
+      <li><b>Power is a Keelson model class.</b> The words are the same fast, balanced and deep that workflow nodes use, so one map in <code>config.json</code> serves workflows and swarms. Every agent in the swarm runs the power's model.</li>
+      <li><b>An exact model overrides power.</b> The form's model picker sets one model for every agent, and its empty row reads <b>use power</b>. The tool's <code>model</code> and <code>worker_model</code> still split lead and workers for callers who want that.</li>
+      <li><b>No power and no model is the provider's default.</b> That is today's behavior, and the card reads <b>copilot default</b> once the first turn reports its provider.</li>
+      <li><b>Copilot needs the map.</b> Copilot publishes all three classes as <code>auto</code>, so power changes nothing there until <code>config.json</code> maps them; appendix G has the map for the three models above. Keelson reads it at boot, so a restart applies it. Claude and Codex derive their classes from their own catalogs.</li>
+    </ul>
+    <p>Power needs one host change. A rib's agent turn hands its model string to the provider unchanged, and only workflow nodes resolve a class name, so a swarm that asked for <code>deep</code> today would send the literal id <code>deep</code> and fail its turns. So <code>power</code> arrives on the tool and the form in the rib release that raises its peer floor to the host version that resolves classes on rib turns. Until then the form offers the model picker alone.</p>
+
+    <h3>Where they show</h3>
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th>Place</th><th>Size</th><th>Model</th><th>Tier</th></tr></thead>
+        <tbody>
+          <tr><td><b>Index card</b></td><td><code>size</code> field: <b>medium</b>, or <b>custom</b></td><td><code>model</code> field: the lead's model id. The class word until the first turn reports, <b>copilot default</b> when none was asked for</td><td class="mono">1a</td></tr>
+          <tr><td><b>Drawer head</b></td><td>Chip: <b>medium · 11/40 turns</b></td><td>Chip: the lead's model id</td><td class="mono">1a</td></tr>
+          <tr><td><b>Drawer vitals</b></td><td>A row with every number</td><td>A row: power, provider, and the model per role</td><td class="mono">1a</td></tr>
+          <tr><td><b>Agents column</b></td><td></td><td>The model in place of the role text, only when lead and workers differ</td><td class="mono">1a</td></tr>
+          <tr><td><b>Launch form</b></td><td>Segmented <b>small · medium · large</b>, with the numbers in the region byline</td><td>The host's model picker</td><td class="mono">2</td></tr>
+          <tr><td><b>Launch form</b></td><td>Hover on a size: its numbers</td><td>Segmented <b>fast · balanced · deep</b>, hover shows the model it resolves to; the picker becomes an override</td><td class="mono">3</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Hover per option is a host change because an option is only a value and a label, and a segment renders no title. An action's <code>hint</code> already becomes the button's title, and the same line on an option would carry a size's numbers or a power's model. A card field and a chip carry no hover at all, which is why the card shows the word and the drawer shows the numbers.</p>
+    <p>Before the host reports the model a turn ran on, the card and drawer show what was asked for: the power's class word, an exact id, or the provider's default. Keelson already reads the served model from the provider and writes it to its usage ledger, and returning it on the turn result lets the card show <b>gpt-5.6-sol</b> where it would otherwise say <b>copilot default</b> or <b>balanced</b>.</p>
+  </section>
+
+  <section>
+    <h2>Tiers</h2>
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th>Tier</th><th>Ships</th><th>Needs</th><th>Done when</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1a</td><td>Index, swarm drawer, reading pane, history, ClickClack row, Start in Chat, context rows. Size and model on cards and in the drawer; <code>size</code> on <code>chat_swarm_start</code>. Verbs: open, history, read, steer, stop, start in chat. Needs-you N1, N2, N4.</td><td>Rib changes 1 to 7, 9 to 15 (appendix C)</td><td>All boards pass <code>expectView</code>; a fix-issue gate goes in review → answered row; removing the grant raises N1 by the next gate.</td></tr>
+          <tr><td class="mono">1b</td><td>Asks: N3 from <code>@operator</code></td><td>Change 8, after D2</td><td>A question to the operator raises needs-you in managed mode, where the owner has no handle.</td></tr>
+          <tr><td class="mono">2</td><td>Launch tabs with size and model picker · reply in the gate thread · recent activity rows · ClickClack footer · token counts · copy and explore the conclusion</td><td>Tier 2 changes (appendix C)</td><td>Start folds the header on the first live swarm; a reset completes in the background with its outcome on the footer.</td></tr>
+          <tr><td class="mono">3</td><td>Power on the tool and the form; hover on each size and power; the served model on cards. Open a run from its gate card; a needs-you badge on the tab</td><td>Host changes (appendix D), and rib change T3</td><td>A swarm started at deep power runs gpt-6-astra on Copilot and its card says so; a gate card opens the run drawer with its approval composer.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="decisions">
+    <h2>Open decisions</h2>
+    <div class="tblwrap">
+      <table class="tbl compact">
+        <thead><tr><th></th><th>Decision</th><th>Options</th><th>Leaning</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">D1</td><td><b>Answering gates from the tab</b></td><td>(a) No answer buttons. (b) Approve and Request changes through <code>respondToRun</code>, sharing <code>ribApprovalGrants.chat</code> with the lead and subject to policy. (c) Wait for an operator-originated respond in the host.</td><td>(a), and ask the host for an effect that opens the run.</td></tr>
+          <tr><td class="mono">D2</td><td><b>What an open ask does</b></td><td>(a) Detect <code>@operator</code> only; the swarm still stalls after two nudges. (b) An open ask holds the swarm open like a live run, so only the wall clock ends it. (c) No asks.</td><td>(b). An agent that asked a question should not stall out while the question is open.</td></tr>
+          <tr><td class="mono">D3</td><td><b>Where needs-you lives</b></td><td>(a) Index head and card order only. (b) Also a row region above the index, hidden when empty.</td><td>(a). A second region repeats the same fact; the banner slot cannot hide at all.</td></tr>
+          <tr><td class="mono">D4</td><td><b>A start form on the tab</b></td><td>(a) Start in Chat only. (b) Launch tabs: Discuss, Dispatch, In chat.</td><td>(b), in tier 2.</td></tr>
+          <tr><td class="mono">D5</td><td><b>First host change to ask for</b></td><td>(a) An <code>open-run</code> effect. (b) A badge on rib tabs. (c) An operator <code>respondToRun</code>. (d) Model classes and the served model on rib turns.</td><td>(d), then (a). (d) is two small changes to the host's rib turn seam and is the only thing Power waits on; (a) turns the N1 card into one click and reuses the host's run drawer.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Validation</h2>
+    <p>The boards are pure functions of the swarm summary. Each builder is tested against fixture summaries covering first run, starting, running, gate in review, N1, N2, N4, ended done, ended stalled, and a failure before boot. Every frame must pass <code>expectView(key, "board")</code>, the validator the host applies before it broadcasts, so a schema slip fails a unit test instead of blanking the tab.</p>
+    <p>A publisher test checks that a change landing during an in-flight recompose is published by the next loop. <code>dev/live-smoke.ts</code> gains assertions on the index frame as a scripted swarm moves through starting, running, gate, answer and done against a real ClickClack, with no model spend. Last, a manual run of the fix-issue scenario with the tab open, then again with <code>ribApprovalGrants.chat</code> removed, confirms that N1 appears and clears once the run is answered in the Workflows tab.</p>
+    <p>Size tests check that each preset's limits read back as its word, that one changed limit reads as custom, and that medium equals today's defaults. The docs test already parses the start-input rows against the tool schema, and it gains the size rows. A tool-level test covers how <code>size</code>, <code>model</code> and <code>worker_model</code> reach the swarm, which no test covers today. For power, a run on Copilot with the class map, started at deep, confirms the lead's turns request <code>gpt-6-astra</code> and the card names it.</p>
+  </section>
+
+  <div class="appendix">
+    <p class="eyebrow">Appendix · reference</p>
+    <h2>Reference detail</h2>
+
+    <section>
+      <h3>A · Keys and regions</h3>
+      <p>One surface, <code>{id: "swarms", title: "Swarms", hideRegionActions: true}</code>. Tier 1 has one row region, the index, with <code>live: true</code>. Tier 2 adds a collapsible header (<code>rib:chat:launch</code>) and a collapsed footer (<code>rib:chat:server</code>). No banner, no <code>registerRegion</code>, no workflow or cadence on any region.</p>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Key</th><th>Kind</th><th>Registered and seeded</th><th>Released</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">rib:chat:swarms</td><td>board</td><td>At activation, seeded at once</td><td>dispose</td></tr>
+          <tr><td class="mono">rib:chat:history</td><td>board</td><td>At activation</td><td>dispose</td></tr>
+          <tr><td class="mono">rib:chat:swarm:&lt;id&gt;</td><td>board</td><td>In the launch path before boot, under an id minted up front and re-minted on collision; persisted swarms at activation</td><td>dispose, or past 100 keys</td></tr>
+          <tr><td class="mono">rib:chat:doc:&lt;id&gt;</td><td>markdown</td><td>With the swarm key; its view entry is pushed and the manifest refreshed once</td><td>With the swarm key</td></tr>
+          <tr><td class="mono">rib:chat:launch</td><td>board</td><td>Tier 2, at activation</td><td>dispose</td></tr>
+          <tr><td class="mono">rib:chat:server</td><td>board</td><td>Tier 2, at activation</td><td>dispose</td></tr>
+          <tr><td class="mono">rib:chat:server-log</td><td>log</td><td>Tier 2, at activation; filled on open with the last 200 lines</td><td>dispose</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>B · Actions</h3>
+      <p>One <code>onAction</code> refuses actions from html frames, revalidates every id from payload or binding, and never awaits anything slower than one ClickClack post. A plain success toasts <code>&lt;type&gt; ✓</code>; a failure toasts and, on a form, also shows inline.</p>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Verb</th><th>From</th><th>Does</th><th>Returns</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">swarm-open</td><td>Card, ended row, history row</td><td>Re-registers the key if the cap released it, publishes</td><td><code>open-canvas</code>, no toast</td></tr>
+          <tr><td class="mono">history-open</td><td>Earlier row, back row</td><td>Recomposes history</td><td><code>open-canvas</code></td></tr>
+          <tr><td class="mono">read-doc</td><td>Read in full, Read the gate</td><td>Recomposes the reading pane</td><td><code>open-canvas</code></td></tr>
+          <tr><td class="mono">steer</td><td>Drawer controls</td><td>Posts the note as the owner; refused once the swarm ended or concluded; resolves open asks</td><td>ok, toasts <code>steer ✓</code></td></tr>
+          <tr><td class="mono">stop-swarm</td><td>Card ⋯, drawer controls</td><td>Stops in the background after a confirm naming the runs it cancels</td><td>ok</td></tr>
+          <tr><td class="mono">start-in-chat</td><td>Index</td><td>Seeds a chat that gathers context and calls <code>chat_swarm_start</code></td><td><code>open-chat</code></td></tr>
+          <tr><td class="mono">start-swarm <span class="tier">2</span></td><td>Launch tabs</td><td>Checks, mints the id, registers keys, boots in the background. Reads <code>task</code>, <code>project</code>, <code>tools</code>, <code>size</code>, and <code>model</code> with its <code>provider</code> companion from the picker; <code>power</code> joins in tier 3</td><td><code>open-surface</code> to the index, no toast</td></tr>
+          <tr><td class="mono">reply <span class="tier">2</span></td><td>Gate card</td><td>Posts in the gate thread as the owner, waking the thread's agents</td><td>ok</td></tr>
+          <tr><td class="mono">server-start, server-stop, server-reset <span class="tier">2</span></td><td>ClickClack footer</td><td>Same guards as the tools; runs in the background and reports on the footer</td><td>ok, meaning requested</td></tr>
+          <tr><td class="mono">server-log <span class="tier">2</span></td><td>ClickClack footer</td><td>Tails the current <code>server.log</code> into the log key</td><td><code>open-canvas</code></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>C · Rib-side data changes</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>#</th><th>Change</th><th>For</th><th>Tier</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td>ClickClack base URL and workspace id on the swarm summary</td><td>Every link out</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">2</td><td>Project and op id on the summary; pass <code>projectId</code> to <code>registerOp</code></td><td>The project field; op records</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">3</td><td>An identity tone per agent, assigned at spawn and kept</td><td>Chips and people fields</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">4</td><td>A health block: connection, reconnect failures, channel fault, lead failures, nudges, refused conclusions and why. An open callback on the ClickClack socket</td><td>Reason ladder, health rows, N4</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">5</td><td>Store the missing-evidence list and last node on each run read</td><td>Evidence strip</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">6</td><td>Who answers each gate, from remembered <code>ribApprovalGrants</code> refusals, persisted</td><td>N1</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">7</td><td>A quiet-since mark when the swarm idles with a paused run, cleared by any turn</td><td>N2</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">8</td><td>Asks: a prompt line to write <code>@operator</code>, detection on bot messages, the rib's own posts excluded</td><td>N3</td><td class="mono">1b</td></tr>
+          <tr><td class="mono">9</td><td>An <code>onChange(kind)</code> hook on the swarm</td><td>Publishers</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">10</td><td>Mint the id at launch; a starting map; failures after minting kept as ended <code>error</code> summaries</td><td>Starting card, boot errors</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">11</td><td>Persist ended summaries, up to 50, to <code>swarms.json</code> in the rib's data directory; cleared on reset</td><td>History across restarts</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">12</td><td>A <code>src/surface/</code> module: builders, a markdown flattener, publishers, key registry, actions</td><td>Everything</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">13</td><td>A cached server status, refreshed on swarm start and end, server tools, and every 60 s while a swarm is live</td><td>ClickClack row, start gating</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">14</td><td>Provider, model, worker model and power as asked, on the summary; a model on each agent; the provider id each turn reports, which the turn runner drops today</td><td>Card and drawer model</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">15</td><td>Size presets; a <code>size</code> input on <code>chat_swarm_start</code> under the explicit limits; a label worked out from the effective limits; concurrency set by size. The docs corpus, the site pages that list start inputs, and the docs test rows follow</td><td>Size everywhere</td><td class="mono">1a</td></tr>
+          <tr><td class="mono">T3</td><td>A <code>power</code> input passed as the class name, with the peer floor raised to the host that resolves it; the served model stored per agent</td><td>Power, served model</td><td class="mono">3</td></tr>
+          <tr><td class="mono">T2</td><td>Stored launch config; gate files kept while pending; owner posts into a thread; an activity ring; summed token usage; server start time, log tail, background stop and reset</td><td>Tier 2 boards</td><td class="mono">2</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">The summary also feeds <code>chat_swarm_status</code> and the op's progress frames, so the new fields stay compact.</p>
+    </section>
+
+    <section>
+      <h3>D · Host changes worth asking for</h3>
+      <p>Tiers 1 and 2 need none: they work on host 0.110.0, and the rib's peer floor already covers every primitive they use. Power needs the first row; hover per option needs the fourth.</p>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Change</th><th>Unlocks</th><th>Until then</th></tr></thead>
+        <tbody>
+          <tr><td><b>Model classes resolved on rib turns</b></td><td>Power: <code>fast</code>, <code>balanced</code> and <code>deep</code> resolve through <code>config.json</code> and the provider's classes, as they do for workflow nodes</td><td>The model picker only</td></tr>
+          <tr><td><b>The served model on the turn result</b></td><td>The card names the model that ran, not <b>copilot default</b> or the class word</td><td>What was asked for</td></tr>
+          <tr><td><b>Model classes and the default model from <code>getProviders</code></b></td><td>A power's hover names its model before the swarm starts</td><td>The class word; the model once a turn reports it</td></tr>
+          <tr><td><b>A <code>hint</code> on select and segmented options</b></td><td>Hover on each size and power</td><td>The Launch byline and the drawer rows</td></tr>
+          <tr><td><b>Reasoning effort on rib turns</b></td><td>Deep power can also raise effort, as workflow nodes do</td><td>Power sets the model only</td></tr>
+          <tr><td><b>An <code>open-run</code> client effect</b></td><td>A gate card opens the run drawer with its trace and approval composer</td><td>"Answer it in the Workflows tab" and a copyable run id</td></tr>
+          <tr><td><b>A badge on rib tabs</b></td><td>Needs-you visible from any tab</td><td>The Workflows pip, which counts every paused run</td></tr>
+          <tr><td><b>A quiet-success flag on actions</b></td><td>Steer and reply without a toast</td><td>Verb names chosen to read well in a toast</td></tr>
+          <tr><td><b>The starting rib on run summaries</b></td><td>"From swarm s9hjx" in the Workflows tab</td><td>The run id</td></tr>
+          <tr><td><b>A node total on run status</b></td><td>A true progress bar per run</td><td>"N settled" as text</td></tr>
+          <tr><td><b>An operator-originated respond</b></td><td>Answer buttons that do not share the lead's grant</td><td>The Workflows tab</td></tr>
+          <tr><td><b><code>open-surface</code> and the roster peek in the drawer</b></td><td>A real back link; the cast in the drawer head</td><td>The back row; the Agents column</td></tr>
+          <tr><td><b>Markdown in row details</b></td><td>Formatted reasons inline</td><td>The reading pane</td></tr>
+          <tr><td><b>Subscriber presence for ribs</b></td><td>Probe ClickClack only while someone watches</td><td>A 60 s probe while a swarm is live</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>E · Alternatives not chosen</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Alternative</th><th>Why not</th></tr></thead>
+        <tbody>
+          <tr><td><b>Mirror the channel in a drawer board</b></td><td>Frames replace the whole payload, so an open drawer re-sends up to 96 KB per message; rows cannot render markdown and have no scroll anchoring. It builds a second, worse home for a conversation ClickClack already holds, the same reason Chamber removed its exhibits shelf.</td></tr>
+          <tr><td><b>A Needs-you banner region</b></td><td>The banner slot cannot collapse or hide, so it always shows. Chamber moved its Briefing out of the banner for this reason. The index head carries the verdict instead.</td></tr>
+          <tr><td><b>A panel per live swarm, or pinned swarms</b></td><td>Chamber removed per-room panels: a panel is for what stays true, and you enter what is happening. Each runtime region also makes every client re-fetch the rib list, which re-runs every rib's auth probe.</td></tr>
+          <tr><td><b>A Dispatched runs region</b></td><td>A second home for runs that already live on each swarm's drawer, and the Workflows tab already lists runs.</td></tr>
+          <tr><td><b>A rib-built run trace</b></td><td>Duplicates the host's run view; what is missing is only an effect to open it.</td></tr>
+          <tr><td><b>An html transcript, or a ClickClack embed</b></td><td>An html region reloads its iframe on every frame, losing scroll and typing. The sandbox blocks frames and network access, and ClickClack serves its embeds with <code>frame-ancestors 'self'</code>.</td></tr>
+          <tr><td><b>Approve and Request changes buttons</b></td><td>Decision D1.</td></tr>
+          <tr><td><b>One shared reader key</b></td><td>Two viewers opening different swarms would race on it; the reading pane is one key per swarm.</td></tr>
+          <tr><td><b>A tab titled Chat</b></td><td>Keelson already has a Chat tab.</td></tr>
+          <tr><td><b>Numbers as the size labels</b></td><td>Three numbers per option read as a spreadsheet; the word carries the choice and the numbers sit one hover or one click away.</td></tr>
+          <tr><td><b>Size and power as chip strips with hints</b></td><td>Chips carry hover today, as Chamber's scope bar does, but each click is a round trip that toasts <code>&lt;type&gt; ✓</code>, and the choice becomes a draft held on the server and shared by every viewer rather than a value in the form.</td></tr>
+          <tr><td><b>Model names as the power labels</b></td><td>Names like flash, sol and astra differ by provider and change as catalogs rotate; the class words stay the same and the hover names the model.</td></tr>
+          <tr><td><b>A power map owned by the rib</b></td><td>A second place to configure what <code>config.json</code> already holds for workflows, and the rib cannot check ids against the live catalog.</td></tr>
+          <tr><td><b>Model ids built into the rib</b></td><td>Copilot retires concrete ids, which is why its provider publishes only <code>auto</code>.</td></tr>
+          <tr><td><b>Power that runs the lead a class above workers</b></td><td>A single word would then mean two models; the tool's <code>model</code> and <code>worker_model</code> already cover a split.</td></tr>
+          <tr><td><b>The lead picks a worker's model at spawn</b></td><td>The operator's power bounds what a swarm spends, and workers can spawn helpers too.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>F · Host behavior this design relies on</h3>
+      <p>Paths are in the keelson repository, from <code>@keelson/shared</code> 0.110.0.</p>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Behavior</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>A region renders board, table, graph, html or log; markdown renders only in the drawer</td><td class="mono cite">apps/web/src/views/Surface.tsx:358-366</td></tr>
+          <tr><td>Rib tabs are text only, with no icon or badge</td><td class="mono cite">apps/web/src/components/TopBar.tsx:13-16</td></tr>
+          <tr><td>Each frame replaces the payload; no delta, no replay on connect</td><td class="mono cite">apps/server/src/snapshot-manager.ts:54-112</td></tr>
+          <tr><td>A recompose requested during one in flight is dropped</td><td class="mono cite">apps/server/src/snapshot-manager.ts:54-60</td></tr>
+          <tr><td>A 404 on a key stops that client's socket for good</td><td class="mono cite">apps/web/src/hooks/useSnapshot.ts:77-86</td></tr>
+          <tr><td>Rows are keyed by content; a changed row closes its open disclosure</td><td class="mono cite">apps/web/src/components/Canvas/BoardView.tsx:1230</td></tr>
+          <tr><td>A single-line expanded field sends on Enter; a multiline one does not</td><td class="mono cite">BoardView.tsx:440-447, 513-535</td></tr>
+          <tr><td>Row detail is plain pre-wrapped text, at most 4000 characters</td><td class="mono cite">packages/shared/src/canvas.ts:714-716</td></tr>
+          <tr><td>A plain action success toasts <code>&lt;type&gt; ✓</code></td><td class="mono cite">apps/web/src/hooks/useRibActionDispatch.ts:140</td></tr>
+          <tr><td><code>open-canvas</code> opens only the rib's own keys; <code>open-surface</code> is not wired in the drawer</td><td class="mono cite">apps/server/src/ribs-handler.ts:196-213</td></tr>
+          <tr><td>No client effect opens an existing run</td><td class="mono cite">packages/shared/src/rib.ts:904-931</td></tr>
+          <tr><td><code>respondToRun</code> is gated by <code>ribApprovalGrants</code> alone</td><td class="mono cite">packages/shared/src/rib.ts:421-434</td></tr>
+          <tr><td>The banner slot cannot collapse or hide</td><td class="mono cite">packages/shared/src/rib.ts:593-600</td></tr>
+          <tr><td>An html region reloads its iframe on every frame; its CSP blocks frames and fetch</td><td class="mono cite">apps/web/src/components/Canvas/SandboxedHtml.tsx:17-28, 173</td></tr>
+          <tr><td>A field option is only <code>{value, label}</code>; a field has no hint; segments and options render no title</td><td class="mono cite">packages/shared/src/canvas.ts:274-323;<br>BoardView.tsx:484-495, 508-512</td></tr>
+          <tr><td>An action's <code>hint</code> becomes its button's title</td><td class="mono cite">BoardView.tsx:201-206, 352, 407, 536</td></tr>
+          <tr><td>A <code>modelPicker</code> field sends the model id under its name and the provider id under <code>providerField</code>; its empty row reads its placeholder</td><td class="mono cite">canvas.ts:305-344;<br>BoardView.tsx:448-467;<br>ModelFieldPicker.tsx:227, 370</td></tr>
+          <tr><td>A rib turn passes its model to the provider unchanged; class names resolve only in workflow prompt nodes</td><td class="mono cite">apps/server/src/rib-agent-turn.ts:254;<br>packages/workflows/src/handlers/prompt.ts:617-657</td></tr>
+          <tr><td>A rib turn's result carries the provider id but no model; the served model goes only to the usage ledger</td><td class="mono cite">packages/shared/src/rib.ts:119-137;<br>rib-agent-turn.ts:269-283, 336-342</td></tr>
+          <tr><td>Copilot publishes fast, balanced and deep as <code>auto</code>; <code>config.json</code> overrides them per provider, read at boot</td><td class="mono cite">packages/providers/src/copilot/provider.ts:68-73;<br>packages/shared/src/config.ts:230-242;<br>apps/server/src/bootstrap.ts:1621</td></tr>
+          <tr><td><code>getProviders</code> gives a rib only each provider's id and name</td><td class="mono cite">apps/server/src/ribs.ts:423-430</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>G · Copilot class map</h3>
+      <p>Added to <code>~/.keelson/config.json</code> beside the provider switches. It sets what fast, balanced and deep mean on Copilot for workflow nodes today, and for swarm power once rib turns resolve classes. A workflow node that names a class on Copilot moves from <code>auto</code> to these models too; a node with a <code>model_by_provider</code> pin, like the chat-swarm workflow's, keeps its pin.</p>
+      <pre class="code">"copilot": {
+  "modelClasses": {
+    "fast": "mai-code-1.1-flash",
+    "balanced": "gpt-5.6-sol",
+    "deep": "gpt-6-astra"
+  }
+}</pre>
+    </section>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('[data-switch]').forEach(function (bar) {
+  var group = bar.getAttribute('data-switch');
+  bar.querySelectorAll('button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var state = btn.getAttribute('data-state');
+      bar.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b === btn)); });
+      document.querySelectorAll('[data-group="' + group + '"]').forEach(function (el) { el.hidden = el.getAttribute('data-state') !== state; });
+    });
+  });
+});
+</script>
