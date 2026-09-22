@@ -795,7 +795,8 @@ export class Swarm {
           `Run ${runId} (${run.workflow}) was cancelled: ${breach}. Its grant requires an isolated worktree.`,
         );
       } else if (change && !opts.quiet) {
-        this.notifyLead(change);
+        // A run resuming after its approval needs nothing from the lead.
+        this.notifyLead(change, { wake: run.status !== "running" });
       }
     } catch (e) {
       this.log(`could not read run ${runId}: ${errText(e)}`);
@@ -807,7 +808,7 @@ export class Swarm {
 
   // Queues a run update for the lead's next turn and puts it on the channel, as
   // the lead, so the operator sees it without waking anyone.
-  private notifyLead(text: string): void {
+  private notifyLead(text: string, opts: { wake?: boolean } = {}): void {
     if (this.status !== "running") return;
     this.log(text);
     const lead = [...this.agents.values()].find((a) => a.lead);
@@ -819,7 +820,7 @@ export class Swarm {
         .then((m) => this.enqueueMessage(m))
         .catch(() => {});
     }
-    if (this.conclusion !== undefined) return;
+    if (this.conclusion !== undefined || opts.wake === false) return;
     this.notes.push(text);
     this.pump();
   }

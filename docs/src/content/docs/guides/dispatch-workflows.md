@@ -48,7 +48,8 @@ read-only workflows that way.
 The lead gets `chat_workflow_start`, `chat_workflow_status`, and
 `chat_workflow_cancel`. It gives each run a one-line purpose and the inputs its
 workflow expects, and starts independent runs in parallel. Every status change
-wakes it, and the update also appears in the channel as a **Run update**.
+appears in the channel as a **Run update**. A pause, an ending, or a
+cancellation also wakes the lead; a run resuming after its approval does not.
 
 The lead cannot conclude while a run is live. It waits, or cancels the run.
 

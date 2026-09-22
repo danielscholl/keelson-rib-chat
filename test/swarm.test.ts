@@ -531,7 +531,12 @@ describe("Workflow dispatch", () => {
           });
         } else if (turn === 2) {
           refused = (await call("chat_done", { summary: "too early" })).content;
+          // Resuming after the approval is posted but does not wake the lead.
           later(20, () => {
+            fake.set("run_1", { status: "running", pendingApproval: undefined });
+            swarmRef?.onRunEvent("run_1");
+          });
+          later(60, () => {
             fake.set("run_1", {
               status: "succeeded",
               completedAt: new Date().toISOString(),
@@ -560,6 +565,7 @@ describe("Workflow dispatch", () => {
     expect(fake.started).toEqual([{ name: "fix-issue", inputs: { issue: "1" } }]);
     expect(prompts[1]).toContain("paused for human approval at node approve-plan");
     expect(refused).toContain("still live");
+    expect(prompts).toHaveLength(3);
     expect(prompts[2]).toContain("is succeeded");
     expect(prompts[2]).toContain("verified");
     expect(summary.status).toBe("done");

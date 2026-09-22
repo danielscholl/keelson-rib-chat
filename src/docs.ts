@@ -191,9 +191,10 @@ lead. Before that the harness reports the project root even for a run still
 creating its worktree, so the check waits. Mark a read-only workflow such as
 \`investigate\` with \`isolated: false\`.
 
-A run's status changes wake the lead with the update in its turn, and appear in
-the channel as a Run update posted by the lead, so the operator sees them
-without waking anyone. The rib also re-reads live runs every 20 seconds.
+A run's status changes appear in the channel as a Run update posted by the
+lead, so the operator sees them without waking anyone. A pause, an ending, or a
+cancellation also wakes the lead with the update in its turn. A run resuming
+after its approval does not. The rib also re-reads live runs every 20 seconds.
 
 A run that pauses on a human gate reports its node and prompt. No agent can
 answer it: the operator answers with \`workflow_respond\`, and the swarm waits.
