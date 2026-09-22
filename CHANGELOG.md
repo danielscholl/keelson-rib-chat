@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.3.0...v0.4.0) (2026-09-22)
+
+
+### Added
+
+* **swarm:** let the lead dispatch Keelson workflows ([#19](https://github.com/danielscholl/keelson-rib-chat/issues/19)) ([ed55739](https://github.com/danielscholl/keelson-rib-chat/commit/ed557392fab0b93d4f993219acbc1060e6be8a33))
+* **swarm:** survive failed turns and narrow thread wakes ([#18](https://github.com/danielscholl/keelson-rib-chat/issues/18)) ([a510728](https://github.com/danielscholl/keelson-rib-chat/commit/a5107285ef2a19d1627cfe2582215d8c12213f65))
+
 ## [0.3.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.2.0...v0.3.0) (2026-09-21)
 
 
