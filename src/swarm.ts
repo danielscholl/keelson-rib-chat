@@ -727,6 +727,7 @@ export class Swarm {
       status: "running",
       startedAt: new Date().toISOString(),
       isolated: grant.isolated,
+      nodesDone: 0,
       prUrls: [],
       verified: false,
     };

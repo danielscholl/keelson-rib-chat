@@ -185,9 +185,11 @@ Keelson's \`config.json\` must also name each workflow for the \`chat\` rib unde
 Keelson's policy as a \`workflow_run\` call.
 
 Every entry is isolated unless it says \`isolated: false\`. An isolated run must
-establish its own worktree. The rib reads each run's checkout as the run starts,
-cancels one it finds in the project's live checkout, and tells the lead. Mark a
-read-only workflow such as \`investigate\` with \`isolated: false\`.
+establish its own worktree. Once a run's first node has finished, the rib checks
+where it ran, cancels one it finds in the project's live checkout, and tells the
+lead. Before that the harness reports the project root even for a run still
+creating its worktree, so the check waits. Mark a read-only workflow such as
+\`investigate\` with \`isolated: false\`.
 
 A run's status changes wake the lead with the update in its turn, and appear in
 the channel as a Run update posted by the lead, so the operator sees them

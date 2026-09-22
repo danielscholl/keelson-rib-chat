@@ -39,9 +39,11 @@ export function verified(run: ChildRun): boolean {
   return run.checkout?.worktreeEstablished === true && run.prUrls.length > 0;
 }
 
-// A live isolated run whose checkout is known but is not its own worktree.
+// A live isolated run that has begun executing outside its own worktree. Until
+// a node has finished, the harness reports the project root for a run whose
+// worktree is still being created, so that alone proves nothing.
 export function isolationBreach(run: ChildRun): string | undefined {
-  if (!run.isolated || !isLive(run) || !run.checkout?.path) return undefined;
+  if (!run.isolated || !isLive(run) || !run.checkout?.path || run.nodesDone === 0) return undefined;
   if (run.checkout.worktreeEstablished) return undefined;
   return `it is running in ${run.checkout.path}, not an isolated worktree`;
 }
@@ -53,6 +55,7 @@ export function applyStatus(run: ChildRun, status: RibRunStatus): string | undef
   const approvalBefore = run.pendingApproval?.nodeId;
   run.status = status.status;
   run.checkout = { ...status.checkout };
+  run.nodesDone = status.nodes.length;
   if (status.completedAt) run.completedAt = status.completedAt;
   if (status.error) run.error = status.error;
   if (status.pendingApproval) run.pendingApproval = { ...status.pendingApproval };

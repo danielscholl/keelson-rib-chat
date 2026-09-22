@@ -87,6 +87,8 @@ export interface ChildRun {
   completedAt?: string;
   isolated: boolean;
   checkout?: { path: string | null; branch: string | null; worktreeEstablished: boolean };
+  // Nodes that have finished or paused.
+  nodesDone: number;
   pendingApproval?: { nodeId: string; prompt: string };
   prUrls: string[];
   error?: string;

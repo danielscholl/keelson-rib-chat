@@ -578,12 +578,19 @@ describe("Workflow dispatch", () => {
   test("an isolated run found in the live checkout is cancelled and reported", async () => {
     const fake = fakeDispatcher({ live: true });
     const prompts: string[] = [];
+    let swarmRef: Swarm | undefined;
     const { start } = harness(
       async ({ agentId, turn, prompt, call }) => {
         if (agentId !== "s1-lead") return;
         prompts.push(prompt);
         if (turn === 1) {
           await call("chat_workflow_start", { workflow: "fix-issue", purpose: "fix issue 2" });
+          // Still creating its worktree: the harness reports the live checkout.
+          later(40, () => {
+            expect(fake.cancelled).toEqual([]);
+            fake.set("run_1", { nodes: [{ nodeId: "extract-issue", status: "succeeded" }] });
+            swarmRef?.onRunEvent("run_1");
+          });
         } else {
           await call("chat_done", { summary: "the run could not be isolated" });
         }
@@ -593,7 +600,8 @@ describe("Workflow dispatch", () => {
         dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
       },
     );
-    const summary = await (await start()).finished;
+    swarmRef = await start();
+    const summary = await swarmRef.finished;
     expect(fake.cancelled).toEqual(["run_1"]);
     expect(prompts[1]).toContain("not an isolated worktree");
     expect(summary.runs?.[0]).toMatchObject({ status: "cancelled", verified: false });

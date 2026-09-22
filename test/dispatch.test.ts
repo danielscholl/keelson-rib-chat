@@ -12,6 +12,7 @@ function run(over: Partial<ChildRun> = {}): ChildRun {
     status: "running",
     startedAt: "",
     isolated: true,
+    nodesDone: 1,
     prUrls: [],
     verified: false,
     ...over,
@@ -84,6 +85,13 @@ describe("dispatch evidence", () => {
     ).toContain("/p");
     expect(
       isolationBreach(run({ checkout: { path: null, branch: null, worktreeEstablished: false } })),
+    ).toBeUndefined();
+    // Before any node finishes, the harness reports the project root for a run
+    // still creating its worktree.
+    expect(
+      isolationBreach(
+        run({ nodesDone: 0, checkout: { path: "/p", branch: "main", worktreeEstablished: false } }),
+      ),
     ).toBeUndefined();
     expect(
       isolationBreach(

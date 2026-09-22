@@ -70,10 +70,12 @@ dispatches long runs a larger `max_minutes`.
 
 ## Isolation
 
-An isolated run must establish its own worktree. The rib reads each run's
-checkout as the run starts. A run found in the project's live checkout is
-cancelled, and the lead is told why. Your working tree is never the place an
-isolated run writes.
+An isolated run must establish its own worktree. Once the run's first node has
+finished, the rib checks where it ran. A run found in the project's live
+checkout is cancelled, and the lead is told why. The check waits for that first
+node because the harness reports the project root for a run that is still
+creating its worktree. For `fix-issue` the first nodes only read the issue, and
+nothing writes until after its approval gate.
 
 ## Read the evidence
 
