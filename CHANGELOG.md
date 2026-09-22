@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.7.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.6.0...v0.7.0) (2026-09-22)
+
+
+### Added
+
+* **surface:** add a ClickClack footer to the Swarms tab ([#34](https://github.com/danielscholl/keelson-rib-chat/issues/34)) ([5aab8fd](https://github.com/danielscholl/keelson-rib-chat/commit/5aab8fd4e5e79610e0cf1c7709db464c2778386b))
+* **surface:** add the Swarms tab with index, drawer and reading pane ([#29](https://github.com/danielscholl/keelson-rib-chat/issues/29)) ([3127d47](https://github.com/danielscholl/keelson-rib-chat/commit/3127d47ab9254d240fdb6e72ccbefb819fef4cac))
+* **surface:** start swarms from the tab and run ended ones again ([#32](https://github.com/danielscholl/keelson-rib-chat/issues/32)) ([4c12ddc](https://github.com/danielscholl/keelson-rib-chat/commit/4c12ddc859e69fe5fa622e7ca51bebe9a433112e))
+* **swarm:** add size presets and record the model each swarm runs ([#26](https://github.com/danielscholl/keelson-rib-chat/issues/26)) ([7540c1a](https://github.com/danielscholl/keelson-rib-chat/commit/7540c1a9fe2b66b603532ab98f88d038fed5ef11))
+* **swarm:** let the lead publish a designed report page ([#35](https://github.com/danielscholl/keelson-rib-chat/issues/35)) ([e76886f](https://github.com/danielscholl/keelson-rib-chat/commit/e76886f160eadbf7ea71b657d2f049ec5f25d1ce))
+* **swarm:** report changes and keep ended swarms across restarts ([#27](https://github.com/danielscholl/keelson-rib-chat/issues/27)) ([3127d47](https://github.com/danielscholl/keelson-rib-chat/commit/3127d47ab9254d240fdb6e72ccbefb819fef4cac))
+* **swarm:** track health, gate answerers and quiet gates ([#28](https://github.com/danielscholl/keelson-rib-chat/issues/28)) ([3127d47](https://github.com/danielscholl/keelson-rib-chat/commit/3127d47ab9254d240fdb6e72ccbefb819fef4cac))
+
+
+### Fixed
+
+* **surface:** tidy ended swarms on the Swarms tab ([#31](https://github.com/danielscholl/keelson-rib-chat/issues/31)) ([8607e5f](https://github.com/danielscholl/keelson-rib-chat/commit/8607e5faaa6e84f7b58d9ad0834a6317953b2451))
+
+
+### Documentation
+
+* **design:** add the Swarms surface design ([#25](https://github.com/danielscholl/keelson-rib-chat/issues/25)) ([531a9b4](https://github.com/danielscholl/keelson-rib-chat/commit/531a9b4a8c81e30b2f876065aa8f8bed3fdfd4c1))
+
 ## [0.6.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.5.0...v0.6.0) (2026-09-22)
 
 
