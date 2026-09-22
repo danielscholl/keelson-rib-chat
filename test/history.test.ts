@@ -36,25 +36,32 @@ function summary(id: string): SwarmSummary {
 describe("swarm history", () => {
   test("round-trips in order, creating the data directory", () => {
     const path = historyPath(join(tempDir(), "rib-chat"));
-    saveHistory(path, [summary("s1"), summary("s2")]);
-    expect(loadHistory(path).map((s) => s.id)).toEqual(["s1", "s2"]);
+    saveHistory(path, { ended: [summary("s1"), summary("s2")], refusedApprovals: ["fix-issue"] });
+    const history = loadHistory(path);
+    expect(history.ended.map((s) => s.id)).toEqual(["s1", "s2"]);
+    expect(history.refusedApprovals).toEqual(["fix-issue"]);
   });
 
   test("leaves no temp file behind", () => {
     const dir = tempDir();
-    saveHistory(historyPath(dir), [summary("s1")]);
+    saveHistory(historyPath(dir), { ended: [summary("s1")], refusedApprovals: [] });
     expect(readdirSync(dir)).toEqual(["swarms.json"]);
   });
 
   test("a missing, corrupt, or foreign file is an empty history", () => {
     const dir = tempDir();
     const path = historyPath(dir);
-    expect(loadHistory(path)).toEqual([]);
+    const none = { ended: [], refusedApprovals: [] };
+    expect(loadHistory(path)).toEqual(none);
     writeFileSync(path, "{not json");
-    expect(loadHistory(path)).toEqual([]);
+    expect(loadHistory(path)).toEqual(none);
     writeFileSync(path, JSON.stringify({ version: 99, ended: [summary("s1")] }));
-    expect(loadHistory(path)).toEqual([]);
-    writeFileSync(path, JSON.stringify({ version: 1, ended: [summary("s1"), { id: 3 }] }));
-    expect(loadHistory(path).map((s) => s.id)).toEqual(["s1"]);
+    expect(loadHistory(path)).toEqual(none);
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, ended: [summary("s1"), { id: 3 }], refusedApprovals: [1] }),
+    );
+    expect(loadHistory(path).ended.map((s) => s.id)).toEqual(["s1"]);
+    expect(loadHistory(path).refusedApprovals).toEqual([]);
   });
 });

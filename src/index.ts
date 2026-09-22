@@ -6,14 +6,24 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { Rib, RibAuthStatus, RibContext } from "@keelson/shared";
+import type { Rib, RibAuthStatus, RibContext, RibViewDescriptor } from "@keelson/shared";
 import { ClickClackClient, ClickClackError } from "./clickclack.ts";
 import type { WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
 import { historyPath, loadHistory, saveHistory } from "./history.ts";
 import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
-import { newSwarmId, Swarm, SwarmStartError } from "./swarm.ts";
+import { handleSwarmsAction } from "./surface/actions.ts";
+import type { ServerLine, SurfaceState } from "./surface/index-board.ts";
+import { INDEX_KEY, SURFACE_ID } from "./surface/keys.ts";
+import { createSwarmsSurface, type SwarmRecord, type SwarmsSurface } from "./surface/surface.ts";
+import {
+  type ApprovalRefusals,
+  newSwarmId,
+  Swarm,
+  type SwarmChange,
+  SwarmStartError,
+} from "./swarm.ts";
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
 import {
   type ChatMessage,
@@ -50,6 +60,16 @@ let disposed = false;
 
 const swarms = new Map<string, Swarm>();
 const ended = new Map<string, SwarmSummary>();
+const refusedApprovals = new Set<string>();
+const approvalRefusals: ApprovalRefusals = {
+  has: (workflow) => refusedApprovals.has(workflow),
+  set: (workflow, refused) => {
+    if (refused === refusedApprovals.has(workflow)) return;
+    if (refused) refusedApprovals.add(workflow);
+    else refusedApprovals.delete(workflow);
+    persistHistory();
+  },
+};
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -174,6 +194,67 @@ function overrides(input: StartSwarmInput): Partial<SwarmLimits> {
   };
 }
 
+// The Swarms tab. Its markdown reading panes are declared per swarm, so the
+// views array grows and shrinks with the keys the surface holds.
+const views: RibViewDescriptor[] = [];
+let surface: SwarmsSurface | undefined;
+let serverLine: ServerLine | undefined;
+let serverPoll: ReturnType<typeof setInterval> | undefined;
+const SERVER_POLL_MS = 60_000;
+
+function surfaceState(): SurfaceState {
+  return {
+    live: [...swarms.values()].map((s) => s.summary()),
+    starting: [...starting.values()],
+    ended: [...ended.values()],
+    ...(serverLine ? { server: serverLine } : {}),
+  };
+}
+
+function findSwarm(id: string): SwarmRecord {
+  const live = swarms.get(id)?.summary();
+  const pending = starting.get(id);
+  const done = ended.get(id);
+  return {
+    ...(live ? { live } : {}),
+    ...(pending ? { starting: pending } : {}),
+    ...(done ? { ended: done } : {}),
+  };
+}
+
+function changed(id: string, kind: SwarmChange): void {
+  surface?.changed(id, kind);
+  if (kind === "start" || kind === "end") void refreshServer();
+}
+
+// The ClickClack row reads a cached status: probed on swarm start and end, after
+// the server tools, and every minute while a swarm is live.
+async function refreshServer(): Promise<void> {
+  if (!surface) return;
+  try {
+    const t = await target();
+    if (t.mode === "managed") {
+      const status = await t.server.status();
+      serverLine = { mode: "managed", url: status.url, running: status.running };
+    } else {
+      serverLine = { mode: "external", url: t.url, running: true };
+    }
+  } catch {
+    serverLine = undefined;
+  }
+  surface?.refresh();
+  if (swarms.size + starting.size > 0 && !serverPoll) {
+    serverPoll = setInterval(() => {
+      if (swarms.size + starting.size === 0) {
+        clearInterval(serverPoll);
+        serverPoll = undefined;
+      }
+      void refreshServer();
+    }, SERVER_POLL_MS);
+    (serverPoll as { unref?: () => void }).unref?.();
+  }
+}
+
 function remember(summary: SwarmSummary): void {
   ended.set(summary.id, summary);
   while (ended.size > ENDED_KEPT) {
@@ -182,13 +263,17 @@ function remember(summary: SwarmSummary): void {
     ended.delete(oldest);
   }
   persistHistory();
+  changed(summary.id, "end");
 }
 
 function persistHistory(): void {
   const dir = getDataDir?.();
   if (!dir) return;
   try {
-    saveHistory(historyPath(dir), ended.values());
+    saveHistory(historyPath(dir), {
+      ended: [...ended.values()],
+      refusedApprovals: [...refusedApprovals],
+    });
   } catch {
     // the in-memory history still answers; the next end retries the write
   }
@@ -284,6 +369,7 @@ async function startSwarm(
     ...(launch.project ? { project: launch.project } : {}),
   };
   starting.set(record.id, record);
+  changed(record.id, "start");
   try {
     return await launchSwarm(record, input, launch);
   } catch (e) {
@@ -291,6 +377,7 @@ async function startSwarm(
     throw e;
   } finally {
     starting.delete(record.id);
+    changed(record.id, "start");
   }
 }
 
@@ -334,6 +421,7 @@ async function launchSwarm(
       ...(cwd ? { cwd } : {}),
       ...(project ? { project } : {}),
       ...(op ? { opId: op.id } : {}),
+      approvalRefusals,
       ...(input.context ? { context: input.context } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),
@@ -342,6 +430,7 @@ async function launchSwarm(
         ? { dispatch: { grants: input.workflows, dispatcher } }
         : {}),
       log: (message, data) => op?.progress(message, data),
+      onChange: (kind) => changed(record.id, kind),
     });
   } catch (e) {
     op?.error(`swarm failed to start: ${errText(e)}`);
@@ -383,6 +472,23 @@ const rib: Rib = {
 
   contributeDocs: () => [chatDocsSource()],
 
+  views,
+  surfaces: [
+    {
+      id: SURFACE_ID,
+      title: "Swarms",
+      hideRegionActions: true,
+      layout: { rows: [{ columns: [{ key: INDEX_KEY, live: true }] }] },
+    },
+  ],
+
+  onAction: (action) =>
+    handleSwarmsAction(action, {
+      surface,
+      find: findSwarm,
+      live: (id) => swarms.get(id),
+    }),
+
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
   onRunEvent: (event) => {
     for (const swarm of swarms.values()) swarm.onRunEvent(event.runId);
@@ -402,9 +508,21 @@ const rib: Rib = {
     disposed = false;
     const dir = getDataDir?.();
     if (dir && ended.size === 0) {
-      for (const summary of loadHistory(historyPath(dir)).slice(-ENDED_KEPT)) {
-        ended.set(summary.id, summary);
-      }
+      const history = loadHistory(historyPath(dir));
+      for (const summary of history.ended.slice(-ENDED_KEPT)) ended.set(summary.id, summary);
+      for (const workflow of history.refusedApprovals) refusedApprovals.add(workflow);
+    }
+    const sm = ctx.getSnapshotManager?.();
+    if (sm && !surface) {
+      surface = createSwarmsSurface({
+        sm,
+        state: surfaceState,
+        find: findSwarm,
+        views,
+        ...(ctx.invalidateManifest ? { invalidateManifest: ctx.invalidateManifest } : {}),
+      });
+      surface.track([...ended.keys()]);
+      void refreshServer();
     }
     return [
       ...makeChatTools({ swarms, starting, ended, startSwarm, readChannel }),
@@ -414,8 +532,10 @@ const rib: Rib = {
         clearEnded: () => {
           ended.clear();
           persistHistory();
+          surface?.refresh();
         },
         endedCount: () => ended.size,
+        onServerChange: () => void refreshServer(),
       }),
     ];
   },
@@ -465,8 +585,17 @@ const rib: Rib = {
       clearTimeout(timer);
     }
     swarms.clear();
+    surface?.dispose();
+    surface = undefined;
+    views.length = 0;
+    serverLine = undefined;
+    if (serverPoll) clearInterval(serverPoll);
+    serverPoll = undefined;
     // Kept on disk, so the next activation reads it back.
-    if (getDataDir?.()) ended.clear();
+    if (getDataDir?.()) {
+      ended.clear();
+      refusedApprovals.clear();
+    }
     await server?.dispose().catch(() => undefined);
     server = undefined;
     runAgentTurn = undefined;

@@ -270,6 +270,7 @@ export class ClickClackClient {
     afterCursor: string;
     onEvent: (event: ClickClackEvent) => void;
     onClose: (code: number) => void;
+    onOpen?: () => void;
   }): Subscription {
     const url = new URL(`${this.baseUrl}/api/realtime/ws`);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -285,6 +286,7 @@ export class ClickClackClient {
         // a malformed frame is dropped; the durable log stays the source of truth
       }
     });
+    socket.addEventListener("open", () => opts.onOpen?.());
     socket.addEventListener("close", (ev) => opts.onClose((ev as CloseEvent).code ?? 1006));
     return { close: () => socket.close() };
   }

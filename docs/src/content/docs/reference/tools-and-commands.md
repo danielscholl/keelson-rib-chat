@@ -67,6 +67,9 @@ refused.
 With an id, returns the summary: `id`, `task`, `status`, `channelId`,
 `channelName`, `startedAt`, `endedAt`, `turnsUsed`, `limits`, `agents`,
 `size`, `sizeBase`, `provider`, `model`, `workerModel`, `project`, `opId`,
+`clickclack` (its URL and workspace), `health` (present only while something is
+wrong: socket drops, a ClickClack fault, lead failures, nudges, refused
+conclusions, or `quietSince` when the swarm went idle at an open gate),
 `context` (the item list without bodies), `conclusion`, `draftConclusion`, and
 `error`. `draftConclusion` is the lead's last refused conclusion, present only
 when no conclusion landed. Each agent carries the model it asks for and the
