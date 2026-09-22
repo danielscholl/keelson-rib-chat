@@ -293,17 +293,6 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
         : []),
       ...(empty ? [{ kind: "rows" as const, items: [{ icon: "◌", text: "No swarms yet." }] }] : []),
       ...(server ? [{ kind: "rows" as const, items: [server] }] : []),
-      {
-        kind: "actions",
-        items: [
-          {
-            type: "start-in-chat",
-            label: "Start a swarm in Chat",
-            glyph: "✦",
-            hint: `Gathers issue and PR context, then starts the swarm. Sizes: ${sizesHint()}.`,
-          },
-        ],
-      },
     ],
   };
 }

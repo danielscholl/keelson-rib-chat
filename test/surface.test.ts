@@ -582,7 +582,7 @@ describe("start and run again", () => {
     expect(result.ok).toBe(true);
     expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual({
       effect: "open-surface",
-      surfaceId: "swarms",
+      surfaceId: "surface:chat:swarms",
       regionKey: INDEX_KEY,
     });
     expect(begun).toEqual([{ task: "Why is the build slow?", workTools: "none", size: "small" }]);

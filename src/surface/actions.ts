@@ -11,7 +11,7 @@ import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import { BODY_MAX, SWARM_SIZES, type SwarmSize } from "../types.ts";
 import { sizesHint } from "./index-board.ts";
-import { docKey, HISTORY_KEY, INDEX_KEY, SURFACE_ID, swarmKey } from "./keys.ts";
+import { docKey, HISTORY_KEY, INDEX_KEY, SURFACE_TAB, swarmKey } from "./keys.ts";
 import type { SwarmRecord, SwarmsSurface } from "./surface.ts";
 
 export interface ActionDeps {
@@ -108,7 +108,7 @@ function started(deps: ActionDeps, input: StartSwarmInput): RibActionResult {
   }
   return {
     ok: true,
-    data: { effect: "open-surface", surfaceId: SURFACE_ID, regionKey: INDEX_KEY },
+    data: { effect: "open-surface", surfaceId: SURFACE_TAB, regionKey: INDEX_KEY },
   };
 }
 
