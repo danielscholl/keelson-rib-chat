@@ -14,10 +14,28 @@ import { createLaunchStore } from "../src/launches.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import { buildHistory, buildIndex, type SurfaceState } from "../src/surface/index-board.ts";
-import { docKey, HISTORY_KEY, INDEX_KEY, LAUNCH_KEY, swarmKey } from "../src/surface/keys.ts";
+import {
+  docKey,
+  HISTORY_KEY,
+  INDEX_KEY,
+  LAUNCH_KEY,
+  SERVER_KEY,
+  SERVER_LOG_KEY,
+  swarmKey,
+} from "../src/surface/keys.ts";
 import { buildLaunch } from "../src/surface/launch-board.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
-import { createSwarmsSurface, MAX_SWARM_KEYS, type SwarmRecord } from "../src/surface/surface.ts";
+import {
+  buildServerPanel,
+  createServerOps,
+  type ServerPanelState,
+} from "../src/surface/server-panel.ts";
+import {
+  createSwarmsSurface,
+  MAX_SWARM_KEYS,
+  type SwarmRecord,
+  type SwarmsSurface,
+} from "../src/surface/surface.ts";
 import { buildGoneBoard, buildStartingBoard, buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import type { Swarm } from "../src/swarm.ts";
 import type { StartSwarmInput } from "../src/tools.ts";
@@ -405,6 +423,8 @@ describe("publishing", () => {
       find: (id): SwarmRecord => (ended.has(id) ? { ended: ended.get(id) as SwarmSummary } : {}),
       launch: () => ({ projects: [], live: 0 }),
       rerunnable: () => false,
+      server: () => ({ live: 0, refused: [] }),
+      readLog: async () => "log",
       views,
       invalidateManifest: () => refreshes++,
       windowMs: 1,
@@ -415,8 +435,9 @@ describe("publishing", () => {
     }
     surface.track([...ended.keys()]);
     expect(refreshes).toBe(1);
-    expect(views).toHaveLength(MAX_SWARM_KEYS);
-    expect(views[0]).toEqual({
+    expect(views[0]).toEqual({ key: SERVER_LOG_KEY, canvasKind: "log", title: "ClickClack log" });
+    expect(views.filter((v) => v.canvasKind === "markdown")).toHaveLength(MAX_SWARM_KEYS);
+    expect(views[1]).toEqual({
       key: docKey("s0005"),
       canvasKind: "markdown",
       title: "Swarm s0005",
@@ -648,6 +669,139 @@ describe("start and run again", () => {
     expect(begun[0]).toEqual({ ...rest, model: "gpt-5.6-sol", provider: "copilot" });
     expect((await act("run-again", { id: "s9hjx", size: "small" })).ok).toBe(false);
     expect((await act("run-again", { id: "s5tcx", size: "small" })).ok).toBe(false);
+  });
+});
+
+describe("the ClickClack footer", () => {
+  const running = {
+    mode: "managed" as const,
+    url: "http://127.0.0.1:18080",
+    running: true,
+    pid: 4242,
+    binary: "/usr/local/bin/clickclack",
+    dataDir: "/data/clickclack",
+    startedAt: T0,
+  };
+  const verbsOf = (st: ServerPanelState) =>
+    buildServerPanel(st)
+      .sections.filter((x) => x.kind === "actions")
+      .flatMap((x) => (x.kind === "actions" ? x.items : []));
+
+  test("composes for every server state, and holds stop and reset while a swarm is live", () => {
+    const at = "2026-09-22T14:10:00.000Z";
+    for (const st of [
+      { live: 0, refused: [] },
+      { server: running, live: 0, refused: ["fix-issue"] },
+      {
+        server: { mode: "managed" as const, url: running.url, running: false },
+        live: 0,
+        refused: [],
+      },
+      {
+        server: { mode: "external" as const, url: "https://cc.example", running: true },
+        live: 1,
+        refused: [],
+      },
+      {
+        server: running,
+        live: 0,
+        refused: [],
+        op: { verb: "reset" as const, phase: "running" as const, at },
+      },
+      {
+        server: running,
+        live: 0,
+        refused: [],
+        op: { verb: "stop" as const, phase: "failed" as const, at, error: "boom" },
+      },
+    ]) {
+      board(SERVER_KEY, buildServerPanel(st));
+    }
+    expect(verbsOf({ server: running, live: 0, refused: [] }).map((i) => i.type)).toEqual([
+      "server-stop",
+      "server-reset",
+      "server-log",
+    ]);
+    const held = verbsOf({ server: running, live: 2, refused: [] });
+    expect(held.find((i) => i.type === "server-stop")).toMatchObject({ disabled: true });
+    expect(held.find((i) => i.type === "server-reset")).toMatchObject({
+      disabled: true,
+      confirm: { irreversible: true, subject: "reset" },
+    });
+    expect(
+      verbsOf({
+        server: { mode: "external", url: "https://cc.example", running: true },
+        live: 0,
+        refused: [],
+      }),
+    ).toEqual([]);
+  });
+
+  test("a verb runs in the background, reports on the footer, and refuses while it or a swarm is busy", async () => {
+    let release: () => void = () => {};
+    const calls: string[] = [];
+    let live = 0;
+    let cleared = 0;
+    let changes = 0;
+    const server = {
+      ensure: async () => ({ url: running.url, pid: 1, adopted: false }),
+      stop: () =>
+        new Promise<boolean>((resolve) => {
+          calls.push("stop");
+          release = () => resolve(true);
+        }),
+      reset: async () => {
+        calls.push("reset");
+        throw new Error("clickclack was not ready within 30s");
+      },
+      status: async () => ({ url: running.url, running: true }),
+    };
+    const ops = createServerOps({
+      target: async () => ({ mode: "managed", server }),
+      liveCount: () => live,
+      clearEnded: () => cleared++,
+      changed: () => changes++,
+      now: () => T0,
+    });
+    live = 1;
+    expect(await ops.run("stop")).toContain("1 swarm(s) live");
+    live = 0;
+    expect(await ops.run("stop")).toBeUndefined();
+    expect(ops.current()).toMatchObject({ verb: "stop", phase: "running" });
+    expect(await ops.run("reset")).toBe("a stop is still running");
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ops.current()).toMatchObject({ verb: "stop", phase: "done" });
+    expect(await ops.run("reset")).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(ops.current()).toMatchObject({
+      verb: "reset",
+      phase: "failed",
+      error: "clickclack was not ready within 30s",
+    });
+    expect(cleared).toBe(0);
+    expect(calls).toEqual(["stop", "reset"]);
+    expect(changes).toBe(4);
+    const external = createServerOps({
+      target: async () => ({ mode: "external", url: "https://cc.example" }),
+      liveCount: () => 0,
+      clearEnded: () => {},
+      changed: () => {},
+    });
+    expect(await external.run("start")).toContain("external");
+  });
+
+  test("the log verb reads the log afresh and opens it", async () => {
+    let opened = 0;
+    const result = await handleSwarmsAction(
+      { type: "server-log" },
+      { ...actionDeps, surface: { logOpened: () => opened++ } as unknown as SwarmsSurface },
+    );
+    expect(opened).toBe(1);
+    expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toMatchObject({
+      effect: "open-canvas",
+      key: SERVER_LOG_KEY,
+    });
   });
 });
 

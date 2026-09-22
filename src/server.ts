@@ -93,6 +93,7 @@ export interface ServerStatus {
   adopted?: boolean;
   binary?: string;
   dataDir?: string;
+  startedAt?: string;
 }
 
 export const UNMANAGED_HINT =
@@ -162,12 +163,14 @@ export class ManagedServer {
     const paths = this.paths();
     const pid = await this.ownedPid(false);
     if (pid === undefined) return { ...base, dataDir: paths.data };
+    const state = this.readState();
     return {
       ...base,
       dataDir: paths.data,
       pid,
       adopted: pid !== this.spawnedPid,
-      ...(this.readState()?.operator ? { operator: true } : {}),
+      ...(state?.operator ? { operator: true } : {}),
+      ...(state?.startedAt ? { startedAt: state.startedAt } : {}),
       running: await this.answers("/readyz", this.timings.probeMs),
     };
   }
@@ -412,13 +415,19 @@ export class ManagedServer {
     return ensureSpawnPath(env);
   }
 
-  private logTail(): string {
+  // The last lines of the current server log, or undefined when there is none.
+  readLog(lines: number): string | undefined {
+    const dir = this.deps.dataDir();
+    if (!dir || !isAbsolute(dir)) return undefined;
     try {
-      const lines = readFileSync(this.paths().log, "utf8").trimEnd().split("\n");
-      return lines.slice(-LOG_TAIL_LINES).join("\n");
+      return readFileSync(this.paths().log, "utf8").trimEnd().split("\n").slice(-lines).join("\n");
     } catch {
-      return "(no server log)";
+      return undefined;
     }
+  }
+
+  private logTail(): string {
+    return this.readLog(LOG_TAIL_LINES) ?? "(no server log)";
   }
 
   private async postJson<T>(path: string, body: unknown): Promise<T> {

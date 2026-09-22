@@ -16,8 +16,9 @@ import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
 import type { ServerLine, SurfaceState } from "./surface/index-board.ts";
-import { INDEX_KEY, LAUNCH_KEY, SURFACE_ID } from "./surface/keys.ts";
+import { INDEX_KEY, LAUNCH_KEY, SERVER_KEY, SURFACE_ID } from "./surface/keys.ts";
 import { type LaunchState, sizesByline } from "./surface/launch-board.ts";
+import { createServerOps, LOG_LINES, type ServerPanelState } from "./surface/server-panel.ts";
 import { createSwarmsSurface, type SwarmRecord, type SwarmsSurface } from "./surface/surface.ts";
 import {
   type ApprovalRefusals,
@@ -236,8 +237,19 @@ async function refreshServer(): Promise<void> {
   try {
     const t = await target();
     if (t.mode === "managed") {
-      const status = await t.server.status();
-      serverLine = { mode: "managed", url: status.url, running: status.running };
+      const { url, running, pid, adopted, operator, binary, dataDir, startedAt } =
+        await t.server.status();
+      serverLine = {
+        mode: "managed",
+        url,
+        running,
+        ...(pid ? { pid } : {}),
+        ...(adopted ? { adopted } : {}),
+        ...(operator ? { operator } : {}),
+        ...(binary ? { binary } : {}),
+        ...(dataDir ? { dataDir } : {}),
+        ...(startedAt ? { startedAt } : {}),
+      };
     } else {
       serverLine = { mode: "external", url: t.url, running: true };
     }
@@ -285,6 +297,39 @@ function launchState(): LaunchState {
       ? {}
       : { dispatchBlocked: "This Keelson host can't start workflows for a rib." }),
   };
+}
+
+function clearEnded(): void {
+  ended.clear();
+  launches.clear();
+  persistHistory();
+  surface?.refresh();
+}
+
+const serverOps = createServerOps({
+  target,
+  liveCount: () => swarms.size + starting.size,
+  clearEnded,
+  changed: () => void refreshServer(),
+});
+
+function serverPanel(): ServerPanelState {
+  return {
+    ...(serverLine ? { server: serverLine } : {}),
+    ...(serverOps.current() ? { op: serverOps.current() } : {}),
+    live: swarms.size + starting.size,
+    refused: [...refusedApprovals],
+  };
+}
+
+async function readServerLog(): Promise<string> {
+  try {
+    const t = await target();
+    if (t.mode !== "managed") return "This ClickClack is external, so the rib has no log for it.";
+    return t.server.readLog?.(LOG_LINES) || "(no server log yet)";
+  } catch (e) {
+    return `could not read the server log: ${errText(e)}`;
+  }
 }
 
 function persistHistory(): void {
@@ -516,6 +561,7 @@ const rib: Rib = {
       layout: {
         header: { key: LAUNCH_KEY, collapsible: true, byline: sizesByline() },
         rows: [{ columns: [{ key: INDEX_KEY, live: true }] }],
+        footer: { key: SERVER_KEY, collapsible: true, collapsed: true },
       },
     },
   ],
@@ -531,6 +577,7 @@ const rib: Rib = {
         return id;
       },
       launchOf: (id) => launches.load(id),
+      server: serverOps,
     }),
 
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
@@ -564,6 +611,8 @@ const rib: Rib = {
         find: findSwarm,
         launch: launchState,
         rerunnable: (id) => ended.has(id) && launches.has(id),
+        server: serverPanel,
+        readLog: readServerLog,
         views,
         ...(ctx.invalidateManifest ? { invalidateManifest: ctx.invalidateManifest } : {}),
       });
@@ -575,12 +624,7 @@ const rib: Rib = {
       ...makeServerTools({
         target,
         liveCount: () => swarms.size + starting.size,
-        clearEnded: () => {
-          ended.clear();
-          launches.clear();
-          persistHistory();
-          surface?.refresh();
-        },
+        clearEnded,
         endedCount: () => ended.size,
         onServerChange: () => void refreshServer(),
       }),

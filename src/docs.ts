@@ -357,6 +357,12 @@ context and calls \`chat_swarm_start\`. An ended swarm's board offers Run again,
 which starts a new swarm with the same task, project, workflows, and context,
 with the size and model open to change.
 
+A folded ClickClack footer shows the server's address, process, binary, data
+directory, and the workflows whose gates the host keeps for the operator. For a
+managed server it offers Start or Stop, Reset (typed confirm, refused while a
+swarm is live), and the last 200 lines of the server log. Start, Stop, and
+Reset run in the background and report on the footer.
+
 # Restarts
 
 > What survives a Keelson restart, and what does not.

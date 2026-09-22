@@ -16,9 +16,18 @@ import type { SwarmChange } from "../swarm.ts";
 import type { StartingSwarm, SwarmSummary } from "../types.ts";
 import { buildDoc } from "./doc.ts";
 import { buildHistory, buildIndex, type SurfaceState } from "./index-board.ts";
-import { docKey, HISTORY_KEY, INDEX_KEY, LAUNCH_KEY, swarmKey } from "./keys.ts";
+import {
+  docKey,
+  HISTORY_KEY,
+  INDEX_KEY,
+  LAUNCH_KEY,
+  SERVER_KEY,
+  SERVER_LOG_KEY,
+  swarmKey,
+} from "./keys.ts";
 import { buildLaunch, type LaunchState } from "./launch-board.ts";
 import { createKeyPublisher, type KeyPublisher } from "./publisher.ts";
+import { buildServerPanel, type ServerPanelState } from "./server-panel.ts";
 import { buildGoneBoard, buildStartingBoard, buildSwarmBoard } from "./swarm-board.ts";
 
 // Keys outlive their swarm, since a client that gets a 404 on a key stops
@@ -36,6 +45,8 @@ export interface SurfaceDeps {
   state: () => SurfaceState;
   find: (id: string) => SwarmRecord;
   launch: () => LaunchState;
+  server: () => ServerPanelState;
+  readLog: () => Promise<string>;
   // Whether an ended swarm's launch is kept, so it can run again.
   rerunnable: (id: string) => boolean;
   // The rib's own views array; the host re-reads it on a manifest refresh.
@@ -50,14 +61,16 @@ export interface SwarmsSurface {
   // Recompose the index and history, for a change no swarm reports: the server
   // row, or history cleared by a reset.
   refresh(): void;
+  // Reads the server log afresh for the log pane.
+  logOpened(): void;
   dispose(): void;
 }
 
 const DOC_KINDS = new Set<SwarmChange>(["start", "gate", "conclusion", "end"]);
 
-function markdown(key: string) {
+function text(key: string) {
   return (data: unknown): string => {
-    if (typeof data !== "string") throw new Error(`${key} expects markdown text`);
+    if (typeof data !== "string") throw new Error(`${key} expects text`);
     return data;
   };
 }
@@ -85,6 +98,21 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     expectView(LAUNCH_KEY, "board"),
     windowMs,
   );
+  const server = createKeyPublisher<CanvasView>(
+    sm,
+    SERVER_KEY,
+    () => buildServerPanel(deps.server()),
+    expectView(SERVER_KEY, "board"),
+    windowMs,
+  );
+  const log = createKeyPublisher<string>(
+    sm,
+    SERVER_LOG_KEY,
+    () => deps.readLog(),
+    text(SERVER_LOG_KEY),
+    windowMs,
+  );
+  deps.views.push({ key: SERVER_LOG_KEY, canvasKind: "log", title: "ClickClack log" });
   const swarms = new Map<string, { board: KeyPublisher; doc: KeyPublisher }>();
 
   const composeBoard = (id: string): CanvasView => {
@@ -111,7 +139,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
         const found = deps.find(id);
         return buildDoc(found.live ?? found.ended, id);
       },
-      markdown(docKey(id)),
+      text(docKey(id)),
       windowMs,
     );
     swarms.set(id, { board, doc });
@@ -155,17 +183,26 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       if (DOC_KINDS.has(kind)) entry?.doc.schedule();
       if (kind === "end") history.schedule();
       if (kind === "start" || kind === "end") launch.schedule();
+      if (kind === "gate" || kind === "start" || kind === "end") server.schedule();
     },
     refresh() {
       index.schedule();
       history.schedule();
       launch.schedule();
+      server.schedule();
+    },
+    logOpened() {
+      log.schedule();
     },
     dispose() {
       for (const id of [...swarms.keys()]) release(id);
       index.release();
       history.release();
       launch.release();
+      server.release();
+      log.release();
+      const at = deps.views.findIndex((v) => v.key === SERVER_LOG_KEY);
+      if (at >= 0) deps.views.splice(at, 1);
     },
   };
 }
