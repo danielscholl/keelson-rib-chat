@@ -27,6 +27,7 @@ import {
   prLabel,
   shortHandle,
   shortRun,
+  span,
 } from "./format.ts";
 
 export interface ServerLine {
@@ -209,7 +210,8 @@ export function endedOutcome(s: SwarmSummary): string {
 
 export function endedRow(s: SwarmSummary): Row {
   const g = STATUS_GLYPH[s.status];
-  const end = s.endedAt ? ` → ${hhmm(s.endedAt)}` : "";
+  const took = span(s.startedAt, s.endedAt);
+  const end = took ? ` · ${took}` : "";
   return {
     icon: g.icon,
     glyph: g.tone,
