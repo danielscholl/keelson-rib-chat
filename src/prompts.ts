@@ -11,6 +11,7 @@ import {
   BODY_MAX,
   type ChatMessage,
   CONCLUSION_MAX,
+  type DispatchGrant,
   type SwarmAgent,
   type SwarmLimits,
 } from "./types.ts";
@@ -32,9 +33,12 @@ export function systemPrompt(opts: {
   workTools?: readonly string[];
   // The rendered index of the task context, one line per item.
   contextIndex: string;
+  // Workflows the lead may start on the project.
+  grants?: readonly DispatchGrant[];
 }): string {
   const { agent, task, channelName, limits, contextIndex } = opts;
   const workTools = opts.workTools ?? [];
+  const grants = opts.grants ?? [];
   const duty = agent.lead
     ? [
         "You are the LEAD. You own the outcome. Plan the work, split it into pieces that can run in parallel, delegate with @mentions or chat_spawn, integrate what comes back, and call chat_done with the final answer. Do a piece yourself when delegating it would cost more than it saves.",
@@ -49,6 +53,19 @@ export function systemPrompt(opts: {
     workTools.length > 0
       ? `- Your tools are the chat_* tools plus ${workTools.join(", ")}. You have nothing else: no shell, no edits, no network. Do not try other tools.`
       : "- Your tools are the chat_* tools. You have nothing else: no files, no shell, no network. Do not try other tools.";
+  const dispatch =
+    grants.length > 0
+      ? [
+          "",
+          "Workflow runs:",
+          `- You can start these Keelson workflows on the project with chat_workflow_start: ${grants.map((g) => `${g.name}${g.isolated ? " (must run in its own worktree)" : ""}`).join(", ")}. A run does the changing: it edits, commits, and opens pull requests in an isolated worktree, so you never need write access yourself.`,
+          "- Give each run one clear purpose and the inputs its workflow expects. Start independent runs in parallel; start a dependent run only after the run it needs has succeeded.",
+          "- A run's progress wakes you. chat_workflow_status shows every run with its branch, pull requests, and evidence; chat_workflow_cancel stops one.",
+          "- A run can pause for human approval. You cannot answer it: tell the operator in the channel what it is waiting for, then wait.",
+          "- A run that must be isolated but lands in the live checkout is cancelled for you. A run counts as verified only when it succeeded with its isolation and pull request evidence; report anything less as unverified.",
+          "- You cannot conclude while a run is live. Wait for it, or cancel it.",
+        ]
+      : [];
   const turnLine = agent.lead
     ? `- Each time you wake is one turn from a shared budget of ${limits.maxTurns} for the whole swarm.`
     : `- Each time you wake is one turn: you have ${limits.maxTurnsPerAgent}, from a shared budget of ${limits.maxTurns} for the whole swarm.`;
@@ -69,6 +86,7 @@ export function systemPrompt(opts: {
     "- chat_read re-reads the channel or one thread. chat_roster lists the agents, their roles, and their turns.",
     `- chat_spawn adds an agent for a line of work that deserves its own context. The swarm holds at most ${limits.maxAgents} agents.`,
     "- A human may post in the channel at any time. Treat it as direction from the operator.",
+    ...dispatch,
     "",
     "Working norms:",
     turnLine,
@@ -113,12 +131,28 @@ export interface TurnInput {
   budget: { turnsUsed: number; maxTurns: number; agentTurns: number; maxTurnsPerAgent?: number };
   // The lead's view of its workers.
   team?: readonly TeamMember[];
+  // Workflow run updates since the lead's last turn.
+  events?: readonly string[];
+  // The lead's workflow runs, one line each.
+  runs?: readonly string[];
 }
 
 export function renderTurn(input: TurnInput): string {
-  const { note, redelivered, messages, background = [], budget, team } = input;
+  const {
+    note,
+    redelivered,
+    messages,
+    background = [],
+    budget,
+    team,
+    events = [],
+    runs = [],
+  } = input;
   const sections: string[] = [];
   if (note) sections.push(note);
+  if (events.length > 0) {
+    sections.push(["Workflow run updates:", ...events.map((e) => `- ${e}`)].join("\n"));
+  }
   if (redelivered) {
     sections.push(
       `Your previous turn ended before it finished (${redelivered}). Its messages are delivered again below.`,
@@ -143,6 +177,7 @@ export function renderTurn(input: TurnInput): string {
     );
     sections.push(`Workers: ${members.join(", ")}.`);
   }
+  if (runs.length > 0) sections.push(["Runs:", ...runs.map((r) => `- ${r}`)].join("\n"));
   sections.push(
     `Budget: swarm ${budget.turnsUsed}/${budget.maxTurns} turns${budget.maxTurnsPerAgent ? `, you ${budget.agentTurns}/${budget.maxTurnsPerAgent}` : ""}.`,
   );

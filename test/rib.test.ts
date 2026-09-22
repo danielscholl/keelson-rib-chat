@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ribIdSchema } from "@keelson/shared";
 import rib from "../src/index.ts";
-import { AGENT_TOOLS } from "../src/swarm.ts";
+import { AGENT_TOOLS, DISPATCH_TOOLS } from "../src/swarm.ts";
 
 describe("rib contract", () => {
   test("id matches the package suffix the harness infers", () => {
@@ -20,7 +20,7 @@ describe("rib contract", () => {
     const names = new Set(
       (rib.registerTools?.({ getExec: () => ({}) as never }) ?? []).map((t) => t.name),
     );
-    for (const tool of AGENT_TOOLS) expect(names.has(tool)).toBe(true);
+    for (const tool of [...AGENT_TOOLS, ...DISPATCH_TOOLS]) expect(names.has(tool)).toBe(true);
   });
 
   test("authStatus reports a missing credential for a server the operator pointed it at", async () => {

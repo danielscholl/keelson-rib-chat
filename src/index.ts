@@ -8,6 +8,7 @@
 
 import type { Rib, RibAuthStatus, RibContext } from "@keelson/shared";
 import { ClickClackClient, ClickClackError } from "./clickclack.ts";
+import type { WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
 import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
@@ -27,6 +28,9 @@ let registerOp: RibContext["registerOp"];
 let getProjects: RibContext["getProjects"];
 let getCredential: RibContext["getCredential"];
 let getDataDir: RibContext["getDataDir"];
+let startWorkflow: RibContext["startWorkflow"];
+let getRunStatus: RibContext["getRunStatus"];
+let cancelRun: RibContext["cancelRun"];
 
 let server: ManagedServer | undefined;
 // Swarms between the start call and the registry, so stop and reset see them too.
@@ -139,10 +143,28 @@ async function launchSwarm(
 ): Promise<{ swarm: Swarm; opId?: string; url: string }> {
   if (!runAgentTurn) throw new Error("this keelson host cannot run agent turns for a rib");
   let cwd: string | undefined;
+  let projectId: string | undefined;
   if (input.project) {
     const project = getProjects?.().find((p) => p.id === input.project || p.name === input.project);
     if (!project) throw new Error(`no registered project '${input.project}'`);
     cwd = project.rootPath;
+    projectId = project.id;
+  }
+  let dispatcher: WorkflowDispatcher | undefined;
+  if (input.workflows?.length) {
+    if (!projectId) throw new Error("workflows need a project to run on");
+    if (!startWorkflow || !getRunStatus || !cancelRun) {
+      throw new Error("this keelson host cannot start workflows for a rib");
+    }
+    const start = startWorkflow;
+    const status = getRunStatus;
+    const cancel = cancelRun;
+    const onProject = projectId;
+    dispatcher = {
+      start: (name, inputs) => start(name, inputs, { projectId: onProject }),
+      status: (runId) => status(runId),
+      cancel: (runId) => cancel(runId),
+    };
   }
   const owner = await ownerClient();
   retryRevocations(owner);
@@ -180,6 +202,9 @@ async function launchSwarm(
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.workerModel ? { workerModel: input.workerModel } : {}),
+      ...(dispatcher && input.workflows
+        ? { dispatch: { grants: input.workflows, dispatcher } }
+        : {}),
       log: (message, data) => op?.progress(message, data),
     });
   } catch (e) {
@@ -227,12 +252,20 @@ const rib: Rib = {
 
   contributeDocs: () => [chatDocsSource()],
 
+  // Delivered for runs this rib started; the swarm that owns the run re-reads it.
+  onRunEvent: (event) => {
+    for (const swarm of swarms.values()) swarm.onRunEvent(event.runId);
+  },
+
   registerTools: (ctx: RibContext) => {
     runAgentTurn = ctx.runAgentTurn;
     registerOp = ctx.registerOp;
     getProjects = ctx.getProjects;
     getCredential = ctx.getCredential;
     getDataDir = ctx.getDataDir;
+    startWorkflow = ctx.startWorkflow;
+    getRunStatus = ctx.getRunStatus;
+    cancelRun = ctx.cancelRun;
     disposed = false;
     return [
       ...makeChatTools({ swarms, ended, startSwarm, readChannel }),

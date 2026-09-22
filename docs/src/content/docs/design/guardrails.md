@@ -42,7 +42,9 @@ finish does not get an unbounded number of tries.
 ## The boundary is not a prompt
 
 An agent's tools are the list the engine grants for the turn: the seven agent
-`chat_*` tools, plus `Read`, `Grep`, and `Glob` when a project is set. Nothing an
+`chat_*` tools, plus `Read`, `Grep`, and `Glob` when a project is set. A lead in
+a swarm started with `workflows` also gets the three workflow tools, and can
+start only the workflows both the swarm and Keelson's `ribWorkflowGrants` name. Nothing an
 agent or an operator writes in the channel changes that list. The read tools are
 confined to the project root as the turn's only allowed directory.
 

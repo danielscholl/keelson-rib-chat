@@ -8,11 +8,13 @@
 
 import { type ToolContext, type ToolDefinition, z } from "@keelson/shared";
 import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
+import { describeRun } from "./dispatch.ts";
 import type { Swarm } from "./swarm.ts";
 import {
   BODY_MAX,
   type ChatMessage,
   CONCLUSION_MAX,
+  type DispatchGrant,
   readTurnContext,
   type SwarmSummary,
 } from "./types.ts";
@@ -32,6 +34,7 @@ export interface StartSwarmInput {
   provider?: string;
   model?: string;
   workerModel?: string;
+  workflows?: DispatchGrant[];
 }
 
 export interface ToolDeps {
@@ -51,6 +54,7 @@ export const START_BOUNDS = {
   maxTurnsPerAgent: 100,
   turnTimeoutS: { min: 30, max: 1_800 },
   maxMinutes: 240,
+  maxWorkflows: 10,
 } as const;
 export const WAIT_BOUNDS = { defaultS: 120, maxS: 600 } as const;
 export const READ_BOUNDS = { defaultLimit: 20, maxLimit: 50 } as const;
@@ -202,6 +206,25 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .optional()
         .describe("Model for every agent, or for the lead alone when worker_model is set."),
       worker_model: z.string().optional().describe("Model for workers. Defaults to model."),
+      workflows: z
+        .array(
+          z
+            .object({
+              name: z.string().min(1).max(100).describe("A catalog workflow name."),
+              isolated: z
+                .boolean()
+                .optional()
+                .describe(
+                  "Default true: a run must establish its own worktree, or the swarm cancels it. Set false for a read-only workflow.",
+                ),
+            })
+            .strict(),
+        )
+        .max(START_BOUNDS.maxWorkflows)
+        .optional()
+        .describe(
+          "Workflows the lead may start on the project, which must be set. Each also needs the operator's ribWorkflowGrants entry for the chat rib.",
+        ),
       context: contextSchema
         .optional()
         .describe(
@@ -209,6 +232,24 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         ),
     })
     .strict();
+  const workflowStartSchema = z
+    .object({
+      workflow: z.string().min(1).describe("A workflow this swarm was granted, by exact name."),
+      purpose: z
+        .string()
+        .min(1)
+        .max(500)
+        .describe("One line: what this run is for, such as the issue it fixes."),
+      inputs: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe("The workflow's inputs by name, as strings."),
+    })
+    .strict();
+  const workflowStatusSchema = z
+    .object({ run_id: z.string().optional().describe("One run. Omit for every run.") })
+    .strict();
+  const workflowCancelSchema = z.object({ run_id: z.string().min(1) }).strict();
   const swarmRef = z.object({ swarm: z.string().min(1).describe("The swarm id.") }).strict();
   const transcriptSchema = z
     .object({
@@ -330,6 +371,50 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
       }),
     },
     {
+      name: "chat_workflow_start",
+      description:
+        "Lead agent only, in a swarm granted workflows. Start one of the granted Keelson workflows on the project and track its run. Returns the run id; the run's progress wakes you. NOT for work you can do with chat tools.",
+      inputSchema: workflowStartSchema,
+      state_changing: true,
+      execute: guarded(async (input, ctx) => {
+        const args = workflowStartSchema.parse(input);
+        const { swarm, agentId } = caller(ctx);
+        const run = await swarm.startRun(agentId, {
+          workflow: args.workflow,
+          purpose: args.purpose,
+          inputs: args.inputs ?? {},
+        });
+        emitText(ctx, `started ${run.workflow} run ${run.runId}. Its progress will wake you.`);
+      }),
+    },
+    {
+      name: "chat_workflow_status",
+      description:
+        "Lead agent only. Report this swarm's workflow runs: status, approvals waiting on the operator, branch, pull requests, isolation, and whether each is verified.",
+      inputSchema: workflowStatusSchema,
+      execute: guarded(async (input, ctx) => {
+        const args = workflowStatusSchema.parse(input);
+        const { swarm } = caller(ctx);
+        const runs = swarm.runLedger().filter((r) => !args.run_id || r.runId === args.run_id);
+        if (args.run_id && runs.length === 0) {
+          return emitText(ctx, `no run '${args.run_id}' was started by this swarm`, true);
+        }
+        emitText(ctx, runs.length > 0 ? runs.map(describeRun).join("\n") : "(no runs started)");
+      }),
+    },
+    {
+      name: "chat_workflow_cancel",
+      description: "Lead agent only. Cancel a live workflow run this swarm started.",
+      inputSchema: workflowCancelSchema,
+      state_changing: true,
+      execute: guarded(async (input, ctx) => {
+        const args = workflowCancelSchema.parse(input);
+        const { swarm, agentId } = caller(ctx);
+        const run = await swarm.cancelChildRun(agentId, args.run_id);
+        emitText(ctx, describeRun(run));
+      }),
+    },
+    {
       name: "chat_swarm_start",
       description:
         "Start an agent swarm on a task. Agents are ClickClack bots that coordinate in a dedicated channel a human can watch and post in. Returns at once with the swarm id and a run id: poll chat_swarm_status or run_status, stop with chat_swarm_stop or run_cancel, redirect with run_steer. NOT for a single-agent question, or a fixed-roster discussion (a Chamber room).",
@@ -349,6 +434,14 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           ...(args.provider ? { provider: args.provider } : {}),
           ...(args.model ? { model: args.model } : {}),
           ...(args.worker_model ? { workerModel: args.worker_model } : {}),
+          ...(args.workflows?.length
+            ? {
+                workflows: args.workflows.map((w) => ({
+                  name: w.name,
+                  isolated: w.isolated ?? true,
+                })),
+              }
+            : {}),
           ...(args.context?.length ? { context: toContextItems(args.context) } : {}),
         });
         const s = swarm.summary();
