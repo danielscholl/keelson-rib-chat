@@ -5,27 +5,23 @@ sidebar:
   order: 4
 ---
 
-## Governed workflow dispatch
+## Check evidence and run ordering
 
-A lead cannot hand work to Keelson's implementation workflows. It cannot start
-`fix-issue`, keep the run id, or see an approval pause, so an outer orchestrator
-starts every implementation run and carries findings between stages.
-
-This is waiting on the harness. A rib has no seam that starts a catalog workflow
-and returns its run id: the cross-rib tool call reaches only rib-owned tools,
-and the workflow seams take a definition or return nothing. The request is
-[keelson#904](https://github.com/danielscholl/keelson/issues/904), and the rib
-side is tracked in
-[#6](https://github.com/danielscholl/keelson-rib-chat/issues/6). When it lands,
-dispatch will be opt-in, will never answer an approval on the operator's behalf,
-and will not count a child's "done" as verified without PR and check evidence.
+A dispatched run counts as verified when it succeeded in its own worktree and
+produced a pull request. The rib does not read that pull request's checks, so a
+verified run can still be red. Nothing enforces an order between runs either:
+the lead starts a dependent run only after the one it needs has succeeded, and
+that is prompt discipline, not a rule. Both wait on a seam that reports a pull
+request's check state to a rib. See
+[Dispatch workflows](../../guides/dispatch-workflows/).
 
 ## Write access
 
-Agents get `Read`, `Grep`, and `Glob` confined to a project at most. Mutating
-work would need a leased worktree per agent, with isolation verified before any
-write is authorized. Granting edit and shell tools to the existing agents would
-solve none of ownership, isolation, or approvals.
+Agents get `Read`, `Grep`, and `Glob` confined to a project at most. Changes go
+through dispatched workflows, each in a worktree the rib checks before the run
+gets far. An agent that edits directly would need its own leased worktree, with
+isolation verified before any write. Granting edit and shell tools to the
+existing agents would solve none of ownership, isolation, or approvals.
 
 ## A Keelson surface
 

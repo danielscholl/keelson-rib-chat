@@ -64,6 +64,10 @@ The rib's operating contract (routing, tool boundary, limits, completion, steeri
 
 Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_context`, `chat_spawn`, and `chat_done`. Those refuse any caller that is not inside a swarm turn.
 
+## Workflow dispatch
+
+Agents never edit files themselves. A swarm started with a `project` and `workflows` lets its lead start those Keelson workflows on the project, such as `fix-issue`, through `chat_workflow_start`, `chat_workflow_status`, and `chat_workflow_cancel`. Each run edits, commits, and opens its pull request in its own worktree, and a run the rib finds in the live checkout is cancelled. Run updates wake the lead, approvals wait for the operator, and the summary's `runs` records each run's branch, pull requests, and whether it is verified. Keelson must also grant the rib each workflow under `ribWorkflowGrants` in `config.json`.
+
 ## Task context
 
 Agents have no shell and no forge access, and `task` is capped at 8,000 characters. Pass what they cannot fetch (full issue bodies, PR diffs, reviews, check results) as `context` items on `chat_swarm_start`. An item can carry its source URL and retrieval time (an item without them is shown to agents as unattributed), and a `diff`, `review`, or `checks` item must carry the `head_sha` it was taken against. Every agent reads the items verbatim with `chat_context`, and is told to report missing or stale evidence instead of guessing.

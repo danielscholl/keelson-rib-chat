@@ -34,13 +34,16 @@ Use a swarm when a problem is worth several agents investigating in parallel and
 talking it through. Do not use one for a single-agent question, or for a fixed
 roster taking turns over one transcript (that is a Chamber room).
 
-A swarm is for read-only investigation. Its agents can talk, and at most read a
-project checkout. They cannot edit files, run shell commands, start workflows,
-lease workspaces, or reach a forge. No prompt can grant those. To implement what
-a swarm recommends, the caller runs an implementation workflow from
-\`workflow_list\` itself, and carries the swarm's conclusion into it. Anything an
-agent needs to know that is not in the checkout (an issue body, a PR diff, review
-comments, CI results) must be supplied by the caller as task context.
+Agents themselves can talk, and at most read a project checkout. They cannot
+edit files, run shell commands, lease workspaces, or reach a forge, and no
+prompt can grant those. Changes go through Keelson workflows instead: a swarm
+started with \`workflows\` lets its lead start those workflows on the project,
+and each run does its editing, committing, and pull requests in its own
+worktree. See Workflow dispatch. Without \`workflows\` a swarm is read-only
+investigation, and the caller carries its conclusion into an implementation
+workflow itself. Anything an agent needs to know that is not in the checkout (an
+issue body, a PR diff, review comments, CI results) must be supplied by the
+caller as task context.
 
 # Starting a swarm
 
@@ -63,6 +66,7 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`provider\` | host default | Provider id used for every agent's turns. |
 | \`model\` | provider default | Model for every agent, or for the lead alone when \`worker_model\` is set. |
 | \`worker_model\` | \`model\` | Model for workers. |
+| \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |
 
 Project confinement: with a \`project\`, every turn runs with the project root as
 its working directory and as its only allowed directory. Without a \`project\`
@@ -158,7 +162,51 @@ swarm ends without one, the summary carries the last draft as \`draftConclusion\
 The conclusion is recorded before it is posted, so a failed post does not lose it.
 
 Beside these, an agent holds Read, Grep, and Glob when the swarm was started with
-a project and \`work_tools: read\`. It holds nothing else.
+a project and \`work_tools: read\`. The lead of a swarm started with \`workflows\`
+also holds the three workflow tools. See Workflow dispatch. An agent holds
+nothing else.
+
+# Workflow dispatch
+
+> How a lead hands changes to Keelson workflows, and the evidence a run must show.
+
+Start a swarm with a \`project\` and \`workflows\`, a list of catalog workflow
+names. Its lead then holds three more tools. Workers never do.
+
+| Tool | For |
+| --- | --- |
+| \`chat_workflow_start\` | Start a granted workflow with a one-line \`purpose\` and its \`inputs\`. Returns the run id. |
+| \`chat_workflow_status\` | The swarm's runs, or one: status, the approval it waits on, branch, pull requests, isolation, and whether it is verified. |
+| \`chat_workflow_cancel\` | Cancel a live run. |
+
+Two grants apply. The swarm's \`workflows\` list is the grant for this swarm.
+Keelson's \`config.json\` must also name each workflow for the \`chat\` rib under
+\`ribWorkflowGrants\`, or Keelson refuses the start. A granted start then passes
+Keelson's policy as a \`workflow_run\` call.
+
+Every entry is isolated unless it says \`isolated: false\`. An isolated run must
+establish its own worktree. The rib reads each run's checkout as the run starts,
+cancels one it finds in the project's live checkout, and tells the lead. Mark a
+read-only workflow such as \`investigate\` with \`isolated: false\`.
+
+A run's status changes wake the lead with the update in its turn, and appear in
+the channel as a Run update posted by the lead, so the operator sees them
+without waking anyone. The rib also re-reads live runs every 20 seconds.
+
+A run that pauses on a human gate reports its node and prompt. No agent can
+answer it: the operator answers with \`workflow_respond\`, and the swarm waits.
+
+A swarm with a live run is not idle, so it is never nudged or stalled while a run
+is in flight. Its wall clock still applies, so give long runs a larger
+\`max_minutes\`. The lead cannot conclude while a run is live. A swarm that ends
+any other way cancels its live runs.
+
+The summary's \`runs\` records each run: workflow, purpose, inputs, status,
+checkout, the pull request links found in its node output, any error, and
+\`verified\`. An isolated run is verified only when it succeeded in an
+established worktree and produced a pull request. A run that need not be
+isolated is verified when it succeeded. The rib does not read CI, so a verified
+run's checks still need review.
 
 # Operator tools
 

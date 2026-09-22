@@ -18,14 +18,23 @@ import {
   renderContextIndex,
   renderContextItem,
 } from "./context.ts";
+import {
+  applyStatus,
+  describeRun,
+  isLive,
+  isolationBreach,
+  type WorkflowDispatcher,
+} from "./dispatch.ts";
 import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
 import { route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
   BODY_MAX,
   type ChatMessage,
+  type ChildRun,
   CONCLUSION_MAX,
   DEFAULT_LIMITS,
+  type DispatchGrant,
   type SwarmAgent,
   type SwarmLimits,
   type SwarmStatus,
@@ -45,6 +54,13 @@ export const AGENT_TOOLS = [
   "chat_context",
   "chat_spawn",
   "chat_done",
+] as const;
+
+// Granted to the lead only, and only when the operator gave the swarm workflows.
+export const DISPATCH_TOOLS = [
+  "chat_workflow_start",
+  "chat_workflow_status",
+  "chat_workflow_cancel",
 ] as const;
 
 const MESSAGE_EVENTS = new Set(["message.created", "thread.reply_created"]);
@@ -69,6 +85,8 @@ export interface SwarmOptions {
   model?: string;
   // Model for workers; the lead always uses `model`.
   workerModel?: string;
+  // Catalog workflows the lead may start on the project, and the seams to do it.
+  dispatch?: { grants: readonly DispatchGrant[]; dispatcher: WorkflowDispatcher; pollMs?: number };
   log?: (message: string, data?: unknown) => void;
   // How long the swarm must sit idle before that counts as quiescent.
   quiesceMs?: number;
@@ -143,6 +161,12 @@ export class Swarm {
   // Agents whose last turn failed, so their next prompt says why messages repeat.
   private readonly redelivery = new Map<string, string>();
   private readonly seen = new Set<string>();
+  private readonly runs = new Map<string, ChildRun>();
+  private readonly syncing = new Set<string>();
+  private readonly resync = new Set<string>();
+  // Run updates waiting for the lead's next turn; they wake it like a message.
+  private readonly notes: string[] = [];
+  private runPoll: ReturnType<typeof setInterval> | undefined;
   private readonly controller = new AbortController();
   private readonly done = deferred<SwarmSummary>();
 
@@ -321,8 +345,9 @@ export class Swarm {
     if (this.conclusion === undefined) {
       for (const agent of this.agents.values()) {
         if (this.busy >= this.limits.maxConcurrent) break;
-        const inbox = this.inboxes.get(agent.id);
-        if (agent.status !== "idle" || !inbox || inbox.length === 0) continue;
+        const inbox = this.inboxes.get(agent.id) ?? [];
+        const notes = agent.lead ? this.notes : [];
+        if (agent.status !== "idle" || (inbox.length === 0 && notes.length === 0)) continue;
         if (this.turnsUsed >= this.limits.maxTurns) {
           void this.finish("exhausted", `turn budget of ${this.limits.maxTurns} spent`);
           return;
@@ -333,7 +358,7 @@ export class Swarm {
           this.capAgent(agent);
           continue;
         }
-        void this.runAgent(agent, inbox.splice(0));
+        void this.runAgent(agent, inbox.splice(0), undefined, notes.splice(0));
       }
     }
     if (this.busy === 0 && this.pendingEvents === 0) {
@@ -368,7 +393,9 @@ export class Swarm {
       return;
     }
     const waiting = [...this.inboxes.values()].some((inbox) => inbox.length > 0);
-    if (waiting || !this.kickedOff) return;
+    if (waiting || this.notes.length > 0 || !this.kickedOff) return;
+    // A run in flight will wake the lead when it moves; waiting on it is not idleness.
+    if (this.liveRuns().length > 0) return;
     const lead = [...this.agents.values()].find((a) => a.lead);
     if (!lead || !this.canWork(lead.id) || this.nudges >= this.limits.maxNudges) {
       void this.finish("stalled", this.stallReason());
@@ -399,7 +426,12 @@ export class Swarm {
       .map((a) => ({ handle: a.handle, status: a.status, turns: a.turns }));
   }
 
-  private async runAgent(agent: SwarmAgent, messages: ChatMessage[], note?: string): Promise<void> {
+  private async runAgent(
+    agent: SwarmAgent,
+    messages: ChatMessage[],
+    note?: string,
+    events: string[] = [],
+  ): Promise<void> {
     agent.status = "busy";
     agent.turns++;
     this.busy++;
@@ -421,11 +453,16 @@ export class Swarm {
       background,
       budget,
       ...(agent.lead ? { team: this.team() } : {}),
+      ...(events.length > 0 ? { events } : {}),
+      ...(agent.lead && this.runs.size > 0
+        ? { runs: [...this.runs.values()].map(describeRun) }
+        : {}),
     });
     this.log(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
 
     const workTools = this.opts.workTools ?? [];
-    const tools = [...AGENT_TOOLS, ...workTools].map((name) => ({ name }));
+    const dispatchTools = agent.lead && this.opts.dispatch ? DISPATCH_TOOLS : [];
+    const tools = [...AGENT_TOOLS, ...dispatchTools, ...workTools].map((name) => ({ name }));
     const model = agent.lead ? this.opts.model : (this.opts.workerModel ?? this.opts.model);
     const outcome = await runTurn(
       this.opts.runAgentTurn,
@@ -436,6 +473,7 @@ export class Swarm {
           channelName: this.channel.name,
           limits: this.limits,
           workTools,
+          ...(agent.lead && this.opts.dispatch ? { grants: this.opts.dispatch.grants } : {}),
           contextIndex: renderContextIndex(this.opts.context ?? []),
         }),
         prompt,
@@ -459,7 +497,13 @@ export class Swarm {
       ...(outcome.error ? { error: outcome.error } : {}),
     });
     if (outcome.status === "timeout" || outcome.status === "error") {
-      this.onTurnFailed(agent, messages, background, `${outcome.status}: ${outcome.error ?? ""}`);
+      this.onTurnFailed(
+        agent,
+        messages,
+        background,
+        `${outcome.status}: ${outcome.error ?? ""}`,
+        events,
+      );
     } else if (outcome.status === "ok") {
       this.failures.delete(agent.id);
       if (agent.lead) this.lastLeadFailure = undefined;
@@ -475,6 +519,7 @@ export class Swarm {
     messages: ChatMessage[],
     background: ChatMessage[],
     reason: string,
+    events: string[] = [],
   ): void {
     if (this.status !== "running" || this.conclusion !== undefined) return;
     const failures = (this.failures.get(agent.id) ?? 0) + 1;
@@ -495,6 +540,7 @@ export class Swarm {
     }
     if (!this.canWork(agent.id)) return;
     this.inboxes.get(agent.id)?.unshift(...messages);
+    if (agent.lead) this.notes.unshift(...events);
     if (background.length > 0) {
       this.background.set(agent.id, [...background, ...(this.background.get(agent.id) ?? [])]);
     }
@@ -635,6 +681,148 @@ export class Swarm {
     return renderContextItem(item, opts.offset);
   }
 
+  // ---- Workflow dispatch, on behalf of the lead. ----
+
+  private liveRuns(): ChildRun[] {
+    return [...this.runs.values()].filter(isLive);
+  }
+
+  ownsRun(runId: string): boolean {
+    return this.runs.has(runId);
+  }
+
+  runLedger(): readonly ChildRun[] {
+    return [...this.runs.values()].map((r) => ({ ...r, prUrls: [...r.prUrls] }));
+  }
+
+  private dispatcherFor(agentId: string): {
+    dispatch: NonNullable<SwarmOptions["dispatch"]>;
+    client: ClickClackClient;
+  } {
+    const { agent, client } = this.as(agentId);
+    if (!agent.lead) throw new Error("only the lead may start or cancel workflow runs");
+    const dispatch = this.opts.dispatch;
+    if (!dispatch) throw new Error("this swarm was not started with workflows to dispatch");
+    return { dispatch, client };
+  }
+
+  async startRun(
+    agentId: string,
+    input: { workflow: string; purpose: string; inputs: Record<string, string> },
+  ): Promise<ChildRun> {
+    const { dispatch, client } = this.dispatcherFor(agentId);
+    if (this.conclusion !== undefined) throw new Error("the swarm has concluded");
+    const grant = dispatch.grants.find((g) => g.name === input.workflow);
+    if (!grant) {
+      throw new Error(
+        `workflow '${input.workflow}' is not one this swarm may start. It may start: ${dispatch.grants.map((g) => g.name).join(", ")}`,
+      );
+    }
+    const { runId } = await dispatch.dispatcher.start(grant.name, input.inputs);
+    const run: ChildRun = {
+      runId,
+      workflow: grant.name,
+      purpose: input.purpose,
+      inputs: { ...input.inputs },
+      status: "running",
+      startedAt: new Date().toISOString(),
+      isolated: grant.isolated,
+      prUrls: [],
+      verified: false,
+    };
+    this.runs.set(runId, run);
+    this.log(`started ${grant.name} run ${runId}: ${input.purpose}`);
+    void this.onChannel(() =>
+      client.postMessage(
+        this.channel.id,
+        `**Run started** \`${grant.name}\` \`${runId}\`: ${input.purpose}`,
+      ),
+    )
+      .then((m) => this.enqueueMessage(m))
+      .catch(() => {});
+    this.armRunPoll(dispatch.pollMs ?? 20_000);
+    void this.syncRun(runId);
+    return run;
+  }
+
+  async cancelChildRun(agentId: string, runId: string): Promise<ChildRun> {
+    const { dispatch } = this.dispatcherFor(agentId);
+    const run = this.runs.get(runId);
+    if (!run) throw new Error(`no run '${runId}' was started by this swarm`);
+    if (!isLive(run)) return run;
+    const result = await dispatch.dispatcher.cancel(runId);
+    if (!result.ok) throw new Error(`could not cancel run ${runId}: ${result.error}`);
+    await this.syncRun(runId, { quiet: true });
+    if (isLive(run)) run.status = "cancelled";
+    return run;
+  }
+
+  onRunEvent(runId: string): void {
+    if (this.runs.has(runId)) void this.syncRun(runId);
+  }
+
+  private armRunPoll(pollMs: number): void {
+    if (this.runPoll) return;
+    this.runPoll = setInterval(() => {
+      for (const run of this.liveRuns()) void this.syncRun(run.runId);
+    }, pollMs);
+    (this.runPoll as { unref?: () => void }).unref?.();
+  }
+
+  // Reads a run's status into the ledger. One read per run at a time; an update
+  // that lands during a read triggers one more.
+  private async syncRun(runId: string, opts: { quiet?: boolean } = {}): Promise<void> {
+    const run = this.runs.get(runId);
+    const dispatch = this.opts.dispatch;
+    if (!run || !dispatch || !isLive(run) || this.status !== "running") return;
+    if (this.syncing.has(runId)) {
+      this.resync.add(runId);
+      return;
+    }
+    this.syncing.add(runId);
+    try {
+      const status = await dispatch.dispatcher.status(runId);
+      if (!status || this.status !== "running") return;
+      const change = applyStatus(run, status);
+      const breach = isolationBreach(run);
+      if (breach) {
+        await dispatch.dispatcher.cancel(runId).catch(() => undefined);
+        run.status = "cancelled";
+        run.error = `cancelled by the swarm: ${breach}`;
+        run.verified = false;
+        this.notifyLead(
+          `Run ${runId} (${run.workflow}) was cancelled: ${breach}. Its grant requires an isolated worktree.`,
+        );
+      } else if (change && !opts.quiet) {
+        this.notifyLead(change);
+      }
+    } catch (e) {
+      this.log(`could not read run ${runId}: ${errText(e)}`);
+    } finally {
+      this.syncing.delete(runId);
+      if (this.resync.delete(runId)) void this.syncRun(runId);
+    }
+  }
+
+  // Queues a run update for the lead's next turn and puts it on the channel, as
+  // the lead, so the operator sees it without waking anyone.
+  private notifyLead(text: string): void {
+    if (this.status !== "running") return;
+    this.log(text);
+    const lead = [...this.agents.values()].find((a) => a.lead);
+    const token = lead ? this.tokens.get(lead.id) : undefined;
+    if (token) {
+      void this.owner
+        .withToken(token)
+        .postMessage(this.channel.id, `**Run update** ${text}`)
+        .then((m) => this.enqueueMessage(m))
+        .catch(() => {});
+    }
+    if (this.conclusion !== undefined) return;
+    this.notes.push(text);
+    this.pump();
+  }
+
   roster(): SwarmSummary["agents"] {
     return [...this.agents.values()].map(({ tokenId: _t, sessionId: _s, ...rest }) => rest);
   }
@@ -644,6 +832,13 @@ export class Swarm {
   async conclude(agentId: string, summary: string): Promise<string | undefined> {
     const { agent, client } = this.as(agentId);
     if (!agent.lead) throw new Error("only the lead may conclude the swarm");
+    const live = this.liveRuns();
+    if (live.length > 0) {
+      this.draftConclusion = summary;
+      throw new Error(
+        `${live.length} workflow run(s) are still live: ${live.map((r) => `${r.runId} (${r.workflow}, ${r.status})`).join(", ")}. Wait for them to finish, or cancel them with chat_workflow_cancel, then conclude.`,
+      );
+    }
     if (summary.length > CONCLUSION_MAX) {
       this.draftConclusion = summary;
       this.refusedConclusions++;
@@ -702,6 +897,7 @@ export class Swarm {
       limits: this.limits,
       agents: this.roster(),
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
+      ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
       ...(this.conclusion !== undefined ? { conclusion: this.conclusion } : {}),
       ...(this.conclusion === undefined && this.draftConclusion !== undefined
         ? { draftConclusion: this.draftConclusion }
@@ -719,6 +915,13 @@ export class Swarm {
       if (timer) clearTimeout(timer);
     }
     this.controller.abort();
+    if (this.runPoll) clearInterval(this.runPoll);
+    for (const run of this.liveRuns()) {
+      await this.opts.dispatch?.dispatcher.cancel(run.runId).catch(() => undefined);
+      run.status = "cancelled";
+      run.error = `the swarm ended (${status}) while the run was live`;
+      run.verified = false;
+    }
     this.subscription?.close();
     this.subscription = undefined;
 

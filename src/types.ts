@@ -68,6 +68,33 @@ export interface SwarmAgent {
 
 export type SwarmStatus = "running" | "done" | "stalled" | "exhausted" | "stopped" | "error";
 
+// A catalog workflow the operator lets the lead start. `isolated` runs must
+// establish their own worktree; one found in the live checkout is cancelled.
+export interface DispatchGrant {
+  name: string;
+  isolated: boolean;
+}
+
+export type ChildRunStatus = "running" | "paused" | "succeeded" | "failed" | "cancelled";
+
+export interface ChildRun {
+  runId: string;
+  workflow: string;
+  purpose: string;
+  inputs: Record<string, string>;
+  status: ChildRunStatus;
+  startedAt: string;
+  completedAt?: string;
+  isolated: boolean;
+  checkout?: { path: string | null; branch: string | null; worktreeEstablished: boolean };
+  pendingApproval?: { nodeId: string; prompt: string };
+  prUrls: string[];
+  error?: string;
+  // Succeeded with the evidence its grant demands: for an isolated run, an
+  // established worktree and a pull request.
+  verified: boolean;
+}
+
 export interface SwarmSummary {
   id: string;
   task: string;
@@ -81,6 +108,8 @@ export interface SwarmSummary {
   agents: readonly Omit<SwarmAgent, "tokenId" | "sessionId">[];
   // The evidence the swarm was given, without the bodies.
   context?: readonly ContextIndexEntry[];
+  // Workflow runs the lead started, with their evidence.
+  runs?: readonly ChildRun[];
   conclusion?: string;
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;

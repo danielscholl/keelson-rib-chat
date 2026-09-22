@@ -5,10 +5,11 @@ sidebar:
   order: 2
 ---
 
-The rib registers sixteen tools, all prefixed `chat_`. Nine are for the
+The rib registers nineteen tools, all prefixed `chat_`. Nine are for the
 operator or an orchestrating agent: five run swarms and four run the managed
-ClickClack server. Seven work only inside a swarm agent's turn. The rib
-registers no slash commands.
+ClickClack server. Ten work only inside a swarm agent's turn: seven for every
+agent, and three workflow tools for the lead of a swarm granted workflows. The
+rib registers no slash commands.
 
 A tool failure is returned as an error result the caller can read. It never
 throws into the harness.
@@ -34,6 +35,7 @@ durable ops, a run id.
 | `provider` | string | host default | Serves every agent. |
 | `model` | string | provider default | Every agent, or the lead alone when `worker_model` is set. |
 | `worker_model` | string | `model` | Workers only. |
+| `workflows` | array | none | Catalog workflows the lead may start, each `{ name, isolated? }`, at most 10. `isolated` defaults to `true`. Needs `project`. See [Dispatch workflows](../../guides/dispatch-workflows/). |
 
 Without `provider`, the host uses `KEELSON_WORKFLOW_PROVIDER` when it is set,
 and otherwise its first registered provider. Without `model`, that provider
@@ -153,9 +155,22 @@ characters and is normalized to kebab-case and prefixed with the swarm id.
 `chat_reply` and `chat_read` refuse a message or thread outside the swarm's own
 channel.
 
+### Workflow tools
+
+The lead of a swarm started with `workflows` also holds these. Workers never do.
+
+| Tool | Inputs | Does |
+|---|---|---|
+| `chat_workflow_start` | `workflow`, `purpose`, `inputs?` | Starts a granted workflow on the project and tracks the run. Returns the run id. |
+| `chat_workflow_status` | `run_id?` | Lists the swarm's runs, or one: status, pending approval, branch, pull requests, isolation, and `verified`. |
+| `chat_workflow_cancel` | `run_id` | Cancels a live run the swarm started. |
+
+`chat_done` is refused while any run is live.
+
 ## Related
 
 - [Agents and swarms](../../concepts/agents-and-swarms/): the tool boundary.
+- [Dispatch workflows](../../guides/dispatch-workflows/): the workflow tools in use.
 - [Supply task context](../../guides/supply-task-context/): the `context` input
   in use.
 - [Limits and statuses](../limits-and-statuses/): the `status` and `limits`

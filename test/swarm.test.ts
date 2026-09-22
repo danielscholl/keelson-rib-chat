@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { RibRunStatus } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { MAX_TURN_FAILURES, Swarm, type SwarmOptions, splitBody } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
@@ -459,6 +460,200 @@ describe("Swarm resilience", () => {
     expect([...at].sort((x, y) => x - y)).toEqual(at);
     const missing = await callTool(tools, "chat_swarm_transcript", { swarm: "nope" });
     expect(missing.isError).toBe(true);
+  });
+});
+
+function fakeDispatcher(opts: { live?: boolean } = {}) {
+  const states = new Map<string, RibRunStatus>();
+  const started: { name: string; inputs: Record<string, string> }[] = [];
+  const cancelled: string[] = [];
+  let n = 0;
+  const set = (runId: string, patch: Partial<RibRunStatus>) => {
+    const current = states.get(runId);
+    if (current) states.set(runId, { ...current, ...patch });
+  };
+  return {
+    started,
+    cancelled,
+    set,
+    dispatcher: {
+      start: async (name: string, inputs: Record<string, string>) => {
+        n++;
+        const runId = `run_${n}`;
+        started.push({ name, inputs });
+        states.set(runId, {
+          runId,
+          workflowName: name,
+          status: "running",
+          startedAt: new Date().toISOString(),
+          checkout: opts.live
+            ? { path: "/project", branch: "main", worktreeEstablished: false }
+            : { path: `/wt/${runId}`, branch: `keelson/${runId}`, worktreeEstablished: true },
+          nodes: [],
+        });
+        return { runId };
+      },
+      status: async (runId: string) => states.get(runId),
+      cancel: async (runId: string) => {
+        cancelled.push(runId);
+        set(runId, { status: "cancelled" });
+        return { ok: true as const };
+      },
+    },
+  };
+}
+
+const later = (ms: number, fn: () => void) => setTimeout(fn, ms);
+
+describe("Workflow dispatch", () => {
+  test("the lead starts a run, waits it out through an approval, and concludes verified", async () => {
+    const fake = fakeDispatcher();
+    let swarmRef: Swarm | undefined;
+    const prompts: string[] = [];
+    let refused = "";
+    const { start, logs, provider } = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId !== "s1-lead") return;
+        prompts.push(prompt);
+        if (turn === 1) {
+          const out = await call("chat_workflow_start", {
+            workflow: "fix-issue",
+            purpose: "fix issue 1",
+            inputs: { issue: "1" },
+          });
+          expect(out.content).toContain("started fix-issue run run_1");
+          later(40, () => {
+            fake.set("run_1", {
+              status: "paused",
+              pendingApproval: { nodeId: "approve-plan", prompt: "Approve the plan?" },
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else if (turn === 2) {
+          refused = (await call("chat_done", { summary: "too early" })).content;
+          later(20, () => {
+            fake.set("run_1", {
+              status: "succeeded",
+              completedAt: new Date().toISOString(),
+              pendingApproval: undefined,
+              nodes: [
+                {
+                  nodeId: "open-pr",
+                  status: "succeeded",
+                  output: "opened https://github.com/o/r/pull/7",
+                },
+              ],
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else {
+          await call("chat_done", { summary: "issue 1 fixed in PR 7" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    const summary = await swarmRef.finished;
+    expect(fake.started).toEqual([{ name: "fix-issue", inputs: { issue: "1" } }]);
+    expect(prompts[1]).toContain("paused for human approval at node approve-plan");
+    expect(refused).toContain("still live");
+    expect(prompts[2]).toContain("is succeeded");
+    expect(prompts[2]).toContain("verified");
+    expect(summary.status).toBe("done");
+    expect(summary.runs?.[0]).toMatchObject({
+      runId: "run_1",
+      status: "succeeded",
+      verified: true,
+      prUrls: ["https://github.com/o/r/pull/7"],
+    });
+    // Waiting on a live run is not idleness: the lead was never nudged.
+    expect(logs.some((l) => l.includes("nudging"))).toBe(false);
+    const leadTools = provider.requests[0]?.tools?.map((t) => t.name) ?? [];
+    expect(leadTools).toContain("chat_workflow_start");
+  });
+
+  test("an isolated run found in the live checkout is cancelled and reported", async () => {
+    const fake = fakeDispatcher({ live: true });
+    const prompts: string[] = [];
+    const { start } = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId !== "s1-lead") return;
+        prompts.push(prompt);
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "fix issue 2" });
+        } else {
+          await call("chat_done", { summary: "the run could not be isolated" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    const summary = await (await start()).finished;
+    expect(fake.cancelled).toEqual(["run_1"]);
+    expect(prompts[1]).toContain("not an isolated worktree");
+    expect(summary.runs?.[0]).toMatchObject({ status: "cancelled", verified: false });
+  });
+
+  test("a workflow outside the grant is refused, and workers never hold dispatch tools", async () => {
+    const fake = fakeDispatcher();
+    let refusal = "";
+    const { start, provider } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          refusal = (await call("chat_workflow_start", { workflow: "deploy", purpose: "x" }))
+            .content;
+          await call("chat_spawn", { handle: "w", role: "r", brief: "b" });
+        } else if (agentId === "s1-lead") {
+          await call("chat_done", { summary: "ok" });
+        } else {
+          await call("chat_post", { body: "@s1-lead done" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    await (await start()).finished;
+    expect(refusal).toContain("not one this swarm may start. It may start: fix-issue");
+    expect(fake.started).toEqual([]);
+    const worker = provider.requests.find((r) => r.turnContext?.agentId === "s1-w");
+    expect(worker?.tools?.map((t) => t.name)).not.toContain("chat_workflow_start");
+  });
+
+  test("stopping the swarm cancels its live runs", async () => {
+    const fake = fakeDispatcher();
+    let swarmRef: Swarm | undefined;
+    const { start } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "fix issue 3" });
+          later(20, () => void swarmRef?.stop());
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    const summary = await swarmRef.finished;
+    expect(summary.status).toBe("stopped");
+    expect(fake.cancelled).toEqual(["run_1"]);
+    expect(summary.runs?.[0]?.status).toBe("cancelled");
+  });
+
+  test("a swarm without workflows gives its lead no dispatch tools", async () => {
+    const { start, provider } = harness(async ({ call }) => {
+      await call("chat_done", { summary: "ok" });
+    });
+    await (await start()).finished;
+    expect(provider.requests[0]?.tools?.map((t) => t.name)).not.toContain("chat_workflow_start");
   });
 });
 
