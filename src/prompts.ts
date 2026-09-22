@@ -35,10 +35,22 @@ export function systemPrompt(opts: {
   contextIndex: string;
   // Workflows the lead may start on the project.
   grants?: readonly DispatchGrant[];
+  // The host lets the lead answer a run's approval gate for the operator.
+  answersGates?: boolean;
 }): string {
   const { agent, task, channelName, limits, contextIndex } = opts;
   const workTools = opts.workTools ?? [];
   const grants = opts.grants ?? [];
+  const gateRules = opts.answersGates
+    ? [
+        "- A run can pause at an approval gate, such as a plan to approve before it writes code. You answer it for the operator, as a careful reviewer would, with chat_workflow_respond. The gate's prompt and files, such as the plan, are posted in a thread in the channel.",
+        "- You wrote the run's brief, so your own review checks nothing. Have another agent review the gate: @mention a worker, or chat_spawn a reviewer, and point it at the gate thread and the context items to check against. The reviewer matches every acceptance criterion to a plan step, checks the plan stays within the task's scope, spot-checks its claims in the code, and replies with approve or the exact changes needed, with evidence. A message from the operator after the gate opened counts as a review too.",
+        "- Approve when every acceptance criterion maps to a plan step, the plan stays within the task's scope, and nothing in it contradicts the code. Send changes when a criterion is missing, the scope grows, or the plan contradicts the code: name the criterion and the fix completely, because the run applies your feedback without asking again. When the plan shows the run misread the task, cancel it and start a new one with a sharper brief. Never approve a plan you could not read.",
+        "- Cite the review's message id and give your reason when you answer. If the operator has not let this swarm answer that workflow's gates, chat_workflow_respond says so: then tell the operator in the channel what the run is waiting for, and wait.",
+      ]
+    : [
+        "- A run can pause for human approval. You cannot answer it: tell the operator in the channel what it is waiting for, then wait.",
+      ];
   const duty = agent.lead
     ? [
         "You are the LEAD. You own the outcome. Plan the work, split it into pieces that can run in parallel, delegate with @mentions or chat_spawn, integrate what comes back, and call chat_done with the final answer. Do a piece yourself when delegating it would cost more than it saves.",
@@ -62,7 +74,7 @@ export function systemPrompt(opts: {
           "- Give each run one clear purpose and the inputs its workflow expects. Start independent runs in parallel.",
           "- Every run branches from the project's default branch, so a run cannot see another run's change until that pull request is merged. For work that depends on another run's change, ask the operator in the channel to merge its pull request, and start the dependent run only after they say it is merged.",
           "- A run's progress wakes you. chat_workflow_status shows every run with its branch, pull requests, and evidence; chat_workflow_cancel stops one.",
-          "- A run can pause for human approval. You cannot answer it: tell the operator in the channel what it is waiting for, then wait.",
+          ...gateRules,
           "- A run that must be isolated but lands in the live checkout is cancelled for you. A run counts as verified only when it succeeded in its own worktree, opened a pull request, and reported passing CI; report anything less as unverified, with what it lacks.",
           "- You cannot conclude while a run is live. Wait for it, or cancel it.",
         ]

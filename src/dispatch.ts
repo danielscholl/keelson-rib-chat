@@ -6,7 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { RibRunStatus } from "@keelson/shared";
+import type { RibApprovalArtifact, RibRunStatus } from "@keelson/shared";
 import type { ChildRun, CiVerdict } from "./types.ts";
 
 // The harness seams a swarm dispatches through, narrowed so the engine can be
@@ -15,6 +15,31 @@ export interface WorkflowDispatcher {
   start(name: string, inputs: Record<string, string>): Promise<{ runId: string }>;
   status(runId: string): Promise<RibRunStatus | undefined>;
   cancel(runId: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  // Absent on a host that cannot answer a gate for the operator.
+  respond?(
+    runId: string,
+    nodeId: string,
+    text: string,
+  ): Promise<{ ok: true } | { ok: false; error: string }>;
+}
+
+// A file a paused gate names, such as the plan it asks about.
+export type GateFile = RibApprovalArtifact;
+
+export function gateFiles(status: RibRunStatus): GateFile[] {
+  return [...(status.pendingApproval?.artifacts ?? [])];
+}
+
+// A line that only names a gate file, which the gate thread carries in full.
+const FILE_HINT = /^[\s`'"([]*\$ARTIFACTS_DIR\/\S+?[\s`'")\].,:;]*$/;
+
+export function withoutFileHints(prompt: string): string {
+  return prompt
+    .split("\n")
+    .filter((line) => !FILE_HINT.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
@@ -88,15 +113,18 @@ export function applyStatus(run: ChildRun, status: RibRunStatus): string | undef
   run.nodesDone = status.nodes.length;
   if (status.completedAt) run.completedAt = status.completedAt;
   if (status.error) run.error = status.error;
-  if (status.pendingApproval) run.pendingApproval = { ...status.pendingApproval };
-  else delete run.pendingApproval;
+  if (status.pendingApproval) {
+    const { nodeId, prompt } = status.pendingApproval;
+    const open = run.pendingApproval?.nodeId === nodeId ? run.pendingApproval : undefined;
+    run.pendingApproval = { ...open, nodeId, prompt };
+  } else delete run.pendingApproval;
   for (const url of prUrlsIn(status)) if (!run.prUrls.includes(url)) run.prUrls.push(url);
   const ci = ciIn(status);
   if (ci) run.ci = ci;
   run.verified = verified(run);
 
   if (run.status === "paused" && run.pendingApproval?.nodeId !== approvalBefore) {
-    return `${label(run)} is paused for human approval at node ${run.pendingApproval?.nodeId}: ${run.pendingApproval?.prompt} Only the operator can answer it.`;
+    return `${label(run)} is paused for approval at node ${run.pendingApproval?.nodeId}.`;
   }
   if (run.status === before) return undefined;
   return describeRun(run);
@@ -108,9 +136,17 @@ function label(run: ChildRun): string {
 
 export function describeRun(run: ChildRun): string {
   const parts = [`${label(run)} is ${run.status}`];
-  if (run.pendingApproval) {
+  const gate = run.pendingApproval;
+  if (gate) {
     parts.push(
-      `waiting on approval at ${run.pendingApproval.nodeId}: ${run.pendingApproval.prompt}`,
+      gate.threadId
+        ? `waiting on approval at ${gate.nodeId}, its prompt and files in thread ${gate.threadId}`
+        : `waiting on approval at ${gate.nodeId}: ${gate.prompt}`,
+    );
+  }
+  for (const answer of run.approvals ?? []) {
+    parts.push(
+      `${answer.decision === "approve" ? "approved" : "sent changes at"} ${answer.nodeId} on ${answer.reviewer}'s review ${answer.review}`,
     );
   }
   if (run.checkout?.branch) parts.push(`branch ${run.checkout.branch}`);

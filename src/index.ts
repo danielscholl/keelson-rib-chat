@@ -31,6 +31,7 @@ let getDataDir: RibContext["getDataDir"];
 let startWorkflow: RibContext["startWorkflow"];
 let getRunStatus: RibContext["getRunStatus"];
 let cancelRun: RibContext["cancelRun"];
+let respondToRun: RibContext["respondToRun"];
 
 let server: ManagedServer | undefined;
 // Swarms between the start call and the registry, so stop and reset see them too.
@@ -159,11 +160,15 @@ async function launchSwarm(
     const start = startWorkflow;
     const status = getRunStatus;
     const cancel = cancelRun;
+    const respond = respondToRun;
     const onProject = projectId;
     dispatcher = {
       start: (name, inputs) => start(name, inputs, { projectId: onProject }),
       status: (runId) => status(runId),
       cancel: (runId) => cancel(runId),
+      ...(respond
+        ? { respond: (runId: string, nodeId: string, text: string) => respond(runId, nodeId, text) }
+        : {}),
     };
   }
   const owner = await ownerClient();
@@ -266,6 +271,7 @@ const rib: Rib = {
     startWorkflow = ctx.startWorkflow;
     getRunStatus = ctx.getRunStatus;
     cancelRun = ctx.cancelRun;
+    respondToRun = ctx.respondToRun;
     disposed = false;
     return [
       ...makeChatTools({ swarms, ended, startSwarm, readChannel }),

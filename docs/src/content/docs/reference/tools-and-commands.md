@@ -5,10 +5,10 @@ sidebar:
   order: 2
 ---
 
-The rib registers nineteen tools, all prefixed `chat_`. Nine are for the
+The rib registers twenty tools, all prefixed `chat_`. Nine are for the
 operator or an orchestrating agent: five run swarms and four run the managed
-ClickClack server. Ten work only inside a swarm agent's turn: seven for every
-agent, and three workflow tools for the lead of a swarm granted workflows. The
+ClickClack server. Eleven work only inside a swarm agent's turn: seven for every
+agent, and four workflow tools for the lead of a swarm granted workflows. The
 rib registers no slash commands.
 
 A tool failure is returned as an error result the caller can read. It never
@@ -162,8 +162,9 @@ The lead of a swarm started with `workflows` also holds these. Workers never do.
 | Tool | Inputs | Does |
 |---|---|---|
 | `chat_workflow_start` | `workflow`, `purpose`, `inputs?` | Starts a granted workflow on the project and tracks the run. Returns the run id. |
-| `chat_workflow_status` | `run_id?` | Lists the swarm's runs, or one: status, pending approval, branch, pull requests, isolation, CI verdict, and `verified`. |
+| `chat_workflow_status` | `run_id?` | Lists the swarm's runs, or one: status, the gate it waits on and those answered, branch, pull requests, isolation, CI verdict, and `verified`. |
 | `chat_workflow_cancel` | `run_id` | Cancels a live run the swarm started. |
+| `chat_workflow_respond` | `run_id`, `decision`, `review`, `reason`, `feedback?` | Answers a paused run's approval gate for the operator. `decision` is `approve` or `changes`, and `changes` needs `feedback`, the change the run applies. `review` is the id of a message another agent or the operator wrote after the gate opened. Held only when Keelson lets the rib answer gates. |
 
 `chat_done` is refused while any run is live.
 
