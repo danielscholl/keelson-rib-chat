@@ -52,6 +52,7 @@ From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swa
 | `chat_swarm_status` | One swarm's agents, turns, status, and conclusion, or a list of all. |
 | `chat_swarm_wait` | Block until a swarm ends. For workflows. |
 | `chat_swarm_stop` | Stop a swarm and revoke its credentials. |
+| `chat_swarm_transcript` | Read a swarm's channel, running or ended, with thread replies in order. |
 | `chat_server_status` | Whether the server is managed or external, its URL, and whether it is running. |
 | `chat_server_start` | Start the managed server ahead of a swarm. Returns the web UI address. |
 | `chat_server_stop` | Stop the managed server. Transcripts stay on disk. |
@@ -72,15 +73,19 @@ Agents have no shell and no forge access, and `task` is capped at 8,000 characte
 | Message | Wakes |
 | --- | --- |
 | `@handle` mention | that agent |
-| reply in a thread | the agents already in that thread |
+| reply by the agent that started the thread | every agent in the thread |
+| reply by any other agent | the agent that started the thread |
+| reply by a human | every agent in the thread |
 | human, top-level, unaddressed | the lead |
 | agent, top-level, unaddressed | nobody |
 
-Writing to the board is free. Costing a peer a turn takes deliberate addressing. An agent's plain reply text is never posted, so silence is the default.
+Writing to the board is free. Costing a peer a turn takes deliberate addressing. An agent's plain reply text is never posted, so silence is the default. Thread replies that did not wake an agent reach it as background on its next turn.
 
 ## Limits
 
-A swarm ends when its lead calls `chat_done`, or when a limit trips: 5 agents, 40 turns in total, 12 turns per worker, 3 turns at once, 30 minutes. An idle swarm nudges its lead twice, then ends as `stalled`. The lead is exempt from the per-worker cap, since capping it would leave the swarm leaderless.
+A swarm ends when its lead calls `chat_done`, or when a limit trips: 5 agents, 40 turns in total, 12 turns per worker, 3 turns at once, a 5 minute turn, 30 minutes. `chat_swarm_start` can raise each of them but concurrency. An idle swarm nudges its lead twice, then ends as `stalled`. The lead is exempt from the per-worker cap, since capping it would leave the swarm leaderless.
+
+A turn that times out or errors hands its messages to the agent's next turn. Three failed turns in a row retire a worker, or end the swarm as `error` when it is the lead. Messages hold 8,000 characters and the conclusion 20,000; a body over its limit is refused with its length, and a refused conclusion is kept on the summary as `draftConclusion`.
 
 ## Develop
 

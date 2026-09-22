@@ -65,8 +65,8 @@ only and are revoked when the swarm ends.
 
 ## Routing is a pure function
 
-`route()` takes a message, the roster, and the thread's participants, and
-returns who wakes. It does no I/O, reads no clock, and calls no provider. The
+`route()` takes a message, the roster, and the thread's participants and
+starter, and returns who wakes. It does no I/O, reads no clock, and calls no provider. The
 engine owns every side effect. This is the same split Chamber draws between a
 strategy and its driver, and it is why the routing rules are unit-tested without
 a server.

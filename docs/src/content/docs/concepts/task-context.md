@@ -55,8 +55,8 @@ item that was not supplied returns an error that tells the agent to report it as
 missing, along with the list of items that do exist.
 
 The list of items, without the bodies, is kept in the swarm's summary, which
-`chat_swarm_status` returns and which becomes the run's result. The record
-shows what evidence a conclusion rested on.
+`chat_swarm_status` returns and the run records. The record shows what evidence
+a conclusion rested on.
 
 ## Related
 

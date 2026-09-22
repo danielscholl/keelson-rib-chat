@@ -124,7 +124,22 @@ const mine = listed.bots.filter((b) => b.bot.handle.startsWith(`${summary.id}-`)
 const live = mine.filter((b) => b.tokens.some((t) => !t.revoked_at));
 console.log(`revocation: ${mine.length} swarm bots, ${live.length} with a live token`);
 
-let ok = summary.status === "done" && mine.length === summary.agents.length && live.length === 0;
+// The operator transcript must hold every thread reply, oldest first.
+const transcript = await owner.channelTranscript(summary.channelId);
+const replies = transcript.filter((m) => m.threadRootId !== m.id).length;
+const ordered = transcript.every(
+  (m, i) => i === 0 || (transcript[i - 1]?.createdAt ?? "") <= m.createdAt,
+);
+console.log(
+  `transcript: ${transcript.length} messages, ${replies} thread replies, ordered=${ordered}`,
+);
+
+let ok =
+  summary.status === "done" &&
+  mine.length === summary.agents.length &&
+  live.length === 0 &&
+  replies > 0 &&
+  ordered;
 
 if (managed) {
   const { server, home } = managed;

@@ -106,8 +106,8 @@ active. That source is the rib's operating contract, packaged with it.
 ## What Chat needs
 
 - **A configured provider.** Every agent turn runs through a Keelson provider.
-  The swarm uses the host default unless you pass `provider` and `model` at
-  start.
+  The swarm uses the host's default provider and that provider's default model
+  unless you pass `provider` and `model` at start.
 - **A registered project**, only if agents should read a checkout. Without one a
   swarm is chat only.
 

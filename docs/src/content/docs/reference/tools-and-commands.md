@@ -5,8 +5,8 @@ sidebar:
   order: 2
 ---
 
-The rib registers fifteen tools, all prefixed `chat_`. Eight are for the
-operator or an orchestrating agent: four run swarms and four run the managed
+The rib registers sixteen tools, all prefixed `chat_`. Nine are for the
+operator or an orchestrating agent: five run swarms and four run the managed
 ClickClack server. Seven work only inside a swarm agent's turn. The rib
 registers no slash commands.
 
@@ -26,10 +26,18 @@ durable ops, a run id.
 | `project` | string | none | A registered project's id or name. Unknown fails the start. |
 | `work_tools` | `none` \| `read` | `read` | `read` grants `Read`, `Grep`, `Glob`, only when `project` is set. |
 | `max_agents` | integer | 5 | 1 to 12, lead included. |
-| `max_turns` | integer | 40 | 1 to 200. |
+| `max_turns` | integer | 40 | 1 to 200, across the swarm. |
+| `max_turns_per_agent` | integer | 12 | 1 to 100. Turns each worker may take. The lead is bounded by `max_turns` only. |
+| `turn_timeout_s` | integer | 300 | 30 to 1,800. Seconds one agent turn may run. |
+| `max_minutes` | integer | 30 | 1 to 240. Wall clock for the whole swarm. |
 | `context` | array | none | Task context items, below. |
-| `provider` | string | host default | Applies to every agent. |
-| `model` | string | host default | Applies to every agent. |
+| `provider` | string | host default | Serves every agent. |
+| `model` | string | provider default | Every agent, or the lead alone when `worker_model` is set. |
+| `worker_model` | string | `model` | Workers only. |
+
+Without `provider`, the host uses `KEELSON_WORKFLOW_PROVIDER` when it is set,
+and otherwise its first registered provider. Without `model`, that provider
+serves its own default model. The lead always runs `model`.
 
 A `context` item:
 
@@ -55,8 +63,9 @@ refused.
 
 With an id, returns the summary: `id`, `task`, `status`, `channelId`,
 `channelName`, `startedAt`, `endedAt`, `turnsUsed`, `limits`, `agents`,
-`context` (the item list without bodies), `conclusion`, and `error`. Without
-one, returns a short row per swarm. Ended swarms are answered for from memory:
+`context` (the item list without bodies), `conclusion`, `draftConclusion`, and
+`error`. `draftConclusion` is the lead's last refused conclusion, present only
+when no conclusion landed. Without one, returns a short row per swarm. Ended swarms are answered for from memory:
 the last 20 of the current process.
 
 ### `chat_swarm_wait`
@@ -78,6 +87,21 @@ poll `chat_swarm_status`.
 
 Aborts turns in flight, revokes every agent's bot token, and ends the swarm as
 `stopped`.
+
+### `chat_swarm_transcript`
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `swarm` | string | required | A swarm id, running or ended. |
+| `thread` | string | none | A thread's root message id. Omit to read the whole channel. |
+| `offset` | integer | 0 | Character offset to continue a long transcript from. |
+
+Reads a swarm's channel as the operator: every message in order, thread replies
+included, or one thread. The result is headed by the channel, the message
+count, and the character range shown, and pages by 40,000 characters; call
+again with the `offset` it names. It answers for any swarm `chat_swarm_status`
+knows. It never starts a stopped managed server, and refuses a thread outside
+the swarm's channel. Swarm agents do not hold it.
 
 ### Generic run tools
 
@@ -112,14 +136,17 @@ read from the turn context the engine sets, never from input.
 | Tool | Inputs | Does |
 |---|---|---|
 | `chat_post` | `body` | Writes a top-level message. Wakes no one without a mention. |
-| `chat_reply` | `message_id`, `body` | Answers in the thread of any message id. |
+| `chat_reply` | `message_id`, `body` | Answers in the thread of any message id. Wakes the thread's starter, or every agent in the thread when the starter replies. See [Routing](../../concepts/routing/). |
 | `chat_read` | `thread_id?`, `limit?` | Reads the channel's latest messages, or one thread. `limit` defaults to 20, at most 50. |
 | `chat_roster` | none | Lists agents with handle, role, turns, and status. |
 | `chat_context` | `id?`, `offset?` | With no `id`, lists the context items. With one, returns the body under an attribution header, 20,000 characters per page. |
 | `chat_spawn` | `handle`, `role`, `brief` | Adds a worker and posts the brief as a mention. Fails at the agent cap. |
-| `chat_done` | `summary` | Lead only. Concludes the swarm. |
+| `chat_done` | `summary` | Lead only. Concludes the swarm. Posts the conclusion to the channel in parts of at most 8,000 characters. |
 
-`body`, `brief`, and `summary` are 1 to 8,000 characters. `handle` is up to 20
+`body` and `brief` are 1 to 8,000 characters, and `summary` 1 to 20,000. A
+value over its limit is refused with its length and how many characters to cut.
+A refused `summary` is kept, and a swarm that ends without a conclusion carries
+it as `draftConclusion`. `handle` is up to 20
 characters and is normalized to kebab-case and prefixed with the swarm id.
 `role` is up to 200 characters.
 

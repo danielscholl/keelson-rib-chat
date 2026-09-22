@@ -28,6 +28,10 @@ export interface TurnOutcome {
 }
 
 const TOOL_CALL_CAP = 32;
+// How long a timed-out turn waits for the host to finish tearing it down. The
+// next turn resumes the same provider session, and resuming it before the old
+// turn has released it can leave the new turn hung with no model call.
+export const SETTLE_GRACE_MS = 15_000;
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -38,6 +42,7 @@ export async function runTurn(
   req: TurnRequest,
   timeoutMs: number,
   parentSignal?: AbortSignal,
+  settleGraceMs = SETTLE_GRACE_MS,
 ): Promise<TurnOutcome> {
   const startedAt = Date.now();
   const toolCalls: string[] = [];
@@ -66,10 +71,23 @@ export async function runTurn(
 
     const outcome = await Promise.race([settled, timed]);
     if (outcome.kind === "timeout") {
+      let grace: ReturnType<typeof setTimeout> | undefined;
+      const late = await Promise.race([
+        settled,
+        new Promise<undefined>((resolve) => {
+          grace = setTimeout(() => resolve(undefined), settleGraceMs);
+        }),
+      ]);
+      if (grace) clearTimeout(grace);
+      const sessionId =
+        late?.kind === "result" && late.result.sessionId
+          ? { sessionId: late.result.sessionId }
+          : {};
       return {
         status: "timeout",
         text: "",
         error: `agent turn exceeded ${timeoutMs}ms`,
+        ...sessionId,
         ...base(),
       };
     }

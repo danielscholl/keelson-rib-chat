@@ -34,6 +34,11 @@ export interface SwarmLimits {
   maxNudges: number;
 }
 
+// A message, brief, or task body. The conclusion gets more room because it is the
+// swarm's whole deliverable; the channel receives it in parts of BODY_MAX.
+export const BODY_MAX = 8_000;
+export const CONCLUSION_MAX = 20_000;
+
 export const DEFAULT_LIMITS: SwarmLimits = {
   maxAgents: 5,
   maxTurns: 40,
@@ -44,7 +49,8 @@ export const DEFAULT_LIMITS: SwarmLimits = {
   maxNudges: 2,
 };
 
-export type AgentStatus = "idle" | "busy" | "capped";
+// `failed`: retired after too many consecutive failed turns.
+export type AgentStatus = "idle" | "busy" | "capped" | "failed";
 
 export interface SwarmAgent {
   id: string;
@@ -76,6 +82,8 @@ export interface SwarmSummary {
   // The evidence the swarm was given, without the bodies.
   context?: readonly ContextIndexEntry[];
   conclusion?: string;
+  // The lead's last conclusion that was refused, kept when no conclusion landed.
+  draftConclusion?: string;
   error?: string;
 }
 

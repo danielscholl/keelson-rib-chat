@@ -268,10 +268,22 @@ export function scriptedProvider(tools: readonly ToolDefinition[], script: Scrip
       return result;
     };
 
-    const result = script({ agentId, prompt: req.prompt, turn, call }).then(
-      () => ({ status: "ok" as const, text: "", sessionId: `sess_${agentId}` }),
-      (e) => ({ status: "error" as const, text: "", error: String(e) }),
-    );
+    // Like a real provider, an aborted turn settles as aborted even when the
+    // script behind it never finishes.
+    const aborted = new Promise<{ status: "aborted"; text: string }>((resolve) => {
+      const signal = req.abortSignal;
+      if (signal?.aborted) resolve({ status: "aborted", text: "" });
+      signal?.addEventListener("abort", () => resolve({ status: "aborted", text: "" }), {
+        once: true,
+      });
+    });
+    const result = Promise.race([
+      script({ agentId, prompt: req.prompt, turn, call }).then(
+        () => ({ status: "ok" as const, text: "", sessionId: `sess_${agentId}` }),
+        (e) => ({ status: "error" as const, text: "", error: String(e) }),
+      ),
+      aborted,
+    ]);
     // An empty stream that ends when the scripted turn does.
     const stream: AsyncIterable<MessageChunk> = {
       [Symbol.asyncIterator]: () => ({

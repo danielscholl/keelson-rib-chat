@@ -47,9 +47,13 @@ The result carries the swarm id and a run id:
 swarm s3fk started in #swarm-s3fk (run 211bdfbe-...). Poll chat_swarm_status("s3fk") or run_status("211bdfbe-...").
 ```
 
-To raise the ceilings for a larger job, pass `max_agents` (up to 12) and
-`max_turns` (up to 200). To run the swarm on a specific model, pass `provider`
-and `model`; they apply to every agent.
+To raise the ceilings for a larger job, pass `max_agents` (up to 12),
+`max_turns` (up to 200), `max_turns_per_agent` (up to 100), `turn_timeout_s`
+(up to 1,800), and `max_minutes` (up to 240).
+
+To choose the model, pass `provider` and `model`. `model` runs every agent, or
+the lead alone when `worker_model` is also set, and workers then run
+`worker_model`. Without `model`, the provider serves its own default.
 
 ## Or run the workflow
 
@@ -61,8 +65,10 @@ conclusion, who took part, and the turn cost:
 { "tool": "workflow_run", "input": { "name": "chat-swarm", "arguments": "Find why ..." } }
 ```
 
-The workflow is written to pass only a task. For a project, limits, or task
-context, call `chat_swarm_start` directly.
+The workflow is written to pass only a task. For a project, limits, a model, or
+task context, call `chat_swarm_start` directly. The model pinned on the
+workflow's nodes runs only its start, wait, and report steps, not the swarm's
+agents.
 
 ## Watch it
 
@@ -70,6 +76,10 @@ Open the `swarm-<id>` channel in ClickClack. The first message is the task. You
 will see the lead delegate with mentions, workers answer in threads, and
 findings land on the board. The rib also streams a progress line per turn to the
 run, which `run_events` returns.
+
+To read the channel from Keelson instead, call `chat_swarm_transcript` with the
+swarm id. It returns every message in order, thread replies included, for a
+running or ended swarm, and pages long transcripts by `offset`.
 
 ## Read the result
 
@@ -87,9 +97,14 @@ run, which `run_events` returns.
 ```
 
 Only `done` means the lead concluded. For any other status, `error` holds the
-reason and the channel holds whatever was found. `chat_swarm_wait` blocks until
-the swarm ends or its timeout passes, which is what a workflow wants; from chat,
-poll `chat_swarm_status`.
+reason and the channel holds whatever was found. When the lead's conclusion was
+refused as too long and none landed, `draftConclusion` holds its last draft.
+`chat_swarm_wait` blocks until the swarm ends or its timeout passes, which is
+what a workflow wants; from chat, poll `chat_swarm_status`.
+
+The run completes only when the swarm concluded or was stopped. Any other
+ending fails it with the status and reason, and the summary is its last
+progress frame.
 
 ## Related
 

@@ -9,8 +9,10 @@
 import type { RibDocsSource } from "@keelson/shared";
 import { CONTEXT_BOUNDS } from "./context.ts";
 import { DEFAULT_PORT } from "./server.ts";
-import { BODY_MAX, ENDED_KEPT, READ_BOUNDS, START_BOUNDS, WAIT_BOUNDS } from "./tools.ts";
-import { DEFAULT_LIMITS } from "./types.ts";
+import { MAX_TURN_FAILURES } from "./swarm.ts";
+import { ENDED_KEPT, READ_BOUNDS, START_BOUNDS, TRANSCRIPT_PAGE, WAIT_BOUNDS } from "./tools.ts";
+import { SETTLE_GRACE_MS } from "./turn-runner.ts";
+import { BODY_MAX, CONCLUSION_MAX, DEFAULT_LIMITS } from "./types.ts";
 
 // The corpus is a source module, not a file read at runtime, so an installed
 // package serves it with no filesystem or network dependency. keelson_docs
@@ -54,16 +56,25 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`work_tools\` | \`read\` | \`read\` grants Read, Grep, and Glob. \`none\` is chat only. |
 | \`max_agents\` | ${l.maxAgents} | Agent cap, lead included. 1 to ${START_BOUNDS.maxAgents}. |
 | \`max_turns\` | ${l.maxTurns} | Total turns across the swarm. 1 to ${START_BOUNDS.maxTurns}. |
+| \`max_turns_per_agent\` | ${l.maxTurnsPerAgent} | Turns each worker may take. 1 to ${START_BOUNDS.maxTurnsPerAgent}. The lead is bounded by \`max_turns\` only. |
+| \`turn_timeout_s\` | ${l.turnTimeoutMs / 1_000} | Seconds one agent turn may run. ${START_BOUNDS.turnTimeoutS.min} to ${START_BOUNDS.turnTimeoutS.max}. |
+| \`max_minutes\` | ${minutes(l.wallClockMs)} | Wall clock for the whole swarm. 1 to ${START_BOUNDS.maxMinutes}. |
 | \`context\` | none | Evidence the agents cannot fetch themselves. See Task context. |
 | \`provider\` | host default | Provider id used for every agent's turns. |
-| \`model\` | host default | Model id used for every agent's turns. |
+| \`model\` | provider default | Model for every agent, or for the lead alone when \`worker_model\` is set. |
+| \`worker_model\` | \`model\` | Model for workers. |
 
 Project confinement: with a \`project\`, every turn runs with the project root as
 its working directory and as its only allowed directory. Without a \`project\`
 there is nothing to confine reads to, so \`work_tools: read\` grants nothing and
 the swarm is chat only.
 
-One provider and model apply to the whole swarm. There is no per-agent choice.
+One provider serves the whole swarm. Without \`provider\`, the host uses
+\`KEELSON_WORKFLOW_PROVIDER\` when it is set, and otherwise its first registered
+provider. Without \`model\`, that provider serves its own default model. The lead
+always runs \`model\`; workers run \`worker_model\` when it is given. The
+\`chat-swarm\` workflow's model pin covers its own start, wait, and report steps,
+not the agents.
 
 # Task context
 
@@ -105,14 +116,22 @@ bodies, is kept in the swarm's status and durable result.
 | Message | Wakes |
 | --- | --- |
 | \`@handle\` mention | that agent |
-| reply in a thread | the agents already in that thread, plus anyone mentioned |
+| reply by the agent that started the thread | every agent already in the thread |
+| reply by any other agent | the agent that started the thread |
+| reply by a human, or in a thread a human started | every agent already in the thread |
 | human, top-level, unaddressed | the lead |
 | agent, top-level, unaddressed | nobody |
 
-Agent handles are prefixed with the swarm id, for example \`s3fk-lead\`. Writing
-to the channel is free; costing a peer a turn takes deliberate addressing. An
-agent's plain reply text is never posted, so silence is the default. An idle
-agent with pending messages runs one turn with all of them batched in.
+Mentions add to every row. Agent handles are prefixed with the swarm id, for
+example \`s3fk-lead\`. Writing to the channel is free; costing a peer a turn takes
+deliberate addressing. An agent's plain reply text is never posted, so silence
+is the default. An idle agent with pending messages runs one turn with all of
+them batched in.
+
+A thread reply that does not wake a participant still reaches it: the next time
+that agent wakes, its turn lists the reply as background, a one-line preview it
+can read in full with \`chat_read\`. So a report to the lead in a shared thread
+costs one turn, not one per participant, and the others still see it.
 
 # Agent tools
 
@@ -121,18 +140,22 @@ agent with pending messages runs one turn with all of them batched in.
 | Tool | For |
 | --- | --- |
 | \`chat_post\` | A top-level message. Wakes no one without an @mention. |
-| \`chat_reply\` | An answer inside a thread. |
+| \`chat_reply\` | An answer inside a thread. See Routing for who it wakes. |
 | \`chat_read\` | Re-read the channel's latest messages, or one thread. ${READ_BOUNDS.defaultLimit} messages by default, at most ${READ_BOUNDS.maxLimit}. |
 | \`chat_roster\` | The agents, their roles, and their turn counts. |
 | \`chat_context\` | List the task context items, or read one verbatim with its attribution. |
 | \`chat_spawn\` | Add a worker with a handle, a role, and a narrow brief. Fails at the agent cap. |
-| \`chat_done\` | Lead only. Conclude the swarm with its final answer. |
+| \`chat_done\` | Lead only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. |
 
 These refuse any caller that is not inside a swarm turn. The calling agent is
 taken from the turn context the engine sets, never from tool input, so an agent
 cannot speak as another. Each agent posts with its own bot token, so ClickClack
-stamps the author. Message bodies, briefs, and the conclusion are each at most
-${BODY_MAX} characters.
+stamps the author. Message bodies and briefs are each at most ${BODY_MAX} characters.
+The conclusion may run to ${CONCLUSION_MAX}, and reaches the channel in parts of at most
+${BODY_MAX}. A body over its limit is refused with its length and how much to cut,
+so the agent can shorten it in one retry. A refused conclusion is kept: if the
+swarm ends without one, the summary carries the last draft as \`draftConclusion\`.
+The conclusion is recorded before it is posted, so a failed post does not lose it.
 
 Beside these, an agent holds Read, Grep, and Glob when the swarm was started with
 a project and \`work_tools: read\`. It holds nothing else.
@@ -147,6 +170,7 @@ a project and \`work_tools: read\`. It holds nothing else.
 | \`chat_swarm_status\` | One swarm's agents, turns, status, and conclusion, or a list of all known swarms. |
 | \`chat_swarm_wait\` | Block until the swarm ends or \`timeout_s\` passes (default ${WAIT_BOUNDS.defaultS}, at most ${WAIT_BOUNDS.maxS}). The result begins with \`RUNNING\` or \`ENDED\`. |
 | \`chat_swarm_stop\` | Stop a running swarm and revoke its agents' credentials. |
+| \`chat_swarm_transcript\` | Read a swarm's channel, running or ended: every message in order with thread replies, or one \`thread\`. Pages by ${TRANSCRIPT_PAGE} characters with \`offset\`. Never starts a stopped managed server. |
 
 The generic \`run_status\`, \`run_events\`, \`run_cancel\`, and \`run_steer\` tools
 work on the run id. The \`chat-swarm\` workflow wraps start, wait, and report.
@@ -167,10 +191,18 @@ Four more tools act on the ClickClack server itself. See Managed server.
 | One turn | ${minutes(l.turnTimeoutMs)} minutes |
 | Idle nudges to the lead | ${l.maxNudges} |
 
-Only the agent cap and the swarm turn budget can be set at start. The lead is
-exempt from the per-worker cap, since capping it would leave the swarm
-leaderless. A worker that has spent its turns is capped the next time a message
-addresses it: the cap is announced in the channel and its messages are dropped.
+Every limit but concurrency and nudges can be set at start. The lead is exempt
+from the per-worker cap, since capping it would leave the swarm leaderless. A
+worker that has spent its turns is capped the next time a message addresses it:
+the cap is announced in the channel and its messages are dropped.
+
+A turn that times out or errors may never have shown the agent its messages, so
+they go back to the front of its inbox, and its next turn says they are
+repeated. After ${MAX_TURN_FAILURES} failed turns in a row a worker is retired as \`failed\` and
+the channel is told. The same run of failures in the lead ends the swarm as
+\`error\`, rather than spending a turn timeout on every wake. A timed-out turn
+first waits up to ${SETTLE_GRACE_MS / 1_000} seconds for the provider to release the agent's session,
+since the next turn resumes that same session.
 
 | Status | Meaning |
 | --- | --- |
@@ -179,10 +211,15 @@ addresses it: the cap is announced in the channel and its messages are dropped.
 | \`stalled\` | The swarm went idle and the lead did not conclude after ${l.maxNudges} nudges. |
 | \`exhausted\` | The turn budget or the wall clock ran out. |
 | \`stopped\` | Stopped by \`chat_swarm_stop\`, \`run_cancel\`, or a host shutdown. |
-| \`error\` | The swarm failed to start, or ClickClack revoked the owner session. |
+| \`error\` | The swarm failed to start, ClickClack revoked the owner session, or the lead's turns kept failing. |
 
 For every ending but \`done\`, \`error\` holds the reason and the channel
-transcript holds whatever was found. After \`chat_done\` no new turn starts;
+transcript holds whatever was found. A \`stalled\` reason names the cause it can
+see: ClickClack unreachable when an agent last tried it, a conclusion refused
+as too long, the lead's last turn failing, or plain silence. A conclusion the
+lead records stands even when ClickClack cannot take its post: the summary and
+the run hold it, and the lead is told the post failed. Bot tokens the swarm
+could not revoke at its end are retried when the next swarm starts. After \`chat_done\` no new turn starts;
 turns already in flight finish, then the swarm ends as \`done\`. A stop or a
 limit that lands in that window wins: the status is not \`done\`, and
 \`conclusion\` still holds what the lead recorded.
@@ -203,6 +240,10 @@ and the transcript stay, so the record keeps its authors.
 The run record differs. After \`chat_swarm_stop\` the run completes with the
 swarm summary as its result. After \`run_cancel\` the host marks the run
 \`cancelled\` at once and it carries no summary; \`chat_swarm_status\` still has it.
+
+A run completes only when the swarm concluded or was stopped. A swarm that ends
+\`stalled\`, \`exhausted\` with no conclusion, or \`error\` fails its run with the
+status and reason, and the summary is the run's last progress frame.
 
 # Restarts
 
