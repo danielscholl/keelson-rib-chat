@@ -18,3 +18,4 @@ export function swarmKey(id: string): string {
 export function docKey(id: string): string {
   return `rib:chat:doc:${id}`;
 }
+export const LAUNCH_KEY = "rib:chat:launch";

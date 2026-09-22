@@ -16,7 +16,8 @@ import type { SwarmChange } from "../swarm.ts";
 import type { StartingSwarm, SwarmSummary } from "../types.ts";
 import { buildDoc } from "./doc.ts";
 import { buildHistory, buildIndex, type SurfaceState } from "./index-board.ts";
-import { docKey, HISTORY_KEY, INDEX_KEY, swarmKey } from "./keys.ts";
+import { docKey, HISTORY_KEY, INDEX_KEY, LAUNCH_KEY, swarmKey } from "./keys.ts";
+import { buildLaunch, type LaunchState } from "./launch-board.ts";
 import { createKeyPublisher, type KeyPublisher } from "./publisher.ts";
 import { buildGoneBoard, buildStartingBoard, buildSwarmBoard } from "./swarm-board.ts";
 
@@ -34,6 +35,9 @@ export interface SurfaceDeps {
   sm: SnapshotManager;
   state: () => SurfaceState;
   find: (id: string) => SwarmRecord;
+  launch: () => LaunchState;
+  // Whether an ended swarm's launch is kept, so it can run again.
+  rerunnable: (id: string) => boolean;
   // The rib's own views array; the host re-reads it on a manifest refresh.
   views: RibViewDescriptor[];
   invalidateManifest?: () => void;
@@ -74,12 +78,19 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     expectView(HISTORY_KEY, "board"),
     windowMs,
   );
+  const launch = createKeyPublisher<CanvasView>(
+    sm,
+    LAUNCH_KEY,
+    () => buildLaunch(deps.launch()),
+    expectView(LAUNCH_KEY, "board"),
+    windowMs,
+  );
   const swarms = new Map<string, { board: KeyPublisher; doc: KeyPublisher }>();
 
   const composeBoard = (id: string): CanvasView => {
     const found = deps.find(id);
     const summary = found.live ?? found.ended;
-    if (summary) return buildSwarmBoard(summary);
+    if (summary) return buildSwarmBoard(summary, { rerunnable: deps.rerunnable(id) });
     if (found.starting) return buildStartingBoard(found.starting);
     return buildGoneBoard(id);
   };
@@ -143,15 +154,18 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       entry?.board.schedule();
       if (DOC_KINDS.has(kind)) entry?.doc.schedule();
       if (kind === "end") history.schedule();
+      if (kind === "start" || kind === "end") launch.schedule();
     },
     refresh() {
       index.schedule();
       history.schedule();
+      launch.schedule();
     },
     dispose() {
       for (const id of [...swarms.keys()]) release(id);
       index.release();
       history.release();
+      launch.release();
     },
   };
 }
