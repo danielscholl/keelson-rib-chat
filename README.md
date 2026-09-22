@@ -66,7 +66,7 @@ Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_context`
 
 ## Workflow dispatch
 
-Agents never edit files themselves. A swarm started with a `project` and `workflows` lets its lead start those Keelson workflows on the project, such as `fix-issue`, through `chat_workflow_start`, `chat_workflow_status`, and `chat_workflow_cancel`. Each run edits, commits, and opens its pull request in its own worktree, and a run the rib finds in the live checkout is cancelled. Run updates wake the lead, approvals wait for the operator, and the summary's `runs` records each run's branch, pull requests, and whether it is verified. Keelson must also grant the rib each workflow under `ribWorkflowGrants` in `config.json`.
+Agents never edit files themselves. A swarm started with a `project` and `workflows` lets its lead start those Keelson workflows on the project, such as `fix-issue`, through `chat_workflow_start`, `chat_workflow_status`, and `chat_workflow_cancel`. Each run edits, commits, and opens its pull request in its own worktree, and a run the rib finds in the live checkout is cancelled. Run updates wake the lead, approvals wait for the operator, and the summary's `runs` records each run's branch, pull requests, CI verdict, and whether it is verified. Keelson must also grant the rib each workflow under `ribWorkflowGrants` in `config.json`.
 
 ## Task context
 

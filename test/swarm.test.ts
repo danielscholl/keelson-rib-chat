@@ -547,6 +547,7 @@ describe("Workflow dispatch", () => {
                   status: "succeeded",
                   output: "opened https://github.com/o/r/pull/7",
                 },
+                { nodeId: "ci-green-gate", status: "succeeded", output: "CI_GATE: PASS" },
               ],
             });
             swarmRef?.onRunEvent("run_1");
@@ -574,11 +575,15 @@ describe("Workflow dispatch", () => {
       status: "succeeded",
       verified: true,
       prUrls: ["https://github.com/o/r/pull/7"],
+      ci: { verdict: "pass" },
     });
     // Waiting on a live run is not idleness: the lead was never nudged.
     expect(logs.some((l) => l.includes("nudging"))).toBe(false);
     const leadTools = provider.requests[0]?.tools?.map((t) => t.name) ?? [];
     expect(leadTools).toContain("chat_workflow_start");
+    const charter = provider.requests[0]?.system ?? "";
+    expect(charter).toContain("start the dependent run only after they say it is merged");
+    expect(charter).toContain("reported passing CI");
   });
 
   test("an isolated run found in the live checkout is cancelled and reported", async () => {

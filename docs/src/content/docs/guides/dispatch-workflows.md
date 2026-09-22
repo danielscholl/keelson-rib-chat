@@ -53,6 +53,15 @@ cancellation also wakes the lead; a run resuming after its approval does not.
 
 The lead cannot conclude while a run is live. It waits, or cancels the run.
 
+## Dependent changes
+
+Every run branches from the project's default branch, so a run cannot see
+another run's change until that run's pull request is merged. When one change
+needs another, the lead asks you in the channel to merge the pull request it
+depends on, and starts the dependent run after you say it is merged. The rib
+does not enforce that order, so give a swarm dependent work only when you
+intend to merge as it goes.
+
 ## Answer approvals
 
 Workflows like `fix-issue` stop at a human gate before they write code. The
@@ -88,10 +97,15 @@ nothing writes until after its approval gate.
 | `pendingApproval` | The node and prompt a paused run waits on. |
 | `checkout` | The path and branch the run used, and whether it established its own worktree. |
 | `prUrls` | Pull request links found in the run's node output. |
-| `verified` | An isolated run succeeded in its own worktree and produced a pull request. A non-isolated run succeeded. |
+| `ci` | The run's own CI verdict, `pass`, `fail`, or `unknown`, with the reason its workflow gave. |
+| `verified` | An isolated run succeeded in its own worktree, produced a pull request, and its CI verdict is `pass`. A non-isolated run succeeded and its CI did not fail. |
 
-The rib does not read CI, so a verified run still needs its checks reviewed. A
-swarm that ends before its runs finish cancels them.
+The CI verdict comes from the run, not from GitHub. `fix-issue` watches the pull
+request's checks and ends with a `CI_GATE:` line, and the rib reads the last one
+in the run's output, or the last `CI_STATUS:` line when there is no gate. A
+workflow that fails its gate fails the run. One that could not read the checks,
+such as on a repository with no CI, reports `unknown`, and the run succeeds but
+is not verified. A swarm that ends before its runs finish cancels them.
 
 ## Related
 

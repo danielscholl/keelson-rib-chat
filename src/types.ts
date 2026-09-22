@@ -91,11 +91,15 @@ export interface ChildRun {
   nodesDone: number;
   pendingApproval?: { nodeId: string; prompt: string };
   prUrls: string[];
+  // The CI verdict the run's workflow printed, if it printed one.
+  ci?: { verdict: CiVerdict; detail?: string };
   error?: string;
   // Succeeded with the evidence its grant demands: for an isolated run, an
-  // established worktree and a pull request.
+  // established worktree, a pull request, and a passing CI verdict.
   verified: boolean;
 }
+
+export type CiVerdict = "pass" | "fail" | "unknown";
 
 export interface SwarmSummary {
   id: string;

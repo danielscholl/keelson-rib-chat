@@ -176,7 +176,7 @@ names. Its lead then holds three more tools. Workers never do.
 | Tool | For |
 | --- | --- |
 | \`chat_workflow_start\` | Start a granted workflow with a one-line \`purpose\` and its \`inputs\`. Returns the run id. |
-| \`chat_workflow_status\` | The swarm's runs, or one: status, the approval it waits on, branch, pull requests, isolation, and whether it is verified. |
+| \`chat_workflow_status\` | The swarm's runs, or one: status, the approval it waits on, branch, pull requests, isolation, CI verdict, and whether it is verified. |
 | \`chat_workflow_cancel\` | Cancel a live run. |
 
 Two grants apply. The swarm's \`workflows\` list is the grant for this swarm.
@@ -204,12 +204,21 @@ is in flight. Its wall clock still applies, so give long runs a larger
 \`max_minutes\`. The lead cannot conclude while a run is live. A swarm that ends
 any other way cancels its live runs.
 
+Every run branches from the project's default branch, so a run cannot see
+another run's change until that run's pull request is merged. Only the operator
+merges. For dependent work the lead asks the operator to merge the pull request
+it needs, and starts the dependent run once they say it is merged. The rib does
+not enforce that order.
+
 The summary's \`runs\` records each run: workflow, purpose, inputs, status,
-checkout, the pull request links found in its node output, any error, and
-\`verified\`. An isolated run is verified only when it succeeded in an
-established worktree and produced a pull request. A run that need not be
-isolated is verified when it succeeded. The rib does not read CI, so a verified
-run's checks still need review.
+checkout, the pull request links found in its node output, its CI verdict, any
+error, and \`verified\`. The CI verdict is the run's own: the last
+\`CI_GATE:\` line in its node output, or failing that the last \`CI_STATUS:\`
+line, read as \`pass\`, \`fail\`, or \`unknown\` with the reason the workflow
+gave. An isolated run is verified only when it succeeded in an established
+worktree, produced a pull request, and its CI verdict is \`pass\`. A run that
+need not be isolated is verified when it succeeded and its CI did not fail. A
+run whose workflow could not read the checks is not verified.
 
 # Operator tools
 

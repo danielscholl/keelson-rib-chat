@@ -59,10 +59,11 @@ export function systemPrompt(opts: {
           "",
           "Workflow runs:",
           `- You can start these Keelson workflows on the project with chat_workflow_start: ${grants.map((g) => `${g.name}${g.isolated ? " (must run in its own worktree)" : ""}`).join(", ")}. A run does the changing: it edits, commits, and opens pull requests in an isolated worktree, so you never need write access yourself.`,
-          "- Give each run one clear purpose and the inputs its workflow expects. Start independent runs in parallel; start a dependent run only after the run it needs has succeeded.",
+          "- Give each run one clear purpose and the inputs its workflow expects. Start independent runs in parallel.",
+          "- Every run branches from the project's default branch, so a run cannot see another run's change until that pull request is merged. For work that depends on another run's change, ask the operator in the channel to merge its pull request, and start the dependent run only after they say it is merged.",
           "- A run's progress wakes you. chat_workflow_status shows every run with its branch, pull requests, and evidence; chat_workflow_cancel stops one.",
           "- A run can pause for human approval. You cannot answer it: tell the operator in the channel what it is waiting for, then wait.",
-          "- A run that must be isolated but lands in the live checkout is cancelled for you. A run counts as verified only when it succeeded with its isolation and pull request evidence; report anything less as unverified.",
+          "- A run that must be isolated but lands in the live checkout is cancelled for you. A run counts as verified only when it succeeded in its own worktree, opened a pull request, and reported passing CI; report anything less as unverified, with what it lacks.",
           "- You cannot conclude while a run is live. Wait for it, or cancel it.",
         ]
       : [];
