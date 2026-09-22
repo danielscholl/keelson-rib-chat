@@ -305,11 +305,34 @@ function agentRows(s: SwarmSummary): Row[] {
   });
 }
 
+function reportCard(s: SwarmSummary): Card[] {
+  if (!s.report) return [];
+  const lead = s.agents.find((a) => a.lead);
+  return [
+    {
+      title: s.report.title,
+      pill: { label: "report", tone: "brand" },
+      footnote: `by @${lead?.handle ?? `${s.id}-lead`} · ${day(s.report.at)} ${hhmm(s.report.at)} · ${Math.max(1, Math.round(s.report.bytes / 1024))} KB`,
+      actions: [
+        {
+          type: "open-report",
+          label: "Open the report",
+          glyph: "◧",
+          tone: "brand",
+          payload: { id: s.id },
+        },
+      ],
+    },
+  ];
+}
+
 function outcome(s: SwarmSummary): Leaf[] {
-  if (live(s) && s.conclusion === undefined) return [];
+  if (live(s) && s.conclusion === undefined) {
+    return s.report ? [{ kind: "cards", title: "Outcome", items: reportCard(s) }] : [];
+  }
   const text = s.conclusion ?? s.draftConclusion;
   const byLead = s.agents.find((a) => a.lead);
-  const cards: Card[] = [];
+  const cards: Card[] = [...reportCard(s)];
   if (s.conclusion !== undefined) {
     cards.push({
       title: "Conclusion",

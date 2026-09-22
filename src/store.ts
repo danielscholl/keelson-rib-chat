@@ -8,27 +8,29 @@
 
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { StartSwarmInput } from "./tools.ts";
 
-const DIR = "launches";
 const ID = /^s[a-z0-9]{4,12}$/;
 
-// What each swarm was started with, context bodies included, so an ended swarm
-// can run again. One file per swarm keeps swarms.json small.
-export interface LaunchStore {
-  save(id: string, input: StartSwarmInput): void;
-  load(id: string): StartSwarmInput | undefined;
+// One JSON file per swarm under a directory of the rib's data directory, for
+// what is too large for swarms.json. Held in memory when there is no data dir.
+export interface SwarmFileStore<T> {
+  save(id: string, value: T): void;
+  load(id: string): T | undefined;
   has(id: string): boolean;
-  // Drops every launch whose swarm the rib no longer knows.
+  // Drops every entry whose swarm the rib no longer knows.
   keepOnly(ids: ReadonlySet<string>): void;
   clear(): void;
 }
 
-export function createLaunchStore(dataDir: () => string | undefined): LaunchStore {
-  const memory = new Map<string, StartSwarmInput>();
+export function createSwarmFileStore<T>(
+  dataDir: () => string | undefined,
+  name: string,
+  valid: (value: unknown) => value is T,
+): SwarmFileStore<T> {
+  const memory = new Map<string, T>();
   const dir = (): string | undefined => {
     const root = dataDir();
-    return root ? join(root, DIR) : undefined;
+    return root ? join(root, name) : undefined;
   };
   const file = (d: string, id: string) => join(d, `${id}.json`);
   const stored = (): string[] => {
@@ -45,17 +47,17 @@ export function createLaunchStore(dataDir: () => string | undefined): LaunchStor
   };
 
   return {
-    save(id, input) {
-      memory.set(id, input);
+    save(id, value) {
+      memory.set(id, value);
       const d = dir();
       if (!d || !ID.test(id)) return;
       try {
         mkdirSync(d, { recursive: true });
         const tmp = `${file(d, id)}.${process.pid}.tmp`;
-        writeFileSync(tmp, JSON.stringify(input));
+        writeFileSync(tmp, JSON.stringify(value));
         renameSync(tmp, file(d, id));
       } catch {
-        // kept in memory; Run again works until the next restart
+        // kept in memory until the next restart
       }
     },
     load(id) {
@@ -64,10 +66,10 @@ export function createLaunchStore(dataDir: () => string | undefined): LaunchStor
       const d = dir();
       if (!d || !ID.test(id)) return undefined;
       try {
-        const input = JSON.parse(readFileSync(file(d, id), "utf8")) as StartSwarmInput;
-        if (typeof input?.task !== "string") return undefined;
-        memory.set(id, input);
-        return input;
+        const value: unknown = JSON.parse(readFileSync(file(d, id), "utf8"));
+        if (!valid(value)) return undefined;
+        memory.set(id, value);
+        return value;
       } catch {
         return undefined;
       }

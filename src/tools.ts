@@ -10,6 +10,7 @@ import { type ToolContext, type ToolDefinition, z } from "@keelson/shared";
 import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
 import { describeRun } from "./dispatch.ts";
 import { modelLabel, sizeText } from "./labels.ts";
+import { REPORT_HTML_MAX, REPORT_TITLE_MAX } from "./report.ts";
 import type { Swarm } from "./swarm.ts";
 import {
   BODY_MAX,
@@ -247,6 +248,16 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         ),
     })
     .strict();
+  const reportSchema = z
+    .object({
+      title: z.string().min(1).max(REPORT_TITLE_MAX).describe("The report's title, one line."),
+      html: z
+        .string()
+        .min(1)
+        .max(REPORT_HTML_MAX)
+        .describe("The page body markup, self-contained. The host supplies the document shell."),
+    })
+    .strict();
   const workflowStartSchema = z
     .object({
       workflow: z.string().min(1).describe("A workflow this swarm was granted, by exact name."),
@@ -408,6 +419,21 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           postError
             ? `conclusion recorded; the swarm is ending, but posting it to the channel failed (${postError}). The operator has it in the swarm summary. End your turn now.`
             : "conclusion recorded; the swarm is ending. End your turn now.",
+        );
+      }),
+    },
+    {
+      name: "chat_report",
+      description: `Lead agent only. Publish the swarm's report: a designed, self-contained HTML page the operator opens from the Swarms tab. Calling it again replaces the page. Read canvas_design_guide (sections "page" and "anti-patterns", plus "form" and "color" for charts) before writing it. The page renders in a sandboxed iframe with no network access: inline all CSS and JS, no external scripts or stylesheets, system font stack only (font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif). Style through CSS custom properties: dark values in :root, overridden in :root[data-theme="light"]. Declare any categorical chart palette on <body> as data-palette-dark="#hex,…" and data-palette-light="…"; a palette that fails color-vision or contrast checks is refused, so fix the colors and call again.`,
+      inputSchema: reportSchema,
+      state_changing: true,
+      execute: guarded(async (input, ctx) => {
+        const args = reportSchema.parse(input);
+        const { swarm, agentId } = caller(ctx);
+        const report = swarm.publishReport(agentId, args.title, args.html);
+        emitText(
+          ctx,
+          `report "${report.title}" published (${Math.round(Buffer.byteLength(report.html, "utf8") / 1024)} KB). The operator opens it from the swarm's card. Keep the chat_done conclusion a short summary that points to it.`,
         );
       }),
     },

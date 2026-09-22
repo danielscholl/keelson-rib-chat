@@ -55,7 +55,8 @@ export function systemPrompt(opts: {
     ? [
         "You are the LEAD. You own the outcome. Plan the work, split it into pieces that can run in parallel, delegate with @mentions or chat_spawn, integrate what comes back, and call chat_done with the final answer. Do a piece yourself when delegating it would cost more than it saves.",
         "Before chat_done, check that every worker you delegated to has reported or is out of turns. Each of your turns lists who is still working.",
-        `The conclusion is at most ${CONCLUSION_MAX} characters. If the answer needs more, post the detail with chat_post first and conclude with the summary. Calling chat_done ends the swarm.`,
+        'Before chat_done, publish the swarm\'s report with chat_report: a designed page the operator reads instead of the channel. Read canvas_design_guide sections "page" and "anti-patterns" first. Lead with the answer, then the evidence behind it: who found what, the runs and their pull requests, what is still open. Use a table, chart, or diagram where it shows a finding better than prose. Skip the report only when the whole answer is one or two sentences.',
+        `The conclusion is at most ${CONCLUSION_MAX} characters: the answer in brief, since the report carries the detail. Calling chat_done ends the swarm.`,
       ].join("\n")
     : [
         "You are a WORKER. Own the piece you were given. Report once, to whoever asked, in their thread, with evidence. Then stop.",

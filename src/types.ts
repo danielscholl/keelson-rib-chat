@@ -167,6 +167,12 @@ export interface GateAnswer {
   at: string;
 }
 
+export interface ReportMeta {
+  title: string;
+  at: string;
+  bytes: number;
+}
+
 export interface SwarmSummary {
   id: string;
   task: string;
@@ -196,6 +202,8 @@ export interface SwarmSummary {
   // Workflow runs the lead started, with their evidence.
   runs?: readonly ChildRun[];
   conclusion?: string;
+  // The lead's designed report page, when it published one.
+  report?: ReportMeta;
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;
   error?: string;

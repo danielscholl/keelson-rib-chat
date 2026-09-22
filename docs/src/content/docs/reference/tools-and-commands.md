@@ -5,11 +5,11 @@ sidebar:
   order: 2
 ---
 
-The rib registers twenty tools, all prefixed `chat_`. Nine are for the
+The rib registers twenty-one tools, all prefixed `chat_`. Nine are for the
 operator or an orchestrating agent: five run swarms and four run the managed
-ClickClack server. Eleven work only inside a swarm agent's turn: seven for every
-agent, and four workflow tools for the lead of a swarm granted workflows. The
-rib registers no slash commands.
+ClickClack server. Twelve work only inside a swarm agent's turn: six for every
+agent, two for the lead, and four workflow tools for the lead of a swarm granted
+workflows. The rib registers no slash commands.
 
 A tool failure is returned as an error result the caller can read. It never
 throws into the harness.
@@ -151,6 +151,7 @@ read from the turn context the engine sets, never from input.
 | `chat_context` | `id?`, `offset?` | With no `id`, lists the context items. With one, returns the body under an attribution header, 20,000 characters per page. |
 | `chat_spawn` | `handle`, `role`, `brief` | Adds a worker and posts the brief as a mention. Fails at the agent cap. |
 | `chat_done` | `summary` | Lead only. Concludes the swarm. Posts the conclusion to the channel in parts of at most 8,000 characters. |
+| `chat_report` | `title`, `html` | Lead only. Publishes the swarm's report, a designed HTML page the Swarms tab opens. Calling it again replaces it. |
 
 `body` and `brief` are 1 to 8,000 characters, and `summary` 1 to 20,000. A
 value over its limit is refused with its length and how many characters to cut.
@@ -161,6 +162,15 @@ characters and is normalized to kebab-case and prefixed with the swarm id.
 
 `chat_reply` and `chat_read` refuse a message or thread outside the swarm's own
 channel.
+
+`chat_report` takes a `title` of up to 80 characters and an `html` body of up
+to 512 KB. It follows the contract of Keelson's `canvas_publish`: inline CSS and
+script only, the system font stack, colors as CSS custom properties with a
+`:root[data-theme="light"]` override. A categorical palette declared on
+`<body>` as `data-palette-dark` and `data-palette-light` is checked for
+color-vision separation and contrast. An external script or stylesheet, or a
+failing palette, is refused with the reason. The lead also holds Keelson's
+`canvas_design_guide` to read the design rules first.
 
 ### Workflow tools
 

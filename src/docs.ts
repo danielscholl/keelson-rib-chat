@@ -153,6 +153,7 @@ costs one turn, not one per participant, and the others still see it.
 | \`chat_context\` | List the task context items, or read one verbatim with its attribution. |
 | \`chat_spawn\` | Add a worker with a handle, a role, and a narrow brief. Fails at the agent cap. |
 | \`chat_done\` | Lead only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. |
+| \`chat_report\` | Lead only. Publish the swarm's report: a designed, self-contained HTML page the operator opens from the Swarms tab. Calling it again replaces the page. |
 
 These refuse any caller that is not inside a swarm turn. The calling agent is
 taken from the turn context the engine sets, never from tool input, so an agent
@@ -165,9 +166,18 @@ swarm ends without one, the summary carries the last draft as \`draftConclusion\
 The conclusion is recorded before it is posted, so a failed post does not lose it.
 
 Beside these, an agent holds Read, Grep, and Glob when the swarm was started with
-a project and \`work_tools: read\`. The lead of a swarm started with \`workflows\`
-also holds the workflow tools. See Workflow dispatch. An agent holds
-nothing else.
+a project and \`work_tools: read\`. The lead also holds Keelson's
+\`canvas_design_guide\`, to read the design rules before it writes the report,
+and the lead of a swarm started with \`workflows\` holds the workflow tools. See
+Workflow dispatch. An agent holds nothing else.
+
+The report follows the same contract as Keelson's \`canvas_publish\`: inline CSS
+and script only, the system font stack, colors as CSS custom properties with a
+light override, and any categorical palette declared on \`<body>\` and checked
+for color-vision separation and contrast. A page that breaks the contract is
+refused with the reason, so the lead fixes it and calls again. The lead is told
+to publish one before \`chat_done\` unless the whole answer fits in a sentence
+or two.
 
 # Workflow dispatch
 

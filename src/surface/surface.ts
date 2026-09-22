@@ -12,6 +12,7 @@ import {
   type RibViewDescriptor,
   type SnapshotManager,
 } from "@keelson/shared";
+import type { SwarmReport } from "../report.ts";
 import type { SwarmChange } from "../swarm.ts";
 import type { StartingSwarm, SwarmSummary } from "../types.ts";
 import { buildDoc } from "./doc.ts";
@@ -21,6 +22,7 @@ import {
   HISTORY_KEY,
   INDEX_KEY,
   LAUNCH_KEY,
+  reportKey,
   SERVER_KEY,
   SERVER_LOG_KEY,
   swarmKey,
@@ -47,6 +49,7 @@ export interface SurfaceDeps {
   launch: () => LaunchState;
   server: () => ServerPanelState;
   readLog: () => Promise<string>;
+  report: (id: string) => SwarmReport | undefined;
   // Whether an ended swarm's launch is kept, so it can run again.
   rerunnable: (id: string) => boolean;
   // The rib's own views array; the host re-reads it on a manifest refresh.
@@ -147,7 +150,45 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     return true;
   }
 
+  const reports = new Map<string, KeyPublisher>();
+
+  // A report key exists only once the lead has published one.
+  function ensureReport(id: string, republish = false): boolean {
+    const held = reports.get(id);
+    if (held) {
+      if (republish) held.schedule();
+      return false;
+    }
+    const page = deps.report(id);
+    if (!page) return false;
+    const key = reportKey(id);
+    reports.set(
+      id,
+      createKeyPublisher<string>(
+        sm,
+        key,
+        () => deps.report(id)?.html ?? "",
+        (data: unknown) => {
+          if (typeof data !== "string" || data.length === 0) {
+            throw new Error(`${key} expects a non-empty html page`);
+          }
+          return data;
+        },
+        windowMs,
+      ),
+    );
+    deps.views.push({ key, canvasKind: "html", title: page.title });
+    return true;
+  }
+
   function release(id: string): void {
+    const report = reports.get(id);
+    if (report) {
+      report.release();
+      reports.delete(id);
+      const at = deps.views.findIndex((v) => v.key === reportKey(id));
+      if (at >= 0) deps.views.splice(at, 1);
+    }
     const entry = swarms.get(id);
     if (!entry) return;
     entry.board.release();
@@ -167,7 +208,10 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
 
   function track(ids: readonly string[]): void {
     let added = false;
-    for (const id of ids) added = register(id) || added;
+    for (const id of ids) {
+      added = register(id) || added;
+      added = ensureReport(id) || added;
+    }
     if (!added) return;
     trim();
     deps.invalidateManifest?.();
@@ -177,6 +221,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     track,
     changed(id, kind) {
       track([id]);
+      if (kind === "report" && ensureReport(id, true)) deps.invalidateManifest?.();
       index.schedule();
       const entry = swarms.get(id);
       entry?.board.schedule();

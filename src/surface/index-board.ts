@@ -179,6 +179,17 @@ function liveCard(s: SwarmSummary, needs: readonly Need[]): Card {
         payload: { id: s.id },
         hint: openHint(s),
       },
+      ...(s.report
+        ? [
+            {
+              type: "open-report",
+              label: "Report",
+              glyph: "◧",
+              payload: { id: s.id },
+              hint: s.report.title,
+            },
+          ]
+        : []),
       stopAction(s),
     ],
   };
@@ -222,7 +233,7 @@ export function endedRow(s: SwarmSummary): Row {
     icon: g.icon,
     glyph: g.tone,
     text: `${s.id} ${firstLine(s.task, 64)} · ${modelLabel(s)}`,
-    trailing: `${day(s.startedAt)} ${hhmm(s.startedAt)}${end} · ${endedOutcome(s)}`,
+    trailing: `${day(s.startedAt)} ${hhmm(s.startedAt)}${end} · ${endedOutcome(s)}${s.report ? " · ◧ report" : ""}`,
     action: { type: "swarm-open", payload: { id: s.id } },
   };
 }

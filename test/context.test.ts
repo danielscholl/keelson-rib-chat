@@ -153,7 +153,9 @@ describe("task context in a swarm", () => {
     expect(worker?.system).toContain("issue-874 [issue]");
     expect(worker?.system).toContain("MISSING EVIDENCE");
 
-    const granted = provider.requests.flatMap((r) => (r.tools ?? []).map((t) => t.name));
+    const granted = provider.requests
+      .filter((r) => r.turnContext?.agentId === "s1-reader")
+      .flatMap((r) => (r.tools ?? []).map((t) => t.name));
     expect(granted).toContain("chat_context");
     expect(granted.some((name) => !name.startsWith("chat_"))).toBe(false);
   });

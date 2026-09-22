@@ -11,9 +11,10 @@ import { ClickClackClient, ClickClackError } from "./clickclack.ts";
 import type { WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
 import { historyPath, loadHistory, saveHistory } from "./history.ts";
-import { createLaunchStore } from "./launches.ts";
+import { isReport, REPORT_DIR, type SwarmReport } from "./report.ts";
 import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
+import { createSwarmFileStore } from "./store.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
 import type { ServerLine, SurfaceState } from "./surface/index-board.ts";
 import { INDEX_KEY, LAUNCH_KEY, SERVER_KEY, SURFACE_ID } from "./surface/keys.ts";
@@ -281,10 +282,15 @@ function remember(summary: SwarmSummary): void {
   changed(summary.id, "end");
 }
 
-const launches = createLaunchStore(() => getDataDir?.());
+const isLaunch = (v: unknown): v is StartSwarmInput =>
+  typeof v === "object" && v !== null && typeof (v as StartSwarmInput).task === "string";
+const launches = createSwarmFileStore(() => getDataDir?.(), "launches", isLaunch);
+const reports = createSwarmFileStore<SwarmReport>(() => getDataDir?.(), REPORT_DIR, isReport);
 
 function pruneLaunches(): void {
-  launches.keepOnly(new Set([...swarms.keys(), ...starting.keys(), ...ended.keys()]));
+  const known = new Set([...swarms.keys(), ...starting.keys(), ...ended.keys()]);
+  launches.keepOnly(known);
+  reports.keepOnly(known);
 }
 
 function launchState(): LaunchState {
@@ -302,6 +308,7 @@ function launchState(): LaunchState {
 function clearEnded(): void {
   ended.clear();
   launches.clear();
+  reports.clear();
   persistHistory();
   surface?.refresh();
 }
@@ -510,7 +517,11 @@ async function launchSwarm(
         ? { dispatch: { grants: input.workflows, dispatcher } }
         : {}),
       log: (message, data) => op?.progress(message, data),
-      onChange: (kind) => changed(record.id, kind),
+      onChange: (kind) => {
+        const page = kind === "report" ? swarm?.reportPage() : undefined;
+        if (page) reports.save(record.id, page);
+        changed(record.id, kind);
+      },
     });
   } catch (e) {
     op?.error(`swarm failed to start: ${errText(e)}`);
@@ -578,6 +589,7 @@ const rib: Rib = {
       },
       launchOf: (id) => launches.load(id),
       server: serverOps,
+      hasReport: (id) => reports.has(id),
     }),
 
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
@@ -612,6 +624,7 @@ const rib: Rib = {
         launch: launchState,
         rerunnable: (id) => ended.has(id) && launches.has(id),
         server: serverPanel,
+        report: (id) => reports.load(id),
         readLog: readServerLog,
         views,
         ...(ctx.invalidateManifest ? { invalidateManifest: ctx.invalidateManifest } : {}),
