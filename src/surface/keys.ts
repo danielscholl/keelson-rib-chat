@@ -21,3 +21,5 @@ export function docKey(id: string): string {
   return `rib:chat:doc:${id}`;
 }
 export const LAUNCH_KEY = "rib:chat:launch";
+export const SERVER_KEY = "rib:chat:server";
+export const SERVER_LOG_KEY = "rib:chat:server-log";

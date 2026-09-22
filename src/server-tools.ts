@@ -10,7 +10,8 @@ import { type ToolContext, type ToolDefinition, z } from "@keelson/shared";
 import type { ManagedServer } from "./server.ts";
 import { emitText, guarded } from "./tools.ts";
 
-export type ServerControl = Pick<ManagedServer, "ensure" | "stop" | "reset" | "status">;
+export type ServerControl = Pick<ManagedServer, "ensure" | "stop" | "reset" | "status"> &
+  Partial<Pick<ManagedServer, "readLog">>;
 
 // What the rib is pointed at: a ClickClack it owns, or one somebody else runs.
 export type ServerTarget =

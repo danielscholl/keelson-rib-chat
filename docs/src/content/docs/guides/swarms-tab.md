@@ -96,3 +96,23 @@ same task, project, workflows, and context, and a form seeded with the old
 swarm's size and model. Changing the model there sets it for every agent. The
 rib keeps each launch in its data directory next to the history, and a server
 reset forgets them with it.
+
+## The ClickClack footer
+
+The footer at the bottom of the tab is folded by default. Open it to see the
+server the rib uses:
+
+- its address, and whether the rib manages it
+- for a managed server: the process, when it started, the binary, and the data
+  directory
+- the workflows whose gates the host keeps for you
+
+For a managed server it has **Start** or **Stop**, **Reset…**, and **Log**.
+Start, Stop, and Reset run in the background, and the footer shows the result.
+A stop can take several seconds, and a reset up to 30. Stop and Reset wait
+until no swarm is live. Reset asks you to type `reset`, because it deletes
+every channel, transcript, bot, and session, and the ended swarms on the tab.
+**Log** opens the last 200 lines of the server log.
+
+An external server shows its address only; the rib doesn't start, stop, or
+reset it.

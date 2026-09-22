@@ -11,7 +11,8 @@ import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import { BODY_MAX, SWARM_SIZES, type SwarmSize } from "../types.ts";
 import { sizesHint } from "./index-board.ts";
-import { docKey, HISTORY_KEY, INDEX_KEY, SURFACE_TAB, swarmKey } from "./keys.ts";
+import { docKey, HISTORY_KEY, INDEX_KEY, SERVER_LOG_KEY, SURFACE_TAB, swarmKey } from "./keys.ts";
+import type { ServerOps, ServerVerb } from "./server-panel.ts";
 import type { SwarmRecord, SwarmsSurface } from "./surface.ts";
 
 export interface ActionDeps {
@@ -21,6 +22,7 @@ export interface ActionDeps {
   // Admits a start and boots it in the background; a refusal throws.
   begin: (input: StartSwarmInput) => string;
   launchOf: (id: string) => StartSwarmInput | undefined;
+  server?: ServerOps;
 }
 
 const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -200,6 +202,19 @@ export async function handleSwarmsAction(
       if (!id || !record.ended || !old) return fail(`swarm '${String(raw)}' can't run again`);
       return started(deps, againInput(old, payload, record.ended), "drawer");
     }
+    case "server-start":
+    case "server-stop":
+    case "server-reset": {
+      if (!deps.server) return fail("this rib can't manage ClickClack here");
+      const why = await deps.server.run(action.type.slice("server-".length) as ServerVerb);
+      return why ? fail(why) : { ok: true };
+    }
+    case "server-log":
+      deps.surface?.logOpened();
+      return {
+        ok: true,
+        data: { effect: "open-canvas", key: SERVER_LOG_KEY, title: "ClickClack log" },
+      };
     case "start-in-chat":
       return {
         ok: true,

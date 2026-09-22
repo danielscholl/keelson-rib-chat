@@ -34,6 +34,12 @@ export interface ServerLine {
   mode: "managed" | "external";
   url?: string;
   running: boolean;
+  pid?: number;
+  adopted?: boolean;
+  operator?: boolean;
+  binary?: string;
+  dataDir?: string;
+  startedAt?: string;
 }
 
 export interface SurfaceState {

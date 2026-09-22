@@ -21,7 +21,7 @@ export interface KeyPublisher {
 export function createKeyPublisher<T>(
   sm: SnapshotManager,
   key: string,
-  compose: () => T,
+  compose: () => T | Promise<T>,
   validate: (data: unknown) => T,
   windowMs = 250,
 ): KeyPublisher {
