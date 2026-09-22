@@ -332,6 +332,27 @@ A run completes only when the swarm concluded or was stopped. A swarm that ends
 \`stalled\`, \`exhausted\` with no conclusion, or \`error\` fails its run with the
 status and reason, and the summary is the run's last progress frame.
 
+# Swarms tab
+
+> The Keelson tab that shows every swarm, what needs the operator, and each swarm's gate, runs, and agents.
+
+The rib publishes a Swarms tab. Live swarms are cards, sorted with the ones
+that need the operator first, then starting, then running. Each card names the
+swarm's size and model, and hovering Open spells both out. Ended swarms are
+rows, newest first. Open shows a swarm's board: vitals, context, open gates,
+runs with their evidence, agents, and the outcome, with Steer and Stop while it
+is live. Read in full opens the conclusion or a gate's prompt as markdown.
+
+A swarm needs the operator when ClickClack stopped answering (its socket closed
+twice without reopening), when a run waits at a gate the swarm cannot answer
+(the host refused it under \`ribApprovalGrants\`, or offers no respond), or when
+a run waits at a gate and the swarm went idle. A refusal is remembered per
+workflow, so the next gate on that workflow is flagged at once. The tab has no
+approve button: answer those gates in the Workflows tab.
+
+Start a swarm in Chat opens a chat that gathers context and calls
+\`chat_swarm_start\`.
+
 # Restarts
 
 > What survives a Keelson restart, and what does not.

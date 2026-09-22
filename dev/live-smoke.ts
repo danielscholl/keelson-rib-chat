@@ -15,10 +15,15 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectView } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { ManagedServer, realServerDeps } from "../src/server.ts";
+import { buildIndex } from "../src/surface/index-board.ts";
+import { INDEX_KEY, swarmKey } from "../src/surface/keys.ts";
+import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import { Swarm } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
+import type { SwarmSummary } from "../src/types.ts";
 import { type Script, scriptedProvider } from "../test/fakes.ts";
 
 let url = process.env.CLICKCLACK_URL ?? "http://localhost:8080";
@@ -97,6 +102,25 @@ const script: Script = async ({ agentId, turn, prompt, call }) => {
 };
 
 const provider = scriptedProvider(tools, script);
+// Every change the tab would publish must compose a frame the host accepts.
+let frames = 0;
+let badFrame: string | undefined;
+let started: Swarm | undefined;
+const checkFrames = (s: SwarmSummary, live: boolean) => {
+  const views: [string, unknown][] = [
+    [INDEX_KEY, buildIndex({ live: live ? [s] : [], starting: [], ended: live ? [] : [s] })],
+    [swarmKey(s.id), buildSwarmBoard(s)],
+  ];
+  for (const [key, view] of views) {
+    try {
+      expectView(key, "board")(view);
+      frames++;
+    } catch (e) {
+      badFrame ??= `${key}: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+};
+
 const swarm = await Swarm.start({
   task: "Smoke test: work out why the build is slow.",
   owner,
@@ -104,7 +128,11 @@ const swarm = await Swarm.start({
   runAgentTurn: provider.run,
   quiesceMs: 1_000,
   log: (m, d) => console.log(`[swarm] ${m}${d ? ` ${JSON.stringify(d)}` : ""}`),
+  onChange: () => {
+    if (started) checkFrames(started.summary(), true);
+  },
 });
+started = swarm;
 swarms.set(swarm.id, swarm);
 
 const summary = await swarm.finished;
@@ -134,7 +162,12 @@ console.log(
   `transcript: ${transcript.length} messages, ${replies} thread replies, ordered=${ordered}`,
 );
 
+checkFrames(summary, false);
+console.log(`boards: ${frames} frames valid${badFrame ? `; first invalid: ${badFrame}` : ""}`);
+
 let ok =
+  !badFrame &&
+  frames > 0 &&
   summary.status === "done" &&
   mine.length === summary.agents.length &&
   live.length === 0 &&
