@@ -390,7 +390,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     {
       name: "chat_workflow_status",
       description:
-        "Lead agent only. Report this swarm's workflow runs: status, approvals waiting on the operator, branch, pull requests, isolation, and whether each is verified.",
+        "Lead agent only. Report this swarm's workflow runs: status, approvals waiting on the operator, branch, pull requests, isolation, CI verdict, and whether each is verified.",
       inputSchema: workflowStatusSchema,
       execute: guarded(async (input, ctx) => {
         const args = workflowStatusSchema.parse(input);

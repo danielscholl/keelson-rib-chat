@@ -5,15 +5,17 @@ sidebar:
   order: 4
 ---
 
-## Check evidence and run ordering
+## Stacked runs
 
-A dispatched run counts as verified when it succeeded in its own worktree and
-produced a pull request. The rib does not read that pull request's checks, so a
-verified run can still be red. Nothing enforces an order between runs either:
-the lead starts a dependent run only after the one it needs has succeeded, and
-that is prompt discipline, not a rule. Both wait on a seam that reports a pull
-request's check state to a rib. See
-[Dispatch workflows](../../guides/dispatch-workflows/).
+Every dispatched run branches from the project's default branch and opens its
+pull request against it, so a run that depends on another's change has to wait
+for that pull request to merge. The lead asks the operator to merge and waits,
+and nothing but the prompt holds it to that. Starting the dependent run on the
+earlier run's branch, as a stacked pull request, would let it go without the
+merge, and the rib could then enforce the order itself. That waits on Keelson
+starting a run's worktree from a chosen branch, and on workflows opening their
+pull request against that branch. See
+[Dispatch workflows](../../guides/dispatch-workflows/#dependent-changes).
 
 ## Write access
 

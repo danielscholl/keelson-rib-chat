@@ -162,7 +162,7 @@ The lead of a swarm started with `workflows` also holds these. Workers never do.
 | Tool | Inputs | Does |
 |---|---|---|
 | `chat_workflow_start` | `workflow`, `purpose`, `inputs?` | Starts a granted workflow on the project and tracks the run. Returns the run id. |
-| `chat_workflow_status` | `run_id?` | Lists the swarm's runs, or one: status, pending approval, branch, pull requests, isolation, and `verified`. |
+| `chat_workflow_status` | `run_id?` | Lists the swarm's runs, or one: status, pending approval, branch, pull requests, isolation, CI verdict, and `verified`. |
 | `chat_workflow_cancel` | `run_id` | Cancels a live run the swarm started. |
 
 `chat_done` is refused while any run is live.

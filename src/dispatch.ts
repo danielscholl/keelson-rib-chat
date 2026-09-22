@@ -7,7 +7,7 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { RibRunStatus } from "@keelson/shared";
-import type { ChildRun } from "./types.ts";
+import type { ChildRun, CiVerdict } from "./types.ts";
 
 // The harness seams a swarm dispatches through, narrowed so the engine can be
 // tested without a host.
@@ -33,10 +33,40 @@ export function prUrlsIn(status: RibRunStatus): string[] {
   return [...found];
 }
 
+// fix-issue and its kin print `CI_STATUS:` after watching the pull request's
+// checks and `CI_GATE:` as their final verdict, which outranks it.
+const CI_LINE = /^[ \t]*CI_(GATE|STATUS):[ \t]*(PASS|FAIL|UNKNOWN)\b[ \t—–-]*(.*)$/gm;
+
+export function ciIn(status: RibRunStatus): ChildRun["ci"] {
+  let gate: ChildRun["ci"];
+  let watch: ChildRun["ci"];
+  for (const node of status.nodes) {
+    for (const text of [node.output, node.error]) {
+      for (const [, kind, verdict = "", detail = ""] of text?.matchAll(CI_LINE) ?? []) {
+        const found = {
+          verdict: verdict.toLowerCase() as CiVerdict,
+          ...(detail.trim() ? { detail: detail.trim() } : {}),
+        };
+        if (kind === "GATE") gate = found;
+        else watch = found;
+      }
+    }
+  }
+  return gate ?? watch;
+}
+
+// The evidence a succeeded run lacks before it counts as verified.
+export function missingEvidence(run: ChildRun): string[] {
+  if (!run.isolated) return run.ci?.verdict === "fail" ? ["passing CI"] : [];
+  const missing: string[] = [];
+  if (!run.checkout?.worktreeEstablished) missing.push("its own worktree");
+  if (run.prUrls.length === 0) missing.push("a pull request");
+  if (run.ci?.verdict !== "pass") missing.push("passing CI");
+  return missing;
+}
+
 export function verified(run: ChildRun): boolean {
-  if (run.status !== "succeeded") return false;
-  if (!run.isolated) return true;
-  return run.checkout?.worktreeEstablished === true && run.prUrls.length > 0;
+  return run.status === "succeeded" && missingEvidence(run).length === 0;
 }
 
 // A live isolated run that has begun executing outside its own worktree. Until
@@ -61,6 +91,8 @@ export function applyStatus(run: ChildRun, status: RibRunStatus): string | undef
   if (status.pendingApproval) run.pendingApproval = { ...status.pendingApproval };
   else delete run.pendingApproval;
   for (const url of prUrlsIn(status)) if (!run.prUrls.includes(url)) run.prUrls.push(url);
+  const ci = ciIn(status);
+  if (ci) run.ci = ci;
   run.verified = verified(run);
 
   if (run.status === "paused" && run.pendingApproval?.nodeId !== approvalBefore) {
@@ -86,12 +118,11 @@ export function describeRun(run: ChildRun): string {
     parts.push("NOT isolated");
   }
   if (run.prUrls.length > 0) parts.push(`PR ${run.prUrls.join(", ")}`);
+  if (run.ci) parts.push(`CI ${run.ci.verdict}${run.ci.detail ? ` (${run.ci.detail})` : ""}`);
   if (run.error) parts.push(`error: ${run.error}`);
   if (run.status === "succeeded") {
     parts.push(
-      run.verified
-        ? "verified"
-        : "NOT verified: an isolated run needs an established worktree and a pull request",
+      run.verified ? "verified" : `NOT verified: it lacks ${missingEvidence(run).join(", ")}`,
     );
   }
   return `${parts.join("; ")}.`;
