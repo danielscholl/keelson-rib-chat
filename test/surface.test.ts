@@ -626,11 +626,15 @@ describe("start and run again", () => {
 
   test("Run again keeps the launch, and swaps the model only when the picker changed", async () => {
     begun.length = 0;
-    await act("run-again", {
+    const again = await act("run-again", {
       id: "s8pln",
       size: "large",
       model: "gpt-6-astra",
       provider: "copilot",
+    });
+    expect(ribClientEffectSchema.parse(again.ok ? again.data : undefined)).toMatchObject({
+      effect: "open-canvas",
+      key: swarmKey("s0new1"),
     });
     expect(begun[0]).toEqual({ ...oldLaunch, size: "large" });
     begun.length = 0;

@@ -99,16 +99,26 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function started(deps: ActionDeps, input: StartSwarmInput): RibActionResult {
+// From the header the new card shows on the index; from a drawer, the drawer
+// moves to the new swarm.
+function started(
+  deps: ActionDeps,
+  input: StartSwarmInput,
+  open: "index" | "drawer",
+): RibActionResult {
+  let id: string;
   try {
-    const id = deps.begin(input);
+    id = deps.begin(input);
     deps.surface?.track([id]);
   } catch (e) {
     return fail(errText(e));
   }
   return {
     ok: true,
-    data: { effect: "open-surface", surfaceId: SURFACE_TAB, regionKey: INDEX_KEY },
+    data:
+      open === "drawer"
+        ? { effect: "open-canvas", key: swarmKey(id), title: `Swarm ${id}` }
+        : { effect: "open-surface", surfaceId: SURFACE_TAB, regionKey: INDEX_KEY },
   };
 }
 
@@ -182,13 +192,13 @@ export async function handleSwarmsAction(
     }
     case "start-swarm": {
       const input = startInput(payload);
-      return typeof input === "string" ? fail(input) : started(deps, input);
+      return typeof input === "string" ? fail(input) : started(deps, input, "index");
     }
     case "run-again": {
       const record = id ? deps.find(id) : {};
       const old = id ? deps.launchOf(id) : undefined;
       if (!id || !record.ended || !old) return fail(`swarm '${String(raw)}' can't run again`);
-      return started(deps, againInput(old, payload, record.ended));
+      return started(deps, againInput(old, payload, record.ended), "drawer");
     }
     case "start-in-chat":
       return {
