@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.5.0...v0.6.0) (2026-09-22)
+
+
+### Added
+
+* **dispatch:** let the swarm answer a run's approval gates ([#23](https://github.com/danielscholl/keelson-rib-chat/issues/23)) ([d78150d](https://github.com/danielscholl/keelson-rib-chat/commit/d78150d0a4bdef1032ddd77386db2fd51364dd04))
+
 ## [0.5.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.4.0...v0.5.0) (2026-09-22)
 
 
