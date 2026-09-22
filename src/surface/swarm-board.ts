@@ -16,9 +16,11 @@ import {
   day,
   firstLine,
   hhmm,
+  plural,
   prLabel,
   shortHandle,
   shortRun,
+  span,
   threadHref,
 } from "./format.ts";
 import { endedOutcome, needReason, openHint, sizeDetail } from "./index-board.ts";
@@ -31,6 +33,15 @@ type Segment = Extract<NonNullable<Row["bar"]>, { segments: unknown }>["segments
 
 // The conclusion on the board is a preview; the reading pane has all of it.
 const PREVIEW_CHARS = 1_200;
+
+const ENDED_TITLE: Record<SwarmSummary["status"], string> = {
+  running: "Running",
+  done: "Ended without a conclusion",
+  stalled: "Stalled",
+  exhausted: "Out of budget",
+  stopped: "Stopped",
+  error: "Failed",
+};
 
 const AGENT_GLYPH = { idle: undefined, busy: "info", capped: "warn", failed: "error" } as const;
 
@@ -53,7 +64,7 @@ function vitals(s: SwarmSummary): Leaf {
   const href = channelHref(s);
   const when = live(s)
     ? `started ${hhmm(s.startedAt)} · wall clock ends ${hhmm(new Date(Date.parse(s.startedAt) + s.limits.wallClockMs).toISOString())}`
-    : `ran ${day(s.startedAt)} ${hhmm(s.startedAt)} → ${hhmm(s.endedAt)}`;
+    : `ran ${day(s.startedAt)} ${hhmm(s.startedAt)} → ${hhmm(s.endedAt)}${s.endedAt ? ` · ${span(s.startedAt, s.endedAt)}` : ""}`;
   const h = s.health;
   const health: Row[] = [
     ...(h?.socketDrops
@@ -282,13 +293,13 @@ function agentRows(s: SwarmSummary): Row[] {
   const differ = Boolean(lead || workers) && lead !== workers;
   if (s.agents.length === 0) return [{ icon: "·", text: "No agents yet." }];
   return s.agents.map((a) => {
-    const glyph = AGENT_GLYPH[a.status];
-    const turns = a.lead ? `${a.turns} turns` : `${a.turns}/${s.limits.maxTurnsPerAgent}`;
+    const glyph = live(s) ? AGENT_GLYPH[a.status] : undefined;
+    const turns = a.lead ? plural(a.turns, "turn") : `${a.turns}/${s.limits.maxTurnsPerAgent}`;
     return {
       chip: { label: shortHandle(a.handle, s.id), tone: a.tone },
       text: differ ? (a.model ?? "provider default") : firstLine(a.role, 40),
       trailing: live(s) ? `${a.status} · ${turns}` : turns,
-      ...(glyph ? { glyph, icon: "●" } : {}),
+      ...(glyph ? { glyph } : {}),
     };
   });
 }
@@ -315,7 +326,7 @@ function outcome(s: SwarmSummary): Leaf[] {
     });
   } else {
     cards.push({
-      title: `Ended ${s.status}`,
+      title: ENDED_TITLE[s.status],
       pill: { label: s.status, tone: s.status === "error" ? "error" : "warn" },
       reason: { text: s.error ?? "the swarm ended without a conclusion" },
       ...(text

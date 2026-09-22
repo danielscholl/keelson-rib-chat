@@ -258,6 +258,23 @@ describe("Swarms boards", () => {
     expect(JSON.stringify(view)).toContain("custom, from medium: up to 5 agents · 60 turns");
   });
 
+  test("an ended swarm shows how long it ran, a plain outcome, and no agent status", () => {
+    const stopped = swarm("s3stp", {
+      status: "stopped",
+      endedAt: "2026-09-22T14:00:23.000Z",
+      error: "stopped from the Swarms tab",
+      agents: [agent("s3stp", 0, { turns: 1 }), agent("s3stp", 1, { status: "busy" })],
+    });
+    const text = JSON.stringify(buildSwarmBoard(stopped));
+    expect(text).toContain("· 23 s");
+    expect(text).toContain('"title":"Stopped"');
+    expect(text).toContain('"trailing":"1 turn"');
+    expect(text).not.toContain('"glyph":"info"');
+    expect(JSON.stringify(buildIndex({ live: [], starting: [], ended: [stopped] }))).toContain(
+      "· 23 s · stopped",
+    );
+  });
+
   test("a live swarm has one actions section, with steer and stop", () => {
     const view = buildSwarmBoard(fixtures.review!);
     const actions = view.sections.filter((s) => s.kind === "actions");
