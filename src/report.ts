@@ -41,6 +41,20 @@ export function reportMeta(r: SwarmReport): ReportMeta {
   return { title: r.title, at: r.at, bytes: Buffer.byteLength(r.html, "utf8") };
 }
 
+// Models sometimes wrap the page in a CDATA section or a code fence. In an HTML
+// document a CDATA opener is a bogus comment that ends at the first ">", which
+// swallows the stylesheet, so the wrapper comes off before anything else.
+export function unwrapReport(html: string): string {
+  let page = html.trim();
+  for (;;) {
+    const inner =
+      page.match(/^<!\[CDATA\[([\s\S]*)\]\]>$/)?.[1] ??
+      page.match(/^```[a-z]*\n([\s\S]*)\n```$/i)?.[1];
+    if (inner === undefined) return page;
+    page = inner.trim();
+  }
+}
+
 function declaredPalette(html: string, attr: string): string[] | undefined {
   const match = html.match(new RegExp(`\\b${attr}\\s*=\\s*["']([^"']*)["']`, "i"));
   const list = match?.[1]

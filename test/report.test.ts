@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { expectView } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
-import { checkReport } from "../src/report.ts";
+import { checkReport, unwrapReport } from "../src/report.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
 import { buildIndex } from "../src/surface/index-board.ts";
 import { INDEX_KEY, reportKey, swarmKey } from "../src/surface/keys.ts";
@@ -54,6 +54,12 @@ describe("the report page", () => {
     expect(checkReport("x".repeat(512 * 1024 + 1))).toContain("512 KB");
   });
 
+  test("a CDATA or code-fence wrapper comes off, so the stylesheet survives", () => {
+    expect(unwrapReport(`<![CDATA[\n${PAGE}\n]]>`)).toBe(PAGE);
+    expect(unwrapReport(`\`\`\`html\n${PAGE}\n\`\`\``)).toBe(PAGE);
+    expect(unwrapReport(`  ${PAGE}  `)).toBe(PAGE);
+  });
+
   test("only the lead holds chat_report and the design guide, and publishing lands on the summary", async () => {
     const results: { agent: string; isError: boolean; content: string }[] = [];
     const h = harness(async ({ agentId, turn, call }) => {
@@ -75,7 +81,10 @@ describe("the report page", () => {
       });
       results.push({
         agent: agentId,
-        ...(await call("chat_report", { title: "Why the build is slow", html: PAGE })),
+        ...(await call("chat_report", {
+          title: "Why the build is slow",
+          html: `<![CDATA[${PAGE}]]>`,
+        })),
       });
       await call("chat_done", { summary: "Linking; see the report." });
     });

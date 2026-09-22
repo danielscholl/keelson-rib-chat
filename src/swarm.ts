@@ -30,7 +30,7 @@ import {
   withoutFileHints,
 } from "./dispatch.ts";
 import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
-import { checkReport, reportMeta, type SwarmReport } from "./report.ts";
+import { checkReport, reportMeta, type SwarmReport, unwrapReport } from "./report.ts";
 import { route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
@@ -1150,9 +1150,10 @@ export class Swarm {
   publishReport(agentId: string, title: string, html: string): SwarmReport {
     const { agent } = this.as(agentId);
     if (!agent.lead) throw new Error("only the lead publishes the swarm's report");
-    const problem = checkReport(html);
+    const page = unwrapReport(html);
+    const problem = checkReport(page);
     if (problem) throw new Error(problem);
-    const report = { title, html, at: new Date().toISOString() };
+    const report = { title, html: page, at: new Date().toISOString() };
     this.report = report;
     this.log(`@${agent.handle} published the report "${title}"`);
     this.changed("report");
