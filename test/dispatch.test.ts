@@ -252,4 +252,18 @@ describe("dispatch evidence", () => {
     expect(text).not.toContain("Approve?");
     expect(text).toContain("sent changes at check-scope on @s1-reviewer's review msg_3");
   });
+
+  test("a loop gate pausing again on the same node is a new gate", () => {
+    const r = run();
+    const first = { nodeId: "refine", prompt: "Good?", pauseId: "p1" };
+    expect(applyStatus(r, status({ status: "paused", pendingApproval: first }))).toContain(
+      "paused for approval at node refine",
+    );
+    if (r.pendingApproval) r.pendingApproval.threadId = "msg_2";
+    const again = { ...first, pauseId: "p2" };
+    expect(applyStatus(r, status({ status: "paused", pendingApproval: again }))).toContain(
+      "paused for approval at node refine",
+    );
+    expect(r.pendingApproval).toEqual(again);
+  });
 });

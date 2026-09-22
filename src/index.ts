@@ -167,7 +167,10 @@ async function launchSwarm(
       status: (runId) => status(runId),
       cancel: (runId) => cancel(runId),
       ...(respond
-        ? { respond: (runId: string, nodeId: string, text: string) => respond(runId, nodeId, text) }
+        ? {
+            respond: (runId: string, nodeId: string, text: string, pauseId?: string) =>
+              respond(runId, nodeId, text, pauseId),
+          }
         : {}),
     };
   }

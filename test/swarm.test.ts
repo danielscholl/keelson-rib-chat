@@ -467,15 +467,15 @@ function fakeDispatcher(opts: { live?: boolean; refuseAnswers?: string; answers?
   const states = new Map<string, RibRunStatus>();
   const started: { name: string; inputs: Record<string, string> }[] = [];
   const cancelled: string[] = [];
-  const answered: { runId: string; nodeId: string; text: string }[] = [];
+  const answered: { runId: string; nodeId: string; text: string; pauseId?: string }[] = [];
   let n = 0;
   const set = (runId: string, patch: Partial<RibRunStatus>) => {
     const current = states.get(runId);
     if (current) states.set(runId, { ...current, ...patch });
   };
-  const respond = async (runId: string, nodeId: string, text: string) => {
+  const respond = async (runId: string, nodeId: string, text: string, pauseId?: string) => {
     if (opts.refuseAnswers) return { ok: false as const, error: opts.refuseAnswers };
-    answered.push({ runId, nodeId, text });
+    answered.push({ runId, nodeId, text, ...(pauseId ? { pauseId } : {}) });
     set(runId, { status: "running", pendingApproval: undefined });
     return { ok: true as const };
   };
@@ -622,6 +622,7 @@ describe("Workflow dispatch", () => {
               pendingApproval: {
                 nodeId: "approve-plan",
                 prompt: "Approve this plan?\n\n$ARTIFACTS_DIR/plan.md",
+                pauseId: "pause-1",
                 artifacts: [{ path: "plan.md", text: "# Plan\n1. Fix the README count." }],
               },
             });
@@ -677,7 +678,9 @@ describe("Workflow dispatch", () => {
     expect(planSeen).toContain("Approve this plan?");
     expect(planSeen).toContain("# Plan");
     expect(planSeen).not.toContain("$ARTIFACTS_DIR");
-    expect(fake.answered).toEqual([{ runId: "run_1", nodeId: "approve-plan", text: "approve" }]);
+    expect(fake.answered).toEqual([
+      { runId: "run_1", nodeId: "approve-plan", text: "approve", pauseId: "pause-1" },
+    ]);
     expect(summary.runs?.[0]).toMatchObject({ status: "succeeded", verified: true });
     expect(summary.runs?.[0]?.approvals).toEqual([
       expect.objectContaining({

@@ -90,7 +90,13 @@ export interface ChildRun {
   // Nodes that have finished or paused.
   nodesDone: number;
   // `threadId` is the channel thread holding the gate's prompt and files.
-  pendingApproval?: { nodeId: string; prompt: string; threadId?: string; openedAt?: string };
+  pendingApproval?: {
+    nodeId: string;
+    prompt: string;
+    pauseId?: string;
+    threadId?: string;
+    openedAt?: string;
+  };
   // Gates the swarm answered for the operator.
   approvals?: GateAnswer[];
   prUrls: string[];

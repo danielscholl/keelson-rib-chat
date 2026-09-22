@@ -23,6 +23,7 @@ import {
   describeRun,
   type GateFile,
   gateFiles,
+  gateKey,
   isLive,
   isolationBreach,
   type WorkflowDispatcher,
@@ -799,7 +800,7 @@ export class Swarm {
     try {
       const status = await dispatch.dispatcher.status(runId);
       if (!status || this.status !== "running") return;
-      const gateBefore = run.pendingApproval?.nodeId;
+      const gateBefore = gateKey(run.pendingApproval);
       const change = applyStatus(run, status);
       const breach = isolationBreach(run);
       if (breach) {
@@ -810,7 +811,7 @@ export class Swarm {
         this.notifyLead(
           `Run ${runId} (${run.workflow}) was cancelled: ${breach}. Its grant requires an isolated worktree.`,
         );
-      } else if (change && run.pendingApproval && run.pendingApproval.nodeId !== gateBefore) {
+      } else if (change && run.pendingApproval && gateKey(run.pendingApproval) !== gateBefore) {
         await this.openGate(run, gateFiles(status), change);
       } else if (change && !opts.quiet) {
         // A run resuming after its approval needs nothing from the lead.
@@ -927,6 +928,7 @@ export class Swarm {
       run.runId,
       gate.nodeId,
       input.decision === "approve" ? "approve" : (feedback ?? ""),
+      gate.pauseId,
     );
     if (!result.ok) {
       const refused = /ribApprovalGrants/.test(result.error)

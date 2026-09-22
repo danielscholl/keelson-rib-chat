@@ -20,11 +20,19 @@ export interface WorkflowDispatcher {
     runId: string,
     nodeId: string,
     text: string,
+    pauseId?: string,
   ): Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 // A file a paused gate names, such as the plan it asks about.
 export type GateFile = RibApprovalArtifact;
+
+// A loop gate pauses again on the same node, so a gate is its node and its pause.
+export function gateKey(
+  gate: { nodeId: string; pauseId?: string } | undefined,
+): string | undefined {
+  return gate ? `${gate.nodeId}:${gate.pauseId ?? ""}` : undefined;
+}
 
 export function gateFiles(status: RibRunStatus): GateFile[] {
   return [...(status.pendingApproval?.artifacts ?? [])];
@@ -107,23 +115,28 @@ export function isolationBreach(run: ChildRun): string | undefined {
 // should hear about, or undefined when nothing did.
 export function applyStatus(run: ChildRun, status: RibRunStatus): string | undefined {
   const before = run.status;
-  const approvalBefore = run.pendingApproval?.nodeId;
+  const gateBefore = gateKey(run.pendingApproval);
   run.status = status.status;
   run.checkout = { ...status.checkout };
   run.nodesDone = status.nodes.length;
   if (status.completedAt) run.completedAt = status.completedAt;
   if (status.error) run.error = status.error;
   if (status.pendingApproval) {
-    const { nodeId, prompt } = status.pendingApproval;
-    const open = run.pendingApproval?.nodeId === nodeId ? run.pendingApproval : undefined;
-    run.pendingApproval = { ...open, nodeId, prompt };
+    const { nodeId, prompt, pauseId } = status.pendingApproval;
+    const same = gateKey(run.pendingApproval) === gateKey(status.pendingApproval);
+    run.pendingApproval = {
+      ...(same ? run.pendingApproval : {}),
+      nodeId,
+      prompt,
+      ...(pauseId ? { pauseId } : {}),
+    };
   } else delete run.pendingApproval;
   for (const url of prUrlsIn(status)) if (!run.prUrls.includes(url)) run.prUrls.push(url);
   const ci = ciIn(status);
   if (ci) run.ci = ci;
   run.verified = verified(run);
 
-  if (run.status === "paused" && run.pendingApproval?.nodeId !== approvalBefore) {
+  if (run.status === "paused" && gateKey(run.pendingApproval) !== gateBefore) {
     return `${label(run)} is paused for approval at node ${run.pendingApproval?.nodeId}.`;
   }
   if (run.status === before) return undefined;
