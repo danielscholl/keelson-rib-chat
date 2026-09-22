@@ -89,7 +89,16 @@ export interface ChildRun {
   checkout?: { path: string | null; branch: string | null; worktreeEstablished: boolean };
   // Nodes that have finished or paused.
   nodesDone: number;
-  pendingApproval?: { nodeId: string; prompt: string };
+  // `threadId` is the channel thread holding the gate's prompt and files.
+  pendingApproval?: {
+    nodeId: string;
+    prompt: string;
+    pauseId?: string;
+    threadId?: string;
+    openedAt?: string;
+  };
+  // Gates the swarm answered for the operator.
+  approvals?: GateAnswer[];
   prUrls: string[];
   // The CI verdict the run's workflow printed, if it printed one.
   ci?: { verdict: CiVerdict; detail?: string };
@@ -100,6 +109,18 @@ export interface ChildRun {
 }
 
 export type CiVerdict = "pass" | "fail" | "unknown";
+
+export interface GateAnswer {
+  nodeId: string;
+  decision: "approve" | "changes";
+  reason: string;
+  // What the run was told to change, for a `changes` decision.
+  feedback?: string;
+  // The message the decision rests on, and who wrote it.
+  review: string;
+  reviewer: string;
+  at: string;
+}
 
 export interface SwarmSummary {
   id: string;

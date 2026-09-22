@@ -163,7 +163,7 @@ The conclusion is recorded before it is posted, so a failed post does not lose i
 
 Beside these, an agent holds Read, Grep, and Glob when the swarm was started with
 a project and \`work_tools: read\`. The lead of a swarm started with \`workflows\`
-also holds the three workflow tools. See Workflow dispatch. An agent holds
+also holds the workflow tools. See Workflow dispatch. An agent holds
 nothing else.
 
 # Workflow dispatch
@@ -171,18 +171,21 @@ nothing else.
 > How a lead hands changes to Keelson workflows, and the evidence a run must show.
 
 Start a swarm with a \`project\` and \`workflows\`, a list of catalog workflow
-names. Its lead then holds three more tools. Workers never do.
+names. Its lead then holds these tools. Workers never do.
 
 | Tool | For |
 | --- | --- |
 | \`chat_workflow_start\` | Start a granted workflow with a one-line \`purpose\` and its \`inputs\`. Returns the run id. |
-| \`chat_workflow_status\` | The swarm's runs, or one: status, the approval it waits on, branch, pull requests, isolation, CI verdict, and whether it is verified. |
+| \`chat_workflow_status\` | The swarm's runs, or one: status, the gate it waits on and those answered, branch, pull requests, isolation, CI verdict, and whether it is verified. |
 | \`chat_workflow_cancel\` | Cancel a live run. |
+| \`chat_workflow_respond\` | Answer a paused run's approval gate for the operator, citing another agent's review: \`approve\`, or \`changes\` with the feedback the run applies. Held only when Keelson lets the rib answer gates. |
 
 Two grants apply. The swarm's \`workflows\` list is the grant for this swarm.
 Keelson's \`config.json\` must also name each workflow for the \`chat\` rib under
 \`ribWorkflowGrants\`, or Keelson refuses the start. A granted start then passes
-Keelson's policy as a \`workflow_run\` call.
+Keelson's policy as a \`workflow_run\` call. For the swarm to answer a
+workflow's approval gates, \`config.json\` must also name it under
+\`ribApprovalGrants\`.
 
 Every entry is isolated unless it says \`isolated: false\`. An isolated run must
 establish its own worktree. Once a run's first node has finished, the rib checks
@@ -196,8 +199,17 @@ lead, so the operator sees them without waking anyone. A pause, an ending, or a
 cancellation also wakes the lead with the update in its turn. A run resuming
 after its approval does not. The rib also re-reads live runs every 20 seconds.
 
-A run that pauses on a human gate reports its node and prompt. No agent can
-answer it: the operator answers with \`workflow_respond\`, and the swarm waits.
+When a run pauses at an approval gate, the rib posts an Approval needed message
+and, in its thread, the gate's prompt and the files it names, such as the plan,
+so every agent can read them. The lead answers the gate for the operator with
+\`chat_workflow_respond\`, citing a review: a message in the swarm's channel,
+written after the gate opened, by a worker or the operator. The rib refuses a
+review the lead wrote. \`approve\` lets the run go on; \`changes\` sends it
+the feedback to apply before it writes code. The answer, its reason, and its
+review are posted in the gate's thread and kept in the run's \`approvals\`.
+Without the \`ribApprovalGrants\` entry, or on a Keelson that cannot answer
+gates for a rib, the operator answers with \`workflow_respond\` and the swarm
+waits.
 
 A swarm with a live run is not idle, so it is never nudged or stalled while a run
 is in flight. Its wall clock still applies, so give long runs a larger
@@ -211,8 +223,8 @@ it needs, and starts the dependent run once they say it is merged. The rib does
 not enforce that order.
 
 The summary's \`runs\` records each run: workflow, purpose, inputs, status,
-checkout, the pull request links found in its node output, its CI verdict, any
-error, and \`verified\`. The CI verdict is the run's own: the last
+checkout, the gate it waits on, the gates the swarm answered, the pull request
+links found in its node output, its CI verdict, any error, and \`verified\`. The CI verdict is the run's own: the last
 \`CI_GATE:\` line in its node output, or failing that the last \`CI_STATUS:\`
 line, read as \`pass\`, \`fail\`, or \`unknown\` with the reason the workflow
 gave. An isolated run is verified only when it succeeded in an established

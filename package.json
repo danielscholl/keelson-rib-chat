@@ -31,7 +31,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13",
-    "@keelson/shared": "https://github.com/danielscholl/keelson/releases/download/v0.109.1/keelson-shared.tgz",
+    "@keelson/shared": "https://github.com/danielscholl/keelson/releases/download/v0.110.0/keelson-shared.tgz",
     "@types/bun": "^1.1.14",
     "typescript": "^7.0.2"
   },

@@ -43,10 +43,20 @@ finish does not get an unbounded number of tries.
 
 An agent's tools are the list the engine grants for the turn: the seven agent
 `chat_*` tools, plus `Read`, `Grep`, and `Glob` when a project is set. A lead in
-a swarm started with `workflows` also gets the three workflow tools, and can
+a swarm started with `workflows` also gets the workflow tools, and can
 start only the workflows both the swarm and Keelson's `ribWorkflowGrants` name. Nothing an
 agent or an operator writes in the channel changes that list. The read tools are
 confined to the project root as the turn's only allowed directory.
+
+## A gate answer rests on another agent's review
+
+When a run pauses at an approval gate, the lead answers it for the operator. The
+lead wrote the run's brief, so its own reading of the plan would check nothing.
+`chat_workflow_respond` takes the id of a review, and the rib refuses one the
+lead wrote, one from outside the swarm's channel, and one written before the gate
+opened. A worker or the operator has to have read the plan first. Which
+workflows a swarm may answer for stays with the operator, in Keelson's
+`ribApprovalGrants`.
 
 ## Related
 

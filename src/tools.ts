@@ -250,6 +250,32 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     .object({ run_id: z.string().optional().describe("One run. Omit for every run.") })
     .strict();
   const workflowCancelSchema = z.object({ run_id: z.string().min(1) }).strict();
+  const workflowRespondSchema = z
+    .object({
+      run_id: z.string().min(1),
+      decision: z
+        .enum(["approve", "changes"])
+        .describe("approve lets the run go on; changes sends it feedback to apply first."),
+      review: z
+        .string()
+        .min(1)
+        .describe(
+          "The id of the review message the decision rests on: written after the gate opened, by another agent or the operator.",
+        ),
+      reason: z
+        .string()
+        .min(1)
+        .max(2_000)
+        .describe("Why, in a sentence or two: the criteria the plan covers, or what it misses."),
+      feedback: z
+        .string()
+        .max(BODY_MAX, tooLong(BODY_MAX))
+        .optional()
+        .describe(
+          "Required for changes: what the run must change, completely. The run applies it without asking again.",
+        ),
+    })
+    .strict();
   const swarmRef = z.object({ swarm: z.string().min(1).describe("The swarm id.") }).strict();
   const transcriptSchema = z
     .object({
@@ -390,7 +416,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     {
       name: "chat_workflow_status",
       description:
-        "Lead agent only. Report this swarm's workflow runs: status, approvals waiting on the operator, branch, pull requests, isolation, CI verdict, and whether each is verified.",
+        "Lead agent only. Report this swarm's workflow runs: status, approval gates waiting and answered, branch, pull requests, isolation, CI verdict, and whether each is verified.",
       inputSchema: workflowStatusSchema,
       execute: guarded(async (input, ctx) => {
         const args = workflowStatusSchema.parse(input);
@@ -411,6 +437,25 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         const args = workflowCancelSchema.parse(input);
         const { swarm, agentId } = caller(ctx);
         const run = await swarm.cancelChildRun(agentId, args.run_id);
+        emitText(ctx, describeRun(run));
+      }),
+    },
+    {
+      name: "chat_workflow_respond",
+      description:
+        "Lead agent only. Answer a paused run's approval gate for the operator once another agent has reviewed it: approve, or send the changes the run must make. Cite the review message.",
+      inputSchema: workflowRespondSchema,
+      state_changing: true,
+      execute: guarded(async (input, ctx) => {
+        const args = workflowRespondSchema.parse(input);
+        const { swarm, agentId } = caller(ctx);
+        const run = await swarm.answerGate(agentId, {
+          runId: args.run_id,
+          decision: args.decision,
+          review: args.review,
+          reason: args.reason,
+          ...(args.feedback ? { feedback: args.feedback } : {}),
+        });
         emitText(ctx, describeRun(run));
       }),
     },

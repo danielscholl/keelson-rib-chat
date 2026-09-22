@@ -4,10 +4,12 @@ import {
   applyStatus,
   ciIn,
   describeRun,
+  gateFiles,
   isolationBreach,
   missingEvidence,
   prUrlsIn,
   verified,
+  withoutFileHints,
 } from "../src/dispatch.ts";
 import type { ChildRun } from "../src/types.ts";
 
@@ -174,7 +176,7 @@ describe("dispatch evidence", () => {
         r,
         status({ status: "paused", pendingApproval: { nodeId: "gate", prompt: "ok?" } }),
       ),
-    ).toContain("paused for human approval at node gate");
+    ).toContain("paused for approval at node gate");
     expect(
       applyStatus(
         r,
@@ -198,5 +200,70 @@ describe("dispatch evidence", () => {
     expect(r.prUrls).toEqual(["https://github.com/o/r/pull/9"]);
     expect(r.ci).toEqual({ verdict: "pass" });
     expect(r.verified).toBe(true);
+  });
+
+  test("a gate keeps its thread while it stays open and drops it for the next gate", () => {
+    const r = run();
+    const gate = { nodeId: "approve-plan", prompt: "Approve?" };
+    applyStatus(r, status({ status: "paused", pendingApproval: gate }));
+    if (r.pendingApproval) r.pendingApproval.threadId = "msg_9";
+    applyStatus(r, status({ status: "paused", pendingApproval: gate }));
+    expect(r.pendingApproval).toEqual({ ...gate, threadId: "msg_9" });
+    applyStatus(
+      r,
+      status({ status: "paused", pendingApproval: { nodeId: "deploy", prompt: "Ship?" } }),
+    );
+    expect(r.pendingApproval).toEqual({ nodeId: "deploy", prompt: "Ship?" });
+  });
+
+  test("a gate's files come from the status, and its hint lines drop from the prompt", () => {
+    const files = [{ path: "plan.md", text: "# Plan" }];
+    const gate = { nodeId: "approve-plan", prompt: "Approve?", artifacts: files };
+    expect(gateFiles(status({ status: "paused", pendingApproval: gate }))).toEqual(files);
+    expect(gateFiles(status())).toEqual([]);
+    const prompt =
+      "Approve this plan.\n\n$ARTIFACTS_DIR/plan.md\n\nSee $ARTIFACTS_DIR/plan.md first.";
+    expect(withoutFileHints(prompt)).toBe(
+      "Approve this plan.\n\nSee $ARTIFACTS_DIR/plan.md first.",
+    );
+  });
+
+  test("a run's description points at its gate thread and lists the gates answered", () => {
+    const text = describeRun(
+      run({
+        status: "paused",
+        pendingApproval: { nodeId: "approve-plan", prompt: "Approve?", threadId: "msg_4" },
+        approvals: [
+          {
+            nodeId: "check-scope",
+            decision: "changes",
+            reason: "r",
+            feedback: "f",
+            review: "msg_3",
+            reviewer: "@s1-reviewer",
+            at: "",
+          },
+        ],
+      }),
+    );
+    expect(text).toContain(
+      "waiting on approval at approve-plan, its prompt and files in thread msg_4",
+    );
+    expect(text).not.toContain("Approve?");
+    expect(text).toContain("sent changes at check-scope on @s1-reviewer's review msg_3");
+  });
+
+  test("a loop gate pausing again on the same node is a new gate", () => {
+    const r = run();
+    const first = { nodeId: "refine", prompt: "Good?", pauseId: "p1" };
+    expect(applyStatus(r, status({ status: "paused", pendingApproval: first }))).toContain(
+      "paused for approval at node refine",
+    );
+    if (r.pendingApproval) r.pendingApproval.threadId = "msg_2";
+    const again = { ...first, pauseId: "p2" };
+    expect(applyStatus(r, status({ status: "paused", pendingApproval: again }))).toContain(
+      "paused for approval at node refine",
+    );
+    expect(r.pendingApproval).toEqual(again);
   });
 });

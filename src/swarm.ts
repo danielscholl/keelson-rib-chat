@@ -21,9 +21,13 @@ import {
 import {
   applyStatus,
   describeRun,
+  type GateFile,
+  gateFiles,
+  gateKey,
   isLive,
   isolationBreach,
   type WorkflowDispatcher,
+  withoutFileHints,
 } from "./dispatch.ts";
 import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
 import { route } from "./router.ts";
@@ -35,6 +39,7 @@ import {
   CONCLUSION_MAX,
   DEFAULT_LIMITS,
   type DispatchGrant,
+  type GateAnswer,
   type SwarmAgent,
   type SwarmLimits,
   type SwarmStatus,
@@ -62,6 +67,8 @@ export const DISPATCH_TOOLS = [
   "chat_workflow_status",
   "chat_workflow_cancel",
 ] as const;
+// Added to them when the host lets the rib answer a run's approval gate.
+export const RESPOND_TOOL = "chat_workflow_respond";
 
 const MESSAGE_EVENTS = new Set(["message.created", "thread.reply_created"]);
 const AUTH_REVOKED = 1008;
@@ -461,7 +468,11 @@ export class Swarm {
     this.log(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
 
     const workTools = this.opts.workTools ?? [];
-    const dispatchTools = agent.lead && this.opts.dispatch ? DISPATCH_TOOLS : [];
+    const dispatch = agent.lead ? this.opts.dispatch : undefined;
+    const answersGates = Boolean(dispatch?.dispatcher.respond);
+    const dispatchTools = dispatch
+      ? [...DISPATCH_TOOLS, ...(answersGates ? [RESPOND_TOOL] : [])]
+      : [];
     const tools = [...AGENT_TOOLS, ...dispatchTools, ...workTools].map((name) => ({ name }));
     const model = agent.lead ? this.opts.model : (this.opts.workerModel ?? this.opts.model);
     const outcome = await runTurn(
@@ -473,7 +484,7 @@ export class Swarm {
           channelName: this.channel.name,
           limits: this.limits,
           workTools,
-          ...(agent.lead && this.opts.dispatch ? { grants: this.opts.dispatch.grants } : {}),
+          ...(dispatch ? { grants: dispatch.grants, answersGates } : {}),
           contextIndex: renderContextIndex(this.opts.context ?? []),
         }),
         prompt,
@@ -692,7 +703,12 @@ export class Swarm {
   }
 
   runLedger(): readonly ChildRun[] {
-    return [...this.runs.values()].map((r) => ({ ...r, prUrls: [...r.prUrls] }));
+    return [...this.runs.values()].map((r) => ({
+      ...r,
+      prUrls: [...r.prUrls],
+      ...(r.pendingApproval ? { pendingApproval: { ...r.pendingApproval } } : {}),
+      ...(r.approvals ? { approvals: [...r.approvals] } : {}),
+    }));
   }
 
   private dispatcherFor(agentId: string): {
@@ -784,6 +800,7 @@ export class Swarm {
     try {
       const status = await dispatch.dispatcher.status(runId);
       if (!status || this.status !== "running") return;
+      const gateBefore = gateKey(run.pendingApproval);
       const change = applyStatus(run, status);
       const breach = isolationBreach(run);
       if (breach) {
@@ -794,6 +811,8 @@ export class Swarm {
         this.notifyLead(
           `Run ${runId} (${run.workflow}) was cancelled: ${breach}. Its grant requires an isolated worktree.`,
         );
+      } else if (change && run.pendingApproval && gateKey(run.pendingApproval) !== gateBefore) {
+        await this.openGate(run, gateFiles(status), change);
       } else if (change && !opts.quiet) {
         // A run resuming after its approval needs nothing from the lead.
         this.notifyLead(change, { wake: run.status !== "running" });
@@ -806,16 +825,20 @@ export class Swarm {
     }
   }
 
-  // Queues a run update for the lead's next turn and puts it on the channel, as
-  // the lead, so the operator sees it without waking anyone.
-  private notifyLead(text: string, opts: { wake?: boolean } = {}): void {
-    if (this.status !== "running") return;
-    this.log(text);
+  private leadClient(): ClickClackClient | undefined {
     const lead = [...this.agents.values()].find((a) => a.lead);
     const token = lead ? this.tokens.get(lead.id) : undefined;
-    if (token) {
-      void this.owner
-        .withToken(token)
+    return token ? this.owner.withToken(token) : undefined;
+  }
+
+  // Queues a run update for the lead's next turn and puts it on the channel, as
+  // the lead, so the operator sees it without waking anyone.
+  private notifyLead(text: string, opts: { wake?: boolean; post?: boolean } = {}): void {
+    if (this.status !== "running") return;
+    this.log(text);
+    const client = opts.post === false ? undefined : this.leadClient();
+    if (client) {
+      void client
         .postMessage(this.channel.id, `**Run update** ${text}`)
         .then((m) => this.enqueueMessage(m))
         .catch(() => {});
@@ -823,6 +846,153 @@ export class Swarm {
     if (this.conclusion !== undefined || opts.wake === false) return;
     this.notes.push(text);
     this.pump();
+  }
+
+  // Puts a paused gate's prompt and files in a thread any agent can read, then
+  // wakes the lead to have it answered.
+  private async openGate(run: ChildRun, files: readonly GateFile[], change: string): Promise<void> {
+    const gate = run.pendingApproval;
+    const client = this.leadClient();
+    if (!gate || !client) return;
+    gate.openedAt = new Date().toISOString();
+    const prompt = files.some((f) => f.text !== undefined)
+      ? withoutFileHints(gate.prompt)
+      : gate.prompt;
+    const parts = [
+      ...splitBody(prompt, BODY_MAX - 64).map((p) => `**Gate prompt**\n\n${p}`),
+      ...files.flatMap((f) =>
+        f.text === undefined
+          ? [`**${f.path}** could not be read: ${f.error ?? "no text"}`]
+          : splitBody(f.text, BODY_MAX - 128).map(
+              (p, i, all) =>
+                `**${f.path}**${all.length > 1 ? ` (${i + 1}/${all.length})` : ""}${f.truncated && i === all.length - 1 ? " (cut short by the host)" : ""}\n\n${p}`,
+            ),
+      ),
+    ];
+    try {
+      const root = await this.onChannel(() =>
+        client.postMessage(
+          this.channel.id,
+          `**Approval needed** ${change} Its prompt and files follow in this thread.`,
+        ),
+      );
+      gate.threadId = root.id;
+      this.enqueueMessage(root);
+      for (const part of parts) {
+        this.enqueueMessage(await this.onChannel(() => client.replyInThread(root.id, part)));
+      }
+    } catch (e) {
+      this.log(`could not post the gate for run ${run.runId}: ${errText(e)}`);
+    }
+    const where = gate.threadId
+      ? `Its prompt and files are in thread ${gate.threadId}.`
+      : `Its prompt: ${gate.prompt}`;
+    const how = this.opts.dispatch?.dispatcher.respond
+      ? "Have another agent review it, then answer with chat_workflow_respond, citing that review."
+      : "Only the operator can answer it: tell them in the channel what it is waiting for.";
+    this.notifyLead(`${change} ${where} ${how}`, { post: false });
+  }
+
+  async answerGate(
+    agentId: string,
+    input: {
+      runId: string;
+      decision: GateAnswer["decision"];
+      review: string;
+      reason: string;
+      feedback?: string;
+    },
+  ): Promise<ChildRun> {
+    const { dispatch, client } = this.dispatcherFor(agentId);
+    const respond = dispatch.dispatcher.respond;
+    if (!respond) {
+      throw new Error(
+        "this keelson host cannot answer a gate for the operator: tell the operator in the channel what the run is waiting for",
+      );
+    }
+    const run = this.runs.get(input.runId);
+    if (!run) throw new Error(`no run '${input.runId}' was started by this swarm`);
+    const gate = run.pendingApproval;
+    if (run.status !== "paused" || !gate) {
+      throw new Error(`run ${input.runId} is ${run.status}, not waiting on an approval`);
+    }
+    const feedback = input.feedback?.trim();
+    if (input.decision === "changes" && !feedback) {
+      throw new Error("a changes decision needs feedback: what the run must change, and why");
+    }
+    if (input.decision === "changes" && feedback?.toLowerCase() === "approve") {
+      throw new Error("the run reads the feedback 'approve' as an approval: say what to change");
+    }
+    const reviewer = await this.reviewer(input.review, gate.openedAt);
+    const result = await respond(
+      run.runId,
+      gate.nodeId,
+      input.decision === "approve" ? "approve" : (feedback ?? ""),
+      gate.pauseId,
+    );
+    if (!result.ok) {
+      const refused = /ribApprovalGrants/.test(result.error)
+        ? " The operator has not let this swarm answer this workflow's gates: tell them in the channel what the run is waiting for, then wait."
+        : "";
+      throw new Error(
+        `could not answer ${gate.nodeId} on run ${run.runId}: ${result.error}.${refused}`,
+      );
+    }
+    const answer: GateAnswer = {
+      nodeId: gate.nodeId,
+      decision: input.decision,
+      reason: input.reason,
+      ...(input.decision === "changes" && feedback ? { feedback } : {}),
+      review: input.review,
+      reviewer,
+      at: new Date().toISOString(),
+    };
+    run.approvals = [...(run.approvals ?? []), answer];
+    this.log(`answered ${gate.nodeId} on run ${run.runId}: ${input.decision}`);
+    const record = [
+      `**${input.decision === "approve" ? "Approved" : "Changes requested"}** \`${gate.nodeId}\` on run \`${run.runId}\`, on ${reviewer}'s review ${input.review}.`,
+      input.reason,
+      ...(answer.feedback ? [`Sent to the run:\n${answer.feedback}`] : []),
+    ].join("\n\n");
+    const threadId = gate.threadId;
+    for (const part of splitBody(record, BODY_MAX - 32)) {
+      await this.onChannel(() =>
+        threadId ? client.replyInThread(threadId, part) : client.postMessage(this.channel.id, part),
+      )
+        .then((m) => this.enqueueMessage(m))
+        .catch((e) => this.log(`could not post the answer for run ${run.runId}: ${errText(e)}`));
+    }
+    void this.syncRun(run.runId, { quiet: true });
+    return run;
+  }
+
+  // Who wrote the review a gate answer rests on: another agent of this swarm or
+  // the operator, in this channel, after the gate opened. Never the lead.
+  private async reviewer(messageId: string, openedAt: string | undefined): Promise<string> {
+    let message: ChatMessage;
+    try {
+      message = await this.owner.getMessage(messageId);
+    } catch {
+      throw new Error(`no message '${messageId}': cite the id of the review message`);
+    }
+    if (message.channelId !== this.channel.id) {
+      throw new Error(`message ${messageId} is not in this swarm's channel`);
+    }
+    if (openedAt && Date.parse(message.createdAt) < Date.parse(openedAt)) {
+      throw new Error(
+        `message ${messageId} predates the gate: cite a review written after it opened`,
+      );
+    }
+    if (message.authorKind === "human") return message.authorName || "the operator";
+    const author = [...this.agents.values()].find((a) => a.botUserId === message.authorId);
+    if (!author)
+      throw new Error(`message ${messageId} is not from this swarm's agents or the operator`);
+    if (author.lead) {
+      throw new Error(
+        "the lead cannot review its own run's gate: have another agent review it, or ask the operator",
+      );
+    }
+    return `@${author.handle}`;
   }
 
   roster(): SwarmSummary["agents"] {

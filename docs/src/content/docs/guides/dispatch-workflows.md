@@ -8,7 +8,8 @@ sidebar:
 Agents in a swarm never edit files. When a swarm has to change a repository, its
 lead hands the change to a Keelson workflow such as `fix-issue`, and the run
 does the editing, committing, and pull request in its own worktree. You choose
-which workflows a swarm may start.
+which workflows a swarm may start, and whose approval gates it may answer for
+you.
 
 ## Grant the workflows
 
@@ -43,10 +44,21 @@ The second is the swarm's own. Pass `workflows` to `chat_swarm_start` with a
 A workflow is isolated unless its entry says `isolated: false`. Mark only
 read-only workflows that way.
 
+To let the swarm answer a workflow's approval gates, name it under
+`ribApprovalGrants` too. Without it, those gates wait for you:
+
+```json
+{
+  "ribWorkflowGrants": { "chat": ["fix-issue", "investigate"] },
+  "ribApprovalGrants": { "chat": ["fix-issue"] }
+}
+```
+
 ## What the lead does
 
-The lead gets `chat_workflow_start`, `chat_workflow_status`, and
-`chat_workflow_cancel`. It gives each run a one-line purpose and the inputs its
+The lead gets `chat_workflow_start`, `chat_workflow_status`,
+`chat_workflow_cancel`, and, when Keelson lets the rib answer gates,
+`chat_workflow_respond`. It gives each run a one-line purpose and the inputs its
 workflow expects, and starts independent runs in parallel. Every status change
 appears in the channel as a **Run update**. A pause, an ending, or a
 cancellation also wakes the lead; a run resuming after its approval does not.
@@ -62,21 +74,37 @@ depends on, and starts the dependent run after you say it is merged. The rib
 does not enforce that order, so give a swarm dependent work only when you
 intend to merge as it goes.
 
-## Answer approvals
+## Approvals
 
-Workflows like `fix-issue` stop at a human gate before they write code. The
-paused run's node and prompt show in the channel, in `chat_swarm_status`, and in
-the lead's next turn. No agent can answer it. Answer it yourself with Keelson's
+Workflows like `fix-issue` stop at an approval gate before they write code. The
+rib posts an **Approval needed** message, with the gate's prompt and the files it
+names, such as the plan, in its thread. Then the swarm answers the gate for you:
+
+1. The lead has another agent review the plan: a worker it @mentions, or a
+   reviewer it spawns. The reviewer checks each acceptance criterion against a
+   plan step, checks the plan stays in scope, spot-checks it against the code,
+   and replies with approve or the changes needed.
+2. The lead calls `chat_workflow_respond` with `approve`, or `changes` and the
+   feedback the run applies before writing code, citing the review's message id
+   and giving its reason.
+3. The answer, its reason, and the review are posted in the gate's thread and
+   kept in the run's `approvals`.
+
+The rib refuses a review the lead wrote, or one written before the gate opened.
+A message you post in the channel after the gate opens counts as a review, so
+you can still steer the decision.
+
+Without a `ribApprovalGrants` entry for the workflow, or on a Keelson that
+cannot answer gates for a rib, the gate waits for you. Answer it with Keelson's
 `workflow_respond` tool, or from the run in the Keelson UI:
 
 ```json
 { "runId": "<run id>", "nodeId": "<node id>", "text": "approve" }
 ```
 
-Text other than `approve` is feedback the workflow folds into its plan.
-
-The swarm waits for you, but its wall clock keeps running, so give a swarm that
-dispatches long runs a larger `max_minutes`.
+Text other than `approve` is feedback the workflow folds into its plan. The
+swarm waits, but its wall clock keeps running, so give a swarm that dispatches
+long runs a larger `max_minutes`.
 
 ## Isolation
 
@@ -94,7 +122,8 @@ nothing writes until after its approval gate.
 | Field | Meaning |
 |---|---|
 | `status` | `running`, `paused`, `succeeded`, `failed`, or `cancelled`. |
-| `pendingApproval` | The node and prompt a paused run waits on. |
+| `pendingApproval` | The node and prompt a paused run waits on, and the thread holding its prompt and files. |
+| `approvals` | Each gate the swarm answered: the node, `approve` or `changes`, the reason, the feedback sent, and the review and its author. |
 | `checkout` | The path and branch the run used, and whether it established its own worktree. |
 | `prUrls` | Pull request links found in the run's node output. |
 | `ci` | The run's own CI verdict, `pass`, `fail`, or `unknown`, with the reason its workflow gave. |

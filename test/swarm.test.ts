@@ -463,20 +463,29 @@ describe("Swarm resilience", () => {
   });
 });
 
-function fakeDispatcher(opts: { live?: boolean } = {}) {
+function fakeDispatcher(opts: { live?: boolean; refuseAnswers?: string; answers?: boolean } = {}) {
   const states = new Map<string, RibRunStatus>();
   const started: { name: string; inputs: Record<string, string> }[] = [];
   const cancelled: string[] = [];
+  const answered: { runId: string; nodeId: string; text: string; pauseId?: string }[] = [];
   let n = 0;
   const set = (runId: string, patch: Partial<RibRunStatus>) => {
     const current = states.get(runId);
     if (current) states.set(runId, { ...current, ...patch });
   };
+  const respond = async (runId: string, nodeId: string, text: string, pauseId?: string) => {
+    if (opts.refuseAnswers) return { ok: false as const, error: opts.refuseAnswers };
+    answered.push({ runId, nodeId, text, ...(pauseId ? { pauseId } : {}) });
+    set(runId, { status: "running", pendingApproval: undefined });
+    return { ok: true as const };
+  };
   return {
     started,
     cancelled,
+    answered,
     set,
     dispatcher: {
+      ...(opts.answers || opts.refuseAnswers ? { respond } : {}),
       start: async (name: string, inputs: Record<string, string>) => {
         n++;
         const runId = `run_${n}`;
@@ -564,7 +573,8 @@ describe("Workflow dispatch", () => {
     swarmRef = await start();
     const summary = await swarmRef.finished;
     expect(fake.started).toEqual([{ name: "fix-issue", inputs: { issue: "1" } }]);
-    expect(prompts[1]).toContain("paused for human approval at node approve-plan");
+    expect(prompts[1]).toContain("paused for approval at node approve-plan");
+    expect(prompts[1]).toContain("Only the operator can answer it");
     expect(refused).toContain("still live");
     expect(prompts).toHaveLength(3);
     expect(prompts[2]).toContain("is succeeded");
@@ -581,9 +591,169 @@ describe("Workflow dispatch", () => {
     expect(logs.some((l) => l.includes("nudging"))).toBe(false);
     const leadTools = provider.requests[0]?.tools?.map((t) => t.name) ?? [];
     expect(leadTools).toContain("chat_workflow_start");
+    // This host cannot answer a gate, so the lead is not offered the tool.
+    expect(leadTools).not.toContain("chat_workflow_respond");
     const charter = provider.requests[0]?.system ?? "";
     expect(charter).toContain("start the dependent run only after they say it is merged");
     expect(charter).toContain("reported passing CI");
+    expect(charter).toContain("You cannot answer it");
+  });
+
+  test("a worker reviews the gate's plan and the lead answers it for the operator", async () => {
+    const fake = fakeDispatcher({ answers: true });
+    let swarmRef: Swarm | undefined;
+    let gateThread = "";
+    let selfReview = "";
+    let planSeen = "";
+    const { start, provider, tools } = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId === "s1-reviewer") {
+          planSeen = (await call("chat_read", { thread_id: gateThread })).content;
+          const brief = prompt.match(/top-level (msg_\d+)/)?.[1];
+          await call("chat_reply", { message_id: brief, body: "approve: it covers the criterion" });
+          return;
+        }
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "fix issue 1" });
+          later(40, () => {
+            fake.set("run_1", {
+              status: "paused",
+              pendingApproval: {
+                nodeId: "approve-plan",
+                prompt: "Approve this plan?\n\n$ARTIFACTS_DIR/plan.md",
+                pauseId: "pause-1",
+                artifacts: [{ path: "plan.md", text: "# Plan\n1. Fix the README count." }],
+              },
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else if (turn === 2) {
+          gateThread = prompt.match(/in thread (msg_\d+)/)?.[1] ?? "";
+          selfReview = (
+            await call("chat_workflow_respond", {
+              run_id: "run_1",
+              decision: "approve",
+              review: gateThread,
+              reason: "looks right",
+            })
+          ).content;
+          await call("chat_spawn", {
+            handle: "reviewer",
+            role: "plan reviewer",
+            brief: `Review the plan in thread ${gateThread} against issue 1.`,
+          });
+        } else if (turn === 3) {
+          const review = [...prompt.matchAll(/@s1-reviewer \((msg_\d+)/g)].at(-1)?.[1];
+          await call("chat_workflow_respond", {
+            run_id: "run_1",
+            decision: "approve",
+            review,
+            reason: "Every criterion maps to a plan step.",
+          });
+          later(20, () => {
+            fake.set("run_1", {
+              status: "succeeded",
+              completedAt: new Date().toISOString(),
+              nodes: [
+                { nodeId: "open-pr", status: "succeeded", output: "https://github.com/o/r/pull/8" },
+                { nodeId: "ci-green-gate", status: "succeeded", output: "CI_GATE: PASS" },
+              ],
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else {
+          await call("chat_done", { summary: "issue 1 fixed in PR 8" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    const summary = await swarmRef.finished;
+    expect(summary.status).toBe("done");
+    expect(selfReview).toContain("the lead cannot review its own run's gate");
+    expect(planSeen).toContain("Approve this plan?");
+    expect(planSeen).toContain("# Plan");
+    expect(planSeen).not.toContain("$ARTIFACTS_DIR");
+    expect(fake.answered).toEqual([
+      { runId: "run_1", nodeId: "approve-plan", text: "approve", pauseId: "pause-1" },
+    ]);
+    expect(summary.runs?.[0]).toMatchObject({ status: "succeeded", verified: true });
+    expect(summary.runs?.[0]?.approvals).toEqual([
+      expect.objectContaining({
+        nodeId: "approve-plan",
+        decision: "approve",
+        reviewer: "@s1-reviewer",
+        reason: "Every criterion maps to a plan step.",
+      }),
+    ]);
+    const lead = provider.requests.find((r) => r.turnContext?.agentId === "s1-lead");
+    expect(lead?.tools?.map((t) => t.name)).toContain("chat_workflow_respond");
+    expect(lead?.system).toContain("your own review checks nothing");
+    const transcript = await callTool(tools, "chat_swarm_transcript", { swarm: summary.id });
+    expect(transcript.content).toContain("**Approved** `approve-plan` on run `run_1`");
+  });
+
+  test("changes need feedback, and an ungranted workflow goes back to the operator", async () => {
+    const fake = fakeDispatcher({
+      refuseAnswers:
+        "rib 'chat' is not granted approvals for workflow 'fix-issue' (config.json ribApprovalGrants)",
+    });
+    let swarmRef: Swarm | undefined;
+    const outs: string[] = [];
+    const { start } = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "fix issue 1" });
+          later(40, () => {
+            fake.set("run_1", {
+              status: "paused",
+              pendingApproval: { nodeId: "approve-plan", prompt: "Approve the plan?" },
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else if (turn === 2) {
+          later(10, () => void swarmRef?.steer("approve the plan"));
+        } else {
+          const review = [...prompt.matchAll(/\[human\] \(top-level (msg_\d+)\)/g)].at(-1)?.[1];
+          outs.push(
+            (
+              await call("chat_workflow_respond", {
+                run_id: "run_1",
+                decision: "changes",
+                review,
+                reason: "r",
+              })
+            ).content,
+          );
+          outs.push(
+            (
+              await call("chat_workflow_respond", {
+                run_id: "run_1",
+                decision: "approve",
+                review,
+                reason: "the operator approved",
+              })
+            ).content,
+          );
+          await call("chat_workflow_cancel", { run_id: "run_1" });
+          await call("chat_done", { summary: "handed back to the operator" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    const summary = await swarmRef.finished;
+    expect(outs[0]).toContain("needs feedback");
+    expect(outs[1]).toContain("has not let this swarm answer this workflow's gates");
+    expect(summary.runs?.[0]?.approvals).toBeUndefined();
   });
 
   test("an isolated run found in the live checkout is cancelled and reported", async () => {
