@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.4.0...v0.5.0) (2026-09-22)
+
+
+### Added
+
+* **dispatch:** require passing CI before a run is verified ([#21](https://github.com/danielscholl/keelson-rib-chat/issues/21)) ([7870e41](https://github.com/danielscholl/keelson-rib-chat/commit/7870e41e01c4c09a3eb7f82022933cd6d1980417))
+
 ## [0.4.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.3.0...v0.4.0) (2026-09-22)
 
 
