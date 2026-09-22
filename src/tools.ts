@@ -320,8 +320,13 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
       execute: guarded(async (input, ctx) => {
         const args = doneSchema.parse(input);
         const { swarm, agentId } = caller(ctx);
-        await swarm.conclude(agentId, args.summary);
-        emitText(ctx, "conclusion recorded; the swarm is ending. End your turn now.");
+        const postError = await swarm.conclude(agentId, args.summary);
+        emitText(
+          ctx,
+          postError
+            ? `conclusion recorded; the swarm is ending, but posting it to the channel failed (${postError}). The operator has it in the swarm summary. End your turn now.`
+            : "conclusion recorded; the swarm is ending. End your turn now.",
+        );
       }),
     },
     {

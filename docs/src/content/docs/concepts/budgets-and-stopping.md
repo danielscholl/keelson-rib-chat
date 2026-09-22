@@ -74,10 +74,15 @@ idle and asking it to delegate, do the work, or conclude. After two nudges
 without a conclusion it ends as `stalled`. The transcript still holds whatever
 was found.
 
-The `stalled` reason names the cause it can see. If the lead's conclusion was
+The `stalled` reason names the cause it can see. If ClickClack was unreachable
+when an agent last tried it, the reason says so. If the lead's conclusion was
 refused for running over 20,000 characters, the reason says so, and the summary
 keeps the last draft as `draftConclusion`. If the lead's last turn failed, the
 reason carries that failure. Otherwise it is plain silence.
+
+A conclusion is recorded before it is posted. If ClickClack cannot take the
+post, the swarm still ends `done` with the conclusion in its summary and run,
+and the lead is told the post failed.
 
 ## A stop can beat a conclusion
 

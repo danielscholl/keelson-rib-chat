@@ -7,7 +7,7 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { Rib, RibAuthStatus, RibContext } from "@keelson/shared";
-import { ClickClackClient } from "./clickclack.ts";
+import { ClickClackClient, ClickClackError } from "./clickclack.ts";
 import { chatDocsSource } from "./docs.ts";
 import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
@@ -86,6 +86,21 @@ async function readerClient(): Promise<ClickClackClient> {
   return ownerClient();
 }
 
+// Bot tokens a swarm could not revoke when it ended, usually because ClickClack
+// was down. Each swarm start retries them.
+const pendingRevocations = new Set<string>();
+
+function retryRevocations(owner: ClickClackClient): void {
+  for (const tokenId of pendingRevocations) {
+    void owner.revokeBotToken(tokenId).then(
+      () => pendingRevocations.delete(tokenId),
+      (e) => {
+        if (e instanceof ClickClackError && e.status === 404) pendingRevocations.delete(tokenId);
+      },
+    );
+  }
+}
+
 async function readChannel(channelId: string, threadId?: string): Promise<ChatMessage[]> {
   const owner = await readerClient();
   if (!threadId) return owner.channelTranscript(channelId);
@@ -130,6 +145,7 @@ async function launchSwarm(
     cwd = project.rootPath;
   }
   const owner = await ownerClient();
+  retryRevocations(owner);
   const workspaceId = await resolveWorkspace(owner);
 
   // Registered before the swarm boots so its startup is on the record too.
@@ -183,6 +199,7 @@ async function launchSwarm(
   op?.signal.addEventListener("abort", () => void live.stop("cancelled"), { once: true });
 
   void live.finished.then((summary) => {
+    for (const tokenId of live.unrevokedTokens()) pendingRevocations.add(tokenId);
     swarms.delete(summary.id);
     ended.set(summary.id, summary);
     while (ended.size > ENDED_KEPT) {

@@ -55,8 +55,9 @@ conclusion carries the last one as `draftConclusion`.
 A stop or a limit that lands between `chat_done` and the swarm settling wins the
 status, and `conclusion` still holds what the lead recorded. Read both fields.
 
-A `stalled` reason names the cause it can see: a conclusion refused as too long,
-the lead's last turn failing, or plain silence.
+A `stalled` reason names the cause it can see: ClickClack unreachable, a
+conclusion refused as too long, the lead's last turn failing, or plain silence.
+A conclusion is recorded before it is posted, so a failed post doesn't lose it.
 
 The durable run completes, with the summary as its result, only when the swarm
 concluded or was stopped. A swarm that ends `stalled`, `exhausted` with no

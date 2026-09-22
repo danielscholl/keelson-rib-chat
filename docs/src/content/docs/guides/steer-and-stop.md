@@ -52,13 +52,14 @@ the first one found into the new task or a `note` context item.
 ## When it stops on its own
 
 A swarm that ends as `stalled` went idle without the lead concluding. Its
-`error` names the cause: a conclusion refused as too long, the lead's last turn
-failing, or plain silence. One that ends as `exhausted` ran out of turns or
+`error` names the cause: ClickClack unreachable, a conclusion refused as too
+long, the lead's last turn failing, or plain silence. One that ends as `exhausted` ran out of turns or
 time. Either way the channel holds the findings so far, and
 `chat_swarm_transcript` reads it.
 
 | Cause | Usual fix |
 |---|---|
+| ClickClack unreachable | Bring the server back (`chat_server_status` shows where it is), then start the swarm again. |
 | Conclusion refused as too long | The answer is in `draftConclusion`, the lead's last draft. |
 | The lead's last turn failed | A longer `turn_timeout_s`, or a different `model`. |
 | Silence, or `exhausted` | A narrower task, higher limits (`max_turns`, `max_turns_per_agent`, `max_minutes`), or the evidence the agents were missing. |

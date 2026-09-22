@@ -160,6 +160,9 @@ export class Swarm {
   private draftConclusion: string | undefined;
   private refusedConclusions = 0;
   private lastLeadFailure: string | undefined;
+  // The last time an agent's channel call failed because ClickClack itself did.
+  private channelFault: string | undefined;
+  private readonly unrevoked: string[] = [];
   private error: string | undefined;
   private endedAt: string | undefined;
   private quiesceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -382,6 +385,7 @@ export class Swarm {
 
   // Says what actually kept the swarm from concluding, not just that it went quiet.
   private stallReason(): string {
+    if (this.channelFault) return `agents could not reach ClickClack: ${this.channelFault}`;
     if (this.refusedConclusions > 0) {
       return `the lead's conclusion was refused ${this.refusedConclusions} time(s) for exceeding ${CONCLUSION_MAX} characters; its last draft is kept as draftConclusion`;
     }
@@ -541,8 +545,22 @@ export class Swarm {
     return { agent, client: this.owner.withToken(token) };
   }
 
+  // A network failure or a 5xx is ClickClack's fault, not the agent's; a stall
+  // that follows one names it.
+  private async onChannel<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      const out = await work();
+      this.channelFault = undefined;
+      return out;
+    } catch (e) {
+      if (!(e instanceof ClickClackError) || e.status >= 500) this.channelFault = errText(e);
+      throw e;
+    }
+  }
+
   async post(agentId: string, body: string): Promise<ChatMessage> {
-    const message = await this.as(agentId).client.postMessage(this.channel.id, body);
+    const { client } = this.as(agentId);
+    const message = await this.onChannel(() => client.postMessage(this.channel.id, body));
     this.enqueueMessage(message);
     return message;
   }
@@ -550,19 +568,20 @@ export class Swarm {
   async reply(agentId: string, messageId: string, body: string): Promise<ChatMessage> {
     const { client } = this.as(agentId);
     // Replies attach to a thread root, so a reply-to-a-reply is lifted to it.
-    const target = await client.getMessage(messageId);
+    const target = await this.onChannel(() => client.getMessage(messageId));
     if (target.channelId !== this.channel.id) {
       throw new Error(`message ${messageId} is not in this swarm's channel`);
     }
-    const message = await client.replyInThread(target.threadRootId, body);
+    const message = await this.onChannel(() => client.replyInThread(target.threadRootId, body));
     this.enqueueMessage(message);
     return message;
   }
 
   async read(agentId: string, opts: { threadId?: string; limit: number }): Promise<ChatMessage[]> {
     const { client } = this.as(agentId);
-    if (!opts.threadId) return client.listMessages(this.channel.id, opts.limit);
-    const thread = await client.getThread(opts.threadId);
+    const threadId = opts.threadId;
+    if (!threadId) return this.onChannel(() => client.listMessages(this.channel.id, opts.limit));
+    const thread = await this.onChannel(() => client.getThread(threadId));
     if (thread[0] && thread[0].channelId !== this.channel.id) {
       throw new Error(`thread ${opts.threadId} is not in this swarm's channel`);
     }
@@ -588,9 +607,11 @@ export class Swarm {
     this.log(`@${spawner.handle} spawned @${agent.handle}: ${input.role}`);
     // The brief is an ordinary mention from the spawner, so the new agent wakes
     // through the router and its thread reply finds its way back.
-    const message = await client.postMessage(
-      this.channel.id,
-      `@${agent.handle} joining as **${input.role}**.\n\n${input.brief}`,
+    const message = await this.onChannel(() =>
+      client.postMessage(
+        this.channel.id,
+        `@${agent.handle} joining as **${input.role}**.\n\n${input.brief}`,
+      ),
     );
     this.enqueueMessage(message);
     return agent;
@@ -618,7 +639,9 @@ export class Swarm {
     return [...this.agents.values()].map(({ tokenId: _t, sessionId: _s, ...rest }) => rest);
   }
 
-  async conclude(agentId: string, summary: string): Promise<void> {
+  // Records the conclusion before posting it: the answer is the deliverable, and
+  // a channel that cannot take the post must not lose it. Returns the post error.
+  async conclude(agentId: string, summary: string): Promise<string | undefined> {
     const { agent, client } = this.as(agentId);
     if (!agent.lead) throw new Error("only the lead may conclude the swarm");
     if (summary.length > CONCLUSION_MAX) {
@@ -628,17 +651,28 @@ export class Swarm {
         `conclusion refused: it is ${summary.length} characters and the limit is ${CONCLUSION_MAX}. Cut at least ${summary.length - CONCLUSION_MAX} characters and call chat_done again. Detail that does not fit can go in a chat_post first.`,
       );
     }
-    const parts = splitBody(summary, BODY_MAX - 32);
-    for (const [i, part] of parts.entries()) {
-      const heading =
-        parts.length > 1 ? `**Conclusion (${i + 1}/${parts.length})**` : "**Conclusion**";
-      await client.postMessage(this.channel.id, `${heading}\n\n${part}`);
-    }
     this.conclusion = summary;
     this.draftConclusion = undefined;
     for (const id of this.inboxes.keys()) this.inboxes.set(id, []);
     this.background.clear();
     this.log(`@${agent.handle} concluded the swarm`);
+    const parts = splitBody(summary, BODY_MAX - 32);
+    try {
+      for (const [i, part] of parts.entries()) {
+        const heading =
+          parts.length > 1 ? `**Conclusion (${i + 1}/${parts.length})**` : "**Conclusion**";
+        await this.onChannel(() => client.postMessage(this.channel.id, `${heading}\n\n${part}`));
+      }
+      return undefined;
+    } catch (e) {
+      this.log(`the conclusion could not be posted to the channel: ${errText(e)}`);
+      return errText(e);
+    }
+  }
+
+  // Bot tokens finish() could not revoke, for the host to retry later.
+  unrevokedTokens(): readonly string[] {
+    return this.unrevoked;
   }
 
   // ---- Operator controls. ----
@@ -696,6 +730,7 @@ export class Swarm {
     for (const agent of this.agents.values()) {
       await this.owner.revokeBotToken(agent.tokenId).catch((e) => {
         if (!(e instanceof ClickClackError && e.status === 404)) {
+          this.unrevoked.push(agent.tokenId);
           this.log(`could not revoke the token for @${agent.handle}: ${errText(e)}`);
         }
       });

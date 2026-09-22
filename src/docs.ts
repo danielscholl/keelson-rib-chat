@@ -155,6 +155,7 @@ The conclusion may run to ${CONCLUSION_MAX}, and reaches the channel in parts of
 ${BODY_MAX}. A body over its limit is refused with its length and how much to cut,
 so the agent can shorten it in one retry. A refused conclusion is kept: if the
 swarm ends without one, the summary carries the last draft as \`draftConclusion\`.
+The conclusion is recorded before it is posted, so a failed post does not lose it.
 
 Beside these, an agent holds Read, Grep, and Glob when the swarm was started with
 a project and \`work_tools: read\`. It holds nothing else.
@@ -214,8 +215,11 @@ since the next turn resumes that same session.
 
 For every ending but \`done\`, \`error\` holds the reason and the channel
 transcript holds whatever was found. A \`stalled\` reason names the cause it can
-see: a conclusion refused as too long, the lead's last turn failing, or plain
-silence. After \`chat_done\` no new turn starts;
+see: ClickClack unreachable when an agent last tried it, a conclusion refused
+as too long, the lead's last turn failing, or plain silence. A conclusion the
+lead records stands even when ClickClack cannot take its post: the summary and
+the run hold it, and the lead is told the post failed. Bot tokens the swarm
+could not revoke at its end are retried when the next swarm starts. After \`chat_done\` no new turn starts;
 turns already in flight finish, then the swarm ends as \`done\`. A stop or a
 limit that lands in that window wins: the status is not \`done\`, and
 \`conclusion\` still holds what the lead recorded.

@@ -359,6 +359,33 @@ describe("Swarm resilience", () => {
     expect(server.messages.some((m) => m.body.includes("will not respond further"))).toBe(true);
   });
 
+  test("a conclusion survives a channel that cannot take the post", async () => {
+    let reply = "";
+    const { start, server } = harness(async ({ agentId, call }) => {
+      if (agentId !== "s1-lead") return;
+      server.down = true;
+      reply = (await call("chat_done", { summary: "the answer" })).content;
+    });
+    const swarm = await start();
+    const summary = await swarm.finished;
+    expect(reply).toContain("posting it to the channel failed");
+    expect(summary.status).toBe("done");
+    expect(summary.conclusion).toBe("the answer");
+    // The lead's token could not be revoked while the server was down.
+    expect(swarm.unrevokedTokens()).toHaveLength(1);
+  });
+
+  test("a stall while ClickClack is unreachable says so", async () => {
+    const { start, server } = harness(async ({ agentId, call }) => {
+      if (agentId !== "s1-lead") return;
+      server.down = true;
+      await call("chat_post", { body: "trying" });
+    });
+    const summary = await (await start()).finished;
+    expect(summary.status).toBe("stalled");
+    expect(summary.error).toContain("agents could not reach ClickClack: fetch failed");
+  });
+
   test("a stall names the lead's failed last turn", async () => {
     const { start } = harness(
       async ({ agentId, turn }) => {
