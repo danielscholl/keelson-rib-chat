@@ -11,11 +11,13 @@ import { ClickClackClient, ClickClackError } from "./clickclack.ts";
 import type { WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
 import { historyPath, loadHistory, saveHistory } from "./history.ts";
+import { createLaunchStore } from "./launches.ts";
 import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
 import type { ServerLine, SurfaceState } from "./surface/index-board.ts";
-import { INDEX_KEY, SURFACE_ID } from "./surface/keys.ts";
+import { INDEX_KEY, LAUNCH_KEY, SURFACE_ID } from "./surface/keys.ts";
+import { type LaunchState, sizesByline } from "./surface/launch-board.ts";
 import { createSwarmsSurface, type SwarmRecord, type SwarmsSurface } from "./surface/surface.ts";
 import {
   type ApprovalRefusals,
@@ -262,8 +264,27 @@ function remember(summary: SwarmSummary): void {
     if (oldest === undefined) break;
     ended.delete(oldest);
   }
+  pruneLaunches();
   persistHistory();
   changed(summary.id, "end");
+}
+
+const launches = createLaunchStore(() => getDataDir?.());
+
+function pruneLaunches(): void {
+  launches.keepOnly(new Set([...swarms.keys(), ...starting.keys(), ...ended.keys()]));
+}
+
+function launchState(): LaunchState {
+  const projects = (getProjects?.() ?? []).map((p) => ({ id: p.id, name: p.name }));
+  const canDispatch = Boolean(startWorkflow && getRunStatus && cancelRun);
+  return {
+    projects,
+    live: swarms.size + starting.size,
+    ...(canDispatch
+      ? {}
+      : { dispatchBlocked: "This Keelson host can't start workflows for a rib." }),
+  };
 }
 
 function persistHistory(): void {
@@ -352,9 +373,11 @@ function prepare(input: StartSwarmInput): Launch {
   };
 }
 
-async function startSwarm(
-  input: StartSwarmInput,
-): Promise<{ swarm: Swarm; opId?: string; url: string }> {
+type Booted = { swarm: Swarm; opId?: string; url: string };
+
+// Checks and admits a start, then boots it in the background. A refusal throws
+// here, before the swarm has an id; a failure after that is an ended error row.
+function beginSwarm(input: StartSwarmInput): { id: string; booted: Promise<Booted> } {
   const launch = prepare(input);
   const sizeBase = input.size ?? "medium";
   const record: StartingSwarm = {
@@ -369,15 +392,27 @@ async function startSwarm(
     ...(launch.project ? { project: launch.project } : {}),
   };
   starting.set(record.id, record);
+  launches.save(record.id, input);
   changed(record.id, "start");
+  const booted = (async () => {
+    try {
+      return await launchSwarm(record, input, launch);
+    } catch (e) {
+      remember(e instanceof SwarmStartError ? e.summary : failedStart(record, errText(e)));
+      throw e;
+    } finally {
+      starting.delete(record.id);
+      changed(record.id, "start");
+    }
+  })();
+  return { id: record.id, booted };
+}
+
+function startSwarm(input: StartSwarmInput): Promise<Booted> {
   try {
-    return await launchSwarm(record, input, launch);
+    return beginSwarm(input).booted;
   } catch (e) {
-    remember(e instanceof SwarmStartError ? e.summary : failedStart(record, errText(e)));
-    throw e;
-  } finally {
-    starting.delete(record.id);
-    changed(record.id, "start");
+    return Promise.reject(e);
   }
 }
 
@@ -478,7 +513,10 @@ const rib: Rib = {
       id: SURFACE_ID,
       title: "Swarms",
       hideRegionActions: true,
-      layout: { rows: [{ columns: [{ key: INDEX_KEY, live: true }] }] },
+      layout: {
+        header: { key: LAUNCH_KEY, collapsible: true, byline: sizesByline() },
+        rows: [{ columns: [{ key: INDEX_KEY, live: true }] }],
+      },
     },
   ],
 
@@ -487,6 +525,12 @@ const rib: Rib = {
       surface,
       find: findSwarm,
       live: (id) => swarms.get(id),
+      begin: (input) => {
+        const { id, booted } = beginSwarm(input);
+        booted.catch(() => undefined);
+        return id;
+      },
+      launchOf: (id) => launches.load(id),
     }),
 
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
@@ -518,6 +562,8 @@ const rib: Rib = {
         sm,
         state: surfaceState,
         find: findSwarm,
+        launch: launchState,
+        rerunnable: (id) => ended.has(id) && launches.has(id),
         views,
         ...(ctx.invalidateManifest ? { invalidateManifest: ctx.invalidateManifest } : {}),
       });
@@ -531,6 +577,7 @@ const rib: Rib = {
         liveCount: () => swarms.size + starting.size,
         clearEnded: () => {
           ended.clear();
+          launches.clear();
           persistHistory();
           surface?.refresh();
         },

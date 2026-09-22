@@ -350,8 +350,12 @@ a run waits at a gate and the swarm went idle. A refusal is remembered per
 workflow, so the next gate on that workflow is flagged at once. The tab has no
 approve button: answer those gates in the Workflows tab.
 
-Start a swarm in Chat opens a chat that gathers context and calls
-\`chat_swarm_start\`.
+The Start a swarm header starts one from the tab. Discuss takes a task,
+project, tool access, size, and model. Dispatch adds the workflows the lead may
+start, and needs a project. In chat opens a chat that gathers issue and PR
+context and calls \`chat_swarm_start\`. An ended swarm's board offers Run again,
+which starts a new swarm with the same task, project, workflows, and context,
+with the size and model open to change.
 
 # Restarts
 

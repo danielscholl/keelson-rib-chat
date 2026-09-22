@@ -65,6 +65,34 @@ conclusion, a refused draft, or an open gate's prompt, with formatting.
 
 ## Starting a swarm
 
-**Start a swarm in Chat** opens a chat that gathers the issue or PR context,
-picks a size, and calls `chat_swarm_start`. A swarm started any other way, over
-MCP or from the `chat-swarm` workflow, gets a card too.
+The **Start a swarm** header above the index has three tabs:
+
+| Tab | Starts |
+|---|---|
+| **Discuss** | A swarm whose agents talk the task through in its channel and conclude. |
+| **Dispatch** | A swarm whose lead may start the workflows you name, in isolated worktrees. It needs a registered project, and each workflow still needs the chat rib's `ribWorkflowGrants` entry. |
+| **In chat** | A chat that gathers the issue or PR context, picks a size, and calls `chat_swarm_start`. Use it when the swarm needs evidence it can't fetch. |
+
+The Discuss and Dispatch forms take the task, the project, whether agents may
+read the project, the size, and the model. The header's byline lists each
+size's agents and wall clock, and hovering **Start swarm** spells out every
+limit. Leave the model empty for the provider's default.
+
+**Start swarm** returns at once. The card shows the swarm as starting while it
+boots, and a start that fails after that becomes an ended row with the reason.
+A start the rib refuses outright, such as an unknown project or a provider that
+can't run agents, shows its reason on the form instead.
+
+The Discuss form is open while no swarm is live, and folds to its tabs once one
+is.
+
+A swarm started any other way, over MCP or from the `chat-swarm` workflow, gets
+a card too.
+
+## Running a swarm again
+
+An ended swarm's drawer offers **Run again**. It starts a new swarm with the
+same task, project, workflows, and context, and a form seeded with the old
+swarm's size and model. Changing the model there sets it for every agent. The
+rib keeps each launch in its data directory next to the history, and a server
+reset forgets them with it.

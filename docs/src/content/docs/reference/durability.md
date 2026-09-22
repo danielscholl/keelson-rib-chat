@@ -16,9 +16,10 @@ The rib keeps no swarm state on disk. State lives in three places, and a
 | Agents, inboxes, thread membership, turn counts | memory | no |
 | Agent provider session ids | memory | no |
 | Bot tokens | memory | no |
-| Task context bodies | memory | no |
+| Task context bodies | memory, and the swarm's launch file | yes, for Run again |
 | Summaries of ended swarms (last 50) | `swarms.json` in the rib's data directory | yes |
 | Workflows whose gates the host refused to let a swarm answer | `swarms.json` | yes |
+| What each kept swarm was started with, for Run again | `launches/<id>.json` in the rib's data directory | yes |
 | A managed server's database, log, and process record | the rib's data directory | yes |
 
 ## A restart ends a swarm in flight
@@ -43,8 +44,9 @@ session was revoked, the swarm ends as `error`.
 ## When a swarm ends
 
 The rib posts a closing line in the channel and revokes each agent's token. The
-bots stay, so the transcript keeps its authors. Task context bodies are
-released with the swarm; the item list, without bodies, stays in the summary.
+bots stay, so the transcript keeps its authors. The summary keeps the context
+item list without bodies. The bodies stay in the swarm's launch file for Run
+again, until the swarm ages out of the last 50 or a server reset.
 
 ## Related
 

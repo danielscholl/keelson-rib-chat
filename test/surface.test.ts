@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   expectView,
   type RibViewDescriptor,
@@ -7,14 +10,17 @@ import {
   type SnapshotManager,
 } from "@keelson/shared";
 import rib from "../src/index.ts";
+import { createLaunchStore } from "../src/launches.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import { buildHistory, buildIndex, type SurfaceState } from "../src/surface/index-board.ts";
-import { docKey, HISTORY_KEY, INDEX_KEY, swarmKey } from "../src/surface/keys.ts";
+import { docKey, HISTORY_KEY, INDEX_KEY, LAUNCH_KEY, swarmKey } from "../src/surface/keys.ts";
+import { buildLaunch } from "../src/surface/launch-board.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
 import { createSwarmsSurface, MAX_SWARM_KEYS, type SwarmRecord } from "../src/surface/surface.ts";
 import { buildGoneBoard, buildStartingBoard, buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import type { Swarm } from "../src/swarm.ts";
+import type { StartSwarmInput } from "../src/tools.ts";
 import {
   type ChildRun,
   SIZE_PRESETS,
@@ -397,6 +403,8 @@ describe("publishing", () => {
       sm,
       state: () => state({ ended: [...ended.values()] }),
       find: (id): SwarmRecord => (ended.has(id) ? { ended: ended.get(id) as SwarmSummary } : {}),
+      launch: () => ({ projects: [], live: 0 }),
+      rerunnable: () => false,
       views,
       invalidateManifest: () => refreshes++,
       windowMs: 1,
@@ -427,18 +435,40 @@ describe("publishing", () => {
   });
 });
 
+const begun: StartSwarmInput[] = [];
+const oldLaunch: StartSwarmInput = {
+  task: "Fix issue #27",
+  workTools: "read",
+  project: "p1",
+  size: "medium",
+  maxTurns: 60,
+  provider: "copilot",
+  model: "gpt-5.6-sol",
+  workerModel: "mai-code-1.1-flash",
+  workflows: [{ name: "fix-issue", isolated: true }],
+  context: [{ id: "issue-27", kind: "issue", title: "README count", body: "the body" }],
+};
+
+const liveSwarm = { summary: () => fixtures.running, steer: async () => {}, stop: async () => {} };
+const actionDeps = {
+  surface: undefined,
+  find: (id: string): SwarmRecord =>
+    id === "s9hjx"
+      ? { live: fixtures.running as SwarmSummary }
+      : id === "s8pln"
+        ? { ended: fixtures.done as SwarmSummary }
+        : {},
+  live: (id: string) => (id === "s9hjx" ? (liveSwarm as unknown as Swarm) : undefined),
+  begin: (input: StartSwarmInput) => {
+    if (input.task === "refuse") throw new Error("no registered project 'nope'");
+    begun.push(input);
+    return "s0new1";
+  },
+  launchOf: (id: string): StartSwarmInput | undefined => (id === "s8pln" ? oldLaunch : undefined),
+};
+
 describe("actions", () => {
-  const live = { summary: () => fixtures.running, steer: async () => {}, stop: async () => {} };
-  const deps = {
-    surface: undefined,
-    find: (id: string): SwarmRecord =>
-      id === "s9hjx"
-        ? { live: fixtures.running as SwarmSummary }
-        : id === "s8pln"
-          ? { ended: fixtures.done as SwarmSummary }
-          : {},
-    live: (id: string) => (id === "s9hjx" ? (live as unknown as Swarm) : undefined),
-  };
+  const deps = actionDeps;
 
   test("open and read return an open-canvas effect on the rib's own key", async () => {
     for (const [type, key] of [
@@ -488,6 +518,156 @@ describe("actions", () => {
     expect(
       (await handleSwarmsAction({ type: "stop-swarm", payload: { id: "s9hjx" } }, deps)).ok,
     ).toBe(true);
+  });
+});
+
+describe("launching from the tab", () => {
+  const projects = [{ id: "p1", name: "keelson-sample" }];
+
+  test("the Launch header composes for every host shape and opens Discuss until a swarm is live", () => {
+    for (const st of [
+      { projects, live: 0 },
+      { projects: [], live: 0 },
+      { projects, live: 2, dispatchBlocked: "no workflows" },
+    ]) {
+      board(LAUNCH_KEY, buildLaunch(st));
+    }
+    const tabs = (st: Parameters<typeof buildLaunch>[0]) => {
+      const section = buildLaunch(st).sections[0];
+      return section?.kind === "actions" ? section.items : [];
+    };
+    expect(tabs({ projects, live: 0 })[0]?.defaultOpen).toBe(true);
+    expect(tabs({ projects, live: 1 })[0]?.defaultOpen).toBeUndefined();
+    expect(tabs({ projects: [], live: 0 })[1]).toMatchObject({ disabled: true });
+    expect(tabs({ projects, live: 0 })[1]?.disabled).toBeUndefined();
+    expect(tabs({ projects: [], live: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
+      "task",
+      "size",
+      "model",
+    ]);
+  });
+
+  test("an ended swarm offers Run again, seeded with its size and model, only when its launch is kept", () => {
+    const actions = (rerunnable: boolean) =>
+      buildSwarmBoard(fixtures.done!, { rerunnable })
+        .sections.filter((x) => x.kind === "actions")
+        .flatMap((x) => (x.kind === "actions" ? x.items : []));
+    expect(actions(false)).toEqual([]);
+    const again = actions(true)[0];
+    expect(again).toMatchObject({ type: "run-again", binding: { id: "s8pln" } });
+    expect(again?.fields?.find((f) => f.name === "size")?.defaultValue).toBe("medium");
+    expect(again?.fields?.find((f) => f.name === "model")).toMatchObject({
+      defaultValue: "gpt-6-astra",
+      modelPicker: { providerField: "provider", providerDefault: "copilot" },
+    });
+    board(swarmKey("s8pln"), buildSwarmBoard(fixtures.done!, { rerunnable: true }));
+  });
+});
+
+describe("start and run again", () => {
+  const act = (type: string, payload: Record<string, unknown>) =>
+    handleSwarmsAction({ type, payload }, actionDeps);
+
+  test("Discuss starts a swarm from the form and opens the index", async () => {
+    begun.length = 0;
+    const result = await act("start-swarm", {
+      mode: "discuss",
+      task: "  Why is the build slow?  ",
+      project: "",
+      tools: "none",
+      size: "small",
+      model: "",
+      provider: "",
+    });
+    expect(result.ok).toBe(true);
+    expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual({
+      effect: "open-surface",
+      surfaceId: "surface:chat:swarms",
+      regionKey: INDEX_KEY,
+    });
+    expect(begun).toEqual([{ task: "Why is the build slow?", workTools: "none", size: "small" }]);
+  });
+
+  test("Dispatch grants the named workflows, and refusals come back to the form", async () => {
+    begun.length = 0;
+    const ok = await act("start-swarm", {
+      mode: "dispatch",
+      task: "Fix issue #27",
+      project: "p1",
+      tools: "read",
+      size: "large",
+      workflows: "fix-issue, docs-check fix-issue",
+      model: "gpt-6-astra",
+      provider: "copilot",
+    });
+    expect(ok.ok).toBe(true);
+    expect(begun[0]).toEqual({
+      task: "Fix issue #27",
+      workTools: "read",
+      size: "large",
+      project: "p1",
+      model: "gpt-6-astra",
+      provider: "copilot",
+      workflows: [
+        { name: "fix-issue", isolated: true },
+        { name: "docs-check", isolated: true },
+      ],
+    });
+    for (const payload of [
+      { mode: "dispatch", task: "t", project: "", workflows: "fix-issue" },
+      { mode: "dispatch", task: "t", project: "p1", workflows: " " },
+      { mode: "dispatch", task: "t", project: "p1", workflows: "../x" },
+      { mode: "discuss", task: " " },
+      { mode: "discuss", task: "refuse" },
+    ]) {
+      expect((await act("start-swarm", payload)).ok).toBe(false);
+    }
+  });
+
+  test("Run again keeps the launch, and swaps the model only when the picker changed", async () => {
+    begun.length = 0;
+    const again = await act("run-again", {
+      id: "s8pln",
+      size: "large",
+      model: "gpt-6-astra",
+      provider: "copilot",
+    });
+    expect(ribClientEffectSchema.parse(again.ok ? again.data : undefined)).toMatchObject({
+      effect: "open-canvas",
+      key: swarmKey("s0new1"),
+    });
+    expect(begun[0]).toEqual({ ...oldLaunch, size: "large" });
+    begun.length = 0;
+    await act("run-again", {
+      id: "s8pln",
+      size: "medium",
+      model: "gpt-5.6-sol",
+      provider: "copilot",
+    });
+    const { workerModel: _dropped, ...rest } = oldLaunch;
+    expect(begun[0]).toEqual({ ...rest, model: "gpt-5.6-sol", provider: "copilot" });
+    expect((await act("run-again", { id: "s9hjx", size: "small" })).ok).toBe(false);
+    expect((await act("run-again", { id: "s5tcx", size: "small" })).ok).toBe(false);
+  });
+});
+
+describe("the launch store", () => {
+  test("keeps each launch on disk until its swarm is forgotten", () => {
+    const dir = mkdtempSync(join(tmpdir(), "chat-launches-"));
+    try {
+      const store = createLaunchStore(() => dir);
+      store.save("s1abc", oldLaunch);
+      store.save("s2abc", { task: "other", workTools: "none" });
+      expect(createLaunchStore(() => dir).load("s1abc")).toEqual(oldLaunch);
+      store.keepOnly(new Set(["s2abc"]));
+      const fresh = createLaunchStore(() => dir);
+      expect(fresh.has("s1abc")).toBe(false);
+      expect(fresh.has("s2abc")).toBe(true);
+      fresh.clear();
+      expect(createLaunchStore(() => dir).has("s2abc")).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

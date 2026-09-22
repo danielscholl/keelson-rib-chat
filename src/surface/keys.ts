@@ -8,6 +8,8 @@
 
 // Every key the Swarms tab reads, all under the rib's own namespace.
 export const SURFACE_ID = "swarms";
+// The host names a rib's surface tab by rib and surface id.
+export const SURFACE_TAB = `surface:chat:${SURFACE_ID}`;
 export const INDEX_KEY = "rib:chat:swarms";
 export const HISTORY_KEY = "rib:chat:history";
 
@@ -18,3 +20,4 @@ export function swarmKey(id: string): string {
 export function docKey(id: string): string {
   return `rib:chat:doc:${id}`;
 }
+export const LAUNCH_KEY = "rib:chat:launch";

@@ -24,6 +24,7 @@ import {
   threadHref,
 } from "./format.ts";
 import { endedOutcome, needReason, openHint, sizeDetail } from "./index-board.ts";
+import { runAgainItem } from "./launch-board.ts";
 
 type Section = CanvasBoardView["sections"][number];
 type Leaf = Exclude<Section, { kind: "columns" }>;
@@ -359,7 +360,15 @@ function back(s: SwarmSummary): Leaf[] {
   ];
 }
 
-export function buildSwarmBoard(s: SwarmSummary): CanvasBoardView {
+function rerun(s: SwarmSummary, rerunnable: boolean): Leaf[] {
+  if (live(s) || !rerunnable) return [];
+  return [{ kind: "actions", items: [runAgainItem(s)] }];
+}
+
+export function buildSwarmBoard(
+  s: SwarmSummary,
+  opts: { rerunnable?: boolean } = {},
+): CanvasBoardView {
   const needs = needsYou(s);
   const pill = !live(s)
     ? { label: endedOutcome(s), tone: s.status === "done" ? ("ok" as const) : ("neutral" as const) }
@@ -381,6 +390,7 @@ export function buildSwarmBoard(s: SwarmSummary): CanvasBoardView {
       vitals(s),
       ...contextRows(s),
       ...outcome(s),
+      ...rerun(s, opts.rerunnable === true),
       ...gateSection(s, needs),
       ...controls(s),
       {

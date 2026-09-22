@@ -8,15 +8,118 @@
 
 import type { RibAction, RibActionResult } from "@keelson/shared";
 import type { Swarm } from "../swarm.ts";
-import { BODY_MAX } from "../types.ts";
+import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
+import { BODY_MAX, SWARM_SIZES, type SwarmSize } from "../types.ts";
 import { sizesHint } from "./index-board.ts";
-import { docKey, HISTORY_KEY, swarmKey } from "./keys.ts";
+import { docKey, HISTORY_KEY, INDEX_KEY, SURFACE_TAB, swarmKey } from "./keys.ts";
 import type { SwarmRecord, SwarmsSurface } from "./surface.ts";
 
 export interface ActionDeps {
   surface: SwarmsSurface | undefined;
   find: (id: string) => SwarmRecord;
   live: (id: string) => Swarm | undefined;
+  // Admits a start and boots it in the background; a refusal throws.
+  begin: (input: StartSwarmInput) => string;
+  launchOf: (id: string) => StartSwarmInput | undefined;
+}
+
+const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+function text(payload: Record<string, unknown>, key: string): string {
+  const v = payload[key];
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function sizeOf(payload: Record<string, unknown>): SwarmSize | undefined {
+  const v = text(payload, "size");
+  return (SWARM_SIZES as readonly string[]).includes(v) ? (v as SwarmSize) : undefined;
+}
+
+// The model picker sends its model and the model's provider; both empty is the host default.
+function modelOf(payload: Record<string, unknown>): Pick<StartSwarmInput, "model" | "provider"> {
+  const model = text(payload, "model");
+  const provider = text(payload, "provider");
+  return { ...(model ? { model } : {}), ...(provider ? { provider } : {}) };
+}
+
+function startInput(payload: Record<string, unknown>): StartSwarmInput | string {
+  const task = text(payload, "task");
+  if (!task) return "a swarm needs a task";
+  if (task.length > BODY_MAX) return `a task is at most ${BODY_MAX} characters`;
+  const project = text(payload, "project");
+  const tools = text(payload, "tools");
+  const input: StartSwarmInput = {
+    task,
+    workTools: tools === "none" ? "none" : "read",
+    size: sizeOf(payload) ?? "medium",
+    ...(project ? { project } : {}),
+    ...modelOf(payload),
+  };
+  if (payload.mode !== "dispatch") return input;
+  if (!project) return "Dispatch needs a project to run the workflows on";
+  const names = [
+    ...new Set(
+      text(payload, "workflows")
+        .split(/[\s,]+/)
+        .filter(Boolean),
+    ),
+  ];
+  if (names.length === 0) return "name at least one workflow the lead may start";
+  if (names.length > START_BOUNDS.maxWorkflows) {
+    return `at most ${START_BOUNDS.maxWorkflows} workflows`;
+  }
+  const bad = names.find((n) => !WORKFLOW.test(n));
+  if (bad) return `'${bad}' is not a workflow name`;
+  return { ...input, workflows: names.map((name) => ({ name, isolated: true })) };
+}
+
+// A new swarm from an old one's launch, with the size and model the form sent.
+function againInput(
+  old: StartSwarmInput,
+  payload: Record<string, unknown>,
+  was: { model?: string; provider?: string },
+): StartSwarmInput {
+  const { model, provider, workerModel, size, ...rest } = old;
+  const picked = modelOf(payload);
+  const same = picked.model === was.model && picked.provider === was.provider;
+  return {
+    ...rest,
+    size: sizeOf(payload) ?? size ?? "medium",
+    ...(same
+      ? {
+          ...(model ? { model } : {}),
+          ...(provider ? { provider } : {}),
+          ...(workerModel ? { workerModel } : {}),
+        }
+      : picked),
+  };
+}
+
+function errText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+// From the header the new card shows on the index; from a drawer, the drawer
+// moves to the new swarm.
+function started(
+  deps: ActionDeps,
+  input: StartSwarmInput,
+  open: "index" | "drawer",
+): RibActionResult {
+  let id: string;
+  try {
+    id = deps.begin(input);
+    deps.surface?.track([id]);
+  } catch (e) {
+    return fail(errText(e));
+  }
+  return {
+    ok: true,
+    data:
+      open === "drawer"
+        ? { effect: "open-canvas", key: swarmKey(id), title: `Swarm ${id}` }
+        : { effect: "open-surface", surfaceId: SURFACE_TAB, regionKey: INDEX_KEY },
+  };
 }
 
 const ID = /^s[a-z0-9]{4,12}$/;
@@ -86,6 +189,16 @@ export async function handleSwarmsAction(
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
       void swarm.stop("stopped from the Swarms tab");
       return { ok: true };
+    }
+    case "start-swarm": {
+      const input = startInput(payload);
+      return typeof input === "string" ? fail(input) : started(deps, input, "index");
+    }
+    case "run-again": {
+      const record = id ? deps.find(id) : {};
+      const old = id ? deps.launchOf(id) : undefined;
+      if (!id || !record.ended || !old) return fail(`swarm '${String(raw)}' can't run again`);
+      return started(deps, againInput(old, payload, record.ended), "drawer");
     }
     case "start-in-chat":
       return {
