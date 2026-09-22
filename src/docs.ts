@@ -12,7 +12,7 @@ import { DEFAULT_PORT } from "./server.ts";
 import { MAX_TURN_FAILURES } from "./swarm.ts";
 import { ENDED_KEPT, READ_BOUNDS, START_BOUNDS, TRANSCRIPT_PAGE, WAIT_BOUNDS } from "./tools.ts";
 import { SETTLE_GRACE_MS } from "./turn-runner.ts";
-import { BODY_MAX, CONCLUSION_MAX, DEFAULT_LIMITS } from "./types.ts";
+import { BODY_MAX, CONCLUSION_MAX, DEFAULT_LIMITS, SIZE_PRESETS, SWARM_SIZES } from "./types.ts";
 
 // The corpus is a source module, not a file read at runtime, so an installed
 // package serves it with no filesystem or network dependency. keelson_docs
@@ -57,6 +57,7 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`task\` | required | What the swarm should work out. At most ${BODY_MAX} characters. Every agent sees it in its system prompt, and the lead receives it as the kickoff message. |
 | \`project\` | none | A registered Keelson project, by id or name. An unknown project fails the start. |
 | \`work_tools\` | \`read\` | \`read\` grants Read, Grep, and Glob. \`none\` is chat only. |
+| \`size\` | \`medium\` | \`small\`, \`medium\` or \`large\`: the preset the limits start from. See Limits and completion. |
 | \`max_agents\` | ${l.maxAgents} | Agent cap, lead included. 1 to ${START_BOUNDS.maxAgents}. |
 | \`max_turns\` | ${l.maxTurns} | Total turns across the swarm. 1 to ${START_BOUNDS.maxTurns}. |
 | \`max_turns_per_agent\` | ${l.maxTurnsPerAgent} | Turns each worker may take. 1 to ${START_BOUNDS.maxTurnsPerAgent}. The lead is bounded by \`max_turns\` only. |
@@ -75,7 +76,9 @@ the swarm is chat only.
 
 One provider serves the whole swarm. Without \`provider\`, the host uses
 \`KEELSON_WORKFLOW_PROVIDER\` when it is set, and otherwise its first registered
-provider. Without \`model\`, that provider serves its own default model. The lead
+provider. A \`provider\` that is not registered, or that cannot run agent turns,
+fails the start before a channel is made. Without \`model\`, that provider
+serves its own default model. The lead
 always runs \`model\`; workers run \`worker_model\` when it is given. The
 \`chat-swarm\` workflow's model pin covers its own start, wait, and report steps,
 not the agents.
@@ -239,7 +242,7 @@ run whose workflow could not read the checks is not verified.
 | Tool | For |
 | --- | --- |
 | \`chat_swarm_start\` | Start a swarm. Returns the swarm id at once, with a run id when the host supports durable ops. |
-| \`chat_swarm_status\` | One swarm's agents, turns, status, and conclusion, or a list of all known swarms. |
+| \`chat_swarm_status\` | One swarm's agents, turns, status, and conclusion, or a list of all known swarms with each one's size and model. |
 | \`chat_swarm_wait\` | Block until the swarm ends or \`timeout_s\` passes (default ${WAIT_BOUNDS.defaultS}, at most ${WAIT_BOUNDS.maxS}). The result begins with \`RUNNING\` or \`ENDED\`. |
 | \`chat_swarm_stop\` | Stop a running swarm and revoke its agents' credentials. |
 | \`chat_swarm_transcript\` | Read a swarm's channel, running or ended: every message in order with thread replies, or one \`thread\`. Pages by ${TRANSCRIPT_PAGE} characters with \`offset\`. Never starts a stopped managed server. |
@@ -263,7 +266,19 @@ Four more tools act on the ClickClack server itself. See Managed server.
 | One turn | ${minutes(l.turnTimeoutMs)} minutes |
 | Idle nudges to the lead | ${l.maxNudges} |
 
-Every limit but concurrency and nudges can be set at start. The lead is exempt
+Those defaults are the \`medium\` size. \`size\` picks a preset, and the \`max_*\`
+inputs then override single limits on top of it. A swarm whose limits moved off
+its preset reports its size as \`custom\`.
+
+| Size | Agents | Turns | Per worker | At once | Wall clock |
+| --- | --- | --- | --- | --- | --- |
+${SWARM_SIZES.map((k) => {
+  const p = SIZE_PRESETS[k];
+  return `| \`${k}\` | ${p.maxAgents} | ${p.maxTurns} | ${p.maxTurnsPerAgent} | ${p.maxConcurrent} | ${minutes(p.wallClockMs)} minutes |`;
+}).join("\n")}
+
+Every size gives a turn ${minutes(l.turnTimeoutMs)} minutes. Every limit but
+concurrency and nudges can be set at start; concurrency moves only with size. The lead is exempt
 from the per-worker cap, since capping it would leave the swarm leaderless. A
 worker that has spent its turns is capped the next time a message addresses it:
 the cap is announced in the channel and its messages are dropped.

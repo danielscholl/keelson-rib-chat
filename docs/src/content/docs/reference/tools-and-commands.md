@@ -26,13 +26,14 @@ durable ops, a run id.
 | `task` | string | required | 1 to 8,000 characters. |
 | `project` | string | none | A registered project's id or name. Unknown fails the start. |
 | `work_tools` | `none` \| `read` | `read` | `read` grants `Read`, `Grep`, `Glob`, only when `project` is set. |
+| `size` | `small` \| `medium` \| `large` | `medium` | The preset the limits start from. The `max_*` inputs override single limits on top of it. See [Limits and statuses](../limits-and-statuses/). |
 | `max_agents` | integer | 5 | 1 to 12, lead included. |
 | `max_turns` | integer | 40 | 1 to 200, across the swarm. |
 | `max_turns_per_agent` | integer | 12 | 1 to 100. Turns each worker may take. The lead is bounded by `max_turns` only. |
 | `turn_timeout_s` | integer | 300 | 30 to 1,800. Seconds one agent turn may run. |
 | `max_minutes` | integer | 30 | 1 to 240. Wall clock for the whole swarm. |
 | `context` | array | none | Task context items, below. |
-| `provider` | string | host default | Serves every agent. |
+| `provider` | string | host default | Serves every agent. An unregistered provider fails the start. |
 | `model` | string | provider default | Every agent, or the lead alone when `worker_model` is set. |
 | `worker_model` | string | `model` | Workers only. |
 | `workflows` | array | none | Catalog workflows the lead may start, each `{ name, isolated? }`, at most 10. `isolated` defaults to `true`. Needs `project`. See [Dispatch workflows](../../guides/dispatch-workflows/). |

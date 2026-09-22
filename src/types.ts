@@ -49,6 +49,36 @@ export const DEFAULT_LIMITS: SwarmLimits = {
   maxNudges: 2,
 };
 
+export const SWARM_SIZES = ["small", "medium", "large"] as const;
+export type SwarmSize = (typeof SWARM_SIZES)[number];
+
+// Medium is DEFAULT_LIMITS, so a start that names no size behaves as it always has.
+export const SIZE_PRESETS: Readonly<Record<SwarmSize, SwarmLimits>> = {
+  small: {
+    ...DEFAULT_LIMITS,
+    maxAgents: 3,
+    maxTurns: 20,
+    maxTurnsPerAgent: 8,
+    wallClockMs: 15 * 60_000,
+  },
+  medium: DEFAULT_LIMITS,
+  large: {
+    ...DEFAULT_LIMITS,
+    maxAgents: 8,
+    maxTurns: 80,
+    maxTurnsPerAgent: 16,
+    maxConcurrent: 4,
+    wallClockMs: 60 * 60_000,
+  },
+};
+
+// The size a swarm's limits match, or "custom" once an override moved one off its base.
+export function sizeOf(limits: SwarmLimits, base: SwarmSize): SwarmSize | "custom" {
+  const preset = SIZE_PRESETS[base];
+  const keys = Object.keys(preset) as (keyof SwarmLimits)[];
+  return keys.every((k) => limits[k] === preset[k]) ? base : "custom";
+}
+
 // `failed`: retired after too many consecutive failed turns.
 export type AgentStatus = "idle" | "busy" | "capped" | "failed";
 
@@ -62,6 +92,10 @@ export interface SwarmAgent {
   tokenId: string;
   spawnedBy?: string;
   sessionId?: string;
+  // The model the swarm asked for on this agent's turns; absent means the provider's default.
+  model?: string;
+  // The provider that served this agent's last turn.
+  providerId?: string;
   turns: number;
   status: AgentStatus;
 }
@@ -132,6 +166,13 @@ export interface SwarmSummary {
   endedAt?: string;
   turnsUsed: number;
   limits: SwarmLimits;
+  size: SwarmSize | "custom";
+  // The preset the limits started from.
+  sizeBase: SwarmSize;
+  // As asked for at start; absent means the host's default.
+  provider?: string;
+  model?: string;
+  workerModel?: string;
   agents: readonly Omit<SwarmAgent, "tokenId" | "sessionId">[];
   // The evidence the swarm was given, without the bodies.
   context?: readonly ContextIndexEntry[];

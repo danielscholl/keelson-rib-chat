@@ -3,7 +3,7 @@ import type { RibRunStatus } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { MAX_TURN_FAILURES, Swarm, type SwarmOptions, splitBody } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
-import { BODY_MAX, CONCLUSION_MAX, type SwarmSummary } from "../src/types.ts";
+import { BODY_MAX, CONCLUSION_MAX, SIZE_PRESETS, type SwarmSummary } from "../src/types.ts";
 import { FakeClickClack, OWNER_TOKEN, type Script, scriptedProvider, WORKSPACE } from "./fakes.ts";
 
 const never = new Promise<void>(() => {});
@@ -880,5 +880,67 @@ describe("chat tools outside a swarm", () => {
       );
     expect(out.isError).toBe(true);
     expect(out.content).toContain("only works inside a swarm");
+  });
+});
+
+describe("size and model", () => {
+  const script: Script = async ({ agentId, turn, call }) => {
+    if (agentId === "s1-lead" && turn === 1) {
+      await call("chat_spawn", { handle: "w", role: "worker", brief: "report back" });
+    } else if (agentId === "s1-w") {
+      await call("chat_post", { body: "@s1-lead done" });
+    } else {
+      await call("chat_done", { summary: "ok" });
+    }
+  };
+
+  test("a size sets the limits, and an override reads as custom", async () => {
+    const small = await (await harness(script, {}, { size: "small" }).start()).finished;
+    expect(small.limits).toEqual(SIZE_PRESETS.small);
+    expect(small.size).toBe("small");
+    expect(small.sizeBase).toBe("small");
+
+    const custom = await (await harness(script, { maxTurns: 25 }, { size: "small" }).start())
+      .finished;
+    expect(custom.limits.maxTurns).toBe(25);
+    expect(custom.limits.maxAgents).toBe(SIZE_PRESETS.small.maxAgents);
+    expect(custom.size).toBe("custom");
+    expect(custom.sizeBase).toBe("small");
+  });
+
+  test("no size is medium", async () => {
+    const summary = await (await harness(script).start()).finished;
+    expect(summary.size).toBe("medium");
+    expect(summary.limits).toEqual(SIZE_PRESETS.medium);
+  });
+
+  test("the lead runs model, workers run worker_model, and each agent records both", async () => {
+    const h = harness(
+      script,
+      {},
+      { provider: "copilot", model: "gpt-6-astra", workerModel: "gpt-5.6-sol" },
+    );
+    const summary = await (await h.start()).finished;
+    const modelOf = (id: string) =>
+      h.provider.requests.filter((r) => r.turnContext?.agentId === id).map((r) => r.model);
+    expect(new Set(modelOf("s1-lead"))).toEqual(new Set(["gpt-6-astra"]));
+    expect(modelOf("s1-w")).toEqual(["gpt-5.6-sol"]);
+    expect(summary).toMatchObject({
+      provider: "copilot",
+      model: "gpt-6-astra",
+      workerModel: "gpt-5.6-sol",
+    });
+    expect(summary.agents.map((a) => [a.handle, a.model, a.providerId])).toEqual([
+      ["s1-lead", "gpt-6-astra", "copilot"],
+      ["s1-w", "gpt-5.6-sol", "copilot"],
+    ]);
+  });
+
+  test("with no model, agents record no model and the provider that served them", async () => {
+    const summary = await (await harness(script).start()).finished;
+    expect(summary.model).toBeUndefined();
+    expect(summary.agents.every((a) => a.model === undefined && a.providerId === "fake")).toBe(
+      true,
+    );
   });
 });

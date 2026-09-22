@@ -37,13 +37,15 @@ import {
   type ChatMessage,
   type ChildRun,
   CONCLUSION_MAX,
-  DEFAULT_LIMITS,
   type DispatchGrant,
   type GateAnswer,
+  SIZE_PRESETS,
   type SwarmAgent,
   type SwarmLimits,
+  type SwarmSize,
   type SwarmStatus,
   type SwarmSummary,
+  sizeOf,
 } from "./types.ts";
 
 // The swarm engine. ClickClack is the bus and the durable record; this is the
@@ -82,6 +84,8 @@ export interface SwarmOptions {
   owner: ClickClackClient;
   workspaceId: string;
   runAgentTurn: RunAgentTurn;
+  // The preset limits start from, medium when absent; `limits` overrides single values.
+  size?: SwarmSize;
   limits?: Partial<SwarmLimits>;
   // Built-in tools granted beside the chat_* set (e.g. Read, Grep, Glob).
   workTools?: readonly string[];
@@ -205,7 +209,7 @@ export class Swarm {
     this.owner = opts.owner;
     this.id = opts.id ?? newSwarmId();
     this.task = opts.task;
-    this.limits = { ...DEFAULT_LIMITS, ...opts.limits };
+    this.limits = { ...SIZE_PRESETS[opts.size ?? "medium"], ...opts.limits };
     this.finished = this.done.promise;
   }
 
@@ -474,7 +478,7 @@ export class Swarm {
       ? [...DISPATCH_TOOLS, ...(answersGates ? [RESPOND_TOOL] : [])]
       : [];
     const tools = [...AGENT_TOOLS, ...dispatchTools, ...workTools].map((name) => ({ name }));
-    const model = agent.lead ? this.opts.model : (this.opts.workerModel ?? this.opts.model);
+    const model = agent.model;
     const outcome = await runTurn(
       this.opts.runAgentTurn,
       {
@@ -500,6 +504,7 @@ export class Swarm {
     );
 
     if (outcome.sessionId) agent.sessionId = outcome.sessionId;
+    if (outcome.providerId) agent.providerId = outcome.providerId;
     this.busy--;
     if (agent.status === "busy") agent.status = "idle";
     this.log(`@${agent.handle} turn ${agent.turns} ${outcome.status}`, {
@@ -573,6 +578,7 @@ export class Swarm {
       handle,
       displayName: `${sanitizeHandle(input.handle)} (${this.id})`,
     });
+    const model = input.lead ? this.opts.model : (this.opts.workerModel ?? this.opts.model);
     const agent: SwarmAgent = {
       id: bot.handle,
       handle: bot.handle,
@@ -582,6 +588,7 @@ export class Swarm {
       botUserId: bot.botUserId,
       tokenId: bot.tokenId,
       ...(input.spawnedBy ? { spawnedBy: input.spawnedBy } : {}),
+      ...(model ? { model } : {}),
       turns: 0,
       status: "idle",
     };
@@ -1067,6 +1074,11 @@ export class Swarm {
       ...(this.endedAt ? { endedAt: this.endedAt } : {}),
       turnsUsed: this.turnsUsed,
       limits: this.limits,
+      size: sizeOf(this.limits, this.opts.size ?? "medium"),
+      sizeBase: this.opts.size ?? "medium",
+      ...(this.opts.provider ? { provider: this.opts.provider } : {}),
+      ...(this.opts.model ? { model: this.opts.model } : {}),
+      ...(this.opts.workerModel ? { workerModel: this.opts.workerModel } : {}),
       agents: this.roster(),
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),

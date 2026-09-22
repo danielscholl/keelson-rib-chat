@@ -47,9 +47,11 @@ The result carries the swarm id and a run id:
 swarm s3fk started in #swarm-s3fk (run 211bdfbe-...). Poll chat_swarm_status("s3fk") or run_status("211bdfbe-...").
 ```
 
-To raise the ceilings for a larger job, pass `max_agents` (up to 12),
-`max_turns` (up to 200), `max_turns_per_agent` (up to 100), `turn_timeout_s`
-(up to 1,800), and `max_minutes` (up to 240).
+For a larger or smaller job, pass `size`: `small` (3 agents, 20 turns, 15
+minutes), `medium` (the default), or `large` (8 agents, 80 turns, 4 turns at
+once, 60 minutes). To set single ceilings on top of that, pass `max_agents`
+(up to 12), `max_turns` (up to 200), `max_turns_per_agent` (up to 100),
+`turn_timeout_s` (up to 1,800), and `max_minutes` (up to 240).
 
 To choose the model, pass `provider` and `model`. `model` runs every agent, or
 the lead alone when `worker_model` is also set, and workers then run
