@@ -42,10 +42,12 @@ import {
   SIZE_PRESETS,
   type SwarmAgent,
   type SwarmLimits,
+  type SwarmProject,
   type SwarmSize,
   type SwarmStatus,
   type SwarmSummary,
   sizeOf,
+  WORKER_TONES,
 } from "./types.ts";
 
 // The swarm engine. ClickClack is the bus and the durable record; this is the
@@ -92,6 +94,8 @@ export interface SwarmOptions {
   // Evidence snapshotted by the caller; immutable for the life of the swarm.
   context?: readonly ContextItem[];
   cwd?: string;
+  project?: SwarmProject;
+  opId?: string;
   provider?: string;
   model?: string;
   // Model for workers; the lead always uses `model`.
@@ -99,11 +103,26 @@ export interface SwarmOptions {
   // Catalog workflows the lead may start on the project, and the seams to do it.
   dispatch?: { grants: readonly DispatchGrant[]; dispatcher: WorkflowDispatcher; pollMs?: number };
   log?: (message: string, data?: unknown) => void;
+  // Called after each change a view of the swarm would show.
+  onChange?: (kind: SwarmChange) => void;
   // How long the swarm must sit idle before that counts as quiescent.
   quiesceMs?: number;
   reconnectMs?: number;
   id?: string;
 }
+
+// Thrown by Swarm.start when boot fails, carrying the ended summary so the
+// failure stays on the record.
+export class SwarmStartError extends Error {
+  constructor(
+    message: string,
+    readonly summary: SwarmSummary,
+  ) {
+    super(message);
+  }
+}
+
+export type SwarmChange = "start" | "turn" | "agent" | "run" | "gate" | "conclusion" | "end";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -219,7 +238,7 @@ export class Swarm {
       await swarm.boot();
     } catch (e) {
       await swarm.finish("error", errText(e));
-      throw e;
+      throw new SwarmStartError(errText(e), swarm.summary());
     }
     return swarm;
   }
@@ -229,6 +248,14 @@ export class Swarm {
       this.opts.log?.(message, data);
     } catch {
       // a throwing logger must never break the swarm
+    }
+  }
+
+  private changed(kind: SwarmChange): void {
+    try {
+      this.opts.onChange?.(kind);
+    } catch {
+      // a throwing listener must never break the swarm
     }
   }
 
@@ -249,6 +276,7 @@ export class Swarm {
       `**Swarm ${this.id}**\n\n${this.task}`,
     );
     this.log(`swarm ${this.id} started in #${this.channel.name}`);
+    this.changed("start");
     this.enqueueMessage(kickoff);
   }
 
@@ -388,6 +416,7 @@ export class Swarm {
 
   private retire(agent: SwarmAgent, status: "capped" | "failed", notice: string): void {
     agent.status = status;
+    this.changed("agent");
     this.inboxes.set(agent.id, []);
     this.background.delete(agent.id);
     void this.owner
@@ -470,6 +499,7 @@ export class Swarm {
         : {}),
     });
     this.log(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
+    this.changed("turn");
 
     const workTools = this.opts.workTools ?? [];
     const dispatch = agent.lead ? this.opts.dispatch : undefined;
@@ -512,6 +542,7 @@ export class Swarm {
       durationMs: outcome.durationMs,
       ...(outcome.error ? { error: outcome.error } : {}),
     });
+    this.changed("turn");
     if (outcome.status === "timeout" || outcome.status === "error") {
       this.onTurnFailed(
         agent,
@@ -579,12 +610,15 @@ export class Swarm {
       displayName: `${sanitizeHandle(input.handle)} (${this.id})`,
     });
     const model = input.lead ? this.opts.model : (this.opts.workerModel ?? this.opts.model);
+    const workers = [...this.agents.values()].filter((a) => !a.lead).length;
+    const tone = input.lead ? "brand" : (WORKER_TONES[workers] ?? "neutral");
     const agent: SwarmAgent = {
       id: bot.handle,
       handle: bot.handle,
       displayName: bot.displayName,
       role: input.role,
       lead: input.lead,
+      tone,
       botUserId: bot.botUserId,
       tokenId: bot.tokenId,
       ...(input.spawnedBy ? { spawnedBy: input.spawnedBy } : {}),
@@ -596,6 +630,7 @@ export class Swarm {
     this.tokens.set(agent.id, bot.token);
     this.inboxes.set(agent.id, []);
     this.background.set(agent.id, []);
+    this.changed("agent");
     return agent;
   }
 
@@ -756,6 +791,7 @@ export class Swarm {
     };
     this.runs.set(runId, run);
     this.log(`started ${grant.name} run ${runId}: ${input.purpose}`);
+    this.changed("run");
     void this.onChannel(() =>
       client.postMessage(
         this.channel.id,
@@ -778,6 +814,7 @@ export class Swarm {
     if (!result.ok) throw new Error(`could not cancel run ${runId}: ${result.error}`);
     await this.syncRun(runId, { quiet: true });
     if (isLive(run)) run.status = "cancelled";
+    this.changed("run");
     return run;
   }
 
@@ -824,6 +861,7 @@ export class Swarm {
         // A run resuming after its approval needs nothing from the lead.
         this.notifyLead(change, { wake: run.status !== "running" });
       }
+      this.changed(gateKey(run.pendingApproval) !== gateBefore ? "gate" : "run");
     } catch (e) {
       this.log(`could not read run ${runId}: ${errText(e)}`);
     } finally {
@@ -956,6 +994,7 @@ export class Swarm {
     };
     run.approvals = [...(run.approvals ?? []), answer];
     this.log(`answered ${gate.nodeId} on run ${run.runId}: ${input.decision}`);
+    this.changed("gate");
     const record = [
       `**${input.decision === "approve" ? "Approved" : "Changes requested"}** \`${gate.nodeId}\` on run \`${run.runId}\`, on ${reviewer}'s review ${input.review}.`,
       input.reason,
@@ -1014,6 +1053,7 @@ export class Swarm {
     const live = this.liveRuns();
     if (live.length > 0) {
       this.draftConclusion = summary;
+      this.changed("conclusion");
       throw new Error(
         `${live.length} workflow run(s) are still live: ${live.map((r) => `${r.runId} (${r.workflow}, ${r.status})`).join(", ")}. Wait for them to finish, or cancel them with chat_workflow_cancel, then conclude.`,
       );
@@ -1021,6 +1061,7 @@ export class Swarm {
     if (summary.length > CONCLUSION_MAX) {
       this.draftConclusion = summary;
       this.refusedConclusions++;
+      this.changed("conclusion");
       throw new Error(
         `conclusion refused: it is ${summary.length} characters and the limit is ${CONCLUSION_MAX}. Cut at least ${summary.length - CONCLUSION_MAX} characters and call chat_done again. Detail that does not fit can go in a chat_post first.`,
       );
@@ -1030,6 +1071,7 @@ export class Swarm {
     for (const id of this.inboxes.keys()) this.inboxes.set(id, []);
     this.background.clear();
     this.log(`@${agent.handle} concluded the swarm`);
+    this.changed("conclusion");
     const parts = splitBody(summary, BODY_MAX - 32);
     try {
       for (const [i, part] of parts.entries()) {
@@ -1079,6 +1121,8 @@ export class Swarm {
       ...(this.opts.provider ? { provider: this.opts.provider } : {}),
       ...(this.opts.model ? { model: this.opts.model } : {}),
       ...(this.opts.workerModel ? { workerModel: this.opts.workerModel } : {}),
+      ...(this.opts.project ? { project: this.opts.project } : {}),
+      ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       agents: this.roster(),
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
@@ -1095,6 +1139,7 @@ export class Swarm {
     this.status = status;
     this.endedAt = new Date().toISOString();
     if (status !== "done" && reason) this.error = reason;
+    this.changed("end");
     for (const timer of [this.quiesceTimer, this.wallClockTimer, this.reconnectTimer]) {
       if (timer) clearTimeout(timer);
     }

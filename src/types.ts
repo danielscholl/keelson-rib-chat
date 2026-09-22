@@ -79,6 +79,11 @@ export function sizeOf(limits: SwarmLimits, base: SwarmSize): SwarmSize | "custo
   return keys.every((k) => limits[k] === preset[k]) ? base : "custom";
 }
 
+// Identity colors in spawn order: the lead is brand, the first five workers take
+// the host's identity hues, and later ones are neutral beside their name.
+export const WORKER_TONES = ["id-blue", "id-amber", "id-teal", "id-rose", "id-olive"] as const;
+export type AgentTone = "brand" | (typeof WORKER_TONES)[number] | "neutral";
+
 // `failed`: retired after too many consecutive failed turns.
 export type AgentStatus = "idle" | "busy" | "capped" | "failed";
 
@@ -88,6 +93,7 @@ export interface SwarmAgent {
   displayName: string;
   role: string;
   lead: boolean;
+  tone: AgentTone;
   botUserId: string;
   tokenId: string;
   spawnedBy?: string;
@@ -173,6 +179,9 @@ export interface SwarmSummary {
   provider?: string;
   model?: string;
   workerModel?: string;
+  project?: SwarmProject;
+  // The durable op the swarm reports to.
+  opId?: string;
   agents: readonly Omit<SwarmAgent, "tokenId" | "sessionId">[];
   // The evidence the swarm was given, without the bodies.
   context?: readonly ContextIndexEntry[];
@@ -182,6 +191,25 @@ export interface SwarmSummary {
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;
   error?: string;
+}
+
+export interface SwarmProject {
+  id: string;
+  name: string;
+}
+
+// A swarm between its start call and a booted channel.
+export interface StartingSwarm {
+  id: string;
+  task: string;
+  startedAt: string;
+  limits: SwarmLimits;
+  sizeBase: SwarmSize;
+  provider?: string;
+  model?: string;
+  workerModel?: string;
+  project?: SwarmProject;
+  opId?: string;
 }
 
 // Carried on RibAgentTurnRequest.turnContext so a chat_* tool knows which agent

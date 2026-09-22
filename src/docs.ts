@@ -342,8 +342,10 @@ and the terminal record of a finished run in the op registry.
 Does not survive: a swarm in flight. Swarm state, inboxes, agent sessions, and
 bot tokens are held in memory, so a restart ends the swarm without resuming it.
 A clean shutdown stops each swarm and revokes its tokens; a crash leaves the
-tokens unrevoked. \`chat_swarm_status\` answers for the last ${ENDED_KEPT} ended swarms of
-the current process only; after a restart use \`run_status\` on the run id.
+tokens unrevoked. \`chat_swarm_status\` answers for the last ${ENDED_KEPT} ended swarms,
+which the rib keeps in \`swarms.json\` in its data directory, so they survive a
+restart. A swarm a crash cut short is not among them; use \`run_status\` on its
+run id. A server reset forgets them.
 
 A managed ClickClack stops with Keelson, after the swarms have revoked their
 tokens, and starts again with the next swarm. One a person started by hand is

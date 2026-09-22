@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { RibRunStatus } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
-import { MAX_TURN_FAILURES, Swarm, type SwarmOptions, splitBody } from "../src/swarm.ts";
+import {
+  MAX_TURN_FAILURES,
+  Swarm,
+  type SwarmChange,
+  type SwarmOptions,
+  SwarmStartError,
+  splitBody,
+} from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
 import { BODY_MAX, CONCLUSION_MAX, SIZE_PRESETS, type SwarmSummary } from "../src/types.ts";
 import { FakeClickClack, OWNER_TOKEN, type Script, scriptedProvider, WORKSPACE } from "./fakes.ts";
@@ -942,5 +949,80 @@ describe("size and model", () => {
     expect(summary.agents.every((a) => a.model === undefined && a.providerId === "fake")).toBe(
       true,
     );
+  });
+});
+
+describe("changes and records", () => {
+  const script: Script = async ({ agentId, turn, call }) => {
+    if (agentId === "s1-lead" && turn === 1) {
+      await call("chat_spawn", { handle: "w", role: "worker", brief: "report back" });
+    } else if (agentId === "s1-w") {
+      await call("chat_post", { body: "@s1-lead done" });
+    } else {
+      await call("chat_done", { summary: "ok" });
+    }
+  };
+
+  test("a swarm reports each change, ending with its end", async () => {
+    const kinds: SwarmChange[] = [];
+    const h = harness(script, {}, { onChange: (k) => kinds.push(k) });
+    await (await h.start()).finished;
+    expect(kinds.slice(0, 2)).toEqual(["agent", "start"]);
+    expect(kinds.filter((k) => k === "agent")).toHaveLength(2);
+    expect(kinds.filter((k) => k === "turn")).toHaveLength(6);
+    expect(kinds).toContain("conclusion");
+    expect(kinds.at(-1)).toBe("end");
+  });
+
+  test("a throwing listener never breaks the swarm", async () => {
+    const h = harness(
+      script,
+      {},
+      {
+        onChange: () => {
+          throw new Error("listener");
+        },
+      },
+    );
+    expect((await (await h.start()).finished).status).toBe("done");
+  });
+
+  test("agents take identity tones in spawn order", async () => {
+    const h = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          for (const handle of ["a", "b", "c", "d", "e", "f"]) {
+            await call("chat_spawn", { handle, role: "r", brief: "b" });
+          }
+          await call("chat_done", { summary: "ok" });
+        }
+      },
+      { maxAgents: 7 },
+    );
+    const summary = await (await h.start()).finished;
+    expect(summary.agents.map((a) => a.tone)).toEqual([
+      "brand",
+      "id-blue",
+      "id-amber",
+      "id-teal",
+      "id-rose",
+      "id-olive",
+      "neutral",
+    ]);
+  });
+
+  test("a boot failure throws the ended summary with it", async () => {
+    const h = harness(script, {}, { project: { id: "p1", name: "sample" }, opId: "op1" });
+    h.server.down = true;
+    const error = await h.start().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SwarmStartError);
+    const summary = (error as SwarmStartError).summary;
+    expect(summary).toMatchObject({
+      id: "s1",
+      status: "error",
+      project: { id: "p1", name: "sample" },
+      opId: "op1",
+    });
+    expect(summary.error).toContain("fetch failed");
   });
 });
