@@ -18,6 +18,18 @@ sidebar:
 | Failed turns in a row | 3 | no | A worker is retired as `failed`, announced in the channel. For the lead, the swarm ends as `error`. |
 | Idle nudges to the lead | 2 | no | The swarm ends as `stalled`. |
 
+The defaults are the `medium` size. `size` at start picks a preset, and the
+`max_*` inputs override single limits on top of it. A swarm whose limits moved
+off its preset reports its size as `custom`. Concurrency moves only with size.
+
+| Size | Agents | Turns | Per worker | At once | Wall clock |
+|---|---|---|---|---|---|
+| `small` | 3 | 20 | 8 | 3 | 15 minutes |
+| `medium` | 5 | 40 | 12 | 3 | 30 minutes |
+| `large` | 8 | 80 | 16 | 4 | 60 minutes |
+
+A turn may run 5 minutes at every size.
+
 A failed turn is one that timed out or errored. Its messages go back to the
 front of the agent's inbox, and the agent's next turn says they are repeated.
 A timed-out turn first waits up to 15 seconds for the provider to release the

@@ -28,6 +28,7 @@ let registerOp: RibContext["registerOp"];
 let getProjects: RibContext["getProjects"];
 let getCredential: RibContext["getCredential"];
 let getDataDir: RibContext["getDataDir"];
+let getProviders: RibContext["getProviders"];
 let startWorkflow: RibContext["startWorkflow"];
 let getRunStatus: RibContext["getRunStatus"];
 let cancelRun: RibContext["cancelRun"];
@@ -128,6 +129,23 @@ async function resolveWorkspace(owner: ClickClackClient): Promise<string> {
   );
 }
 
+// The host's workflow and stub providers cannot run an agent's turns; refusing
+// here costs nothing, where the swarm would otherwise fail its lead three times.
+const NOT_AGENT_PROVIDERS = new Set(["workflow", "stub"]);
+
+function checkProvider(provider: string | undefined): void {
+  if (!provider) return;
+  if (NOT_AGENT_PROVIDERS.has(provider)) {
+    throw new Error(`provider '${provider}' cannot run agent turns`);
+  }
+  const known = getProviders?.().filter((p) => !NOT_AGENT_PROVIDERS.has(p.id));
+  if (known && !known.some((p) => p.id === provider)) {
+    throw new Error(
+      `no registered provider '${provider}'; registered: ${known.map((p) => p.id).join(", ") || "none"}`,
+    );
+  }
+}
+
 async function startSwarm(
   input: StartSwarmInput,
 ): Promise<{ swarm: Swarm; opId?: string; url: string }> {
@@ -143,6 +161,7 @@ async function launchSwarm(
   input: StartSwarmInput,
 ): Promise<{ swarm: Swarm; opId?: string; url: string }> {
   if (!runAgentTurn) throw new Error("this keelson host cannot run agent turns for a rib");
+  checkProvider(input.provider);
   let cwd: string | undefined;
   let projectId: string | undefined;
   if (input.project) {
@@ -196,6 +215,7 @@ async function launchSwarm(
       owner,
       workspaceId,
       runAgentTurn,
+      ...(input.size ? { size: input.size } : {}),
       limits: {
         ...(input.maxAgents ? { maxAgents: input.maxAgents } : {}),
         ...(input.maxTurns ? { maxTurns: input.maxTurns } : {}),
@@ -271,6 +291,7 @@ const rib: Rib = {
     getProjects = ctx.getProjects;
     getCredential = ctx.getCredential;
     getDataDir = ctx.getDataDir;
+    getProviders = ctx.getProviders;
     startWorkflow = ctx.startWorkflow;
     getRunStatus = ctx.getRunStatus;
     cancelRun = ctx.cancelRun;
@@ -339,6 +360,7 @@ const rib: Rib = {
     getProjects = undefined;
     getCredential = undefined;
     getDataDir = undefined;
+    getProviders = undefined;
   },
 };
 

@@ -23,6 +23,42 @@ describe("rib contract", () => {
     for (const tool of [...AGENT_TOOLS, ...DISPATCH_TOOLS]) expect(names.has(tool)).toBe(true);
   });
 
+  test("a start on a provider that cannot run agent turns fails before any channel", async () => {
+    const tools =
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        runAgentTurn: (() => {
+          throw new Error("no turn should run");
+        }) as never,
+        getProviders: () => [
+          { id: "copilot", displayName: "Copilot" },
+          { id: "workflow", displayName: "Workflow" },
+        ],
+      }) ?? [];
+    const start = tools.find((t) => t.name === "chat_swarm_start");
+    const run = async (provider: string) => {
+      let out = "";
+      await start?.execute(
+        { task: "t", provider },
+        {
+          cwd: "/tmp",
+          abortSignal: new AbortController().signal,
+          emit: (c) => {
+            if (c.type === "tool_result") out = String(c.content);
+          },
+        },
+      );
+      return out;
+    };
+    try {
+      expect(await run("claude")).toContain("no registered provider 'claude'; registered: copilot");
+      expect(await run("workflow")).toContain("provider 'workflow' cannot run agent turns");
+      expect(await run("stub")).toContain("provider 'stub' cannot run agent turns");
+    } finally {
+      await rib.dispose?.();
+    }
+  });
+
   test("authStatus reports a missing credential for a server the operator pointed it at", async () => {
     const saved = {
       CLICKCLACK_URL: process.env.CLICKCLACK_URL,

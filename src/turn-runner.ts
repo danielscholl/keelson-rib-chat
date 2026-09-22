@@ -22,6 +22,8 @@ export interface TurnOutcome {
   error?: string;
   // Passed back as resumeSessionId so an agent keeps one continuous session.
   sessionId?: string;
+  // The provider the host resolved the turn to.
+  providerId?: string;
   toolCalls: string[];
   usage?: TokenUsage;
   durationMs: number;
@@ -95,15 +97,18 @@ export async function runTurn(
       return { status: "error", text: "", error: errText(outcome.err), ...base() };
     }
     const result = outcome.result;
-    const sessionId = result.sessionId ? { sessionId: result.sessionId } : {};
+    const kept = {
+      ...(result.sessionId ? { sessionId: result.sessionId } : {}),
+      ...(result.providerId ? { providerId: result.providerId } : {}),
+    };
     if (controller.signal.aborted || result.status === "aborted") {
-      return { status: "aborted", text: result.text ?? "", ...sessionId, ...base() };
+      return { status: "aborted", text: result.text ?? "", ...kept, ...base() };
     }
     if (result.status === "ok") {
       return {
         status: "ok",
         text: result.text,
-        ...sessionId,
+        ...kept,
         ...(result.usage ? { usage: result.usage } : {}),
         ...base(),
       };
@@ -112,7 +117,7 @@ export async function runTurn(
       status: result.status,
       text: "",
       error: result.error ?? result.text ?? `turn ${result.status}`,
-      ...sessionId,
+      ...kept,
       ...base(),
     };
   } catch (e) {

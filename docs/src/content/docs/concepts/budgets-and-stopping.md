@@ -22,6 +22,10 @@ its own stopping rule.
 | Failed turns in a row | 3 | no |
 | Idle nudges to the lead | 2 | no |
 
+These are the `medium` size. A swarm can start `small` or `large` instead, and
+the `max_*` inputs still set single limits on top of the size. See
+[Limits and statuses](../../reference/limits-and-statuses/).
+
 An agent sees the swarm budget, and a worker its own, at the foot of the
 messages each turn delivers.
 

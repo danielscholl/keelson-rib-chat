@@ -9,6 +9,7 @@
 import { type ToolContext, type ToolDefinition, z } from "@keelson/shared";
 import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
 import { describeRun } from "./dispatch.ts";
+import { modelLabel, sizeText } from "./labels.ts";
 import type { Swarm } from "./swarm.ts";
 import {
   BODY_MAX,
@@ -16,6 +17,9 @@ import {
   CONCLUSION_MAX,
   type DispatchGrant,
   readTurnContext,
+  SIZE_PRESETS,
+  SWARM_SIZES,
+  type SwarmSize,
   type SwarmSummary,
 } from "./types.ts";
 
@@ -24,6 +28,7 @@ import {
 export interface StartSwarmInput {
   task: string;
   project?: string;
+  size?: SwarmSize;
   maxAgents?: number;
   maxTurns?: number;
   maxTurnsPerAgent?: number;
@@ -173,6 +178,12 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .string()
         .optional()
         .describe("A registered keelson project; agents read its checkout."),
+      size: z
+        .enum(SWARM_SIZES)
+        .optional()
+        .describe(
+          `How much the swarm may do. ${SWARM_SIZES.map((k) => `${k}: ${sizeText(SIZE_PRESETS[k])}`).join("; ")}. Default medium. The max_* inputs override single limits.`,
+        ),
       max_agents: z.number().int().min(1).max(START_BOUNDS.maxAgents).optional(),
       max_turns: z.number().int().min(1).max(START_BOUNDS.maxTurns).optional(),
       max_turns_per_agent: z
@@ -471,6 +482,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           task: args.task,
           workTools: args.work_tools ?? "read",
           ...(args.project ? { project: args.project } : {}),
+          ...(args.size ? { size: args.size } : {}),
           ...(args.max_agents ? { maxAgents: args.max_agents } : {}),
           ...(args.max_turns ? { maxTurns: args.max_turns } : {}),
           ...(args.max_turns_per_agent ? { maxTurnsPerAgent: args.max_turns_per_agent } : {}),
@@ -512,12 +524,14 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         emitText(
           ctx,
           JSON.stringify(
-            all.map(({ id, status, task, turnsUsed, channelName }) => ({
-              id,
-              status,
-              channelName,
-              turnsUsed,
-              task: task.slice(0, 120),
+            all.map((s) => ({
+              id: s.id,
+              status: s.status,
+              channelName: s.channelName,
+              turnsUsed: s.turnsUsed,
+              size: s.size,
+              model: modelLabel(s),
+              task: s.task.slice(0, 120),
             })),
             null,
             1,

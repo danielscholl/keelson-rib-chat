@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { ribDocsSourceSchema } from "@keelson/shared";
 import pkg from "../package.json" with { type: "json" };
 import rib from "../src/index.ts";
-import { DEFAULT_LIMITS } from "../src/types.ts";
+import { DEFAULT_LIMITS, SIZE_PRESETS, SWARM_SIZES } from "../src/types.ts";
 
 const ctx = { getExec: () => ({}) as never };
 const source = rib.contributeDocs?.(ctx)[0];
@@ -80,6 +80,21 @@ describe("contributed docs", () => {
 
     expect(accepts({ work_tools: "read" })).toBe(true);
     expect(accepts({ work_tools: "write" })).toBe(false);
+
+    const meaning = row("size").split("|")[3] ?? "";
+    const sizes = [...meaning.matchAll(/`(\w+)`/g)].map((m) => m[1]);
+    expect(sizes).toEqual([...SWARM_SIZES]);
+    for (const size of sizes) expect(accepts({ size })).toBe(true);
+    expect(accepts({ size: "huge" })).toBe(false);
+  });
+
+  test("the advertised sizes are the presets", () => {
+    for (const size of SWARM_SIZES) {
+      const p = SIZE_PRESETS[size];
+      expect(row(size)).toBe(
+        `| \`${size}\` | ${p.maxAgents} | ${p.maxTurns} | ${p.maxTurnsPerAgent} | ${p.maxConcurrent} | ${p.wallClockMs / 60_000} minutes |`,
+      );
+    }
   });
 
   test("the advertised wait bound is the one the schema enforces", () => {

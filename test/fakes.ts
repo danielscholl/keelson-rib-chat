@@ -279,7 +279,12 @@ export function scriptedProvider(tools: readonly ToolDefinition[], script: Scrip
     });
     const result = Promise.race([
       script({ agentId, prompt: req.prompt, turn, call }).then(
-        () => ({ status: "ok" as const, text: "", sessionId: `sess_${agentId}` }),
+        () => ({
+          status: "ok" as const,
+          text: "",
+          sessionId: `sess_${agentId}`,
+          providerId: req.provider ?? "fake",
+        }),
         (e) => ({ status: "error" as const, text: "", error: String(e) }),
       ),
       aborted,
