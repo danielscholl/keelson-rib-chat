@@ -79,6 +79,11 @@ export function sizeOf(limits: SwarmLimits, base: SwarmSize): SwarmSize | "custo
   return keys.every((k) => limits[k] === preset[k]) ? base : "custom";
 }
 
+// Identity colors in spawn order: the lead is brand, the first five workers take
+// the host's identity hues, and later ones are neutral beside their name.
+export const WORKER_TONES = ["id-blue", "id-amber", "id-teal", "id-rose", "id-olive"] as const;
+export type AgentTone = "brand" | (typeof WORKER_TONES)[number] | "neutral";
+
 // `failed`: retired after too many consecutive failed turns.
 export type AgentStatus = "idle" | "busy" | "capped" | "failed";
 
@@ -88,6 +93,7 @@ export interface SwarmAgent {
   displayName: string;
   role: string;
   lead: boolean;
+  tone: AgentTone;
   botUserId: string;
   tokenId: string;
   spawnedBy?: string;
@@ -123,6 +129,8 @@ export interface ChildRun {
   checkout?: { path: string | null; branch: string | null; worktreeEstablished: boolean };
   // Nodes that have finished or paused.
   nodesDone: number;
+  // The node the run reached last.
+  lastNode?: string;
   // `threadId` is the channel thread holding the gate's prompt and files.
   pendingApproval?: {
     nodeId: string;
@@ -130,6 +138,9 @@ export interface ChildRun {
     pauseId?: string;
     threadId?: string;
     openedAt?: string;
+    // `operator` when this swarm cannot answer the gate: the host offers no
+    // respond, or refused one on this workflow under ribApprovalGrants.
+    answerer?: "swarm" | "operator";
   };
   // Gates the swarm answered for the operator.
   approvals?: GateAnswer[];
@@ -173,6 +184,12 @@ export interface SwarmSummary {
   provider?: string;
   model?: string;
   workerModel?: string;
+  project?: SwarmProject;
+  // The durable op the swarm reports to.
+  opId?: string;
+  clickclack?: { url: string; workspaceId: string };
+  // Present only while something is wrong or was.
+  health?: SwarmHealth;
   agents: readonly Omit<SwarmAgent, "tokenId" | "sessionId">[];
   // The evidence the swarm was given, without the bodies.
   context?: readonly ContextIndexEntry[];
@@ -182,6 +199,37 @@ export interface SwarmSummary {
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;
   error?: string;
+}
+
+export interface SwarmHealth {
+  // Socket closes since it last opened; two means ClickClack stopped answering.
+  socketDrops?: number;
+  channelFault?: string;
+  leadFailures?: number;
+  lastLeadFailure?: string;
+  nudges?: number;
+  refusedConclusions?: number;
+  // When the swarm went idle with a run paused at a gate; the next turn clears it.
+  quietSince?: string;
+}
+
+export interface SwarmProject {
+  id: string;
+  name: string;
+}
+
+// A swarm between its start call and a booted channel.
+export interface StartingSwarm {
+  id: string;
+  task: string;
+  startedAt: string;
+  limits: SwarmLimits;
+  sizeBase: SwarmSize;
+  provider?: string;
+  model?: string;
+  workerModel?: string;
+  project?: SwarmProject;
+  opId?: string;
 }
 
 // Carried on RibAgentTurnRequest.turnContext so a chat_* tool knows which agent

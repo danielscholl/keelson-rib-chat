@@ -17,7 +17,8 @@ The rib keeps no swarm state on disk. State lives in three places, and a
 | Agent provider session ids | memory | no |
 | Bot tokens | memory | no |
 | Task context bodies | memory | no |
-| Summaries of ended swarms (last 20) | memory | no |
+| Summaries of ended swarms (last 50) | `swarms.json` in the rib's data directory | yes |
+| Workflows whose gates the host refused to let a swarm answer | `swarms.json` | yes |
 | A managed server's database, log, and process record | the rib's data directory | yes |
 
 ## A restart ends a swarm in flight
@@ -27,9 +28,10 @@ which revokes its bot tokens and ends it as `stopped`. On a crash, the tokens
 are left unrevoked in ClickClack. They are held nowhere else, so nothing can use
 them, and you can revoke them from ClickClack.
 
-After a restart, `chat_swarm_status` no longer knows the swarm. Use `run_status`
-with the run id for the terminal record, and the ClickClack channel for the
-transcript.
+A swarm stopped by a clean shutdown is kept with the other ended swarms, so
+`chat_swarm_status` still answers for it after the restart. One a crash cut
+short is not. Use `run_status` with its run id for the terminal record, and the
+ClickClack channel for the transcript.
 
 ## A dropped socket does not
 

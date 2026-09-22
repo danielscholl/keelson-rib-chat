@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ribIdSchema } from "@keelson/shared";
 import rib from "../src/index.ts";
 import { AGENT_TOOLS, DISPATCH_TOOLS } from "../src/swarm.ts";
@@ -56,6 +59,50 @@ describe("rib contract", () => {
       expect(await run("stub")).toContain("provider 'stub' cannot run agent turns");
     } finally {
       await rib.dispose?.();
+    }
+  });
+
+  test("a start that fails after its id is minted is remembered across a reload", async () => {
+    const saved = {
+      CLICKCLACK_URL: process.env.CLICKCLACK_URL,
+      CLICKCLACK_TOKEN: process.env.CLICKCLACK_TOKEN,
+    };
+    process.env.CLICKCLACK_URL = "http://127.0.0.1:1";
+    process.env.CLICKCLACK_TOKEN = "cc_owner";
+    const dir = mkdtempSync(join(tmpdir(), "rib-chat-"));
+    const ctx = {
+      getExec: () => ({}) as never,
+      getDataDir: () => dir,
+      runAgentTurn: (() => {
+        throw new Error("no turn should run");
+      }) as never,
+    };
+    const call = async (name: string, input: unknown) => {
+      const tools = rib.registerTools?.(ctx) ?? [];
+      let out = "";
+      await tools
+        .find((t) => t.name === name)
+        ?.execute(input, {
+          cwd: "/tmp",
+          abortSignal: new AbortController().signal,
+          emit: (c) => {
+            if (c.type === "tool_result") out = String(c.content);
+          },
+        });
+      return out;
+    };
+    try {
+      expect(await call("chat_swarm_start", { task: "find it", size: "small" })).toContain(
+        "chat tool failed",
+      );
+      await rib.dispose?.();
+      const rows = JSON.parse(await call("chat_swarm_status", {})) as Record<string, unknown>[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: "error", size: "small", task: "find it" });
+    } finally {
+      restore(saved);
+      await rib.dispose?.();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

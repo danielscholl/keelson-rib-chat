@@ -6,15 +6,34 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { Rib, RibAuthStatus, RibContext } from "@keelson/shared";
+import type { Rib, RibAuthStatus, RibContext, RibViewDescriptor } from "@keelson/shared";
 import { ClickClackClient, ClickClackError } from "./clickclack.ts";
 import type { WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
+import { historyPath, loadHistory, saveHistory } from "./history.ts";
 import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
-import { Swarm } from "./swarm.ts";
+import { handleSwarmsAction } from "./surface/actions.ts";
+import type { ServerLine, SurfaceState } from "./surface/index-board.ts";
+import { INDEX_KEY, SURFACE_ID } from "./surface/keys.ts";
+import { createSwarmsSurface, type SwarmRecord, type SwarmsSurface } from "./surface/surface.ts";
+import {
+  type ApprovalRefusals,
+  newSwarmId,
+  Swarm,
+  type SwarmChange,
+  SwarmStartError,
+} from "./swarm.ts";
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
-import type { ChatMessage, SwarmSummary } from "./types.ts";
+import {
+  type ChatMessage,
+  SIZE_PRESETS,
+  type StartingSwarm,
+  type SwarmLimits,
+  type SwarmProject,
+  type SwarmSummary,
+  sizeOf,
+} from "./types.ts";
 
 const READ_TOOLS = ["Read", "Grep", "Glob"] as const;
 const DEFAULT_URL = "http://localhost:8080";
@@ -36,11 +55,21 @@ let respondToRun: RibContext["respondToRun"];
 
 let server: ManagedServer | undefined;
 // Swarms between the start call and the registry, so stop and reset see them too.
-let starting = 0;
+const starting = new Map<string, StartingSwarm>();
 let disposed = false;
 
 const swarms = new Map<string, Swarm>();
 const ended = new Map<string, SwarmSummary>();
+const refusedApprovals = new Set<string>();
+const approvalRefusals: ApprovalRefusals = {
+  has: (workflow) => refusedApprovals.has(workflow),
+  set: (workflow, refused) => {
+    if (refused === refusedApprovals.has(workflow)) return;
+    if (refused) refusedApprovals.add(workflow);
+    else refusedApprovals.delete(workflow);
+    persistHistory();
+  },
+};
 
 function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -146,33 +175,156 @@ function checkProvider(provider: string | undefined): void {
   }
 }
 
-async function startSwarm(
-  input: StartSwarmInput,
-): Promise<{ swarm: Swarm; opId?: string; url: string }> {
-  starting++;
-  try {
-    return await launchSwarm(input);
-  } finally {
-    starting--;
+// Unique across live, starting, and remembered swarms, since the id names the
+// channel and every key the tab shows.
+function mintId(): string {
+  for (;;) {
+    const id = newSwarmId();
+    if (!swarms.has(id) && !starting.has(id) && !ended.has(id)) return id;
   }
 }
 
-async function launchSwarm(
-  input: StartSwarmInput,
-): Promise<{ swarm: Swarm; opId?: string; url: string }> {
+function overrides(input: StartSwarmInput): Partial<SwarmLimits> {
+  return {
+    ...(input.maxAgents ? { maxAgents: input.maxAgents } : {}),
+    ...(input.maxTurns ? { maxTurns: input.maxTurns } : {}),
+    ...(input.maxTurnsPerAgent ? { maxTurnsPerAgent: input.maxTurnsPerAgent } : {}),
+    ...(input.turnTimeoutMs ? { turnTimeoutMs: input.turnTimeoutMs } : {}),
+    ...(input.wallClockMs ? { wallClockMs: input.wallClockMs } : {}),
+  };
+}
+
+// The Swarms tab. Its markdown reading panes are declared per swarm, so the
+// views array grows and shrinks with the keys the surface holds.
+const views: RibViewDescriptor[] = [];
+let surface: SwarmsSurface | undefined;
+let serverLine: ServerLine | undefined;
+let serverPoll: ReturnType<typeof setInterval> | undefined;
+const SERVER_POLL_MS = 60_000;
+
+function surfaceState(): SurfaceState {
+  return {
+    live: [...swarms.values()].map((s) => s.summary()),
+    starting: [...starting.values()],
+    ended: [...ended.values()],
+    ...(serverLine ? { server: serverLine } : {}),
+  };
+}
+
+function findSwarm(id: string): SwarmRecord {
+  const live = swarms.get(id)?.summary();
+  const pending = starting.get(id);
+  const done = ended.get(id);
+  return {
+    ...(live ? { live } : {}),
+    ...(pending ? { starting: pending } : {}),
+    ...(done ? { ended: done } : {}),
+  };
+}
+
+function changed(id: string, kind: SwarmChange): void {
+  surface?.changed(id, kind);
+  if (kind === "start" || kind === "end") void refreshServer();
+}
+
+// The ClickClack row reads a cached status: probed on swarm start and end, after
+// the server tools, and every minute while a swarm is live.
+async function refreshServer(): Promise<void> {
+  if (!surface) return;
+  try {
+    const t = await target();
+    if (t.mode === "managed") {
+      const status = await t.server.status();
+      serverLine = { mode: "managed", url: status.url, running: status.running };
+    } else {
+      serverLine = { mode: "external", url: t.url, running: true };
+    }
+  } catch {
+    serverLine = undefined;
+  }
+  surface?.refresh();
+  if (swarms.size + starting.size > 0 && !serverPoll) {
+    serverPoll = setInterval(() => {
+      if (swarms.size + starting.size === 0) {
+        clearInterval(serverPoll);
+        serverPoll = undefined;
+      }
+      void refreshServer();
+    }, SERVER_POLL_MS);
+    (serverPoll as { unref?: () => void }).unref?.();
+  }
+}
+
+function remember(summary: SwarmSummary): void {
+  ended.set(summary.id, summary);
+  while (ended.size > ENDED_KEPT) {
+    const oldest = ended.keys().next().value;
+    if (oldest === undefined) break;
+    ended.delete(oldest);
+  }
+  persistHistory();
+  changed(summary.id, "end");
+}
+
+function persistHistory(): void {
+  const dir = getDataDir?.();
+  if (!dir) return;
+  try {
+    saveHistory(historyPath(dir), {
+      ended: [...ended.values()],
+      refusedApprovals: [...refusedApprovals],
+    });
+  } catch {
+    // the in-memory history still answers; the next end retries the write
+  }
+}
+
+// A start that failed after its id was minted, kept so the failure has a record.
+function failedStart(record: StartingSwarm, error: string): SwarmSummary {
+  return {
+    id: record.id,
+    task: record.task,
+    status: "error",
+    channelId: "",
+    channelName: `swarm-${record.id}`,
+    startedAt: record.startedAt,
+    endedAt: new Date().toISOString(),
+    turnsUsed: 0,
+    limits: record.limits,
+    size: sizeOf(record.limits, record.sizeBase),
+    sizeBase: record.sizeBase,
+    ...(record.provider ? { provider: record.provider } : {}),
+    ...(record.model ? { model: record.model } : {}),
+    ...(record.workerModel ? { workerModel: record.workerModel } : {}),
+    ...(record.project ? { project: record.project } : {}),
+    ...(record.opId ? { opId: record.opId } : {}),
+    agents: [],
+    error,
+  };
+}
+
+interface Launch {
+  cwd?: string;
+  project?: SwarmProject;
+  dispatcher?: WorkflowDispatcher;
+}
+
+// Everything that can refuse a start before it has an id: a refusal here is an
+// answer to the caller, not a swarm that failed.
+function prepare(input: StartSwarmInput): Launch {
   if (!runAgentTurn) throw new Error("this keelson host cannot run agent turns for a rib");
   checkProvider(input.provider);
   let cwd: string | undefined;
-  let projectId: string | undefined;
+  let project: SwarmProject | undefined;
   if (input.project) {
-    const project = getProjects?.().find((p) => p.id === input.project || p.name === input.project);
-    if (!project) throw new Error(`no registered project '${input.project}'`);
-    cwd = project.rootPath;
-    projectId = project.id;
+    const found = getProjects?.().find((p) => p.id === input.project || p.name === input.project);
+    if (!found) throw new Error(`no registered project '${input.project}'`);
+    cwd = found.rootPath;
+    project = { id: found.id, name: found.name };
   }
   let dispatcher: WorkflowDispatcher | undefined;
   if (input.workflows?.length) {
-    if (!projectId) throw new Error("workflows need a project to run on");
+    if (!project) throw new Error("workflows need a project to run on");
     if (!startWorkflow || !getRunStatus || !cancelRun) {
       throw new Error("this keelson host cannot start workflows for a rib");
     }
@@ -180,7 +332,7 @@ async function launchSwarm(
     const status = getRunStatus;
     const cancel = cancelRun;
     const respond = respondToRun;
-    const onProject = projectId;
+    const onProject = project.id;
     dispatcher = {
       start: (name, inputs) => start(name, inputs, { projectId: onProject }),
       status: (runId) => status(runId),
@@ -193,6 +345,50 @@ async function launchSwarm(
         : {}),
     };
   }
+  return {
+    ...(cwd ? { cwd } : {}),
+    ...(project ? { project } : {}),
+    ...(dispatcher ? { dispatcher } : {}),
+  };
+}
+
+async function startSwarm(
+  input: StartSwarmInput,
+): Promise<{ swarm: Swarm; opId?: string; url: string }> {
+  const launch = prepare(input);
+  const sizeBase = input.size ?? "medium";
+  const record: StartingSwarm = {
+    id: mintId(),
+    task: input.task,
+    startedAt: new Date().toISOString(),
+    limits: { ...SIZE_PRESETS[sizeBase], ...overrides(input) },
+    sizeBase,
+    ...(input.provider ? { provider: input.provider } : {}),
+    ...(input.model ? { model: input.model } : {}),
+    ...(input.workerModel ? { workerModel: input.workerModel } : {}),
+    ...(launch.project ? { project: launch.project } : {}),
+  };
+  starting.set(record.id, record);
+  changed(record.id, "start");
+  try {
+    return await launchSwarm(record, input, launch);
+  } catch (e) {
+    remember(e instanceof SwarmStartError ? e.summary : failedStart(record, errText(e)));
+    throw e;
+  } finally {
+    starting.delete(record.id);
+    changed(record.id, "start");
+  }
+}
+
+async function launchSwarm(
+  record: StartingSwarm,
+  input: StartSwarmInput,
+  launch: Launch,
+): Promise<{ swarm: Swarm; opId?: string; url: string }> {
+  const agentTurn = runAgentTurn;
+  if (!agentTurn) throw new Error("this keelson host cannot run agent turns for a rib");
+  const { cwd, project, dispatcher } = launch;
   const owner = await ownerClient();
   retryRevocations(owner);
   const workspaceId = await resolveWorkspace(owner);
@@ -203,29 +399,29 @@ async function launchSwarm(
   const op = registerOp?.({
     kind: "chat_swarm",
     title: input.task.replace(/\s+/g, " ").trim().slice(0, 80),
+    ...(project ? { projectId: project.id } : {}),
     onSteer: (note) => {
       if (swarm) void swarm.steer(note);
       else pendingSteers.push(note);
     },
   });
+  if (op) record.opId = op.id;
 
   try {
     swarm = await Swarm.start({
+      id: record.id,
       task: input.task,
       owner,
       workspaceId,
-      runAgentTurn,
-      ...(input.size ? { size: input.size } : {}),
-      limits: {
-        ...(input.maxAgents ? { maxAgents: input.maxAgents } : {}),
-        ...(input.maxTurns ? { maxTurns: input.maxTurns } : {}),
-        ...(input.maxTurnsPerAgent ? { maxTurnsPerAgent: input.maxTurnsPerAgent } : {}),
-        ...(input.turnTimeoutMs ? { turnTimeoutMs: input.turnTimeoutMs } : {}),
-        ...(input.wallClockMs ? { wallClockMs: input.wallClockMs } : {}),
-      },
+      runAgentTurn: agentTurn,
+      size: record.sizeBase,
+      limits: overrides(input),
       // Reading a checkout needs a project to confine it to.
       workTools: input.workTools === "read" && cwd ? READ_TOOLS : [],
       ...(cwd ? { cwd } : {}),
+      ...(project ? { project } : {}),
+      ...(op ? { opId: op.id } : {}),
+      approvalRefusals,
       ...(input.context ? { context: input.context } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),
@@ -234,6 +430,7 @@ async function launchSwarm(
         ? { dispatch: { grants: input.workflows, dispatcher } }
         : {}),
       log: (message, data) => op?.progress(message, data),
+      onChange: (kind) => changed(record.id, kind),
     });
   } catch (e) {
     op?.error(`swarm failed to start: ${errText(e)}`);
@@ -254,12 +451,7 @@ async function launchSwarm(
   void live.finished.then((summary) => {
     for (const tokenId of live.unrevokedTokens()) pendingRevocations.add(tokenId);
     swarms.delete(summary.id);
-    ended.set(summary.id, summary);
-    while (ended.size > ENDED_KEPT) {
-      const oldest = ended.keys().next().value;
-      if (oldest === undefined) break;
-      ended.delete(oldest);
-    }
+    remember(summary);
     // The run succeeds when the swarm delivered an answer, or the operator stopped
     // it. Anything else failed at its job, and the run says so; the summary stays
     // on the record as the last progress frame.
@@ -280,6 +472,23 @@ const rib: Rib = {
 
   contributeDocs: () => [chatDocsSource()],
 
+  views,
+  surfaces: [
+    {
+      id: SURFACE_ID,
+      title: "Swarms",
+      hideRegionActions: true,
+      layout: { rows: [{ columns: [{ key: INDEX_KEY, live: true }] }] },
+    },
+  ],
+
+  onAction: (action) =>
+    handleSwarmsAction(action, {
+      surface,
+      find: findSwarm,
+      live: (id) => swarms.get(id),
+    }),
+
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
   onRunEvent: (event) => {
     for (const swarm of swarms.values()) swarm.onRunEvent(event.runId);
@@ -297,13 +506,36 @@ const rib: Rib = {
     cancelRun = ctx.cancelRun;
     respondToRun = ctx.respondToRun;
     disposed = false;
+    const dir = getDataDir?.();
+    if (dir && ended.size === 0) {
+      const history = loadHistory(historyPath(dir));
+      for (const summary of history.ended.slice(-ENDED_KEPT)) ended.set(summary.id, summary);
+      for (const workflow of history.refusedApprovals) refusedApprovals.add(workflow);
+    }
+    const sm = ctx.getSnapshotManager?.();
+    if (sm && !surface) {
+      surface = createSwarmsSurface({
+        sm,
+        state: surfaceState,
+        find: findSwarm,
+        views,
+        ...(ctx.invalidateManifest ? { invalidateManifest: ctx.invalidateManifest } : {}),
+      });
+      surface.track([...ended.keys()]);
+      void refreshServer();
+    }
     return [
-      ...makeChatTools({ swarms, ended, startSwarm, readChannel }),
+      ...makeChatTools({ swarms, starting, ended, startSwarm, readChannel }),
       ...makeServerTools({
         target,
-        liveCount: () => swarms.size + starting,
-        clearEnded: () => ended.clear(),
+        liveCount: () => swarms.size + starting.size,
+        clearEnded: () => {
+          ended.clear();
+          persistHistory();
+          surface?.refresh();
+        },
         endedCount: () => ended.size,
+        onServerChange: () => void refreshServer(),
       }),
     ];
   },
@@ -353,6 +585,17 @@ const rib: Rib = {
       clearTimeout(timer);
     }
     swarms.clear();
+    surface?.dispose();
+    surface = undefined;
+    views.length = 0;
+    serverLine = undefined;
+    if (serverPoll) clearInterval(serverPoll);
+    serverPoll = undefined;
+    // Kept on disk, so the next activation reads it back.
+    if (getDataDir?.()) {
+      ended.clear();
+      refusedApprovals.clear();
+    }
     await server?.dispose().catch(() => undefined);
     server = undefined;
     runAgentTurn = undefined;

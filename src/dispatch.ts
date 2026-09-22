@@ -119,6 +119,8 @@ export function applyStatus(run: ChildRun, status: RibRunStatus): string | undef
   run.status = status.status;
   run.checkout = { ...status.checkout };
   run.nodesDone = status.nodes.length;
+  const last = status.nodes.at(-1)?.nodeId;
+  if (last) run.lastNode = last;
   if (status.completedAt) run.completedAt = status.completedAt;
   if (status.error) run.error = status.error;
   if (status.pendingApproval) {

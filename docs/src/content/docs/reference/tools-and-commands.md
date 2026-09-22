@@ -66,10 +66,16 @@ refused.
 
 With an id, returns the summary: `id`, `task`, `status`, `channelId`,
 `channelName`, `startedAt`, `endedAt`, `turnsUsed`, `limits`, `agents`,
+`size`, `sizeBase`, `provider`, `model`, `workerModel`, `project`, `opId`,
+`clickclack` (its URL and workspace), `health` (present only while something is
+wrong: socket drops, a ClickClack fault, lead failures, nudges, refused
+conclusions, or `quietSince` when the swarm went idle at an open gate),
 `context` (the item list without bodies), `conclusion`, `draftConclusion`, and
 `error`. `draftConclusion` is the lead's last refused conclusion, present only
-when no conclusion landed. Without one, returns a short row per swarm. Ended swarms are answered for from memory:
-the last 20 of the current process.
+when no conclusion landed. Each agent carries the model it asks for and the
+provider that served its last turn. Without an id, returns a short row per
+swarm, starting swarms first, with its size and model. The last 50 ended swarms
+are kept in the rib's data directory, so they survive a restart.
 
 ### `chat_swarm_wait`
 

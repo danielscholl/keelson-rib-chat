@@ -41,11 +41,14 @@ import {
   type GateAnswer,
   SIZE_PRESETS,
   type SwarmAgent,
+  type SwarmHealth,
   type SwarmLimits,
+  type SwarmProject,
   type SwarmSize,
   type SwarmStatus,
   type SwarmSummary,
   sizeOf,
+  WORKER_TONES,
 } from "./types.ts";
 
 // The swarm engine. ClickClack is the bus and the durable record; this is the
@@ -92,18 +95,51 @@ export interface SwarmOptions {
   // Evidence snapshotted by the caller; immutable for the life of the swarm.
   context?: readonly ContextItem[];
   cwd?: string;
+  project?: SwarmProject;
+  opId?: string;
   provider?: string;
   model?: string;
   // Model for workers; the lead always uses `model`.
   workerModel?: string;
+  // Workflows whose gates the host refused to let a swarm answer, shared across
+  // swarms so the next gate on one is flagged for the operator at once.
+  approvalRefusals?: ApprovalRefusals;
   // Catalog workflows the lead may start on the project, and the seams to do it.
   dispatch?: { grants: readonly DispatchGrant[]; dispatcher: WorkflowDispatcher; pollMs?: number };
   log?: (message: string, data?: unknown) => void;
+  // Called after each change a view of the swarm would show.
+  onChange?: (kind: SwarmChange) => void;
   // How long the swarm must sit idle before that counts as quiescent.
   quiesceMs?: number;
   reconnectMs?: number;
   id?: string;
 }
+
+// Thrown by Swarm.start when boot fails, carrying the ended summary so the
+// failure stays on the record.
+export class SwarmStartError extends Error {
+  constructor(
+    message: string,
+    readonly summary: SwarmSummary,
+  ) {
+    super(message);
+  }
+}
+
+export interface ApprovalRefusals {
+  has(workflow: string): boolean;
+  set(workflow: string, refused: boolean): void;
+}
+
+export type SwarmChange =
+  | "start"
+  | "turn"
+  | "agent"
+  | "run"
+  | "gate"
+  | "conclusion"
+  | "health"
+  | "end";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -194,6 +230,8 @@ export class Swarm {
   private conclusion: string | undefined;
   private draftConclusion: string | undefined;
   private refusedConclusions = 0;
+  private socketDrops = 0;
+  private quietSince: string | undefined;
   private lastLeadFailure: string | undefined;
   // The last time an agent's channel call failed because ClickClack itself did.
   private channelFault: string | undefined;
@@ -219,7 +257,7 @@ export class Swarm {
       await swarm.boot();
     } catch (e) {
       await swarm.finish("error", errText(e));
-      throw e;
+      throw new SwarmStartError(errText(e), swarm.summary());
     }
     return swarm;
   }
@@ -229,6 +267,14 @@ export class Swarm {
       this.opts.log?.(message, data);
     } catch {
       // a throwing logger must never break the swarm
+    }
+  }
+
+  private changed(kind: SwarmChange): void {
+    try {
+      this.opts.onChange?.(kind);
+    } catch {
+      // a throwing listener must never break the swarm
     }
   }
 
@@ -249,6 +295,7 @@ export class Swarm {
       `**Swarm ${this.id}**\n\n${this.task}`,
     );
     this.log(`swarm ${this.id} started in #${this.channel.name}`);
+    this.changed("start");
     this.enqueueMessage(kickoff);
   }
 
@@ -259,12 +306,19 @@ export class Swarm {
       afterCursor: this.cursor,
       onEvent: (event) => this.onEvent(event),
       onClose: (code) => this.onSocketClose(code),
+      onOpen: () => {
+        if (this.socketDrops === 0) return;
+        this.socketDrops = 0;
+        this.changed("health");
+      },
     });
   }
 
   private onSocketClose(code: number): void {
     this.subscription = undefined;
     if (this.status !== "running") return;
+    this.socketDrops++;
+    this.changed("health");
     if (code === AUTH_REVOKED) {
       void this.finish("error", "ClickClack closed the socket: credential revoked");
       return;
@@ -388,6 +442,7 @@ export class Swarm {
 
   private retire(agent: SwarmAgent, status: "capped" | "failed", notice: string): void {
     agent.status = status;
+    this.changed("agent");
     this.inboxes.set(agent.id, []);
     this.background.delete(agent.id);
     void this.owner
@@ -406,7 +461,14 @@ export class Swarm {
     const waiting = [...this.inboxes.values()].some((inbox) => inbox.length > 0);
     if (waiting || this.notes.length > 0 || !this.kickedOff) return;
     // A run in flight will wake the lead when it moves; waiting on it is not idleness.
-    if (this.liveRuns().length > 0) return;
+    // A gate nobody is working on is, though, and only the operator can move it.
+    if (this.liveRuns().length > 0) {
+      if (!this.quietSince && this.liveRuns().some((r) => r.status === "paused")) {
+        this.quietSince = new Date().toISOString();
+        this.changed("health");
+      }
+      return;
+    }
     const lead = [...this.agents.values()].find((a) => a.lead);
     if (!lead || !this.canWork(lead.id) || this.nudges >= this.limits.maxNudges) {
       void this.finish("stalled", this.stallReason());
@@ -418,6 +480,7 @@ export class Swarm {
     }
     this.nudges++;
     this.log(`swarm idle; nudging the lead (${this.nudges}/${this.limits.maxNudges})`);
+    this.changed("health");
     void this.runAgent(lead, [], nudgeText(CONCLUSION_MAX));
   }
 
@@ -470,6 +533,8 @@ export class Swarm {
         : {}),
     });
     this.log(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
+    this.quietSince = undefined;
+    this.changed("turn");
 
     const workTools = this.opts.workTools ?? [];
     const dispatch = agent.lead ? this.opts.dispatch : undefined;
@@ -512,6 +577,7 @@ export class Swarm {
       durationMs: outcome.durationMs,
       ...(outcome.error ? { error: outcome.error } : {}),
     });
+    this.changed("turn");
     if (outcome.status === "timeout" || outcome.status === "error") {
       this.onTurnFailed(
         agent,
@@ -579,12 +645,15 @@ export class Swarm {
       displayName: `${sanitizeHandle(input.handle)} (${this.id})`,
     });
     const model = input.lead ? this.opts.model : (this.opts.workerModel ?? this.opts.model);
+    const workers = [...this.agents.values()].filter((a) => !a.lead).length;
+    const tone = input.lead ? "brand" : (WORKER_TONES[workers] ?? "neutral");
     const agent: SwarmAgent = {
       id: bot.handle,
       handle: bot.handle,
       displayName: bot.displayName,
       role: input.role,
       lead: input.lead,
+      tone,
       botUserId: bot.botUserId,
       tokenId: bot.tokenId,
       ...(input.spawnedBy ? { spawnedBy: input.spawnedBy } : {}),
@@ -596,6 +665,7 @@ export class Swarm {
     this.tokens.set(agent.id, bot.token);
     this.inboxes.set(agent.id, []);
     this.background.set(agent.id, []);
+    this.changed("agent");
     return agent;
   }
 
@@ -710,10 +780,19 @@ export class Swarm {
   }
 
   runLedger(): readonly ChildRun[] {
+    const answers = Boolean(this.opts.dispatch?.dispatcher.respond);
     return [...this.runs.values()].map((r) => ({
       ...r,
       prUrls: [...r.prUrls],
-      ...(r.pendingApproval ? { pendingApproval: { ...r.pendingApproval } } : {}),
+      ...(r.pendingApproval
+        ? {
+            pendingApproval: {
+              ...r.pendingApproval,
+              answerer:
+                answers && !this.opts.approvalRefusals?.has(r.workflow) ? "swarm" : "operator",
+            },
+          }
+        : {}),
       ...(r.approvals ? { approvals: [...r.approvals] } : {}),
     }));
   }
@@ -756,6 +835,7 @@ export class Swarm {
     };
     this.runs.set(runId, run);
     this.log(`started ${grant.name} run ${runId}: ${input.purpose}`);
+    this.changed("run");
     void this.onChannel(() =>
       client.postMessage(
         this.channel.id,
@@ -778,6 +858,7 @@ export class Swarm {
     if (!result.ok) throw new Error(`could not cancel run ${runId}: ${result.error}`);
     await this.syncRun(runId, { quiet: true });
     if (isLive(run)) run.status = "cancelled";
+    this.changed("run");
     return run;
   }
 
@@ -824,6 +905,7 @@ export class Swarm {
         // A run resuming after its approval needs nothing from the lead.
         this.notifyLead(change, { wake: run.status !== "running" });
       }
+      this.changed(gateKey(run.pendingApproval) !== gateBefore ? "gate" : "run");
     } catch (e) {
       this.log(`could not read run ${runId}: ${errText(e)}`);
     } finally {
@@ -938,6 +1020,10 @@ export class Swarm {
       gate.pauseId,
     );
     if (!result.ok) {
+      if (/ribApprovalGrants/.test(result.error)) {
+        this.opts.approvalRefusals?.set(run.workflow, true);
+        this.changed("gate");
+      }
       const refused = /ribApprovalGrants/.test(result.error)
         ? " The operator has not let this swarm answer this workflow's gates: tell them in the channel what the run is waiting for, then wait."
         : "";
@@ -955,7 +1041,9 @@ export class Swarm {
       at: new Date().toISOString(),
     };
     run.approvals = [...(run.approvals ?? []), answer];
+    this.opts.approvalRefusals?.set(run.workflow, false);
     this.log(`answered ${gate.nodeId} on run ${run.runId}: ${input.decision}`);
+    this.changed("gate");
     const record = [
       `**${input.decision === "approve" ? "Approved" : "Changes requested"}** \`${gate.nodeId}\` on run \`${run.runId}\`, on ${reviewer}'s review ${input.review}.`,
       input.reason,
@@ -1014,6 +1102,7 @@ export class Swarm {
     const live = this.liveRuns();
     if (live.length > 0) {
       this.draftConclusion = summary;
+      this.changed("conclusion");
       throw new Error(
         `${live.length} workflow run(s) are still live: ${live.map((r) => `${r.runId} (${r.workflow}, ${r.status})`).join(", ")}. Wait for them to finish, or cancel them with chat_workflow_cancel, then conclude.`,
       );
@@ -1021,6 +1110,7 @@ export class Swarm {
     if (summary.length > CONCLUSION_MAX) {
       this.draftConclusion = summary;
       this.refusedConclusions++;
+      this.changed("conclusion");
       throw new Error(
         `conclusion refused: it is ${summary.length} characters and the limit is ${CONCLUSION_MAX}. Cut at least ${summary.length - CONCLUSION_MAX} characters and call chat_done again. Detail that does not fit can go in a chat_post first.`,
       );
@@ -1030,6 +1120,7 @@ export class Swarm {
     for (const id of this.inboxes.keys()) this.inboxes.set(id, []);
     this.background.clear();
     this.log(`@${agent.handle} concluded the swarm`);
+    this.changed("conclusion");
     const parts = splitBody(summary, BODY_MAX - 32);
     try {
       for (const [i, part] of parts.entries()) {
@@ -1063,7 +1154,23 @@ export class Swarm {
     return this.finished;
   }
 
+  private health(): SwarmHealth | undefined {
+    const lead = [...this.agents.values()].find((a) => a.lead);
+    const leadFailures = lead ? (this.failures.get(lead.id) ?? 0) : 0;
+    const health: SwarmHealth = {
+      ...(this.socketDrops > 0 ? { socketDrops: this.socketDrops } : {}),
+      ...(this.channelFault ? { channelFault: this.channelFault } : {}),
+      ...(leadFailures > 0 ? { leadFailures } : {}),
+      ...(this.lastLeadFailure ? { lastLeadFailure: this.lastLeadFailure } : {}),
+      ...(this.nudges > 0 ? { nudges: this.nudges } : {}),
+      ...(this.refusedConclusions > 0 ? { refusedConclusions: this.refusedConclusions } : {}),
+      ...(this.quietSince ? { quietSince: this.quietSince } : {}),
+    };
+    return Object.keys(health).length > 0 ? health : undefined;
+  }
+
   summary(): SwarmSummary {
+    const health = this.health();
     return {
       id: this.id,
       task: this.task,
@@ -1079,6 +1186,10 @@ export class Swarm {
       ...(this.opts.provider ? { provider: this.opts.provider } : {}),
       ...(this.opts.model ? { model: this.opts.model } : {}),
       ...(this.opts.workerModel ? { workerModel: this.opts.workerModel } : {}),
+      ...(this.opts.project ? { project: this.opts.project } : {}),
+      ...(this.opts.opId ? { opId: this.opts.opId } : {}),
+      clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
+      ...(health ? { health } : {}),
       agents: this.roster(),
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
@@ -1095,6 +1206,7 @@ export class Swarm {
     this.status = status;
     this.endedAt = new Date().toISOString();
     if (status !== "done" && reason) this.error = reason;
+    this.changed("end");
     for (const timer of [this.quiesceTimer, this.wallClockTimer, this.reconnectTimer]) {
       if (timer) clearTimeout(timer);
     }

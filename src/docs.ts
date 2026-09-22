@@ -332,6 +332,27 @@ A run completes only when the swarm concluded or was stopped. A swarm that ends
 \`stalled\`, \`exhausted\` with no conclusion, or \`error\` fails its run with the
 status and reason, and the summary is the run's last progress frame.
 
+# Swarms tab
+
+> The Keelson tab that shows every swarm, what needs the operator, and each swarm's gate, runs, and agents.
+
+The rib publishes a Swarms tab. Live swarms are cards, sorted with the ones
+that need the operator first, then starting, then running. Each card names the
+swarm's size and model, and hovering Open spells both out. Ended swarms are
+rows, newest first. Open shows a swarm's board: vitals, context, open gates,
+runs with their evidence, agents, and the outcome, with Steer and Stop while it
+is live. Read in full opens the conclusion or a gate's prompt as markdown.
+
+A swarm needs the operator when ClickClack stopped answering (its socket closed
+twice without reopening), when a run waits at a gate the swarm cannot answer
+(the host refused it under \`ribApprovalGrants\`, or offers no respond), or when
+a run waits at a gate and the swarm went idle. A refusal is remembered per
+workflow, so the next gate on that workflow is flagged at once. The tab has no
+approve button: answer those gates in the Workflows tab.
+
+Start a swarm in Chat opens a chat that gathers context and calls
+\`chat_swarm_start\`.
+
 # Restarts
 
 > What survives a Keelson restart, and what does not.
@@ -342,8 +363,10 @@ and the terminal record of a finished run in the op registry.
 Does not survive: a swarm in flight. Swarm state, inboxes, agent sessions, and
 bot tokens are held in memory, so a restart ends the swarm without resuming it.
 A clean shutdown stops each swarm and revokes its tokens; a crash leaves the
-tokens unrevoked. \`chat_swarm_status\` answers for the last ${ENDED_KEPT} ended swarms of
-the current process only; after a restart use \`run_status\` on the run id.
+tokens unrevoked. \`chat_swarm_status\` answers for the last ${ENDED_KEPT} ended swarms,
+which the rib keeps in \`swarms.json\` in its data directory, so they survive a
+restart. A swarm a crash cut short is not among them; use \`run_status\` on its
+run id. A server reset forgets them.
 
 A managed ClickClack stops with Keelson, after the swarms have revoked their
 tokens, and starts again with the next swarm. One a person started by hand is

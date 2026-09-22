@@ -18,9 +18,11 @@ import {
   type DispatchGrant,
   readTurnContext,
   SIZE_PRESETS,
+  type StartingSwarm,
   SWARM_SIZES,
   type SwarmSize,
   type SwarmSummary,
+  sizeOf,
 } from "./types.ts";
 
 // The tool layer's seams, injected so the module stays testable: index.ts
@@ -44,6 +46,8 @@ export interface StartSwarmInput {
 
 export interface ToolDeps {
   swarms: Map<string, Swarm>;
+  // Swarms between the start call and a booted channel.
+  starting?: ReadonlyMap<string, StartingSwarm>;
   // Summaries of swarms that have ended, kept so status still answers.
   ended: Map<string, SwarmSummary>;
   // `url` is the ClickClack server the swarm runs on, for pointing a human at its UI.
@@ -68,7 +72,7 @@ export const TRANSCRIPT_PAGE = 40_000;
 // message the lead can act on, and keeps the refused draft.
 const CONCLUSION_HARD_MAX = 200_000;
 // Ended swarms whose summary chat_swarm_status still answers for.
-export const ENDED_KEPT = 20;
+export const ENDED_KEPT = 50;
 function tooLong(max: number) {
   return {
     error: (issue: { input?: unknown }) => {
@@ -520,19 +524,29 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           if (!summary) return emitText(ctx, `no swarm '${args.swarm}'`, true);
           return emitText(ctx, JSON.stringify(summary, null, 1));
         }
+        const pending = [...(deps.starting?.values() ?? [])].map((s) => ({
+          id: s.id,
+          status: "starting",
+          size: sizeOf(s.limits, s.sizeBase),
+          model: modelLabel({ ...s, agents: [] }),
+          task: s.task.slice(0, 120),
+        }));
         const all = [...[...deps.swarms.values()].map((s) => s.summary()), ...deps.ended.values()];
         emitText(
           ctx,
           JSON.stringify(
-            all.map((s) => ({
-              id: s.id,
-              status: s.status,
-              channelName: s.channelName,
-              turnsUsed: s.turnsUsed,
-              size: s.size,
-              model: modelLabel(s),
-              task: s.task.slice(0, 120),
-            })),
+            [
+              ...pending,
+              ...all.map((s) => ({
+                id: s.id,
+                status: s.status,
+                channelName: s.channelName,
+                turnsUsed: s.turnsUsed,
+                size: s.size,
+                model: modelLabel(s),
+                task: s.task.slice(0, 120),
+              })),
+            ],
             null,
             1,
           ),
