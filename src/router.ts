@@ -39,6 +39,26 @@ export function mentionedHandles(body: string): string[] {
   return [...found];
 }
 
+// Text that opens a sentence, ignoring markdown marks.
+const OPENS = /(^|\n|[.!?:]\s)[\s*_>`~-]*$/;
+const SENTENCE_END = /[.!?](\s|$)|\n/;
+
+// Handles a message speaks to rather than about: the mention opens a sentence,
+// or the sentence it sits in is a question.
+export function addressedHandles(body: string): string[] {
+  const found = new Set<string>();
+  for (const match of body.matchAll(MENTION)) {
+    const handle = match[2];
+    if (!handle) continue;
+    const at = (match.index ?? 0) + (match[1]?.length ?? 0);
+    const rest = body.slice(at);
+    const end = rest.search(SENTENCE_END);
+    const asks = end >= 0 && rest[end] === "?";
+    if (OPENS.test(body.slice(0, at)) || asks) found.add(handle.toLowerCase());
+  }
+  return [...found];
+}
+
 export function route(input: RouteInput): string[] {
   const { message, agents, threadParticipants, threadStarter } = input;
   const author = agents.find((a) => a.botUserId === message.authorId);

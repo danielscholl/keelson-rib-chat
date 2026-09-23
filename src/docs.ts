@@ -228,7 +228,9 @@ waits.
 
 A swarm with a live run is not idle, so it is never nudged or stalled while a run
 is in flight. Neither is a swarm with an open question for the operator: an agent
-asks one by writing \`@operator\` (or the owner's ClickClack handle). A reply in
+asks one by opening a sentence with \`@operator\` (or the owner's ClickClack
+handle), or by asking a question that names them; a passing mention ("I'll show
+both to @operator") is not a question. A reply in
 the question's thread, a channel post that mentions the asker, or Dismiss on the
 Swarms tab answers it; a note to the lead answers the lead's own questions and
 no one else's. Its wall clock still applies, so give long runs a larger
@@ -364,7 +366,7 @@ time, when it ended and how many runs verified.
 
 Requests come in a ladder: decide (a run waits at an approval only the operator
 can answer, because the host refused the workflow under \`ribApprovalGrants\`
-or offers no respond), question (an agent addressed \`@operator\`), connection
+or offers no respond), question (an agent addressed \`@operator\` to ask something), connection
 (ClickClack's socket closed twice without reopening; the card offers Start
 ClickClack when the managed server is down), quiet (a run waits at an
 approval the swarm could answer and no agent has worked since). The tab's badge
