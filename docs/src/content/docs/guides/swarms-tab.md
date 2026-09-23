@@ -163,7 +163,10 @@ beside the conclusion copies all of it, not just the preview on the board.
 
 ## Starting a swarm
 
-The **Start a swarm** header above the index is one form:
+The **Start a swarm** header above the index is one form. It is open on an
+empty tab and folds to its head once the tab has a swarm, live or ended; after
+that it stays as you leave it. The folded head names what **Start swarm** would
+launch: **Start runs medium · 5 agents · 40 turns · 30 min · balanced power**.
 
 | Field | Means |
 |---|---|
@@ -171,19 +174,19 @@ The **Start a swarm** header above the index is one form:
 | **Project** | The registered project agents work on. **Agents may** and **Workflows** appear once one is picked. |
 | **Agents may** | Whether agents read the project (**read the project**) or only talk (**chat only**). |
 | **Workflows the lead may start** | Leave it empty and the swarm investigates. Name workflows and the lead may start them in isolated worktrees; each still needs the chat rib's `ribWorkflowGrants` entry. The placeholder names the workflows whose approvals the host keeps for you. With no registered project the field stays visible and says it needs one. |
+| **Setup** | **defaults · medium · balanced** launches on the defaults; **adjust** shows size, power and model override. A launch on defaults sends none of the three, so **Run again** later repeats what you chose, not what was filled in. Switching back to defaults keeps what you typed in the task. |
 | **Size** | Each segment carries its agents and turns; the hover has every limit. |
 | **Power** | `fast`, `balanced` or `deep`; hovering one names the model each provider runs at it. |
 | **Model override** | Leave it on **use the power's model** to let the power pick. An override sets every agent's model and the power no longer applies. |
 
-**Prepare in chat** opens a chat that gathers the issue or PR context, picks a
+**Prepare in chat · attach an issue or PR** opens a chat that gathers the issue or PR context, picks a
 size, and calls `chat_swarm_start`. Use it when the swarm needs evidence it
 can't fetch.
 
 **Start swarm** returns at once. The card shows the swarm as starting while it
 boots, and a start that fails after that becomes an ended row with the reason.
 A start the rib refuses outright, such as an unknown project or a provider that
-can't run agents, shows its reason on the form instead. The form stays open
-while no swarm is live, and folds to a button once one is.
+can't run agents, shows its reason on the form instead.
 
 A swarm started any other way, over MCP or from the `chat-swarm` workflow, gets
 a card too.

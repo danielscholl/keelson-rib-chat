@@ -77,13 +77,18 @@ function startInput(payload: Record<string, unknown>): StartSwarmInput | string 
   if (LINK.test(task)) return LINK_REFUSAL;
   const project = text(payload, "project");
   const tools = text(payload, "tools");
+  // On defaults the launch records no size, power or model, so the kept launch
+  // says what was chosen and Run again repeats a choice rather than a default.
+  const adjusted = text(payload, "setup") !== "defaults";
+  const size = adjusted ? sizeOf(payload) : undefined;
+  const power = adjusted ? powerOf(payload) : undefined;
   const input: StartSwarmInput = {
     task,
     workTools: tools === "none" ? "none" : "read",
-    size: sizeOf(payload) ?? "medium",
-    power: powerOf(payload) ?? "balanced",
+    ...(size ? { size } : {}),
+    ...(power ? { power } : {}),
     ...(project ? { project } : {}),
-    ...modelOf(payload),
+    ...(adjusted ? modelOf(payload) : {}),
   };
   const names = [
     ...new Set(

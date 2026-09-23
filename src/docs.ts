@@ -396,7 +396,11 @@ item by id with its text under a disclosure, the activity with repeats counted
 CI detail), and About. A note posted with Message the lead shows in the
 activity at once.
 
-The Start a swarm header is one form. Workflows named means the lead may
+The Start a swarm header is one form, open on an empty tab and folded once
+the tab has a swarm; its folded head names the default launch. Setup starts on
+defaults (medium, balanced power, the power's model), and adjust shows size,
+power and model override; a launch on defaults sends none of them, so Run again
+repeats a choice and not a default. Workflows named means the lead may
 dispatch them; none named means the swarm investigates. A task that names a
 URL or #N with no context is refused, since agents cannot open links; Prepare
 in chat opens a chat that gathers the evidence and calls \`chat_swarm_start\`.

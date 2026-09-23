@@ -18,7 +18,7 @@ import { createSwarmFileStore } from "./store.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
 import type { SurfaceState } from "./surface/index-board.ts";
 import { BADGE_KEY, INDEX_KEY, LAUNCH_KEY, SERVER_KEY, SURFACE_ID } from "./surface/keys.ts";
-import { type LaunchState, sizesByline } from "./surface/launch-board.ts";
+import { type LaunchState, launchByline } from "./surface/launch-board.ts";
 import type { ServerLine } from "./surface/parts.ts";
 import { createServerOps } from "./surface/server-ops.ts";
 import { LOG_LINES, type ServerPanelState } from "./surface/server-panel.ts";
@@ -326,6 +326,7 @@ function launchState(): LaunchState {
   return {
     projects,
     live: swarms.size + starting.size,
+    ended: ended.size,
     refused: [...refusedApprovals],
     ...(classes.length > 0 ? { classes } : {}),
     ...(canDispatch
@@ -608,7 +609,7 @@ const rib: Rib = {
       hideRegionActions: true,
       badgeKey: BADGE_KEY,
       layout: {
-        header: { key: LAUNCH_KEY, collapsible: true, byline: sizesByline() },
+        header: { key: LAUNCH_KEY, collapsible: true, byline: launchByline() },
         rows: [{ columns: [{ key: INDEX_KEY, live: true }] }],
         footer: { key: SERVER_KEY, collapsible: true, collapsed: true },
       },
