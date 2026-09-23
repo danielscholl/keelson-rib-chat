@@ -2,6 +2,7 @@ import type {
   MessageChunk,
   RibAgentTurn,
   RibAgentTurnRequest,
+  RibRunStatus,
   ToolDefinition,
 } from "@keelson/shared";
 import type { ClickClackTransport } from "../src/clickclack.ts";
@@ -315,4 +316,56 @@ export function scriptedProvider(tools: readonly ToolDefinition[], script: Scrip
     return { stream, result };
   };
   return { run, requests };
+}
+
+// A workflow host whose runs move only when a test sets their status.
+export function fakeDispatcher(
+  opts: { live?: boolean; refuseAnswers?: string; answers?: boolean } = {},
+) {
+  const states = new Map<string, RibRunStatus>();
+  const started: { name: string; inputs: Record<string, string> }[] = [];
+  const cancelled: string[] = [];
+  const answered: { runId: string; nodeId: string; text: string; pauseId?: string }[] = [];
+  let n = 0;
+  const set = (runId: string, patch: Partial<RibRunStatus>) => {
+    const current = states.get(runId);
+    if (current) states.set(runId, { ...current, ...patch });
+  };
+  const respond = async (runId: string, nodeId: string, text: string, pauseId?: string) => {
+    if (opts.refuseAnswers) return { ok: false as const, error: opts.refuseAnswers };
+    answered.push({ runId, nodeId, text, ...(pauseId ? { pauseId } : {}) });
+    set(runId, { status: "running", pendingApproval: undefined });
+    return { ok: true as const };
+  };
+  return {
+    started,
+    cancelled,
+    answered,
+    set,
+    dispatcher: {
+      ...(opts.answers || opts.refuseAnswers ? { respond } : {}),
+      start: async (name: string, inputs: Record<string, string>) => {
+        n++;
+        const runId = `run_${n}`;
+        started.push({ name, inputs });
+        states.set(runId, {
+          runId,
+          workflowName: name,
+          status: "running",
+          startedAt: new Date().toISOString(),
+          checkout: opts.live
+            ? { path: "/project", branch: "main", worktreeEstablished: false }
+            : { path: `/wt/${runId}`, branch: `keelson/${runId}`, worktreeEstablished: true },
+          nodes: [],
+        });
+        return { runId };
+      },
+      status: async (runId: string) => states.get(runId),
+      cancel: async (runId: string) => {
+        cancelled.push(runId);
+        set(runId, { status: "cancelled" });
+        return { ok: true as const };
+      },
+    },
+  };
 }
