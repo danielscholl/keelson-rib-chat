@@ -314,7 +314,7 @@ describe("Swarms boards", () => {
     expect(() => expectView(swarmKey("s7act"), "board")(drawer)).not.toThrow();
     const recent = JSON.stringify(drawer).match(/"title":"Recent","items":(\[.*?\])/)?.[1];
     const items = JSON.parse(recent ?? "[]");
-    expect(items).toHaveLength(8);
+    expect(items).toHaveLength(12);
     expect(items[0]).toMatchObject({ text: "@lead turn 12 ok", trailing: "14:21" });
     const index = JSON.stringify(buildIndex(state({ live: [s] })));
     expect(index).toContain('"label":"14:21","text":"@lead turn 12 ok"');
@@ -372,6 +372,17 @@ describe("the reading pane", () => {
     expect(doc).toContain("### plan.md\n\n## Steps\n\n1. Count the nodes.");
     expect(doc).toContain("### diff.patch (cut short)\n\n````\n+12 nodes\n````");
     expect(doc).toContain("### notes.txt\n\n*Could not be read: not found.*");
+  });
+
+  test("the board's conclusion preview drops markdown marks; the pane keeps them", () => {
+    const md = swarm("s8mdn", {
+      status: "done",
+      endedAt: T0,
+      conclusion: "**Show all 12.** Drop `RECENT_SHOWN`.",
+    });
+    const drawer = JSON.stringify(buildSwarmBoard(md));
+    expect(drawer).toContain('"value":"Show all 12. Drop RECENT_SHOWN."');
+    expect(buildDoc(md, "s8mdn")).toContain("**Show all 12.** Drop `RECENT_SHOWN`.");
   });
 
   test("the conclusion's copy button reveals the whole conclusion", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { expectView } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { needsYou } from "../src/needs.ts";
+import { buildDoc } from "../src/surface/doc.ts";
 import { buildIndex } from "../src/surface/index-board.ts";
 import { INDEX_KEY, swarmKey } from "../src/surface/keys.ts";
 import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
@@ -114,6 +115,36 @@ describe("an agent asking the operator", () => {
     expect(swarm.summary().health?.asks?.map((a) => a.text)).toEqual([
       "@dana should the cap stay?",
     ]);
+    await swarm.stop();
+  });
+
+  test("a long ask keeps its question: the card shows the line that asks, the pane all of it", async () => {
+    const long = [
+      "@operator The evidence does not decide this, so I need your preference.",
+      "",
+      `**What we measured.** ${"Showing all 12 adds 484 bytes. ".repeat(20)}`,
+      "",
+      "**Which do you prefer, 8 of 12 or all 12?**",
+      "",
+      "1. Keep 8 of 12.",
+      "2. Show all 12.",
+    ].join("\n");
+    const { start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId === "s1-lead" && turn === 1) await call("chat_post", { body: long });
+    });
+    const swarm = await start();
+    await settle();
+    const s = swarm.summary();
+    const index = JSON.stringify(buildIndex({ live: [s], starting: [], ended: [] }));
+    expect(index).toContain("asked at");
+    expect(index).toContain(": Which do you prefer, 8 of 12 or all 12?");
+    const drawer = JSON.stringify(buildSwarmBoard(s));
+    expect(drawer).toContain('"footnote":"Which do you prefer, 8 of 12 or all 12?"');
+    expect(drawer).toContain("Read the question");
+    const doc = buildDoc(s, "s1");
+    expect(doc).toContain("## @lead asked you");
+    expect(doc).toContain("2. Show all 12.");
+    expect(doc).not.toContain("@operator");
     await swarm.stop();
   });
 

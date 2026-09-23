@@ -7,7 +7,8 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { GateFileText, SwarmSummary } from "../types.ts";
-import { channelHref, day, hhmm, threadHref } from "./format.ts";
+import { channelHref, day, hhmm, shortHandle, threadHref } from "./format.ts";
+import { askText } from "./parts.ts";
 
 function fileSection(f: GateFileText): string {
   if (f.text === undefined) return `### ${f.path}\n\n*Could not be read: ${f.error ?? "no text"}.*`;
@@ -35,9 +36,13 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
       : "";
     return `${title}\n\n*Swarm ${s.id} ended ${s.status}: ${why}. ${where}*${draft}\n`;
   }
+  const asks = (s.health?.asks ?? []).map(
+    (a) =>
+      `## @${shortHandle(a.handle, s.id)} asked you · ${hhmm(a.at)}\n\n${askText(a.text)}\n\nPost in ${where} or steer the lead to answer.`,
+  );
   const gates = (s.runs ?? []).filter((r) => r.status === "paused" && r.pendingApproval);
-  if (gates.length > 0) {
-    const parts = gates.map((r) => {
+  if (gates.length > 0 || asks.length > 0) {
+    const gateParts = gates.map((r) => {
       const gate = r.pendingApproval;
       const thread = threadHref(s, gate?.threadId);
       const quoted = (gate?.prompt ?? "")
@@ -47,7 +52,7 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
       const files = (gate?.files ?? []).map(fileSection).join("\n\n");
       return `## ${gate?.nodeId} · ${r.workflow} ${r.runId}\n\n${quoted}${files ? `\n\n${files}` : ""}${thread ? `\n\n[The gate thread](${thread}) holds the review.` : ""}`;
     });
-    return `${title}\n\n*Swarm ${s.id} · ${where}*\n\n${parts.join("\n\n")}\n`;
+    return `${title}\n\n*Swarm ${s.id} · ${where}*\n\n${[...asks, ...gateParts].join("\n\n")}\n`;
   }
-  return `${title}\n\n*Swarm ${s.id} is working in ${where}.* Nothing to read here yet: a conclusion or an open gate shows here.\n`;
+  return `${title}\n\n*Swarm ${s.id} is working in ${where}.* Nothing to read here yet: a conclusion, a question for you, or an open gate shows here.\n`;
 }

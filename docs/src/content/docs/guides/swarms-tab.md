@@ -41,7 +41,7 @@ A card is marked **needs you** when the swarm can't make progress without you:
 | ClickClack stopped answering: the swarm's socket closed twice without reopening | Check the server with `chat_server_status`. |
 | A gate only you can answer: the host refused the swarm's answer under `ribApprovalGrants`, or offers the rib no way to answer | Answer the run in the Workflows tab, or grant the chat rib approvals for that workflow. |
 | A gate nobody is working on: a run is paused and the swarm went idle | Reply in the gate thread, steer the lead, or answer the run in the Workflows tab. |
-| An agent asked you: its message @mentions `@operator`, or your ClickClack handle | Post in the channel, or steer the lead. |
+| An agent asked you: its message @mentions `@operator`, or your ClickClack handle | Post in the channel, or steer the lead. **Read the question** shows the whole message. |
 
 A swarm with an open question waits for you. It isn't nudged or stalled, and
 only its wall clock ends it.
@@ -61,7 +61,7 @@ the plan in the gate thread.
 - open gates
 - the workflow runs, each with a worktree, PR, and CI strip
 - the agents
-- the last eight things the swarm did, newest first
+- the last twelve things the swarm did, newest first
 - the outcome, once there is one
 
 **Steer** posts a note in the channel as the operator, which wakes the lead.
