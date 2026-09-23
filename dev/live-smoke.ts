@@ -183,7 +183,7 @@ const indexOk =
   heads.has("1 live") &&
   pills.has("running") &&
   meters > 0 &&
-  endedIndex.includes(`"trailing":"${summary.id} · `) &&
+  endedIndex.includes(` · ${summary.id}","trailing":"`) &&
   endedIndex.includes('"label":"done"');
 console.log(
   `index: heads=${[...heads].join("|")} pills=${[...pills].join("|")} meters=${meters} ended row=${endedIndex.includes('"label":"done"')}`,

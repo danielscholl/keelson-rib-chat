@@ -43,6 +43,7 @@ import {
   openHint,
   type Request,
   requestOf,
+  type ServerLine,
   sizeDetail,
   sizeWord,
   stopAction,
@@ -64,7 +65,6 @@ export const DETAIL_CHARS = 4_000;
 // does not ship eighty thousand characters in every frame.
 const CONTEXT_DETAIL_BUDGET = 24_000;
 export const RECENT_SHOWN = 12;
-const BENCH_COLUMNS = 4;
 
 // A board field renders text as is, so markdown's emphasis and code marks come off.
 function plain(markdown: string): string {
@@ -108,7 +108,7 @@ function requestCard(request: Request): Card {
   return {
     title: request.title,
     pill: request.pill,
-    fields: [{ value: request.line }],
+    fields: [{ value: request.line }, ...(request.link ? [request.link] : [])],
     actions: [request.primary, ...request.more],
   };
 }
@@ -162,9 +162,9 @@ function reviewingCard(s: SwarmSummary, run: ChildRun): Card {
   };
 }
 
-function requests(s: SwarmSummary, needs: readonly Need[]): Leaf[] {
+function requests(s: SwarmSummary, needs: readonly Need[], server?: ServerLine): Leaf[] {
   if (!live(s)) return [];
-  const asked = needs.map((n) => requestCard(requestOf(s, n)));
+  const asked = needs.map((n) => requestCard(requestOf(s, n, server)));
   const reviewing = (s.runs ?? [])
     .filter(
       (r) =>
@@ -272,6 +272,7 @@ function agentCard(s: SwarmSummary, a: SwarmSummary["agents"][number]): Card {
     mono: true,
     ...(live(s) ? { pill: AGENT_PILL[a.status] } : {}),
     ...(a.lead ? {} : { bar: { value: a.turns, total: s.limits.maxTurnsPerAgent } }),
+    stacked: true,
     fields: [
       { value: firstLine(a.role, 64) },
       { value: tokens ? `${turns} · ${tokens}` : turns },
@@ -291,7 +292,6 @@ function bench(s: SwarmSummary): Leaf {
     kind: "cards",
     title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`,
     grid: true,
-    columns: BENCH_COLUMNS,
     items: items.length > 0 ? items : [{ title: "No agents yet", ghost: true }],
   };
 }
@@ -370,12 +370,18 @@ function runRows(s: SwarmSummary): Row[] {
       ...(href ? { href } : {}),
       action: { type: "open-run", payload: { id: s.id, runId: run.runId } },
     };
-    const answers: Row[] = (run.approvals ?? []).map((a) => ({
-      icon: a.decision === "approve" ? "✓" : "↺",
-      glyph: a.decision === "approve" ? "ok" : "warn",
-      text: `${a.nodeId} ${a.decision === "approve" ? "approved" : "sent back"} on ${a.reviewer}'s review`,
-      trailing: hhmm(a.at),
-    }));
+    const answers: Row[] = (run.approvals ?? []).map((a) => {
+      const why = [a.reason, ...(a.feedback ? [`Changes asked: ${a.feedback}`] : [])].join("\n\n");
+      const review = threadHref(s, a.review);
+      return {
+        icon: a.decision === "approve" ? "✓" : "↺",
+        glyph: a.decision === "approve" ? "ok" : "warn",
+        text: `${a.nodeId} ${a.decision === "approve" ? "approved" : "sent back"} on ${activityText(s.id, a.reviewer)}'s review`,
+        trailing: hhmm(a.at),
+        ...(why.trim() ? { detail: why.slice(0, DETAIL_CHARS) } : {}),
+        ...(review ? { href: review } : {}),
+      };
+    });
     return [row, ...answers];
   });
 }
@@ -439,16 +445,29 @@ function taskAndContext(s: SwarmSummary): Leaf[] {
 // ---- Activity, newest first, repeats counted. ----
 
 function activity(s: SwarmSummary): Leaf[] {
-  const entries = [...(s.activity ?? [])].reverse().slice(0, RECENT_SHOWN);
+  const all = s.activity ?? [];
+  const entries = [...all].reverse().slice(0, RECENT_SHOWN);
   if (entries.length === 0) return [];
+  const earlier = all.length - entries.length;
   return [
     {
       kind: "rows",
       title: "Activity",
-      items: entries.map((e) => ({
-        text: `${firstLine(activityText(s.id, e.text), 90)}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`,
-        trailing: hhmm(e.at),
-      })),
+      items: [
+        ...entries.map((e) => ({
+          text: `${firstLine(activityText(s.id, e.text), 90)}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`,
+          trailing: hhmm(e.at),
+        })),
+        ...(earlier > 0
+          ? [
+              {
+                icon: "▤",
+                text: `Read the full log · ${plural(earlier, "earlier event")}`,
+                action: { type: "read-doc", payload: { id: s.id } },
+              },
+            ]
+          : []),
+      ],
     },
   ];
 }
@@ -575,6 +594,8 @@ function rerun(s: SwarmSummary, launch: StartSwarmInput | undefined): Leaf[] {
 export interface BoardOptions {
   // The launch the swarm was started with, when the rib kept it, so it can run again.
   launch?: StartSwarmInput;
+  // The ClickClack server, so a connection request can offer to start it.
+  server?: ServerLine;
 }
 
 export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): CanvasBoardView {
@@ -601,7 +622,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
         : {}),
     },
     sections: isLiveNow
-      ? [...requests(s, needs), ...outcome(s), stats(s), ...controls(s), ...record]
+      ? [...requests(s, needs, opts.server), ...outcome(s), stats(s), ...controls(s), ...record]
       : [...outcome(s), stats(s), ...rerun(s, opts.launch), ...record],
   };
 }

@@ -7,7 +7,15 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { GateFileText, SwarmSummary } from "../types.ts";
-import { channelHref, day, hhmm, shortHandle, threadHref } from "./format.ts";
+import {
+  activityText,
+  channelHref,
+  day,
+  firstLine,
+  hhmm,
+  shortHandle,
+  threadHref,
+} from "./format.ts";
 import { askText } from "./parts.ts";
 
 function fileSection(f: GateFileText): string {
@@ -37,6 +45,11 @@ function record(s: SwarmSummary): string {
       : "";
     parts.push(`## ${c.kind}: ${c.title}\n\n*${meta}*${body}`);
   }
+  const log = (s.activity ?? []).map(
+    (e) =>
+      `- ${hhmm(e.at)} ${firstLine(activityText(s.id, e.text), 160)}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`,
+  );
+  if (log.length > 0) parts.push(`## Activity\n\n${log.join("\n")}`);
   return parts.filter(Boolean).join("\n\n");
 }
 
@@ -83,5 +96,5 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
     });
     return `${title}\n\n*Swarm ${s.id} · ${where}*\n\n${[...asks, ...gateParts].join("\n\n")}${after}\n`;
   }
-  return `${title}\n\n*Swarm ${s.id} is working in ${where}.* Nothing to read here yet: a conclusion, a question for you, or an open approval shows here.${after}\n`;
+  return `${title}\n\n*Swarm ${s.id} is working in ${where}.* Nothing waits on you: a conclusion, a question for you, or an open approval shows here first.${after}\n`;
 }

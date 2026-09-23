@@ -201,15 +201,16 @@ export async function handleSwarmsAction(
       deps.surface?.track([id]);
       return { ok: true, data: { effect: "open-canvas", key: docKey(id), title: `Swarm ${id}` } };
     }
+    case "message-lead":
     case "steer": {
       const swarm = id ? deps.live(id) : undefined;
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
       if (swarm.summary().conclusion !== undefined) {
-        return fail(`swarm ${id} has concluded; a steer would never be read`);
+        return fail(`swarm ${id} has concluded; the lead would never read it`);
       }
       const note = typeof payload.note === "string" ? payload.note.trim() : "";
-      if (!note) return fail("a steer needs a note");
-      if (note.length > BODY_MAX) return fail(`a steer is at most ${BODY_MAX} characters`);
+      if (!note) return fail("a message needs a note");
+      if (note.length > BODY_MAX) return fail(`a message is at most ${BODY_MAX} characters`);
       await swarm.steer(note);
       return { ok: true };
     }

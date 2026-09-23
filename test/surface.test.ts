@@ -14,10 +14,12 @@ import rib from "../src/index.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
+import { hhmm } from "../src/surface/format.ts";
 import {
   buildBadge,
   buildHistory,
   buildIndex,
+  endedRow,
   type SurfaceState,
 } from "../src/surface/index-board.ts";
 import {
@@ -40,7 +42,7 @@ import {
   type SwarmsSurface,
 } from "../src/surface/surface.ts";
 import { buildGoneBoard, buildStartingBoard, buildSwarmBoard } from "../src/surface/swarm-board.ts";
-import type { Swarm } from "../src/swarm.ts";
+import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
 import type { StartSwarmInput } from "../src/tools.ts";
 import {
   type ChildRun,
@@ -278,6 +280,28 @@ describe("Swarms boards", () => {
     ]);
   });
 
+  test("a connection request starts a stopped managed server and links the channel", () => {
+    const down = { mode: "managed" as const, running: false };
+    const card = cardsOf(buildIndex(state({ live: [fixtures.gone!], server: down })))[0];
+    expect(card?.pill).toEqual({ label: "connection", tone: "error" });
+    expect(card?.fields?.[0]?.value).toContain("the managed server is not running");
+    expect(card?.fields?.[1]).toEqual({
+      value: "#swarm-s4n4x in ClickClack",
+      href: "http://127.0.0.1:18080/app/ws_1/ch_s4n4x",
+    });
+    expect(card?.actions?.map((a) => a.type).slice(0, 2)).toEqual(["server-start", "swarm-open"]);
+    const up = { mode: "managed" as const, running: true, url: "http://127.0.0.1:18080" };
+    const retrying = cardsOf(buildIndex(state({ live: [fixtures.gone!], server: up })))[0];
+    expect(retrying?.fields?.[0]?.value).toContain("the swarm retries every 2 seconds");
+    expect(retrying?.actions?.[0]?.type).toBe("swarm-open");
+    const view = buildSwarmBoard(fixtures.gone!, { server: down });
+    board(swarmKey("s4n4x"), view);
+    const request = view.sections.find((s) => s.kind === "cards");
+    expect(request?.kind === "cards" ? request.items[0]?.actions?.[0]?.type : "").toBe(
+      "server-start",
+    );
+  });
+
   test("a request card leads with the decision, its verb, and no meter", () => {
     const card = cardsOf(buildIndex(state({ live: [fixtures.onlyYou!] })))[0];
     expect(card?.pill).toEqual({ label: "decide", tone: "caution" });
@@ -285,7 +309,11 @@ describe("Swarms boards", () => {
     expect(card?.fields?.[0]?.value).toBe(
       "fix-issue r20000-1 paused at approve-plan since 14:31 · only you can approve fix-issue on this host",
     );
-    expect(card?.fields?.[1]?.value).toMatch(
+    expect(card?.fields?.[1]).toEqual({
+      value: "the approval thread in ClickClack",
+      href: "http://127.0.0.1:18080/app/ws_1/msg_0042",
+    });
+    expect(card?.fields?.[2]?.value).toMatch(
       /^11 of 80 turns used · 69 remaining · \d+ of 60 min$/,
     );
     expect(card?.footnote).toBe(
@@ -343,9 +371,16 @@ describe("Swarms boards", () => {
     expect(items).toHaveLength(9);
     expect(items[0]).toMatchObject({
       chip: { label: "done", tone: "ok" },
-      text: "Fix issue #27: README undercounts frontend-mix nodes",
+      text: "Fix issue #27: README undercounts frontend-mix nodes · s0010",
     });
-    expect(items[0]?.trailing?.startsWith("s0010 · gpt-5.6-sol · 11 turns · ")).toBe(true);
+    expect(items[0]?.trailing?.startsWith("gpt-5.6-sol · 11 turns · ")).toBe(true);
+    const done = fixtures.done!;
+    expect(endedRow(done, new Date("2026-09-30T12:00:00Z")).trailing).toBe(
+      "gpt-6-astra · workers gpt-5.6-sol · 11 turns · 29 min · Sep 22 · 1 of 1 run verified",
+    );
+    expect(endedRow(done, new Date(done.endedAt!)).trailing).toBe(
+      `gpt-6-astra · workers gpt-5.6-sol · 11 turns · 29 min · ${hhmm(done.endedAt)} · 1 of 1 run verified`,
+    );
     expect(items.at(-1)).toMatchObject({
       text: "3 earlier ended swarms",
       action: { type: "history-open" },
@@ -366,7 +401,7 @@ describe("Swarms boards", () => {
     expect(text).not.toContain('"type":"steer"');
     expect(text).toContain('"label":"Runs verified","value":"1 of 1","tone":"ok"');
     expect(JSON.stringify(buildIndex(state({ ended: [fixtures.done!] })))).toContain(
-      "· Sep 22 14:00 · 1 of 1 run verified",
+      "· Sep 22 · 1 of 1 run verified",
     );
   });
 
@@ -416,7 +451,7 @@ describe("Swarms boards", () => {
     const actions = view.sections.filter((s) => s.kind === "actions");
     expect(actions).toHaveLength(1);
     const items = actions[0]?.kind === "actions" ? actions[0].items : [];
-    expect(items.map((i) => i.type)).toEqual(["steer", "stop-swarm"]);
+    expect(items.map((i) => i.type)).toEqual(["message-lead", "stop-swarm"]);
     expect(items[0]).toMatchObject({ label: "Message the lead", expanded: true });
     expect(items[1]).toMatchObject({ inline: true, align: "end" });
     const review = view.sections[0];
@@ -439,7 +474,8 @@ describe("Swarms boards", () => {
     const view = buildSwarmBoard(fixtures.waiting!);
     const bench = view.sections.find((x) => x.kind === "cards" && x.title?.startsWith("Agents"));
     const items = bench?.kind === "cards" ? bench.items : [];
-    expect(bench).toMatchObject({ grid: true, columns: 4, title: "Agents · 2 of 5" });
+    expect(bench).toMatchObject({ grid: true, title: "Agents · 2 of 5" });
+    expect(bench).not.toHaveProperty("columns");
     expect(items).toHaveLength(5);
     expect(items[0]).toMatchObject({
       title: "lead",
@@ -547,7 +583,7 @@ ${"detail ".repeat(1000)}`,
       runs,
       task: "t".repeat(8000),
       conclusion: "c".repeat(20_000),
-      activity: Array.from({ length: 12 }, () => ({ at: T0, text: "a".repeat(400) })),
+      activity: Array.from({ length: ACTIVITY_KEPT }, () => ({ at: T0, text: "a".repeat(400) })),
       usage: { input: 9_000_000, output: 400_000, cached: 7_000_000 },
     });
     const many = Array.from({ length: 50 }, (_, i) =>
@@ -563,7 +599,43 @@ ${"detail ".repeat(1000)}`,
       16_000,
     );
     expect(JSON.stringify(buildSwarmBoard(big)).length).toBeLessThan(48_000);
-    expect(buildDoc(big, big.id).length).toBeLessThan(96_000);
+    expect(buildDoc(big, big.id).length).toBeLessThan(128_000);
+  });
+});
+
+describe("the record", () => {
+  const rowsTitled = (view: ReturnType<typeof buildSwarmBoard>, title: string) => {
+    const section = view.sections.find((x) => x.kind === "rows" && x.title === title);
+    return section?.kind === "rows" ? section.items : [];
+  };
+
+  test("activity shows the newest twelve and points at the full log", () => {
+    const s = swarm("s7log", {
+      activity: Array.from({ length: 15 }, (_, i) => ({ at: T0, text: `event ${i}` })),
+    });
+    const view = buildSwarmBoard(s);
+    board(swarmKey(s.id), view);
+    const rows = rowsTitled(view, "Activity");
+    expect(rows).toHaveLength(13);
+    expect(rows[0]?.text).toBe("event 14");
+    expect(rows.at(-1)).toMatchObject({
+      text: "Read the full log · 3 earlier events",
+      action: { type: "read-doc", payload: { id: "s7log" } },
+    });
+    const doc = buildDoc(s, s.id);
+    expect(doc).toContain("## Activity");
+    expect(doc).toContain("- 14:00 event 0\n");
+    const short = buildSwarmBoard(swarm("s7few", { activity: [{ at: T0, text: "one" }] }));
+    expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
+  });
+
+  test("an answered approval names its reviewer and discloses the reason", () => {
+    const rows = rowsTitled(buildSwarmBoard(fixtures.done!), "Runs");
+    expect(rows[1]).toMatchObject({
+      text: "approve-plan approved on @w1's review",
+      detail: "r",
+      href: "http://127.0.0.1:18080/app/ws_1/msg_1",
+    });
   });
 });
 
@@ -807,7 +879,15 @@ describe("actions", () => {
     expect((await handleSwarmsAction({ type: "nope" }, deps)).ok).toBe(false);
   });
 
-  test("steer and stop need a live swarm, and steer needs a note", async () => {
+  test("message-lead and stop need a live swarm, and a message needs a note", async () => {
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "message-lead", payload: { id: "s9hjx", note: "hi" } },
+          deps,
+        )
+      ).ok,
+    ).toBe(true);
     expect(
       (await handleSwarmsAction({ type: "steer", payload: { id: "s8pln", note: "hi" } }, deps)).ok,
     ).toBe(false);

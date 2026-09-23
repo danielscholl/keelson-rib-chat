@@ -76,7 +76,15 @@ export interface SwarmsSurface {
   dispose(): void;
 }
 
-const DOC_KINDS = new Set<SwarmChange>(["start", "gate", "conclusion", "health", "end"]);
+const DOC_KINDS = new Set<SwarmChange>([
+  "start",
+  "turn",
+  "gate",
+  "conclusion",
+  "health",
+  "activity",
+  "end",
+]);
 
 function text(key: string) {
   return (data: unknown): string => {
@@ -145,7 +153,11 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     const summary = found.live ?? found.ended;
     if (summary) {
       const launch = found.ended ? deps.launchOf(id) : undefined;
-      return buildSwarmBoard(summary, launch ? { launch } : {});
+      const server = found.live ? deps.state().server : undefined;
+      return buildSwarmBoard(summary, {
+        ...(launch ? { launch } : {}),
+        ...(server ? { server } : {}),
+      });
     }
     if (found.starting) return buildStartingBoard(found.starting);
     return buildGoneBoard(id);
