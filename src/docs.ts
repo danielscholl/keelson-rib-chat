@@ -244,8 +244,9 @@ it needs, and starts the dependent run once they say it is merged. The rib does
 not enforce that order.
 
 The summary's \`runs\` records each run: workflow, purpose, inputs, status,
-checkout, the gate it waits on, the gates the swarm answered, the pull request
-links found in its node output, its CI verdict, any error, and \`verified\`. The CI verdict is the run's own: the last
+checkout, the gate it waits on, every gate it paused at with who answered it,
+the gates the swarm answered, the pull request links found in its node output,
+its CI verdict, any error, and \`verified\`. The CI verdict is the run's own: the last
 \`CI_GATE:\` line in its node output, or failing that the last \`CI_STATUS:\`
 line, read as \`pass\`, \`fail\`, or \`unknown\` with the reason the workflow
 gave. An isolated run is verified only when it succeeded in an established
@@ -393,8 +394,12 @@ the runs (only when the launch named workflows; each names its branch, every
 pull request, how long it took, and why it failed), the task and each context
 item by id with its text under a disclosure, the activity with repeats counted
 (the last 200 events are in the reading pane, with each run's full error and
-CI detail), and About. A note posted with Message the lead shows in the
-activity at once.
+CI detail), and About. Each activity row carries its actor as a chip in the
+agent's color, or you for the operator, and a turn is one row written when it
+ends, with its outcome, how long it took and what woke it. Each bench card's
+footnote names the agent's last event, and the Turns tile keeps its spark after
+the swarm ends. A note posted with Message the lead shows in the activity at
+once.
 
 The Start a swarm header is one form, open on an empty tab and folded once
 the tab has a swarm; its folded head names the default launch. Setup starts on

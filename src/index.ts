@@ -33,6 +33,7 @@ import {
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
 import {
   type ChatMessage,
+  publicSummary,
   SIZE_PRESETS,
   type StartingSwarm,
   type SwarmLimits,
@@ -585,9 +586,9 @@ async function launchSwarm(
     // it. Anything else failed at its job, and the run says so; the summary stays
     // on the record as the last progress frame.
     if (summary.conclusion !== undefined || summary.status === "stopped") {
-      op?.done(summary);
+      op?.done(publicSummary(summary));
     } else {
-      op?.progress(`swarm ${summary.status}`, summary);
+      op?.progress(`swarm ${summary.status}`, publicSummary(summary));
       op?.error(`swarm ${summary.id} ${summary.status}: ${summary.error ?? "no conclusion"}`);
     }
   });

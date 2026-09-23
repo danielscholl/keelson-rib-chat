@@ -18,6 +18,7 @@ import {
   CONCLUSION_MAX,
   type DispatchGrant,
   isLive,
+  publicSummary,
   readTurnContext,
   SIZE_PRESETS,
   type StartingSwarm,
@@ -559,7 +560,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         if (args.swarm) {
           const summary = summaryOf(args.swarm);
           if (!summary) return emitText(ctx, `no swarm '${args.swarm}'`, true);
-          return emitText(ctx, JSON.stringify(summary, null, 1));
+          return emitText(ctx, JSON.stringify(publicSummary(summary), null, 1));
         }
         const pending = [...(deps.starting?.values() ?? [])].map((s) => ({
           id: s.id,
@@ -612,7 +613,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         const summary = summaryOf(args.swarm);
         if (!summary) return emitText(ctx, `no swarm '${args.swarm}'`, true);
         const state = isLive(summary.status) ? "RUNNING" : "ENDED";
-        emitText(ctx, `${state}\n${JSON.stringify(summary, null, 1)}`);
+        emitText(ctx, `${state}\n${JSON.stringify(publicSummary(summary), null, 1)}`);
       }),
     },
     {

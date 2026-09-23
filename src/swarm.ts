@@ -35,6 +35,7 @@ import { addressedHandles, mentionedHandles, route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
   type ActivityEntry,
+  type ActivityKind,
   addTokens,
   BODY_MAX,
   type ChatMessage,
@@ -54,6 +55,7 @@ import {
   type SwarmStatus,
   type SwarmSummary,
   sizeOf,
+  type TurnSpan,
   WORKER_TONES,
 } from "./types.ts";
 
@@ -95,8 +97,47 @@ export const GATE_FILES_MAX = 64_000;
 export const ACTIVITY_KEPT = 200;
 const ASK_CHARS = 2_000;
 const PACE_MINUTES = 30;
-// Enough turn starts to fill PACE_MINUTES at any size's concurrency.
-const TURN_STARTS_KEPT = 400;
+// An ended swarm's spark spreads its whole run over at most this many buckets.
+const PACE_BUCKETS = 30;
+
+type ActivityMeta = { kind: ActivityKind; actor?: string; subject?: string };
+
+// Trims the activity list to `kept`, oldest first, dropping turn entries before
+// anything else: spans already hold every turn, and the rest mark the course.
+export function keepActivity(entries: ActivityEntry[], kept: number): void {
+  while (entries.length > kept) {
+    const turn = entries.findIndex((e) => e.kind === "turn");
+    entries.splice(turn >= 0 ? turn : 0, 1);
+  }
+}
+
+// Turns started per bucket: per minute over the last PACE_MINUTES while live,
+// and over the whole run once ended. Undefined until there are two buckets.
+export function paceOf(
+  starts: readonly number[],
+  startedAt: number,
+  anchor: number,
+  ended: boolean,
+): number[] | undefined {
+  const from = ended ? startedAt : Math.max(startedAt, anchor - PACE_MINUTES * 60_000);
+  const width = ended ? Math.max(60_000, Math.ceil((anchor - startedAt) / PACE_BUCKETS)) : 60_000;
+  const count = Math.min(
+    ended ? PACE_BUCKETS : PACE_MINUTES,
+    Math.floor((anchor - from) / width) + 1,
+  );
+  if (count < 2) return undefined;
+  const buckets = new Array<number>(count).fill(0);
+  for (const t of starts) {
+    const i = Math.min(count - 1, Math.floor((t - from) / width));
+    if (i >= 0) buckets[i] = (buckets[i] ?? 0) + 1;
+  }
+  return buckets;
+}
+
+function seconds(ms: number): string {
+  const s = Math.max(1, Math.round(ms / 1000));
+  return s < 90 ? `${s} s` : `${Math.round(s / 60)} min`;
+}
 
 export interface SwarmOptions {
   task: string;
@@ -277,8 +318,8 @@ export class Swarm {
   private channelFault: string | undefined;
   private cancelFault: string | undefined;
   private lastWaiting = "";
-  // When each turn started, for the pace the board's Turns tile draws.
-  private readonly turnStarts: number[] = [];
+  // Every turn, for the pace the Turns tile draws and the record's timeline.
+  private readonly spans: TurnSpan[] = [];
   private readonly unrevoked: string[] = [];
   private error: string | undefined;
   private endedAt: string | undefined;
@@ -306,16 +347,31 @@ export class Swarm {
     return swarm;
   }
 
-  private log(message: string, data?: unknown): void {
+  // An event on the tab's activity list and in the op's progress log.
+  private log(message: string, meta: ActivityMeta, data?: unknown): void {
+    this.record(message, meta);
+    this.progress(message, data);
+  }
+
+  private record(text: string, meta: ActivityMeta): void {
     const at = new Date().toISOString();
     const last = this.activity.at(-1);
-    if (last && last.text === message) {
+    if (last && last.text === text && last.kind === meta.kind && last.actor === meta.actor) {
       last.at = at;
       last.count = (last.count ?? 1) + 1;
-    } else {
-      this.activity.push({ at, text: message });
-      this.activity.splice(0, Math.max(0, this.activity.length - ACTIVITY_KEPT));
+      return;
     }
+    this.activity.push({
+      at,
+      text,
+      kind: meta.kind,
+      ...(meta.actor ? { actor: meta.actor } : {}),
+      ...(meta.subject ? { subject: meta.subject } : {}),
+    });
+    keepActivity(this.activity, ACTIVITY_KEPT);
+  }
+
+  private progress(message: string, data?: unknown): void {
     try {
       this.opts.log?.(message, data);
     } catch {
@@ -352,7 +408,7 @@ export class Swarm {
       `**Swarm ${this.id}**\n\n${this.task}`,
     );
     this.ownPosts.add(kickoff.id);
-    this.log(`swarm ${this.id} started in #${this.channel.name}`);
+    this.log(`swarm ${this.id} started in #${this.channel.name}`, { kind: "start" });
     this.changed("start");
     this.enqueueMessage(kickoff);
   }
@@ -402,7 +458,7 @@ export class Swarm {
     this.pendingEvents++;
     this.eventChain = this.eventChain
       .then(work)
-      .catch((e) => this.log(`event handling failed: ${errText(e)}`))
+      .catch((e) => this.log(`event handling failed: ${errText(e)}`, { kind: "fault" }))
       .finally(() => {
         this.pendingEvents--;
         this.pump();
@@ -530,7 +586,7 @@ export class Swarm {
       "capped",
       `@${agent.handle} has used all ${this.limits.maxTurnsPerAgent} of its turns and will not respond further.`,
     );
-    this.log(`@${agent.handle} reached its turn cap`);
+    this.log(`@${agent.handle} reached its turn cap`, { kind: "cap", actor: agent.id });
   }
 
   private retire(agent: SwarmAgent, status: "capped" | "failed", notice: string): void {
@@ -577,7 +633,10 @@ export class Swarm {
       return;
     }
     this.nudges++;
-    this.log(`swarm idle; nudging the lead (${this.nudges}/${this.limits.maxNudges})`);
+    this.log(`swarm idle; nudging the lead (${this.nudges}/${this.limits.maxNudges})`, {
+      kind: "nudge",
+      subject: lead.id,
+    });
     this.changed("health");
     void this.runAgent(lead, [], nudgeText(CONCLUSION_MAX));
   }
@@ -596,6 +655,24 @@ export class Swarm {
     return [...this.agents.values()]
       .filter((a) => !a.lead)
       .map((a) => ({ handle: a.handle, status: a.status, turns: a.turns }));
+  }
+
+  // Who a turn answers: each message's author, and the run notes or nudge beside them.
+  private wokeBy(
+    messages: readonly ChatMessage[],
+    note?: string,
+    events: readonly string[] = [],
+  ): string[] {
+    const by = new Set<string>();
+    for (const m of messages) {
+      const author = [...this.agents.values()].find((a) => a.botUserId === m.authorId);
+      if (author) by.add(author.id);
+      else if (this.ownPosts.has(m.id)) by.add("rib");
+      else if (m.authorKind === "human") by.add("operator");
+    }
+    if (events.length > 0) by.add("runs");
+    if (note) by.add("nudge");
+    return [...by];
   }
 
   private async runAgent(
@@ -630,9 +707,17 @@ export class Swarm {
         ? { runs: [...this.runs.values()].map(describeRun) }
         : {}),
     });
-    this.log(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
-    this.turnStarts.push(Date.now());
-    this.turnStarts.splice(0, Math.max(0, this.turnStarts.length - TURN_STARTS_KEPT));
+    // A turn's start goes to the op's progress only; its one activity entry lands
+    // when it ends, with what came of it.
+    this.progress(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
+    const turn: TurnSpan = {
+      agentId: agent.id,
+      n: agent.turns,
+      startedAt: new Date().toISOString(),
+      messages: messages.length,
+      wokeBy: this.wokeBy(messages, note, events),
+    };
+    this.spans.push(turn);
     this.quietSince = undefined;
     this.changed("turn");
 
@@ -686,11 +771,31 @@ export class Swarm {
     }
     this.busy--;
     if (agent.status === "busy") agent.status = "idle";
-    this.log(`@${agent.handle} turn ${agent.turns} ${outcome.status}`, {
+    if (!turn.endedAt) {
+      turn.endedAt = new Date().toISOString();
+      turn.outcome = outcome.status;
+    }
+    this.progress(`@${agent.handle} turn ${turn.n} ${outcome.status}`, {
       tools: outcome.toolCalls,
       durationMs: outcome.durationMs,
       ...(outcome.error ? { error: outcome.error } : {}),
     });
+    const woke =
+      messages.length > 0
+        ? `${messages.length} new`
+        : turn.wokeBy.includes("nudge")
+          ? "nudged"
+          : turn.wokeBy.includes("runs")
+            ? "run update"
+            : undefined;
+    this.record(
+      [
+        `@${agent.handle} turn ${turn.n} ${outcome.status}`,
+        seconds(outcome.durationMs),
+        ...(woke ? [woke] : []),
+      ].join(" · "),
+      { kind: "turn", actor: agent.id, subject: `turn:${turn.n}` },
+    );
     this.changed("turn");
     if (outcome.status === "timeout" || outcome.status === "error") {
       this.onTurnFailed(
@@ -731,7 +836,10 @@ export class Swarm {
         "failed",
         `@${agent.handle} will not respond further: its last ${failures} turns failed (${reason}).`,
       );
-      this.log(`@${agent.handle} retired after ${failures} failed turns`);
+      this.log(`@${agent.handle} retired after ${failures} failed turns`, {
+        kind: "retire",
+        actor: agent.id,
+      });
       return;
     }
     if (!this.canWork(agent.id)) return;
@@ -774,6 +882,7 @@ export class Swarm {
       ...(model ? { model } : {}),
       turns: 0,
       status: "idle",
+      joinedAt: new Date().toISOString(),
     };
     this.agents.set(agent.id, agent);
     this.tokens.set(agent.id, bot.token);
@@ -846,7 +955,11 @@ export class Swarm {
       at: message.createdAt || new Date().toISOString(),
     });
     this.asks.splice(0, Math.max(0, this.asks.length - ASKS_KEPT));
-    this.log(`@${agent.handle} asked the operator`);
+    this.log(`@${agent.handle} asked the operator`, {
+      kind: "ask",
+      actor: agent.id,
+      subject: message.threadRootId || message.id,
+    });
     this.changed("health");
   }
 
@@ -880,7 +993,11 @@ export class Swarm {
       const at = this.asks.indexOf(ask);
       if (at >= 0) this.asks.splice(at, 1);
     }
-    this.log(why);
+    this.log(why, {
+      kind: "answer",
+      actor: "operator",
+      ...(gone[0] ? { subject: gone[0].threadRootId } : {}),
+    });
     this.changed("health");
   }
 
@@ -911,7 +1028,11 @@ export class Swarm {
       lead: false,
       spawnedBy: spawner.id,
     });
-    this.log(`@${spawner.handle} spawned @${agent.handle}: ${input.role}`);
+    this.log(`@${spawner.handle} spawned @${agent.handle}: ${input.role}`, {
+      kind: "spawn",
+      actor: spawner.id,
+      subject: agent.id,
+    });
     // The brief is an ordinary mention from the spawner, so the new agent wakes
     // through the router and its thread reply finds its way back.
     const message = await this.onChannel(() =>
@@ -967,6 +1088,7 @@ export class Swarm {
           }
         : {}),
       ...(r.approvals ? { approvals: [...r.approvals] } : {}),
+      ...(r.gates ? { gates: r.gates.map((g) => ({ ...g })) } : {}),
     }));
   }
 
@@ -1007,7 +1129,11 @@ export class Swarm {
       verified: false,
     };
     this.runs.set(runId, run);
-    this.log(`started ${grant.name} run ${runId}: ${input.purpose}`);
+    this.log(`started ${grant.name} run ${runId}: ${input.purpose}`, {
+      kind: "run",
+      actor: agentId,
+      subject: runId,
+    });
     this.changed("run");
     void this.onChannel(() =>
       client.postMessage(
@@ -1063,6 +1189,7 @@ export class Swarm {
       if (!status || this.status !== "running") return;
       const gateBefore = gateKey(run.pendingApproval);
       const change = applyStatus(run, status);
+      if (gateKey(run.pendingApproval) !== gateBefore) this.trackGate(run);
       const breach = isolationBreach(run);
       if (breach) {
         await dispatch.dispatcher.cancel(runId).catch(() => undefined);
@@ -1071,19 +1198,43 @@ export class Swarm {
         run.verified = false;
         this.notifyLead(
           `Run ${runId} (${run.workflow}) was cancelled: ${breach}. Its grant requires an isolated worktree.`,
+          { kind: "run", subject: runId },
         );
       } else if (change && run.pendingApproval && gateKey(run.pendingApproval) !== gateBefore) {
         await this.openGate(run, gateFiles(status), change);
       } else if (change && !opts.quiet) {
         // A run resuming after its approval needs nothing from the lead.
-        this.notifyLead(change, { wake: run.status !== "running" });
+        this.notifyLead(
+          change,
+          { kind: "run", subject: runId },
+          { wake: run.status !== "running" },
+        );
       }
       this.changed(gateKey(run.pendingApproval) !== gateBefore ? "gate" : "run");
     } catch (e) {
-      this.log(`could not read run ${runId}: ${errText(e)}`);
+      this.log(`could not read run ${runId}: ${errText(e)}`, { kind: "fault", subject: runId });
     } finally {
       this.syncing.delete(runId);
       if (this.resync.delete(runId)) void this.syncRun(runId);
+    }
+  }
+
+  // Closes the gate the run left and opens the one it reached. A gate the swarm
+  // answered has an approval since it opened; any other the run moved past, the
+  // operator answered.
+  private trackGate(run: ChildRun): void {
+    const now = new Date().toISOString();
+    const open = [...(run.gates ?? [])].reverse().find((g) => !g.closedAt);
+    if (open) {
+      open.closedAt = now;
+      const bySwarm = run.approvals?.some((a) => a.nodeId === open.nodeId && a.at >= open.openedAt);
+      if (bySwarm) open.by = "swarm";
+      else if (run.status === "running" || run.status === "paused" || run.status === "succeeded") {
+        open.by = "operator";
+      }
+    }
+    if (run.pendingApproval) {
+      run.gates = [...(run.gates ?? []), { nodeId: run.pendingApproval.nodeId, openedAt: now }];
     }
   }
 
@@ -1095,9 +1246,13 @@ export class Swarm {
 
   // Queues a run update for the lead's next turn and puts it on the channel, as
   // the lead, so the operator sees it without waking anyone.
-  private notifyLead(text: string, opts: { wake?: boolean; post?: boolean } = {}): void {
+  private notifyLead(
+    text: string,
+    meta: ActivityMeta,
+    opts: { wake?: boolean; post?: boolean } = {},
+  ): void {
     if (this.status !== "running") return;
-    this.log(text);
+    this.log(text, meta);
     const client = opts.post === false ? undefined : this.leadClient();
     if (client) {
       void client
@@ -1145,7 +1300,10 @@ export class Swarm {
         this.enqueueMessage(await this.onChannel(() => client.replyInThread(root.id, part)));
       }
     } catch (e) {
-      this.log(`could not post the gate for run ${run.runId}: ${errText(e)}`);
+      this.log(`could not post the gate for run ${run.runId}: ${errText(e)}`, {
+        kind: "fault",
+        subject: run.runId,
+      });
     }
     const where = gate.threadId
       ? `Its prompt and files are in thread ${gate.threadId}.`
@@ -1154,7 +1312,11 @@ export class Swarm {
       this.opts.dispatch?.dispatcher.respond && !this.opts.approvalRefusals?.has(run.workflow)
         ? "Have another agent review it, then answer with chat_workflow_respond, citing that review."
         : "Only the operator can answer it: tell @operator in the channel what it is waiting for.";
-    this.notifyLead(`${change} ${where} ${how}`, { post: false });
+    this.notifyLead(
+      `${change} ${where} ${how}`,
+      { kind: "gate", subject: run.runId },
+      { post: false },
+    );
   }
 
   async answerGate(
@@ -1217,7 +1379,11 @@ export class Swarm {
     };
     run.approvals = [...(run.approvals ?? []), answer];
     this.opts.approvalRefusals?.set(run.workflow, false);
-    this.log(`answered ${gate.nodeId} on run ${run.runId}: ${input.decision}`);
+    this.log(`answered ${gate.nodeId} on run ${run.runId}: ${input.decision}`, {
+      kind: "gate-answer",
+      actor: agentId,
+      subject: run.runId,
+    });
     this.changed("gate");
     const record = [
       `**${input.decision === "approve" ? "Approved" : "Changes requested"}** \`${gate.nodeId}\` on run \`${run.runId}\`, on ${reviewer}'s review ${input.review}.`,
@@ -1230,7 +1396,12 @@ export class Swarm {
         threadId ? client.replyInThread(threadId, part) : client.postMessage(this.channel.id, part),
       )
         .then((m) => this.enqueueMessage(m))
-        .catch((e) => this.log(`could not post the answer for run ${run.runId}: ${errText(e)}`));
+        .catch((e) =>
+          this.log(`could not post the answer for run ${run.runId}: ${errText(e)}`, {
+            kind: "fault",
+            subject: run.runId,
+          }),
+        );
     }
     void this.syncRun(run.runId, { quiet: true });
     return run;
@@ -1285,16 +1456,12 @@ export class Swarm {
 
   // Turns started per minute over the last PACE_MINUTES, once two have passed.
   private pace(): number[] | undefined {
-    const now = Date.now();
-    const start = Math.max(Date.parse(this.startedAt), now - PACE_MINUTES * 60_000);
-    const minutes = Math.min(PACE_MINUTES, Math.floor((now - start) / 60_000) + 1);
-    if (minutes < 2) return undefined;
-    const buckets = new Array<number>(minutes).fill(0);
-    for (const t of this.turnStarts) {
-      const i = Math.floor((t - start) / 60_000);
-      if (i >= 0 && i < minutes) buckets[i] = (buckets[i] ?? 0) + 1;
-    }
-    return buckets;
+    return paceOf(
+      this.spans.map((t) => Date.parse(t.startedAt)),
+      Date.parse(this.startedAt),
+      this.endedAt ? Date.parse(this.endedAt) : Date.now(),
+      this.endedAt !== undefined,
+    );
   }
 
   // Records the conclusion before posting it: the answer is the deliverable, and
@@ -1322,7 +1489,7 @@ export class Swarm {
     this.draftConclusion = undefined;
     for (const id of this.inboxes.keys()) this.inboxes.set(id, []);
     this.background.clear();
-    this.log(`@${agent.handle} concluded the swarm`);
+    this.log(`@${agent.handle} concluded the swarm`, { kind: "conclusion", actor: agent.id });
     this.changed("conclusion");
     const parts = splitBody(summary, BODY_MAX - 32);
     try {
@@ -1333,7 +1500,9 @@ export class Swarm {
       }
       return undefined;
     } catch (e) {
-      this.log(`the conclusion could not be posted to the channel: ${errText(e)}`);
+      this.log(`the conclusion could not be posted to the channel: ${errText(e)}`, {
+        kind: "fault",
+      });
       return errText(e);
     }
   }
@@ -1348,7 +1517,12 @@ export class Swarm {
     const report = { title, html: page, at: new Date().toISOString() };
     const again = this.report?.title === title;
     this.report = report;
-    if (!again) this.log(`@${agent.handle} published the report "${title}"`);
+    if (!again) {
+      this.log(`@${agent.handle} published the report "${title}"`, {
+        kind: "report",
+        actor: agent.id,
+      });
+    }
     this.changed("report");
     return report;
   }
@@ -1395,7 +1569,10 @@ export class Swarm {
   // The board shows the operator's own post at once, before the lead's turn does.
   private noteOperator(where: string, note: string): void {
     const gist = note.split("\n", 1)[0]?.trim() ?? "";
-    this.log(`${where}: ${gist.length > 80 ? `${gist.slice(0, 79).trimEnd()}…` : gist}`);
+    this.log(`${where}: ${gist.length > 80 ? `${gist.slice(0, 79).trimEnd()}…` : gist}`, {
+      kind: "operator",
+      actor: "operator",
+    });
     this.changed("activity");
   }
 
@@ -1423,7 +1600,7 @@ export class Swarm {
 
   summary(): SwarmSummary {
     const health = this.health();
-    const pace = this.status === "running" ? this.pace() : undefined;
+    const pace = this.pace();
     return {
       id: this.id,
       task: this.task,
@@ -1454,6 +1631,9 @@ export class Swarm {
       ...(this.opts.dispatch ? { workflows: this.opts.dispatch.grants.map((g) => g.name) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
       ...(pace ? { pace } : {}),
+      ...(this.spans.length > 0
+        ? { spans: this.spans.map((t) => ({ ...t, wokeBy: [...t.wokeBy] })) }
+        : {}),
       ...(this.conclusion !== undefined ? { conclusion: this.conclusion } : {}),
       ...(this.report ? { report: reportMeta(this.report) } : {}),
       ...(this.conclusion === undefined && this.draftConclusion !== undefined
@@ -1482,7 +1662,7 @@ export class Swarm {
     for (const run of this.liveRuns()) {
       await this.opts.dispatch?.dispatcher.cancel(run.runId).catch((e) => {
         this.cancelFault = `run ${run.runId} (${run.workflow}) could not be cancelled: ${errText(e)}`;
-        this.log(this.cancelFault);
+        this.log(this.cancelFault, { kind: "fault", subject: run.runId });
       });
       run.status = "cancelled";
       run.error = `the swarm ended (${status}) while the run was live`;
@@ -1500,13 +1680,23 @@ export class Swarm {
       await this.owner.revokeBotToken(agent.tokenId).catch((e) => {
         if (!(e instanceof ClickClackError && e.status === 404)) {
           this.unrevoked.push(agent.tokenId);
-          this.log(`could not revoke the token for @${agent.handle}: ${errText(e)}`);
+          this.log(`could not revoke the token for @${agent.handle}: ${errText(e)}`, {
+            kind: "fault",
+            subject: agent.id,
+          });
         }
       });
     }
     this.tokens.clear();
+    // Turns aborted by the end may report after the summary is frozen.
+    const now = new Date().toISOString();
+    for (const t of this.spans) {
+      if (t.endedAt) continue;
+      t.endedAt = now;
+      t.outcome = "aborted";
+    }
     this.status = status;
-    this.log(`swarm ${this.id} ${status}${reason ? `: ${reason}` : ""}`);
+    this.log(`swarm ${this.id} ${status}${reason ? `: ${reason}` : ""}`, { kind: "end" });
     this.changed("end");
     this.done.resolve(this.summary());
   }
