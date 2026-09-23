@@ -63,8 +63,9 @@ function modelRow(s: SwarmSummary): string {
   const workers = s.workerModel ?? s.model;
   if (lead && workers && lead !== workers) return `${provider} · lead ${lead} · workers ${workers}`;
   if (lead) return `${provider} · every agent on ${lead}`;
-  if (workers) return `${provider} · lead on its default · workers ${workers}`;
-  return `${provider} · the provider's default model`;
+  const power = s.power ? `${s.power} power` : undefined;
+  if (workers) return `${provider} · lead at ${power ?? "its default"} · workers ${workers}`;
+  return power ? `${power} on ${provider}` : `${provider} · the provider's default model`;
 }
 
 function vitals(s: SwarmSummary): Leaf {
@@ -352,7 +353,9 @@ function agentRows(s: SwarmSummary): Row[] {
     const turns = a.usage ? `${count} · ${tokenCount(tokenTotal(a.usage))} tokens` : count;
     return {
       chip: { label: shortHandle(a.handle, s.id), tone: a.tone },
-      text: differ ? (a.model ?? "provider default") : firstLine(a.role, 40),
+      text: differ
+        ? (a.model ?? (s.power ? `${s.power} power` : "provider default"))
+        : firstLine(a.role, 40),
       trailing: live(s) ? `${a.status} · ${turns}` : turns,
       ...(glyph ? { glyph } : {}),
     };

@@ -51,6 +51,15 @@ describe("model label", () => {
     const served = [{ providerId: "copilot" }] as unknown as SwarmSummary["agents"];
     expect(modelLabel({ agents: served })).toBe("copilot default");
   });
+  test("names the power when no model was asked for", () => {
+    const served = [{ providerId: "copilot" }] as unknown as SwarmSummary["agents"];
+    expect(modelLabel({ power: "deep", agents })).toBe("deep power");
+    expect(modelLabel({ power: "deep", agents: served })).toBe("deep power on copilot");
+    expect(modelLabel({ power: "fast", workerModel: "mai-code-1.1-flash", agents })).toBe(
+      "fast power · workers mai-code-1.1-flash",
+    );
+    expect(modelLabel({ power: "fast", model: "gpt-6-astra", agents })).toBe("gpt-6-astra");
+  });
 });
 
 describe("chat_swarm_start inputs", () => {
@@ -100,5 +109,11 @@ describe("chat_swarm_start inputs", () => {
 
   test("an unknown size is refused", async () => {
     expect(await start({ task: "t", size: "huge" })).toBeUndefined();
+  });
+
+  test("power reaches the launcher, and an unknown one is refused", async () => {
+    expect((await start({ task: "t", power: "deep" }))?.power).toBe("deep");
+    expect((await start({ task: "t" }))?.power).toBeUndefined();
+    expect(await start({ task: "t", power: "max" })).toBeUndefined();
   });
 });

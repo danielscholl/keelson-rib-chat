@@ -298,9 +298,15 @@ function pruneLaunches(): void {
 function launchState(): LaunchState {
   const projects = (getProjects?.() ?? []).map((p) => ({ id: p.id, name: p.name }));
   const canDispatch = Boolean(startWorkflow && getRunStatus && cancelRun);
+  const classes = (getProviders?.() ?? []).flatMap((p) =>
+    p.modelClasses && !NOT_AGENT_PROVIDERS.has(p.id)
+      ? [{ provider: p.id, classes: p.modelClasses }]
+      : [],
+  );
   return {
     projects,
     live: swarms.size + starting.size,
+    ...(classes.length > 0 ? { classes } : {}),
     ...(canDispatch
       ? {}
       : { dispatchBlocked: "This Keelson host can't start workflows for a rib." }),
@@ -371,6 +377,7 @@ function failedStart(record: StartingSwarm, error: string): SwarmSummary {
     ...(record.provider ? { provider: record.provider } : {}),
     ...(record.model ? { model: record.model } : {}),
     ...(record.workerModel ? { workerModel: record.workerModel } : {}),
+    ...(record.power ? { power: record.power } : {}),
     ...(record.project ? { project: record.project } : {}),
     ...(record.opId ? { opId: record.opId } : {}),
     agents: [],
@@ -443,6 +450,7 @@ function beginSwarm(input: StartSwarmInput): { id: string; booted: Promise<Boote
     ...(input.provider ? { provider: input.provider } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.workerModel ? { workerModel: input.workerModel } : {}),
+    power: input.power ?? "balanced",
     ...(launch.project ? { project: launch.project } : {}),
   };
   starting.set(record.id, record);
@@ -515,6 +523,7 @@ async function launchSwarm(
       ...(input.provider ? { provider: input.provider } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.workerModel ? { workerModel: input.workerModel } : {}),
+      ...(record.power ? { power: record.power } : {}),
       ...(dispatcher && input.workflows
         ? { dispatch: { grants: input.workflows, dispatcher } }
         : {}),

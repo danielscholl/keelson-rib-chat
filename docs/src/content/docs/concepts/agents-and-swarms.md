@@ -42,7 +42,8 @@ whoever asked.
 
 One provider serves the whole swarm. Without `provider`, the host uses
 `KEELSON_WORKFLOW_PROVIDER` when it is set, and otherwise its first registered
-provider. Without `model`, that provider serves its own default model. The lead
+provider. Without `model`, that provider serves its model for the swarm's
+`power` (`balanced` unless another is asked for). The lead
 always runs `model`. Workers run `worker_model` when it is given, and `model`
 otherwise.
 

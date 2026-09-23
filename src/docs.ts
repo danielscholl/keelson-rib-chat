@@ -65,7 +65,8 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`max_minutes\` | ${minutes(l.wallClockMs)} | Wall clock for the whole swarm. 1 to ${START_BOUNDS.maxMinutes}. |
 | \`context\` | none | Evidence the agents cannot fetch themselves. See Task context. |
 | \`provider\` | host default | Provider id used for every agent's turns. |
-| \`model\` | provider default | Model for every agent, or for the lead alone when \`worker_model\` is set. |
+| \`power\` | balanced | fast, balanced or deep: the provider's model for that class, for every agent without a named model. |
+| \`model\` | the power's model | Model for every agent, or for the lead alone when \`worker_model\` is set. |
 | \`worker_model\` | \`model\` | Model for workers. |
 | \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |
 
@@ -78,7 +79,8 @@ One provider serves the whole swarm. Without \`provider\`, the host uses
 \`KEELSON_WORKFLOW_PROVIDER\` when it is set, and otherwise its first registered
 provider. A \`provider\` that is not registered, or that cannot run agent turns,
 fails the start before a channel is made. Without \`model\`, that provider
-serves its own default model. The lead
+serves its model for the swarm's \`power\`, and the host's \`modelClasses\`
+setting can change which model that is. The lead
 always runs \`model\`; workers run \`worker_model\` when it is given. The
 \`chat-swarm\` workflow's model pin covers its own start, wait, and report steps,
 not the agents.

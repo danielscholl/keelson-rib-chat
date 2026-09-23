@@ -72,6 +72,10 @@ export const SIZE_PRESETS: Readonly<Record<SwarmSize, SwarmLimits>> = {
   },
 };
 
+// How much model the agents get: the provider's model for that class, unless a model is named.
+export const SWARM_POWERS = ["fast", "balanced", "deep"] as const;
+export type SwarmPower = (typeof SWARM_POWERS)[number];
+
 // The size a swarm's limits match, or "custom" once an override moved one off its base.
 export function sizeOf(limits: SwarmLimits, base: SwarmSize): SwarmSize | "custom" {
   const preset = SIZE_PRESETS[base];
@@ -220,6 +224,7 @@ export interface SwarmSummary {
   provider?: string;
   model?: string;
   workerModel?: string;
+  power?: SwarmPower;
   project?: SwarmProject;
   // The durable op the swarm reports to.
   opId?: string;
@@ -280,6 +285,7 @@ export interface StartingSwarm {
   provider?: string;
   model?: string;
   workerModel?: string;
+  power?: SwarmPower;
   project?: SwarmProject;
   opId?: string;
 }

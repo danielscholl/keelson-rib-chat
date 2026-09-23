@@ -631,8 +631,32 @@ describe("launching from the tab", () => {
     expect(tabs({ projects: [], live: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
       "task",
       "size",
+      "power",
       "model",
     ]);
+  });
+
+  test("each power's hover names the model every provider runs at it", () => {
+    const section = buildLaunch({
+      projects,
+      live: 0,
+      classes: [
+        { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
+        { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
+      ],
+    }).sections[0];
+    const power = (section?.kind === "actions" ? section.items[0]?.fields : [])?.find(
+      (f) => f.name === "power",
+    );
+    expect(power?.defaultValue).toBe("balanced");
+    expect(power?.options?.find((o) => o.value === "deep")?.hint).toBe(
+      "claude: opus-9 · copilot: gpt-6-pro",
+    );
+    expect(
+      buildLaunch({ projects, live: 0 }).sections.flatMap((x) =>
+        x.kind === "actions" ? (x.items[0]?.fields ?? []) : [],
+      ),
+    ).toContainEqual(expect.objectContaining({ name: "model", placeholder: "use power" }));
   });
 
   test("an ended swarm offers Run again, seeded with its size and model, only when its launch is kept", () => {
@@ -673,7 +697,9 @@ describe("start and run again", () => {
       surfaceId: "surface:chat:swarms",
       regionKey: INDEX_KEY,
     });
-    expect(begun).toEqual([{ task: "Why is the build slow?", workTools: "none", size: "small" }]);
+    expect(begun).toEqual([
+      { task: "Why is the build slow?", workTools: "none", size: "small", power: "balanced" },
+    ]);
   });
 
   test("Dispatch grants the named workflows, and refusals come back to the form", async () => {
@@ -685,6 +711,7 @@ describe("start and run again", () => {
       tools: "read",
       size: "large",
       workflows: "fix-issue, docs-check fix-issue",
+      power: "deep",
       model: "gpt-6-astra",
       provider: "copilot",
     });
@@ -693,6 +720,7 @@ describe("start and run again", () => {
       task: "Fix issue #27",
       workTools: "read",
       size: "large",
+      power: "deep",
       project: "p1",
       model: "gpt-6-astra",
       provider: "copilot",
@@ -724,16 +752,22 @@ describe("start and run again", () => {
       effect: "open-canvas",
       key: swarmKey("s0new1"),
     });
-    expect(begun[0]).toEqual({ ...oldLaunch, size: "large" });
+    expect(begun[0]).toEqual({ ...oldLaunch, size: "large", power: "balanced" });
     begun.length = 0;
     await act("run-again", {
       id: "s8pln",
       size: "medium",
+      power: "fast",
       model: "gpt-5.6-sol",
       provider: "copilot",
     });
     const { workerModel: _dropped, ...rest } = oldLaunch;
-    expect(begun[0]).toEqual({ ...rest, model: "gpt-5.6-sol", provider: "copilot" });
+    expect(begun[0]).toEqual({
+      ...rest,
+      power: "fast",
+      model: "gpt-5.6-sol",
+      provider: "copilot",
+    });
     expect((await act("run-again", { id: "s9hjx", size: "small" })).ok).toBe(false);
     expect((await act("run-again", { id: "s5tcx", size: "small" })).ok).toBe(false);
   });

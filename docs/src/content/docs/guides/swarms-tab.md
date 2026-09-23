@@ -97,9 +97,10 @@ The **Start a swarm** header above the index has three tabs:
 | **In chat** | A chat that gathers the issue or PR context, picks a size, and calls `chat_swarm_start`. Use it when the swarm needs evidence it can't fetch. |
 
 The Discuss and Dispatch forms take the task, the project, whether agents may
-read the project, the size, and the model. The header's byline lists each
-size's agents and wall clock, and hovering **Start swarm** spells out every
-limit. Leave the model empty for the provider's default.
+read the project, the size, the power, and the model. The header's byline lists
+each size's agents and wall clock, and hovering **Start swarm** spells out every
+limit. Power is `fast`, `balanced` or `deep`; hovering one names the model each
+provider runs at it. Leave the model on **use power** to let the power pick.
 
 **Start swarm** returns at once. The card shows the swarm as starting while it
 boots, and a start that fails after that becomes an ended row with the reason.
@@ -116,7 +117,7 @@ a card too.
 
 An ended swarm's drawer offers **Run again**. It starts a new swarm with the
 same task, project, workflows, and context, and a form seeded with the old
-swarm's size and model. Changing the model there sets it for every agent. The
+swarm's size, power and model. Changing the model there sets it for every agent. The
 rib keeps each launch in its data directory next to the history, and a server
 reset forgets them with it.
 
