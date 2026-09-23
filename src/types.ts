@@ -107,6 +107,13 @@ export interface SwarmAgent {
   status: AgentStatus;
 }
 
+export interface GateFileText {
+  path: string;
+  text?: string;
+  error?: string;
+  truncated?: boolean;
+}
+
 export interface ActivityEntry {
   at: string;
   text: string;
@@ -162,6 +169,8 @@ export interface ChildRun {
     // `operator` when this swarm cannot answer the gate: the host offers no
     // respond, or refused one on this workflow under ribApprovalGrants.
     answerer?: "swarm" | "operator";
+    // The files the gate names, such as the plan, kept for the reading pane.
+    files?: GateFileText[];
   };
   // Gates the swarm answered for the operator.
   approvals?: GateAnswer[];

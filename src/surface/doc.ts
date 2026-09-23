@@ -6,8 +6,14 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { SwarmSummary } from "../types.ts";
+import type { GateFileText, SwarmSummary } from "../types.ts";
 import { channelHref, day, hhmm, threadHref } from "./format.ts";
+
+function fileSection(f: GateFileText): string {
+  if (f.text === undefined) return `### ${f.path}\n\n*Could not be read: ${f.error ?? "no text"}.*`;
+  const body = /\.(md|markdown)$/i.test(f.path) ? f.text : `\`\`\`\`\n${f.text}\n\`\`\`\``;
+  return `### ${f.path}${f.truncated ? " (cut short)" : ""}\n\n${body}`;
+}
 
 // The reading pane: a markdown drawer view, one per swarm, so two viewers
 // reading different swarms never race on one key.
@@ -38,7 +44,8 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
         .split("\n")
         .map((l) => `> ${l}`)
         .join("\n");
-      return `## ${gate?.nodeId} · ${r.workflow} ${r.runId}\n\n${quoted}${thread ? `\n\n[The gate thread](${thread}) holds its files and the review.` : ""}`;
+      const files = (gate?.files ?? []).map(fileSection).join("\n\n");
+      return `## ${gate?.nodeId} · ${r.workflow} ${r.runId}\n\n${quoted}${files ? `\n\n${files}` : ""}${thread ? `\n\n[The gate thread](${thread}) holds the review.` : ""}`;
     });
     return `${title}\n\n*Swarm ${s.id} · ${where}*\n\n${parts.join("\n\n")}\n`;
   }

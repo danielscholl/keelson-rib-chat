@@ -629,6 +629,7 @@ describe("Workflow dispatch", () => {
     let swarmRef: Swarm | undefined;
     let gateThread = "";
     let selfReview = "";
+    let keptFiles: unknown;
     let planSeen = "";
     const { start, provider, tools } = harness(
       async ({ agentId, turn, prompt, call }) => {
@@ -655,6 +656,7 @@ describe("Workflow dispatch", () => {
           });
         } else if (turn === 2) {
           gateThread = prompt.match(/in thread (msg_\d+)/)?.[1] ?? "";
+          keptFiles = swarmRef?.summary().runs?.[0]?.pendingApproval?.files;
           selfReview = (
             await call("chat_workflow_respond", {
               run_id: "run_1",
@@ -700,6 +702,7 @@ describe("Workflow dispatch", () => {
     const summary = await swarmRef.finished;
     expect(summary.status).toBe("done");
     expect(selfReview).toContain("the lead cannot review its own run's gate");
+    expect(keptFiles).toEqual([{ path: "plan.md", text: "# Plan\n1. Fix the README count." }]);
     expect(planSeen).toContain("Approve this plan?");
     expect(planSeen).toContain("# Plan");
     expect(planSeen).not.toContain("$ARTIFACTS_DIR");

@@ -225,6 +225,12 @@ export async function handleSwarmsAction(
       if (!id || !record.ended || !old) return fail(`swarm '${String(raw)}' can't run again`);
       return started(deps, againInput(old, payload, record.ended), "drawer");
     }
+    case "copy-conclusion": {
+      const record = id ? deps.find(id) : {};
+      const conclusion = (record.live ?? record.ended)?.conclusion;
+      if (conclusion === undefined) return fail(`swarm '${String(raw)}' has no conclusion`);
+      return { ok: true, data: conclusion };
+    }
     case "open-report": {
       if (!id || !known(id) || !deps.hasReport?.(id))
         return fail(`swarm '${String(raw)}' has no report`);

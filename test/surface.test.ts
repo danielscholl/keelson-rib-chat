@@ -354,6 +354,46 @@ describe("Swarms boards", () => {
 });
 
 describe("the reading pane", () => {
+  test("an open gate shows its files: markdown as is, other text fenced, failures named", () => {
+    const withFiles = swarm("s9fil", {
+      runs: [
+        run("r7", {
+          status: "paused",
+          pendingApproval: {
+            nodeId: "approve-plan",
+            prompt: "Approve?",
+            files: [
+              { path: "plan.md", text: "## Steps\n\n1. Count the nodes." },
+              { path: "diff.patch", text: "+12 nodes", truncated: true },
+              { path: "notes.txt", error: "not found" },
+            ],
+          },
+        }),
+      ],
+    });
+    const doc = buildDoc(withFiles, "s9fil");
+    expect(doc).toContain("### plan.md\n\n## Steps\n\n1. Count the nodes.");
+    expect(doc).toContain("### diff.patch (cut short)\n\n````\n+12 nodes\n````");
+    expect(doc).toContain("### notes.txt\n\n*Could not be read: not found.*");
+  });
+
+  test("the conclusion's copy button reveals the whole conclusion", async () => {
+    const done = fixtures.done!;
+    const drawer = JSON.stringify(buildSwarmBoard(done));
+    expect(drawer).toContain('"copyAction":{"type":"copy-conclusion","payload":{"id":"s8pln"}}');
+    const deps = {
+      surface: undefined,
+      find: (id: string) => (id === "s8pln" ? { ended: done } : {}),
+      live: () => undefined,
+      begin: () => "s0",
+      launchOf: () => undefined,
+    };
+    const copy = (id: string) =>
+      handleSwarmsAction({ type: "copy-conclusion", payload: { id } }, deps);
+    expect(await copy("s8pln")).toEqual({ ok: true, data: done.conclusion });
+    expect((await copy("s0non")).ok).toBe(false);
+  });
+
   test("shows the whole conclusion, the refused draft, or the open gate's prompt", () => {
     expect(buildDoc(fixtures.done, "s8pln")).toContain("x".repeat(3000));
     expect(buildDoc(fixtures.stalled, "s5tcx")).toContain("a draft");
