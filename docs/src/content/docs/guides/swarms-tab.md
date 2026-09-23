@@ -21,9 +21,11 @@ A card that asks something leads with the request:
 - the title is the request itself: **Review the plan for …**, **@planner
   asked: …**, **ClickClack stopped answering**, or **No agent has worked since
   21:48**
-- the first line says what happened and why it is yours
-- the second line is the budget: turns used and remaining, minutes of the wall
+- the first line says what happened and why it is yours, then how long it has
+  waited (**opened 4 min ago**, **asked 2 min ago**), kept current by a live
   clock
+- then the budget: turns used and remaining, and the time left (**53 min
+  left**)
 - the footnote is the setup: the task, the project, the size, the model, the
   agents, when it started
 - the first button is the request's verb: **Review plan**, **Read question**,
@@ -31,13 +33,16 @@ A card that asks something leads with the request:
   and **Stop swarm** is in the overflow menu
 
 When a swarm asks more than one thing, the card shows the first and counts the
-rest.
+rest. A card that asks something has a colored edge in the request's tone, so it
+stands out from the running cards.
 
 A running card leads with the task and the id, then:
 
 - what the swarm is doing this minute: who is working and the latest event, or
   the approval a peer is reviewing
-- **Turn budget used · 18 of 80 · 62 remaining**, over a meter
+- a meter captioned **Turn budget used**, with **18 of 80 · 62 remaining**
+  beside it
+- the time left, on a live clock
 - the agents, in their identity colors
 - the setup in the footnote
 
@@ -82,12 +87,13 @@ Live, the board runs in this order:
 - the requests, one card each, with **reviewing** approvals after them
 - the report, once the lead has published one
 - the budget strip: turns used with what is left and a sparkline of turns per
-  minute, time against the wall clock, agents against the cap with how many are
+  minute, the time left on a live clock, agents against the cap with how many are
   busy or waiting, and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
 - **Message the lead**, which posts in the channel as you and wakes the lead,
-  and **Stop swarm…** at the far end of the row. What you post shows at once
-  under Activity, as **you posted in #swarm-<id>: …**
+  and **Stop swarm…** at the far end of the row. The button reads
+  **Sending…** until the note is posted, the toast says where it went, and
+  the note shows at once under Activity as **you posted in #swarm-<id>: …**
 
 Ended, it runs: the outcome (the report, the conclusion with **Read in full**,
 or the cause, such as **Stopped by you at 21:50**, **Out of turns at 40** or
@@ -140,8 +146,9 @@ The **Start a swarm** header above the index is one form:
 | Field | Means |
 |---|---|
 | **Task** | What the swarm works out. Agents can't open links, so describe the issue or PR, or use **Prepare in chat** to attach it. A task that names a URL or `#123` with nothing attached is refused before a channel exists. |
-| **Project** and **Agents may** | The registered project agents may read, and whether they may (**chat only** or **read the project**). |
-| **Workflows the lead may start** | Leave it empty and the swarm investigates. Name workflows and the lead may start them in isolated worktrees; this needs a project, and each workflow still needs the chat rib's `ribWorkflowGrants` entry. The placeholder names the workflows whose approvals the host keeps for you. |
+| **Project** | The registered project agents work on. **Agents may** and **Workflows** appear once one is picked. |
+| **Agents may** | Whether agents read the project (**read the project**) or only talk (**chat only**). |
+| **Workflows the lead may start** | Leave it empty and the swarm investigates. Name workflows and the lead may start them in isolated worktrees; each still needs the chat rib's `ribWorkflowGrants` entry. The placeholder names the workflows whose approvals the host keeps for you. With no registered project the field stays visible and says it needs one. |
 | **Size** | Each segment carries its agents and turns; the hover has every limit. |
 | **Power** | `fast`, `balanced` or `deep`; hovering one names the model each provider runs at it. |
 | **Model override** | Leave it on **use the power's model** to let the power pick. An override sets every agent's model and the power no longer applies. |

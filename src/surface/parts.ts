@@ -112,16 +112,42 @@ export function verifiedText(s: SwarmSummary): string | undefined {
 }
 
 // The budget in one supporting line: turns spent and left, and time spent of the wall clock.
-export function budgetLine(s: SwarmSummary, now = Date.now()): string {
+export function budgetLine(s: SwarmSummary): string {
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
-  const elapsed = Math.max(0, Math.round((now - Date.parse(s.startedAt)) / 60_000));
-  return `${s.turnsUsed} of ${s.limits.maxTurns} turns used · ${left} remaining · ${elapsed} of ${minutes(s.limits.wallClockMs)} min`;
+  return `${s.turnsUsed} of ${s.limits.maxTurns} turns used · ${left} remaining`;
 }
 
-// The named meter's text, shown above the track until the host draws it on the bar.
-export function meterLine(s: SwarmSummary): string {
+export function endsAt(s: SwarmSummary): string {
+  return new Date(Date.parse(s.startedAt) + s.limits.wallClockMs).toISOString();
+}
+
+// The host ticks these between frames, so a waiting request stays true.
+const SINCE_LABEL: Record<NeedKind, string> = {
+  decide: "opened",
+  question: "asked",
+  connection: "since",
+  quiet: "last turn",
+};
+
+export function sinceClock(need: Need) {
+  return need.since
+    ? [{ label: SINCE_LABEL[need.kind], clock: { at: need.since, mode: "since" as const } }]
+    : [];
+}
+
+export function timeLeft(s: SwarmSummary) {
+  return { label: "time", clock: { at: endsAt(s), mode: "until" as const } };
+}
+
+// The turn meter, captioned on its own track.
+export function turnMeter(s: SwarmSummary) {
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
-  return `Turn budget used · ${s.turnsUsed} of ${s.limits.maxTurns} · ${left} remaining`;
+  return {
+    value: s.turnsUsed,
+    total: s.limits.maxTurns,
+    label: "Turn budget used",
+    trailing: `${s.turnsUsed} of ${s.limits.maxTurns} · ${left} remaining`,
+  };
 }
 
 // The gate's own verb, for the gates the rib knows.
@@ -170,7 +196,7 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
       kind: "decide",
       title: what,
       pill: NEED_PILL.decide,
-      line: `${run.workflow} ${shortRun(run.runId)} paused at ${gate.nodeId}${gate.openedAt ? ` since ${hhmm(gate.openedAt)}` : ""} · only you can approve ${run.workflow} on this host`,
+      line: `${run.workflow} ${shortRun(run.runId)} paused at ${gate.nodeId} · only you can approve ${run.workflow} on this host`,
       ...linkTo(threadHref(s, gate.threadId), "the approval thread in ClickClack"),
       primary: {
         type: "open-run",
@@ -189,7 +215,7 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
       kind: "question",
       title: `@${who} asked: ${askGist(ask.text, 96)}`,
       pill: NEED_PILL.question,
-      line: `asked at ${hhmm(ask.at)} in #${s.channelName} · a reply in its thread answers it; other questions stay open`,
+      line: `in #${s.channelName} · a reply in its thread answers it; other questions stay open`,
       ...linkTo(
         threadHref(s, ask.threadRootId) ?? threadHref(s, ask.messageId),
         "the question in ClickClack",
@@ -225,6 +251,7 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
         ? {
             type: "server-start",
             label: "Start ClickClack",
+            pendingLabel: "Starting…",
             tone: "brand",
             glyph: "▶",
             hint: "Starts the managed server. The swarm reconnects and replays what it missed.",
@@ -275,6 +302,7 @@ export function messageLead(s: SwarmSummary, tone?: CanvasActionItem["tone"]): C
       },
     ],
     submitLabel: "Send",
+    pendingLabel: "Sending…",
   };
 }
 
@@ -303,6 +331,7 @@ function replyAction(
       },
     ],
     submitLabel: "Reply",
+    pendingLabel: "Sending…",
     ...(href ? { hint: `Thread: ${href}` } : {}),
   };
 }
@@ -312,6 +341,7 @@ export function stopAction(s: SwarmSummary, inline = false): CanvasActionItem {
   return {
     type: "stop-swarm",
     label: "Stop swarm…",
+    pendingLabel: "Stopping…",
     destructive: true,
     ...(inline ? { inline: true, align: "end" as const } : {}),
     payload: { id: s.id },

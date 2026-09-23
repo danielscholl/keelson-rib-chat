@@ -305,17 +305,27 @@ describe("Swarms boards", () => {
   test("a request card leads with the decision, its verb, and no meter", () => {
     const card = cardsOf(buildIndex(state({ live: [fixtures.onlyYou!] })))[0];
     expect(card?.pill).toEqual({ label: "decide", tone: "caution" });
+    expect(card?.edge).toBe("caution");
     expect(card?.bar).toBeUndefined();
-    expect(card?.fields?.[0]?.value).toBe(
-      "fix-issue r20000-1 paused at approve-plan since 14:31 · only you can approve fix-issue on this host",
-    );
-    expect(card?.fields?.[1]).toEqual({
-      value: "the approval thread in ClickClack",
-      href: "http://127.0.0.1:18080/app/ws_1/msg_0042",
-    });
-    expect(card?.fields?.[2]?.value).toMatch(
-      /^11 of 80 turns used · 69 remaining · \d+ of 60 min$/,
-    );
+    expect(card?.fields).toEqual([
+      {
+        value:
+          "fix-issue r20000-1 paused at approve-plan · only you can approve fix-issue on this host",
+      },
+      { label: "opened", clock: { at: "2026-09-22T14:31:00.000Z", mode: "since" } },
+      {
+        value: "the approval thread in ClickClack",
+        href: "http://127.0.0.1:18080/app/ws_1/msg_0042",
+      },
+      { value: "11 of 80 turns used · 69 remaining" },
+      { label: "time", clock: { at: "2026-09-22T15:00:00.000Z", mode: "until" } },
+      {
+        people: [
+          { name: "lead", tone: "brand" },
+          { name: "w1", tone: WORKER_TONES[0] },
+        ],
+      },
+    ]);
     expect(card?.footnote).toBe(
       "Fix issue #27: README undercounts frontend-mix nodes · keelson-sample · large · gpt-6-astra · 2 agents · started 14:00",
     );
@@ -346,9 +356,18 @@ describe("Swarms boards", () => {
   test("a running card names the activity, then the budget as a named meter", () => {
     const card = cardsOf(buildIndex(state({ live: [fixtures.waiting!] })))[0];
     expect(card?.pill).toEqual({ label: "running", tone: "info" });
-    expect(card?.bar).toEqual({ value: 11, total: 40 });
+    expect(card?.edge).toBeUndefined();
+    expect(card?.bar).toEqual({
+      value: 11,
+      total: 40,
+      label: "Turn budget used",
+      trailing: "11 of 40 · 29 remaining",
+    });
     expect(card?.fields?.[0]?.value).toBe("@lead working · @lead turn 3 ok");
-    expect(card?.fields?.[1]?.value).toBe("Turn budget used · 11 of 40 · 29 remaining");
+    expect(card?.fields?.[1]).toEqual({
+      label: "time",
+      clock: { at: "2026-09-22T14:30:00.000Z", mode: "until" },
+    });
     expect(card?.footnote).toBe("keelson-sample · medium · gpt-5.6-sol · 2 agents · started 14:00");
     expect(card?.actions?.[0]).toMatchObject({ type: "swarm-open", label: "Open swarm" });
     const stopping = cardsOf(buildIndex(state({ live: [fixtures.stopping!] })))[0];
@@ -474,8 +493,7 @@ describe("Swarms boards", () => {
     const view = buildSwarmBoard(fixtures.waiting!);
     const bench = view.sections.find((x) => x.kind === "cards" && x.title?.startsWith("Agents"));
     const items = bench?.kind === "cards" ? bench.items : [];
-    expect(bench).toMatchObject({ grid: true, title: "Agents · 2 of 5" });
-    expect(bench).not.toHaveProperty("columns");
+    expect(bench).toMatchObject({ grid: true, columns: 4, title: "Agents · 2 of 5" });
     expect(items).toHaveLength(5);
     expect(items[0]).toMatchObject({
       title: "lead",
@@ -486,7 +504,7 @@ describe("Swarms boards", () => {
     expect(items[0]?.bar).toBeUndefined();
     expect(items[1]).toMatchObject({
       pill: { label: "waiting", tone: "caution" },
-      bar: { value: 3, total: 12 },
+      bar: { value: 3, total: 12, trailing: "3 of 12 turns" },
       footnote: "2 messages waiting",
     });
     expect(items.slice(2).every((c) => c.ghost === true)).toBe(true);
@@ -497,6 +515,11 @@ describe("Swarms boards", () => {
       value: "11 of 40",
       sub: "29 remaining",
       spark: [1, 3, 2, 0, 1],
+    });
+    expect(tiles[1]).toEqual({
+      label: "Time",
+      clock: { at: "2026-09-22T14:30:00.000Z", mode: "until" },
+      sub: `of 30 min · ends ${hhmm("2026-09-22T14:30:00.000Z")}`,
     });
     expect(tiles[2]).toMatchObject({ label: "Agents", value: "2 of 5", sub: "1 busy · 1 waiting" });
     expect(JSON.stringify(view)).toContain('"text":"@lead turn 3 ok ×2"');
@@ -879,6 +902,21 @@ describe("actions", () => {
     expect((await handleSwarmsAction({ type: "nope" }, deps)).ok).toBe(false);
   });
 
+  test("a finished action names what it did in the toast", async () => {
+    expect(
+      await handleSwarmsAction(
+        { type: "message-lead", payload: { id: "s9hjx", note: "hi" } },
+        deps,
+      ),
+    ).toEqual({ ok: true, data: { message: "Posted in #swarm-s9hjx as you" } });
+    expect(
+      await handleSwarmsAction({ type: "stop-swarm", payload: { id: "s9hjx" } }, deps),
+    ).toEqual({
+      ok: true,
+      data: { message: "Stopping swarm s9hjx: cancelling its runs and revoking its bots" },
+    });
+  });
+
   test("message-lead and stop need a live swarm, and a message needs a note", async () => {
     expect(
       (
@@ -948,6 +986,13 @@ describe("launching from the tab", () => {
       "large · 8 agents · 80 turns",
     ]);
     expect(field({ projects, live: 0 }, "project")?.placeholder).toBe("no project");
+    expect(field({ projects, live: 0 }, "workflows")?.showWhen).toEqual({ field: "project" });
+    expect(field({ projects, live: 0 }, "tools")?.showWhen).toEqual({ field: "project" });
+    expect(field({ projects: [], live: 0 }, "workflows")?.showWhen).toBeUndefined();
+    expect(
+      field({ projects, live: 0, dispatchBlocked: "no workflows" }, "workflows")?.showWhen,
+    ).toBeUndefined();
+    expect(items({ projects, live: 0 })[0]?.pendingLabel).toBe("Starting…");
   });
 
   test("each power's hover names the model every provider runs at it", () => {

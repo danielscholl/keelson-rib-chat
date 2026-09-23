@@ -123,7 +123,7 @@ const checkFrames = (s: SwarmSummary, live: boolean) => {
     if (section.kind !== "cards") continue;
     for (const card of section.items) {
       if (card.pill) pills.add(card.pill.label);
-      if (card.fields?.some((f) => String(f.value).startsWith("Turn budget used"))) meters++;
+      if (card.bar && "label" in card.bar && card.bar.label === "Turn budget used") meters++;
     }
   }
   for (const [key, view] of views) {
