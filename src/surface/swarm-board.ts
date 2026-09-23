@@ -8,7 +8,7 @@
 
 import type { CanvasBoardView } from "@keelson/shared";
 import { missingEvidence } from "../dispatch.ts";
-import { modelLabel } from "../labels.ts";
+import { modelLabel, tokenCount, tokensText, tokenTotal } from "../labels.ts";
 import { type Need, needsYou } from "../needs.ts";
 import { type ChildRun, type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
 import {
@@ -114,6 +114,7 @@ function vitals(s: SwarmSummary): Leaf {
       { icon: "◷", text: `${when}${s.project ? ` · on ${s.project.name}` : ""}` },
       { icon: "◫", text: sizeDetail(s) },
       { icon: "◆", text: modelRow(s) },
+      ...(s.usage ? [{ icon: "∑", text: `${tokensText(s.usage)} tokens` }] : []),
       ...health,
     ],
   };
@@ -338,7 +339,8 @@ function agentRows(s: SwarmSummary): Row[] {
   if (s.agents.length === 0) return [{ icon: "·", text: "No agents yet." }];
   return s.agents.map((a) => {
     const glyph = live(s) ? AGENT_GLYPH[a.status] : undefined;
-    const turns = a.lead ? plural(a.turns, "turn") : `${a.turns}/${s.limits.maxTurnsPerAgent}`;
+    const count = a.lead ? plural(a.turns, "turn") : `${a.turns}/${s.limits.maxTurnsPerAgent}`;
+    const turns = a.usage ? `${count} · ${tokenCount(tokenTotal(a.usage))} tokens` : count;
     return {
       chip: { label: shortHandle(a.handle, s.id), tone: a.tone },
       text: differ ? (a.model ?? "provider default") : firstLine(a.role, 40),

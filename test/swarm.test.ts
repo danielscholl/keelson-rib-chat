@@ -3,6 +3,7 @@ import type { RibRunStatus } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { needsYou } from "../src/needs.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
+import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import {
   MAX_TURN_FAILURES,
   Swarm,
@@ -158,6 +159,21 @@ describe("Swarm", () => {
     const summary = await (await start()).finished;
     expect(results).toEqual([false, false, true]);
     expect(summary.agents.length).toBe(3);
+  });
+
+  test("token usage sums per agent and per swarm, failed turns included", async () => {
+    const { start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId !== "s1-lead") return;
+      if (turn === 1) throw new Error("provider hiccup");
+      await call("chat_done", { summary: "ok" });
+    });
+    const summary = await (await start()).finished;
+    const two = { input: 2_400, output: 600, cached: 1_600 };
+    expect(summary.agents[0]?.usage).toEqual(two);
+    expect(summary.usage).toEqual(two);
+    const board = JSON.stringify(buildSwarmBoard(summary));
+    expect(board).toContain("2k in · 600 out · 2k cached tokens");
+    expect(board).toContain("2 turns · 5k tokens");
   });
 
   test("an idle swarm nudges its lead, then ends as stalled", async () => {

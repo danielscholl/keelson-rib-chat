@@ -102,8 +102,24 @@ export interface SwarmAgent {
   model?: string;
   // The provider that served this agent's last turn.
   providerId?: string;
+  usage?: TokenTally;
   turns: number;
   status: AgentStatus;
+}
+
+// Tokens summed over turns. `input` counts cache writes too; `cached` is cache reads.
+export interface TokenTally {
+  input: number;
+  output: number;
+  cached: number;
+}
+
+export function addTokens(a: TokenTally | undefined, b: TokenTally): TokenTally {
+  return {
+    input: (a?.input ?? 0) + b.input,
+    output: (a?.output ?? 0) + b.output,
+    cached: (a?.cached ?? 0) + b.cached,
+  };
 }
 
 export type SwarmStatus = "running" | "done" | "stalled" | "exhausted" | "stopped" | "error";
@@ -204,6 +220,8 @@ export interface SwarmSummary {
   conclusion?: string;
   // The lead's designed report page, when it published one.
   report?: ReportMeta;
+  // Every agent's tokens summed; absent when the provider reported none.
+  usage?: TokenTally;
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;
   error?: string;

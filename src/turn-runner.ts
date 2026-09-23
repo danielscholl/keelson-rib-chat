@@ -81,10 +81,11 @@ export async function runTurn(
         }),
       ]);
       if (grace) clearTimeout(grace);
-      const sessionId =
-        late?.kind === "result" && late.result.sessionId
-          ? { sessionId: late.result.sessionId }
-          : {};
+      const lateResult = late?.kind === "result" ? late.result : undefined;
+      const sessionId = {
+        ...(lateResult?.sessionId ? { sessionId: lateResult.sessionId } : {}),
+        ...(lateResult?.usage ? { usage: lateResult.usage } : {}),
+      };
       return {
         status: "timeout",
         text: "",
@@ -100,6 +101,7 @@ export async function runTurn(
     const kept = {
       ...(result.sessionId ? { sessionId: result.sessionId } : {}),
       ...(result.providerId ? { providerId: result.providerId } : {}),
+      ...(result.usage ? { usage: result.usage } : {}),
     };
     if (controller.signal.aborted || result.status === "aborted") {
       return { status: "aborted", text: result.text ?? "", ...kept, ...base() };
@@ -109,7 +111,6 @@ export async function runTurn(
         status: "ok",
         text: result.text,
         ...kept,
-        ...(result.usage ? { usage: result.usage } : {}),
         ...base(),
       };
     }
