@@ -26,7 +26,6 @@ import {
   firstLine,
   hhmm,
   minutes,
-  minutesSince,
   plural,
   prLabel,
   shortHandle,
@@ -37,6 +36,7 @@ import {
 import { runAgainItem } from "./launch-board.ts";
 import {
   causeTitle,
+  endsAt,
   LIFECYCLE,
   livePill,
   messageLead,
@@ -44,6 +44,7 @@ import {
   type Request,
   requestOf,
   type ServerLine,
+  sinceClock,
   sizeDetail,
   sizeWord,
   stopAction,
@@ -65,6 +66,7 @@ export const DETAIL_CHARS = 4_000;
 // does not ship eighty thousand characters in every frame.
 const CONTEXT_DETAIL_BUDGET = 24_000;
 export const RECENT_SHOWN = 12;
+const BENCH_COLUMNS = 4;
 
 // A board field renders text as is, so markdown's emphasis and code marks come off.
 function plain(markdown: string): string {
@@ -104,11 +106,12 @@ function modelRow(s: SwarmSummary): string {
 
 // ---- Requests: what the operator is asked, one card each. ----
 
-function requestCard(request: Request): Card {
+function requestCard(request: Request, need: Need): Card {
   return {
     title: request.title,
     pill: request.pill,
-    fields: [{ value: request.line }, ...(request.link ? [request.link] : [])],
+    edge: request.pill.tone,
+    fields: [{ value: request.line }, ...sinceClock(need), ...(request.link ? [request.link] : [])],
     actions: [request.primary, ...request.more],
   };
 }
@@ -164,7 +167,7 @@ function reviewingCard(s: SwarmSummary, run: ChildRun): Card {
 
 function requests(s: SwarmSummary, needs: readonly Need[], server?: ServerLine): Leaf[] {
   if (!live(s)) return [];
-  const asked = needs.map((n) => requestCard(requestOf(s, n, server)));
+  const asked = needs.map((n) => requestCard(requestOf(s, n, server), n));
   const reviewing = (s.runs ?? [])
     .filter(
       (r) =>
@@ -193,7 +196,6 @@ function stats(s: SwarmSummary): Leaf {
     ...(busy > 0 ? [`${busy} busy`] : []),
     ...(waiting > 0 ? [`${waiting} waiting`] : []),
   ];
-  const elapsed = isLiveNow ? minutesSince(s.startedAt) : undefined;
   const wall = minutes(s.limits.wallClockMs);
   const items: Stat[] = [
     {
@@ -203,13 +205,13 @@ function stats(s: SwarmSummary): Leaf {
       ...(isLiveNow && left === 0 ? { tone: "warn" as const } : {}),
       ...(isLiveNow && s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
     },
-    {
-      label: "Time",
-      value: isLiveNow ? `${elapsed} min` : span(s.startedAt, s.endedAt) || "0 s",
-      sub: isLiveNow
-        ? `of ${wall} · ends ${hhmm(new Date(Date.parse(s.startedAt) + s.limits.wallClockMs).toISOString())}`
-        : `of ${wall} min`,
-    },
+    isLiveNow
+      ? {
+          label: "Time",
+          clock: { at: endsAt(s), mode: "until" as const },
+          sub: `of ${wall} min · ends ${hhmm(endsAt(s))}`,
+        }
+      : { label: "Time", value: span(s.startedAt, s.endedAt) || "0 s", sub: `of ${wall} min` },
     {
       label: "Agents",
       value: `${s.agents.length} of ${s.limits.maxAgents}`,
@@ -271,11 +273,17 @@ function agentCard(s: SwarmSummary, a: SwarmSummary["agents"][number]): Card {
     titleTone: a.tone,
     mono: true,
     ...(live(s) ? { pill: AGENT_PILL[a.status] } : {}),
-    ...(a.lead ? {} : { bar: { value: a.turns, total: s.limits.maxTurnsPerAgent } }),
+    ...(a.lead
+      ? {}
+      : { bar: { value: a.turns, total: s.limits.maxTurnsPerAgent, trailing: turns } }),
     stacked: true,
     fields: [
       { value: firstLine(a.role, 64) },
-      { value: tokens ? `${turns} · ${tokens}` : turns },
+      ...(a.lead
+        ? [{ value: tokens ? `${turns} · ${tokens}` : turns }]
+        : tokens
+          ? [{ value: tokens }]
+          : []),
       ...(pinned ? [{ value: a.model as string }] : []),
     ],
     ...(foot.length > 0 ? { footnote: foot.join(" · ") } : {}),
@@ -292,6 +300,7 @@ function bench(s: SwarmSummary): Leaf {
     kind: "cards",
     title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`,
     grid: true,
+    columns: BENCH_COLUMNS,
     items: items.length > 0 ? items : [{ title: "No agents yet", ghost: true }],
   };
 }

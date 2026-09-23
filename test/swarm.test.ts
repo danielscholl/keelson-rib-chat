@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { RibRunStatus } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { needsYou } from "../src/needs.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
@@ -14,7 +13,14 @@ import {
 } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
 import { BODY_MAX, CONCLUSION_MAX, SIZE_PRESETS, type SwarmSummary } from "../src/types.ts";
-import { FakeClickClack, OWNER_TOKEN, type Script, scriptedProvider, WORKSPACE } from "./fakes.ts";
+import {
+  FakeClickClack,
+  fakeDispatcher,
+  OWNER_TOKEN,
+  type Script,
+  scriptedProvider,
+  WORKSPACE,
+} from "./fakes.ts";
 
 const never = new Promise<void>(() => {});
 
@@ -489,55 +495,6 @@ describe("Swarm resilience", () => {
   });
 });
 
-function fakeDispatcher(opts: { live?: boolean; refuseAnswers?: string; answers?: boolean } = {}) {
-  const states = new Map<string, RibRunStatus>();
-  const started: { name: string; inputs: Record<string, string> }[] = [];
-  const cancelled: string[] = [];
-  const answered: { runId: string; nodeId: string; text: string; pauseId?: string }[] = [];
-  let n = 0;
-  const set = (runId: string, patch: Partial<RibRunStatus>) => {
-    const current = states.get(runId);
-    if (current) states.set(runId, { ...current, ...patch });
-  };
-  const respond = async (runId: string, nodeId: string, text: string, pauseId?: string) => {
-    if (opts.refuseAnswers) return { ok: false as const, error: opts.refuseAnswers };
-    answered.push({ runId, nodeId, text, ...(pauseId ? { pauseId } : {}) });
-    set(runId, { status: "running", pendingApproval: undefined });
-    return { ok: true as const };
-  };
-  return {
-    started,
-    cancelled,
-    answered,
-    set,
-    dispatcher: {
-      ...(opts.answers || opts.refuseAnswers ? { respond } : {}),
-      start: async (name: string, inputs: Record<string, string>) => {
-        n++;
-        const runId = `run_${n}`;
-        started.push({ name, inputs });
-        states.set(runId, {
-          runId,
-          workflowName: name,
-          status: "running",
-          startedAt: new Date().toISOString(),
-          checkout: opts.live
-            ? { path: "/project", branch: "main", worktreeEstablished: false }
-            : { path: `/wt/${runId}`, branch: `keelson/${runId}`, worktreeEstablished: true },
-          nodes: [],
-        });
-        return { runId };
-      },
-      status: async (runId: string) => states.get(runId),
-      cancel: async (runId: string) => {
-        cancelled.push(runId);
-        set(runId, { status: "cancelled" });
-        return { ok: true as const };
-      },
-    },
-  };
-}
-
 const later = (ms: number, fn: () => void) => setTimeout(fn, ms);
 
 describe("Workflow dispatch", () => {
@@ -783,6 +740,44 @@ describe("Workflow dispatch", () => {
     expect(outs[0]).toContain("needs feedback");
     expect(outs[1]).toContain("has not let this swarm answer this workflow's gates");
     expect(summary.runs?.[0]?.approvals).toBeUndefined();
+  });
+
+  test("a gate on a workflow the host refused tells the lead the operator answers it", async () => {
+    const fake = fakeDispatcher({ answers: true });
+    const refused = new Set(["fix-issue"]);
+    let swarmRef: Swarm | undefined;
+    let notice = "";
+    const { start } = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "fix issue 1" });
+          later(40, () => {
+            fake.set("run_1", {
+              status: "paused",
+              pendingApproval: { nodeId: "approve-plan", prompt: "Approve the plan?" },
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else {
+          notice = prompt;
+          await call("chat_workflow_cancel", { run_id: "run_1" });
+          await call("chat_done", { summary: "handed to the operator" });
+        }
+      },
+      {},
+      {
+        approvalRefusals: {
+          has: (w) => refused.has(w),
+          set: (w, r) => void (r ? refused.add(w) : refused.delete(w)),
+        },
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    await swarmRef.finished;
+    expect(notice).toContain("Only the operator can answer it");
+    expect(notice).not.toContain("Have another agent review it");
   });
 
   test("an isolated run found in the live checkout is cancelled and reported", async () => {
@@ -1197,7 +1192,10 @@ describe("health and needs", () => {
     const threadId = swarm.summary().runs?.[0]?.pendingApproval?.threadId;
     expect((await reply("run_9", "x")).ok).toBe(false);
     expect((await reply("run_1", "  ")).ok).toBe(false);
-    expect(await reply("run_1", "Keep the retry cap at 30 s.")).toEqual({ ok: true });
+    expect(await reply("run_1", "Keep the retry cap at 30 s.")).toEqual({
+      ok: true,
+      data: { message: "Replied in the approve-plan thread as you" },
+    });
     await swarm.finished;
     const posted = server.messages.find(
       (m) => m.body === "**Operator:** Keep the retry cap at 30 s.",

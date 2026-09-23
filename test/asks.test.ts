@@ -185,7 +185,7 @@ describe("an agent asking the operator", () => {
     await settle();
     const s = swarm.summary();
     const index = JSON.stringify(buildIndex({ live: [s], starting: [], ended: [] }));
-    expect(index).toContain("asked at");
+    expect(index).toContain('{"label":"asked","clock":{"at":"');
     expect(index).toContain("@lead asked: Which do you prefer, 8 of 12 or all 12?");
     const drawer = JSON.stringify(buildSwarmBoard(s));
     expect(drawer).toContain('"title":"@lead asked: Which do you prefer, 8 of 12 or all 12?"');

@@ -1148,9 +1148,10 @@ export class Swarm {
     const where = gate.threadId
       ? `Its prompt and files are in thread ${gate.threadId}.`
       : `Its prompt: ${gate.prompt}`;
-    const how = this.opts.dispatch?.dispatcher.respond
-      ? "Have another agent review it, then answer with chat_workflow_respond, citing that review."
-      : "Only the operator can answer it: tell @operator in the channel what it is waiting for.";
+    const how =
+      this.opts.dispatch?.dispatcher.respond && !this.opts.approvalRefusals?.has(run.workflow)
+        ? "Have another agent review it, then answer with chat_workflow_respond, citing that review."
+        : "Only the operator can answer it: tell @operator in the channel what it is waiting for.";
     this.notifyLead(`${change} ${where} ${how}`, { post: false });
   }
 

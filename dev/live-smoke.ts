@@ -17,14 +17,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectView } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
+import { needsYou } from "../src/needs.ts";
 import { ManagedServer, realServerDeps } from "../src/server.ts";
-import { buildIndex } from "../src/surface/index-board.ts";
+import { buildBadge, buildIndex } from "../src/surface/index-board.ts";
 import { INDEX_KEY, swarmKey } from "../src/surface/keys.ts";
 import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import { Swarm } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
 import type { SwarmSummary } from "../src/types.ts";
-import { type Script, scriptedProvider } from "../test/fakes.ts";
+import { fakeDispatcher, type Script, scriptedProvider } from "../test/fakes.ts";
 
 let url = process.env.CLICKCLACK_URL ?? "http://localhost:8080";
 let token = process.env.CLICKCLACK_TOKEN;
@@ -122,7 +123,7 @@ const checkFrames = (s: SwarmSummary, live: boolean) => {
     if (section.kind !== "cards") continue;
     for (const card of section.items) {
       if (card.pill) pills.add(card.pill.label);
-      if (card.fields?.some((f) => String(f.value).startsWith("Turn budget used"))) meters++;
+      if (card.bar && "label" in card.bar && card.bar.label === "Turn budget used") meters++;
     }
   }
   for (const [key, view] of views) {
@@ -189,7 +190,193 @@ console.log(
   `index: heads=${[...heads].join("|")} pills=${[...pills].join("|")} meters=${meters} ended row=${endedIndex.includes('"label":"done"')}`,
 );
 
+// ---- Scene two: a peer reviews one approval, and only the operator can answer the next. ----
+
+const later = (ms: number, fn: () => void) => setTimeout(fn, ms);
+const fake = fakeDispatcher({ answers: true });
+const REFUSAL =
+  "rib 'chat' is not granted approvals for workflow 'release' (config.json ribApprovalGrants)";
+const dispatcher = {
+  ...fake.dispatcher,
+  respond: async (runId: string, nodeId: string, text: string, pauseId?: string) =>
+    runId === "run_2"
+      ? { ok: false as const, error: REFUSAL }
+      : fake.dispatcher.respond!(runId, nodeId, text, pauseId),
+};
+// An earlier swarm learned that the host keeps release approvals for the operator.
+const refused = new Set(["release"]);
+const approvalRefusals = {
+  has: (w: string) => refused.has(w),
+  set: (w: string, r: boolean) => void (r ? refused.add(w) : refused.delete(w)),
+};
+const shipped = (runId: string, pr: number) => {
+  fake.set(runId, {
+    status: "succeeded",
+    completedAt: new Date().toISOString(),
+    nodes: [
+      { nodeId: "open-pr", status: "succeeded", output: `https://github.com/o/r/pull/${pr}` },
+      { nodeId: "ci-green-gate", status: "succeeded", output: "CI_GATE: PASS" },
+    ],
+  });
+  gated?.onRunEvent(runId);
+};
+const pause = (runId: string, nodeId: string, prompt: string) => {
+  fake.set(runId, { status: "paused", pendingApproval: { nodeId, prompt } });
+  gated?.onRunEvent(runId);
+};
+
+let gated: Swarm | undefined;
+let gateThread: string | undefined;
+let reviewed = false;
+const gateScript: Script = async ({ agentId, turn, prompt, call }) => {
+  const say = async (tool: string, input: unknown) => {
+    const out = await call(tool, input);
+    console.log(`   ${agentId} -> ${tool}: ${out.isError ? "ERROR " : ""}${out.content}`);
+    if (out.isError) throw new Error(out.content);
+  };
+  if (agentId.endsWith("-reviewer")) {
+    const brief = prompt.match(/top-level (msg_\w+)/)?.[1];
+    if (!brief) return;
+    await say("chat_reply", {
+      message_id: brief,
+      body: "approve: each plan step maps to the issue",
+    });
+    return;
+  }
+  if (!agentId.endsWith("-lead")) return;
+  if (turn === 1) {
+    await say("chat_workflow_start", { workflow: "fix-issue", purpose: "fix the slow build" });
+    later(300, () => pause("run_1", "approve-plan", "Approve this plan?\n\n1. Enable caching."));
+    return;
+  }
+  if (!gateThread) {
+    gateThread = prompt.match(/in thread (msg_\w+)/)?.[1];
+    if (!gateThread) return;
+    await say("chat_spawn", {
+      handle: "reviewer",
+      role: "plan reviewer",
+      brief: `Review the plan in thread ${gateThread} and reply to this brief with your verdict.`,
+    });
+    await say("chat_reply", {
+      message_id: gateThread,
+      body: `@${gated?.id}-reviewer please review this plan.`,
+    });
+    return;
+  }
+  if (!reviewed) {
+    const review = [...prompt.matchAll(/-reviewer \((msg_\w+)/g)].at(-1)?.[1];
+    if (!review) return;
+    reviewed = true;
+    await say("chat_workflow_respond", {
+      run_id: "run_1",
+      decision: "approve",
+      review,
+      reason: "Every plan step maps to the issue.",
+    });
+    later(200, () => shipped("run_1", 8));
+    await say("chat_workflow_start", { workflow: "release", purpose: "release the fix" });
+    later(500, () => pause("run_2", "approve-release", "Release 1.2.3?"));
+    return;
+  }
+  const runs = gated?.summary().runs ?? [];
+  if (runs.length === 2 && runs.every((r) => r.status === "succeeded")) {
+    await say("chat_done", { summary: "The fix shipped in PR 8 and the release in PR 9." });
+  }
+};
+
+// What the tab showed along the way.
+const gateHeads = new Set<string>();
+const gatePills = new Set<string>();
+const verbs = new Set<string>();
+const seen = { reviewing: false, badge: false };
+let operatorAnswered = false;
+const gateProvider = scriptedProvider(tools, gateScript);
+const second = await Swarm.start({
+  task: "Smoke test: fix the slow build and release it.",
+  owner,
+  workspaceId: workspace.id,
+  runAgentTurn: gateProvider.run,
+  quiesceMs: 1_000,
+  approvalRefusals,
+  dispatch: {
+    grants: [
+      { name: "fix-issue", isolated: true },
+      { name: "release", isolated: true },
+    ],
+    dispatcher,
+  },
+  log: (m, d) => console.log(`[gates] ${m}${d ? ` ${JSON.stringify(d)}` : ""}`),
+  onChange: () => {
+    if (!gated) return;
+    const s = gated.summary();
+    const index = buildIndex({ live: [s], starting: [], ended: [] });
+    const board = buildSwarmBoard(s);
+    for (const [key, view] of [
+      [INDEX_KEY, index],
+      [swarmKey(s.id), board],
+    ] as const) {
+      try {
+        expectView(key, "board")(view);
+        frames++;
+      } catch (e) {
+        badFrame ??= `${key}: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    }
+    if (index.header?.status) gateHeads.add(index.header.status.label);
+    if (buildBadge({ live: [s], starting: [], ended: [] }).count === 1) seen.badge = true;
+    for (const section of index.sections) {
+      if (section.kind !== "cards") continue;
+      for (const card of section.items) {
+        if (card.pill) gatePills.add(card.pill.label);
+        if (card.actions?.[0]) verbs.add(card.actions[0].label);
+      }
+    }
+    for (const section of board.sections) {
+      if (section.kind !== "cards") continue;
+      for (const card of section.items) {
+        if (
+          card.pill?.label === "reviewing" &&
+          card.fields?.some((f) => String(f.value).startsWith("@reviewer reviews the plan"))
+        ) {
+          seen.reviewing = true;
+        }
+      }
+    }
+    if (!operatorAnswered && needsYou(s).some((n) => n.kind === "decide")) {
+      operatorAnswered = true;
+      // The operator answers in Workflows, outside the swarm.
+      later(500, async () => {
+        await fake.dispatcher.respond!("run_2", "approve-release", "approve");
+        shipped("run_2", 9);
+      });
+    }
+  },
+});
+gated = second;
+swarms.set(second.id, second);
+const gatedSummary = await second.finished;
+const [fixRun, releaseRun] = gatedSummary.runs ?? [];
+const gatesOk =
+  gatedSummary.status === "done" &&
+  fixRun?.verified === true &&
+  releaseRun?.verified === true &&
+  fixRun.approvals?.[0]?.reviewer === `@${second.id}-reviewer` &&
+  releaseRun.approvals === undefined &&
+  seen.reviewing &&
+  gateHeads.has("1 needs you") &&
+  gatePills.has("decide") &&
+  verbs.has("Review and approve") &&
+  seen.badge &&
+  fake.answered.map((a) => a.runId).join(",") === "run_1,run_2";
+console.log(
+  `gates: status=${gatedSummary.status} runs=${(gatedSummary.runs ?? []).map((r) => `${r.workflow}:${r.status}${r.verified ? "+verified" : ""}`).join(",")} reviewing=${seen.reviewing} heads=${[...gateHeads].join("|")} pills=${[...gatePills].join("|")} verbs=${[...verbs].join("|")} badge=${seen.badge} answered=${fake.answered.map((a) => a.runId).join(",")}`,
+);
+console.log(
+  `boards: ${frames} frames valid in both scenes${badFrame ? `; first invalid: ${badFrame}` : ""}`,
+);
+
 let ok =
+  gatesOk &&
   !badFrame &&
   frames > 0 &&
   indexOk &&

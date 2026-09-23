@@ -96,6 +96,9 @@ export function modelField(model?: string, provider?: string): Field {
   };
 }
 
+// Workflows and read access need a project; they stay hidden until one is picked.
+const ONCE_A_PROJECT = { field: "project" };
+
 // The workflows field says who answers their approvals, from the refusals the
 // host has made so far, where the decision it informs is made.
 function workflowsField(state: LaunchState): Field {
@@ -111,6 +114,7 @@ function workflowsField(state: LaunchState): Field {
     name: "workflows",
     label: "Workflows the lead may start",
     placeholder,
+    ...(state.projects.length > 0 && !state.dispatchBlocked ? { showWhen: ONCE_A_PROJECT } : {}),
   };
 }
 
@@ -136,6 +140,7 @@ function fields(state: LaunchState): Field[] {
           {
             name: "tools",
             label: "Agents may",
+            showWhen: ONCE_A_PROJECT,
             required: true,
             segmented: true,
             half: true,
@@ -165,6 +170,7 @@ export function buildLaunch(state: LaunchState): CanvasBoardView {
       fields: fields(state),
       submitLabel: "Start swarm",
       submitTone: "brand",
+      pendingLabel: "Starting…",
       hint: `Sizes: ${sizesHint()}.`,
       ...(state.live === 0 ? { expanded: true } : {}),
     },
