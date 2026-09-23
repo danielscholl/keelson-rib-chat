@@ -361,8 +361,9 @@ A swarm needs the operator when ClickClack stopped answering (its socket closed
 twice without reopening), when a run waits at a gate the swarm cannot answer
 (the host refused it under \`ribApprovalGrants\`, or offers no respond), or when
 a run waits at a gate and the swarm went idle. A refusal is remembered per
-workflow, so the next gate on that workflow is flagged at once. The tab has no
-approve button: answer those gates in the Workflows tab.
+workflow, so the next gate on that workflow is flagged at once. Open run on a
+gate card or a run row opens the run beside the tab, where the operator answers
+the gate. The Swarms tab shows how many live swarms need the operator.
 
 The Start a swarm header starts one from the tab. Discuss takes a task,
 project, tool access, size, and model. Dispatch adds the workflows the lead may

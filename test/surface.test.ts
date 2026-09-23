@@ -6,6 +6,7 @@ import {
   expectView,
   type RibViewDescriptor,
   ribClientEffectSchema,
+  ribSurfaceBadgeSchema,
   ribSurfaceDescriptorSchema,
   type SnapshotManager,
 } from "@keelson/shared";
@@ -13,7 +14,12 @@ import rib from "../src/index.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
-import { buildHistory, buildIndex, type SurfaceState } from "../src/surface/index-board.ts";
+import {
+  buildBadge,
+  buildHistory,
+  buildIndex,
+  type SurfaceState,
+} from "../src/surface/index-board.ts";
 import {
   docKey,
   HISTORY_KEY,
@@ -240,7 +246,7 @@ describe("Swarms boards", () => {
     const card = cards?.kind === "cards" ? cards.items[0] : undefined;
     expect(card?.fields).toContainEqual({ label: "size", value: "large" });
     expect(card?.fields).toContainEqual({ label: "model", value: "gpt-6-astra" });
-    expect(card?.reason?.text).toContain("answer it in the Workflows tab");
+    expect(card?.reason?.text).toContain("open the run to answer it");
     expect(card?.actions?.[0]?.hint).toBe(
       "large: up to 8 agents · 80 turns, 16 per worker · 4 at once · 5 min a turn. Model: gpt-6-astra.",
     );
@@ -673,6 +679,40 @@ describe("launching from the tab", () => {
       modelPicker: { providerField: "provider", providerDefault: "copilot" },
     });
     board(swarmKey("s8pln"), buildSwarmBoard(fixtures.done!, { rerunnable: true }));
+  });
+});
+
+describe("opening a run and the tab's count", () => {
+  test("a gate card and a run row open the run, and the action names its workflow", async () => {
+    const drawer = buildSwarmBoard(fixtures.onlyYou!);
+    const json = JSON.stringify(drawer);
+    expect(json).toContain('"label":"Open run"');
+    expect(json).toContain(
+      '"action":{"type":"open-run","payload":{"id":"s7k1p","runId":"r20000-1111-2222"}}',
+    );
+    board(swarmKey("s7k1p"), drawer);
+    const opened = await handleSwarmsAction(
+      { type: "open-run", payload: { id: "s8pln", runId: "r40000-1111-2222" } },
+      actionDeps,
+    );
+    expect(ribClientEffectSchema.parse(opened.ok ? opened.data : undefined)).toEqual({
+      effect: "open-run",
+      runId: "r40000-1111-2222",
+      workflow: "fix-issue",
+    });
+    const missing = await handleSwarmsAction(
+      { type: "open-run", payload: { id: "s8pln", runId: "nope" } },
+      actionDeps,
+    );
+    expect(missing.ok).toBe(false);
+  });
+
+  test("the tab counts the live swarms that need the operator", () => {
+    const badge = buildBadge(
+      state({ live: [fixtures.running!, fixtures.onlyYou!, fixtures.review!] }),
+    );
+    expect(ribSurfaceBadgeSchema.parse(badge)).toEqual({ count: 1, title: "1 swarm needs you" });
+    expect(buildBadge(state({ live: [fixtures.running!] }))).toEqual({ count: 0 });
   });
 });
 

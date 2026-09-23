@@ -217,6 +217,14 @@ export async function handleSwarmsAction(
       await swarm.replyToGate(runId, note);
       return { ok: true };
     }
+    case "open-run": {
+      const found = id ? deps.find(id) : {};
+      const summary = found.live ?? found.ended;
+      const runId = typeof payload.runId === "string" ? payload.runId : "";
+      const run = summary?.runs?.find((r) => r.runId === runId);
+      if (!run) return fail(`run '${runId}' is not one of swarm '${String(raw)}''s runs`);
+      return { ok: true, data: { effect: "open-run", runId, workflow: run.workflow } };
+    }
     case "stop-swarm": {
       const swarm = id ? deps.live(id) : undefined;
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);

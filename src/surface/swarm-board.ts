@@ -163,9 +163,15 @@ function gateCard(s: SwarmSummary, run: ChildRun, need: Need | undefined): Card 
       { label: "run", value: shortRun(run.runId), copyable: true },
     ],
     footnote: firstLine(gate?.prompt ?? "", 200),
-    ...(gate?.threadId
-      ? {
-          actions: [
+    actions: [
+      {
+        type: "open-run",
+        label: "Open run",
+        hint: "Opens the run beside the tab, where you can answer its gate.",
+        binding: { id: s.id, runId: run.runId },
+      },
+      ...(gate?.threadId
+        ? [
             {
               type: "reply",
               label: "Reply in thread",
@@ -180,9 +186,9 @@ function gateCard(s: SwarmSummary, run: ChildRun, need: Need | undefined): Card 
               ],
               submitLabel: "Reply",
             },
-          ],
-        }
-      : {}),
+          ]
+        : []),
+    ],
     reason: need
       ? (needReason(s, need) ?? { text: "waiting on you" })
       : {
@@ -338,6 +344,7 @@ function runRows(s: SwarmSummary): Row[] {
       trailing: runStatus(run),
       bar: { segments: evidence(run) },
       ...(href ? { href } : {}),
+      action: { type: "open-run", payload: { id: s.id, runId: run.runId } },
     };
     const answers: Row[] = (run.approvals ?? []).map((a) => ({
       icon: a.decision === "approve" ? "✓" : "↺",

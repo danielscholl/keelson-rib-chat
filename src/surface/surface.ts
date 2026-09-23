@@ -9,6 +9,7 @@
 import {
   type CanvasView,
   expectView,
+  type RibSurfaceBadge,
   type RibViewDescriptor,
   type SnapshotManager,
 } from "@keelson/shared";
@@ -16,8 +17,9 @@ import type { SwarmReport } from "../report.ts";
 import type { SwarmChange } from "../swarm.ts";
 import type { StartingSwarm, SwarmSummary } from "../types.ts";
 import { buildDoc } from "./doc.ts";
-import { buildHistory, buildIndex, type SurfaceState } from "./index-board.ts";
+import { buildBadge, buildHistory, buildIndex, type SurfaceState } from "./index-board.ts";
 import {
+  BADGE_KEY,
   docKey,
   HISTORY_KEY,
   INDEX_KEY,
@@ -78,6 +80,14 @@ function text(key: string) {
   };
 }
 
+function badgeOf(data: unknown): RibSurfaceBadge {
+  const count = (data as RibSurfaceBadge | null)?.count;
+  if (!Number.isInteger(count) || (count as number) < 0) {
+    throw new Error(`${BADGE_KEY} expects a whole count`);
+  }
+  return data as RibSurfaceBadge;
+}
+
 export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   const { sm, windowMs } = deps;
   const index = createKeyPublisher<CanvasView>(
@@ -85,6 +95,13 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     INDEX_KEY,
     () => buildIndex(deps.state()),
     expectView(INDEX_KEY, "board"),
+    windowMs,
+  );
+  const badge = createKeyPublisher<RibSurfaceBadge>(
+    sm,
+    BADGE_KEY,
+    () => buildBadge(deps.state()),
+    badgeOf,
     windowMs,
   );
   const history = createKeyPublisher<CanvasView>(
@@ -223,6 +240,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       track([id]);
       if (kind === "report" && ensureReport(id, true)) deps.invalidateManifest?.();
       index.schedule();
+      badge.schedule();
       const entry = swarms.get(id);
       entry?.board.schedule();
       if (DOC_KINDS.has(kind)) entry?.doc.schedule();
@@ -232,6 +250,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     },
     refresh() {
       index.schedule();
+      badge.schedule();
       history.schedule();
       launch.schedule();
       server.schedule();
@@ -242,6 +261,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     dispose() {
       for (const id of [...swarms.keys()]) release(id);
       index.release();
+      badge.release();
       history.release();
       launch.release();
       server.release();

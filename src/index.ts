@@ -17,7 +17,7 @@ import { makeServerTools } from "./server-tools.ts";
 import { createSwarmFileStore } from "./store.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
 import type { SurfaceState } from "./surface/index-board.ts";
-import { INDEX_KEY, LAUNCH_KEY, SERVER_KEY, SURFACE_ID } from "./surface/keys.ts";
+import { BADGE_KEY, INDEX_KEY, LAUNCH_KEY, SERVER_KEY, SURFACE_ID } from "./surface/keys.ts";
 import { type LaunchState, sizesByline } from "./surface/launch-board.ts";
 import type { ServerLine } from "./surface/parts.ts";
 import { createServerOps } from "./surface/server-ops.ts";
@@ -580,6 +580,7 @@ const rib: Rib = {
       id: SURFACE_ID,
       title: "Swarms",
       hideRegionActions: true,
+      badgeKey: BADGE_KEY,
       layout: {
         header: { key: LAUNCH_KEY, collapsible: true, byline: sizesByline() },
         rows: [{ columns: [{ key: INDEX_KEY, live: true }] }],

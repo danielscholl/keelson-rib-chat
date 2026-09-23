@@ -6,7 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
+import type { CanvasActionItem, CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
 import { modelLabel } from "../labels.ts";
 import { type Need, needsYou, oldestNeed } from "../needs.ts";
 import { type StartingSwarm, type SwarmStatus, type SwarmSummary, sizeOf } from "../types.ts";
@@ -184,6 +184,13 @@ function serverRow(server: ServerLine | undefined): Row | undefined {
     href: `${server.url}/app`,
     trailing: server.mode,
   };
+}
+
+export function buildBadge(state: SurfaceState): RibSurfaceBadge {
+  const count = state.live.filter((s) => needsYou(s).length > 0).length;
+  return count > 0
+    ? { count, title: `${count} ${count === 1 ? "swarm needs" : "swarms need"} you` }
+    : { count };
 }
 
 export function buildIndex(state: SurfaceState): CanvasBoardView {
