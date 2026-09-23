@@ -104,9 +104,9 @@ one-sentence lead-in in the prose above it and a numbered `figcaption`
 ("Figure 1. ..."), never dropped in cold.
 
 A rib's signature figures are usually **app screenshots** of its live surfaces.
-The Chat rib has no Keelson surface: its live view is the swarm's ClickClack
-channel, so a screenshot of a channel mid-swarm is the signature figure, and a
-diagram earns its place only for routing and the turn loop. keelson reserves the
+The Chat rib has two: the Swarms tab in Keelson (the index and a swarm's
+board) and the swarm's ClickClack channel mid-swarm. A diagram earns its
+place only for routing and the turn loop. keelson reserves the
 dark `screenshot-figure` frame for app screenshots and the light
 `diagram-figure` frame for diagrams; the inherited theme styles both.
 

@@ -25,11 +25,6 @@ gets far. An agent that edits directly would need its own leased worktree, with
 isolation verified before any write. Granting edit and shell tools to the
 existing agents would solve none of ownership, isolation, or approvals.
 
-## A Keelson surface
-
-ClickClack's own UI is the live view. A board showing roster, budget, and status
-per swarm is the natural next step.
-
 ## A managed server on Windows
 
 The managed server relies on POSIX process groups and `ps`. On Windows the rib
@@ -38,9 +33,10 @@ says so and asks for an external server.
 ## An operator-only reset
 
 `chat_server_reset` is a tool, so an MCP client can call it, held back only by
-its `confirm` input and the live-swarm check. A board action with a confirm
-dialog would keep it to the operator. That waits on
-[a Keelson surface](#a-keelson-surface).
+its `confirm` input and the live-swarm check. The Swarms tab's footer already
+carries Reset behind a typed confirm, so retiring the tool would keep a reset
+to the operator. That waits on deciding that an operator who reaches Keelson
+only over MCP no longer needs the tool.
 
 ## Surviving a server restart
 
