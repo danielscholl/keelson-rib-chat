@@ -88,8 +88,14 @@ export function sizeOf(limits: SwarmLimits, base: SwarmSize): SwarmSize | "custo
 export const WORKER_TONES = ["id-blue", "id-amber", "id-teal", "id-rose", "id-olive"] as const;
 export type AgentTone = "brand" | (typeof WORKER_TONES)[number] | "neutral";
 
-// `failed`: retired after too many consecutive failed turns.
-export type AgentStatus = "idle" | "busy" | "capped" | "failed";
+// `waiting`: idle with messages queued, because every slot is taken or the swarm
+// has concluded. `failed`: retired after too many consecutive failed turns.
+export type AgentStatus = "idle" | "waiting" | "busy" | "capped" | "failed";
+
+// A swarm that is still on the tab as live: running, or stopping.
+export function isLive(status: SwarmStatus): boolean {
+  return status === "running" || status === "stopping";
+}
 
 export interface SwarmAgent {
   id: string;
@@ -110,6 +116,8 @@ export interface SwarmAgent {
   usage?: TokenTally;
   turns: number;
   status: AgentStatus;
+  // Messages waiting in the agent's inbox, when any are.
+  queued?: number;
 }
 
 export interface GateFileText {
@@ -122,6 +130,8 @@ export interface GateFileText {
 export interface ActivityEntry {
   at: string;
   text: string;
+  // Consecutive identical events collapse into one entry that counts them.
+  count?: number;
 }
 
 // Tokens summed over turns. `input` counts cache writes too; `cached` is cache reads.
@@ -139,7 +149,16 @@ export function addTokens(a: TokenTally | undefined, b: TokenTally): TokenTally 
   };
 }
 
-export type SwarmStatus = "running" | "done" | "stalled" | "exhausted" | "stopped" | "error";
+// `stopping`: Stop was accepted; the child runs are being cancelled and the bot
+// tokens revoked. It becomes `stopped` once that work is done.
+export type SwarmStatus =
+  | "running"
+  | "stopping"
+  | "done"
+  | "stalled"
+  | "exhausted"
+  | "stopped"
+  | "error";
 
 // A catalog workflow the operator lets the lead start. `isolated` runs must
 // establish their own worktree; one found in the live checkout is cancelled.
@@ -174,6 +193,9 @@ export interface ChildRun {
     // `operator` when this swarm cannot answer the gate: the host offers no
     // respond, or refused one on this workflow under ribApprovalGrants.
     answerer?: "swarm" | "operator";
+    // The agent the lead asked to review the plan, taken from the lead's
+    // mention in the gate thread; absent when no agent was asked.
+    reviewer?: string;
     // The files the gate names, such as the plan, kept for the reading pane.
     files?: GateFileText[];
   };
@@ -235,8 +257,13 @@ export interface SwarmSummary {
   agents: readonly Omit<SwarmAgent, "tokenId" | "sessionId">[];
   // The evidence the swarm was given, without the bodies.
   context?: readonly ContextIndexEntry[];
+  // The workflows the launch let the lead start; absent on a Discuss swarm.
+  workflows?: readonly string[];
   // Workflow runs the lead started, with their evidence.
   runs?: readonly ChildRun[];
+  // Turns started per minute over the last 30 minutes, oldest first, once two
+  // minutes have passed.
+  pace?: readonly number[];
   conclusion?: string;
   // The lead's designed report page, when it published one.
   report?: ReportMeta;
@@ -259,14 +286,19 @@ export interface SwarmHealth {
   refusedConclusions?: number;
   // When the swarm went idle with a run paused at a gate; the next turn clears it.
   quietSince?: string;
-  // Questions agents put to the operator; the operator's next message clears them.
+  // Questions agents put to the operator, each open until answered in its
+  // thread, by a post that mentions the asker, or dismissed.
   asks?: readonly OperatorAsk[];
+  // A live run the swarm could not cancel when it stopped.
+  cancelFault?: string;
 }
 
 export interface OperatorAsk {
   agentId: string;
   handle: string;
   messageId: string;
+  // The thread the question lives in: the message itself, or its thread root.
+  threadRootId: string;
   text: string;
   at: string;
 }

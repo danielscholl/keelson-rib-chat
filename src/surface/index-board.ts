@@ -6,23 +6,24 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { CanvasActionItem, CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
+import type { CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
 import { modelLabel } from "../labels.ts";
 import { type Need, needsYou, oldestNeed } from "../needs.ts";
-import { type StartingSwarm, type SwarmStatus, type SwarmSummary, sizeOf } from "../types.ts";
+import { type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
+import { activityText, day, firstLine, hhmm, plural, shortHandle, span } from "./format.ts";
 import {
-  activityText,
-  channelHref,
-  day,
-  firstLine,
-  firstPr,
-  hhmm,
-  prLabel,
-  shortHandle,
-  shortRun,
-  span,
-} from "./format.ts";
-import { endedOutcome, needReason, openHint, type ServerLine } from "./parts.ts";
+  budgetLine,
+  LIFECYCLE,
+  livePill,
+  meterLine,
+  openHint,
+  openSwarm,
+  requestOf,
+  type ServerLine,
+  sizeWord,
+  stopAction,
+  verifiedText,
+} from "./parts.ts";
 
 export interface SurfaceState {
   live: readonly SwarmSummary[];
@@ -32,105 +33,95 @@ export interface SurfaceState {
   server?: ServerLine;
 }
 
-type Card = Extract<CanvasBoardView["sections"][number], { kind: "cards" }>["items"][number];
-type Row = Extract<CanvasBoardView["sections"][number], { kind: "rows" }>["items"][number];
+type Section = CanvasBoardView["sections"][number];
+type Card = Extract<Section, { kind: "cards" }>["items"][number];
+type Row = Extract<Section, { kind: "rows" }>["items"][number];
+type Field = NonNullable<Card["fields"]>[number];
 
 export const ENDED_SHOWN = 8;
 
-export const STATUS_GLYPH: Record<SwarmStatus, { icon: string; tone: Row["glyph"] }> = {
-  running: { icon: "●", tone: "info" },
-  done: { icon: "✓", tone: "ok" },
-  stopped: { icon: "■", tone: "neutral" },
-  stalled: { icon: "◌", tone: "warn" },
-  exhausted: { icon: "◔", tone: "warn" },
-  error: { icon: "✕", tone: "error" },
-};
-
-// One line on what the swarm is doing, when nothing needs the operator.
-function statusReason(s: SwarmSummary): Card["reason"] | undefined {
+// What the swarm is doing this minute, from its latest event or health.
+function activityLine(s: SwarmSummary): string {
+  const h = s.health;
+  if (s.status === "stopping") return "stopping: cancelling runs and revoking tokens";
+  if (s.conclusion !== undefined) return "the lead has concluded; turns in flight finish";
   const gated = s.runs?.find((r) => r.status === "paused" && r.pendingApproval);
   if (gated?.pendingApproval) {
-    return {
-      label: "gate",
-      text: `${gated.pendingApproval.nodeId} on ${gated.workflow} ${shortRun(gated.runId)}, in peer review since ${hhmm(gated.pendingApproval.openedAt)}`,
-    };
+    const who = gated.pendingApproval.reviewer;
+    return `${gated.pendingApproval.nodeId} on ${gated.workflow} is in review${who ? ` by @${shortHandle(who, s.id)}` : ""} since ${hhmm(gated.pendingApproval.openedAt)}`;
   }
-  const h = s.health;
-  if (h?.channelFault) return { label: "ClickClack", text: h.channelFault };
-  if (h?.lastLeadFailure) return { label: "lead", text: `last turn failed: ${h.lastLeadFailure}` };
-  if (h?.nudges) {
-    return { label: "idle", text: `nudged the lead ${h.nudges} of ${s.limits.maxNudges} times` };
-  }
+  if (h?.channelFault) return `ClickClack fault: ${firstLine(h.channelFault, 80)}`;
+  if (h?.lastLeadFailure) return `the lead's last turn failed: ${firstLine(h.lastLeadFailure, 80)}`;
+  if (h?.nudges) return `idle: nudged the lead ${h.nudges} of ${s.limits.maxNudges} times`;
+  const busy = s.agents.filter((a) => a.status === "busy");
   const last = s.activity?.at(-1);
-  if (last) return { label: hhmm(last.at), text: firstLine(activityText(s.id, last.text), 120) };
-  return undefined;
+  if (busy.length > 0) {
+    return `${busy.map((a) => `@${shortHandle(a.handle, s.id)}`).join(", ")} working${last ? ` · ${firstLine(activityText(s.id, last.text), 60)}` : ""}`;
+  }
+  if (last) return `${hhmm(last.at)} ${firstLine(activityText(s.id, last.text), 90)}`;
+  return "waiting for the lead's first turn";
 }
 
-function stopAction(s: SwarmSummary): CanvasActionItem {
-  const live = (s.runs ?? []).filter((r) => r.status === "running" || r.status === "paused");
+// The third level: what the swarm is, in one muted line.
+function setup(s: SwarmSummary, withTask: boolean): string {
+  return [
+    ...(withTask ? [firstLine(s.task, 72)] : []),
+    ...(s.project ? [s.project.name] : []),
+    sizeWord(s),
+    modelLabel(s),
+    ...(s.agents.length > 0 ? [plural(s.agents.length, "agent")] : []),
+    `started ${hhmm(s.startedAt)}`,
+  ].join(" · ");
+}
+
+function people(s: SwarmSummary): Field[] {
+  if (s.agents.length === 0) return [];
+  return [{ people: s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone })) }];
+}
+
+function reportAction(s: SwarmSummary) {
+  return s.report
+    ? [
+        {
+          type: "open-report",
+          label: "Report",
+          glyph: "◧",
+          payload: { id: s.id },
+          hint: s.report.title,
+        },
+      ]
+    : [];
+}
+
+// A swarm that asks something: the request is the title, its verb the first
+// action, and the task drops to the footnote.
+function requestCard(s: SwarmSummary, needs: readonly Need[]): Card {
+  const first = needs[0] as Need;
+  const request = requestOf(s, first);
+  const more = needs.length - 1;
   return {
-    type: "stop-swarm",
-    label: "Stop swarm…",
-    destructive: true,
-    payload: { id: s.id },
-    confirm: {
-      title: `Stop swarm ${s.id}?`,
-      body:
-        live.length > 0
-          ? `Its agents stop, and ${live.length} live run(s) are cancelled: ${live.map((r) => `${r.workflow} ${shortRun(r.runId)}`).join(", ")}.`
-          : "Its agents stop and their tokens are revoked. The channel keeps the transcript.",
-      confirmLabel: "Stop swarm",
-    },
+    title: request.title,
+    pill: request.pill,
+    // One level per line: the request, the budget, the roster.
+    stacked: true,
+    fields: [{ value: request.line }, { value: budgetLine(s) }, ...people(s)],
+    footnote: setup(s, true),
+    ...(more > 0 ? { reason: { text: `+${plural(more, "more request")}` } } : {}),
+    actions: [request.primary, openSwarm(s), ...reportAction(s), stopAction(s)],
   };
 }
 
-function liveCard(s: SwarmSummary, needs: readonly Need[]): Card {
-  const first = needs[0];
-  const pr = firstPr(s);
-  const reason = first ? needReason(s, first) : statusReason(s);
-  const href = channelHref(s);
+// A swarm that asks nothing: the task is the title, the first line is what it
+// is doing now, and the budget is a named meter under it.
+function runningCard(s: SwarmSummary): Card {
   return {
     title: `${firstLine(s.task)} · ${s.id}`,
-    pill: first ? { label: "needs you", tone: "caution" } : { label: "running", tone: "info" },
+    pill: livePill(s),
     bar: { value: s.turnsUsed, total: s.limits.maxTurns },
-    fields: [
-      { label: "channel", value: `#${s.channelName}`, ...(href ? { href } : {}) },
-      ...(s.agents.length > 0
-        ? [
-            {
-              label: "with",
-              people: s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone })),
-            },
-          ]
-        : []),
-      ...(s.project ? [{ label: "on", value: s.project.name }] : []),
-      { label: "size", value: s.size },
-      { label: "model", value: modelLabel(s) },
-      { label: "started", value: hhmm(s.startedAt) },
-      ...(pr ? [{ label: "PR", value: prLabel(pr), href: pr }] : []),
-    ],
-    ...(reason ? { reason } : {}),
-    actions: [
-      {
-        type: "swarm-open",
-        label: "Open",
-        glyph: "→",
-        payload: { id: s.id },
-        hint: openHint(s),
-      },
-      ...(s.report
-        ? [
-            {
-              type: "open-report",
-              label: "Report",
-              glyph: "◧",
-              payload: { id: s.id },
-              hint: s.report.title,
-            },
-          ]
-        : []),
-      stopAction(s),
-    ],
+    stacked: true,
+    fields: [{ value: activityLine(s) }, { value: meterLine(s) }, ...people(s)],
+    footnote: setup(s, false),
+    actions: [openSwarm(s, "brand"), ...reportAction(s), stopAction(s)],
   };
 }
 
@@ -139,17 +130,17 @@ function startingCard(s: StartingSwarm): Card {
   return {
     title: `${firstLine(s.task)} · ${s.id}`,
     pill: { label: "starting", tone: "neutral" },
-    fields: [
-      ...(s.project ? [{ label: "on", value: s.project.name }] : []),
-      { label: "size", value: shape.size },
-      { label: "model", value: modelLabel(shape) },
-      { label: "started", value: hhmm(s.startedAt) },
-    ],
-    reason: { label: "starting", text: "Creating the channel and the lead." },
+    fields: [{ value: "creating the channel and the lead" }],
+    footnote: [
+      ...(s.project ? [s.project.name] : []),
+      sizeWord(shape),
+      modelLabel(shape),
+      `started ${hhmm(s.startedAt)}`,
+    ].join(" · "),
     actions: [
       {
         type: "swarm-open",
-        label: "Open",
+        label: "Open swarm",
         glyph: "→",
         payload: { id: s.id },
         hint: openHint(shape),
@@ -158,31 +149,24 @@ function startingCard(s: StartingSwarm): Card {
   };
 }
 
+// An ended swarm leads with its lifecycle, then the task, then the result.
 export function endedRow(s: SwarmSummary): Row {
-  const g = STATUS_GLYPH[s.status];
+  const life = LIFECYCLE[s.status];
   const took = span(s.startedAt, s.endedAt);
-  const end = took ? ` · ${took}` : "";
+  const verified = verifiedText(s);
   return {
-    icon: g.icon,
-    glyph: g.tone,
-    text: `${s.id} ${firstLine(s.task, 64)} · ${modelLabel(s)}`,
-    trailing: `${day(s.startedAt)} ${hhmm(s.startedAt)}${end} · ${endedOutcome(s)}${s.report ? " · ◧ report" : ""}`,
+    chip: { label: life.label, tone: life.tone },
+    text: firstLine(s.task, 72),
+    trailing: [
+      s.id,
+      modelLabel(s),
+      plural(s.turnsUsed, "turn"),
+      ...(took ? [took] : []),
+      `${day(s.startedAt)} ${hhmm(s.startedAt)}`,
+      ...(verified ? [verified] : []),
+      ...(s.report ? ["◧ report"] : []),
+    ].join(" · "),
     action: { type: "swarm-open", payload: { id: s.id } },
-  };
-}
-
-function serverRow(server: ServerLine | undefined): Row | undefined {
-  if (!server) return undefined;
-  if (!server.running || !server.url) {
-    return server.mode === "managed"
-      ? { icon: "◌", text: "ClickClack is stopped; the next swarm starts it managed" }
-      : { icon: "◌", glyph: "warn", text: "ClickClack is not reachable", trailing: "external" };
-  }
-  return {
-    icon: "↗",
-    text: `ClickClack at ${server.url.replace(/^https?:\/\//, "")}`,
-    href: `${server.url}/app`,
-    trailing: server.mode,
   };
 }
 
@@ -202,9 +186,9 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
     .filter((x) => x.needs.length === 0)
     .sort((a, b) => a.s.startedAt.localeCompare(b.s.startedAt));
   const cards = [
-    ...needing.map((x) => liveCard(x.s, x.needs)),
+    ...needing.map((x) => requestCard(x.s, x.needs)),
     ...state.starting.map(startingCard),
-    ...running.map((x) => liveCard(x.s, x.needs)),
+    ...running.map((x) => runningCard(x.s)),
   ];
   const ended = [...state.ended].reverse();
   const shown = ended.slice(0, ENDED_SHOWN);
@@ -219,13 +203,20 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
       : liveCount > 0
         ? { label: `${liveCount} live`, tone: "info" as const }
         : undefined;
-  const server = serverRow(state.server);
+  const segments =
+    liveCount > 0
+      ? [
+          { label: "needs you", n: needing.length, tone: "caution" as const },
+          { label: "running", n: running.length, tone: "info" as const },
+          { label: "starting", n: state.starting.length, tone: "neutral" as const },
+        ].filter((seg) => seg.n > 0)
+      : [];
   const empty = cards.length === 0 && ended.length === 0;
 
   return {
     view: "board",
     title: "Swarms",
-    ...(status ? { header: { status } } : {}),
+    ...(status ? { header: { status, ...(segments.length > 0 ? { segments } : {}) } } : {}),
     sections: [
       ...(cards.length > 0 ? [{ kind: "cards" as const, title: "Live", items: cards }] : []),
       ...(shown.length > 0
@@ -248,8 +239,24 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
             },
           ]
         : []),
-      ...(empty ? [{ kind: "rows" as const, items: [{ icon: "◌", text: "No swarms yet." }] }] : []),
-      ...(server ? [{ kind: "rows" as const, items: [server] }] : []),
+      ...(empty
+        ? [
+            {
+              kind: "journey" as const,
+              items: [
+                { title: "Start a swarm", text: "Name the task above and pick a size." },
+                {
+                  title: "Agents talk in #swarm-<id>",
+                  text: "The lead spawns workers and they work it out in ClickClack.",
+                },
+                {
+                  title: "The lead concludes here",
+                  text: "The answer and its report land on this tab.",
+                },
+              ],
+            },
+          ]
+        : []),
     ],
   };
 }

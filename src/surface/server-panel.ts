@@ -13,6 +13,7 @@ import type { ServerLine } from "./parts.ts";
 type Section = CanvasBoardView["sections"][number];
 type Row = Extract<Section, { kind: "rows" }>["items"][number];
 type Item = Extract<Section, { kind: "actions" }>["items"][number];
+type Pill = NonNullable<NonNullable<CanvasBoardView["header"]>["status"]>;
 
 export type ServerVerb = "start" | "stop" | "reset";
 
@@ -28,8 +29,6 @@ export interface ServerPanelState {
   op?: ServerOp;
   // Swarms live or starting; stop and reset wait for them.
   live: number;
-  // Workflows whose gates the host keeps for the operator.
-  refused: readonly string[];
 }
 
 export const LOG_LINES = 200;
@@ -40,20 +39,27 @@ const DOING: Record<ServerVerb, string> = {
   reset: "resetting",
 };
 
-function opRow(op: ServerOp): Row {
-  if (op.phase === "running") return { icon: "◌", glyph: "info", text: `${DOING[op.verb]}…` };
+function opRow(op: ServerOp): Row | undefined {
+  if (op.phase === "running") return undefined;
   if (op.phase === "failed") {
     return { icon: "!", glyph: "error", text: `${op.verb} failed: ${op.error ?? "unknown error"}` };
   }
   return { icon: "✓", glyph: "ok", text: `${op.verb} finished ${hhmm(op.at)}` };
 }
 
-function pill(server: ServerLine | undefined): { label: string; tone: "ok" | "neutral" | "warn" } {
+// The head is visible while the footer is folded, so an operation in progress
+// or a failed one reports there, not in the body the operator folded away.
+export function pill(state: ServerPanelState): Pill {
+  const { server, op } = state;
+  if (op?.phase === "running") return { label: `${DOING[op.verb]}…`, tone: "info" };
+  if (op?.phase === "failed") return { label: `${op.verb} failed`, tone: "error" };
   if (!server) return { label: "unknown", tone: "neutral" };
-  if (server.running) return { label: "running", tone: "ok" };
-  return server.mode === "managed"
-    ? { label: "stopped", tone: "neutral" }
-    : { label: "unreachable", tone: "warn" };
+  if (server.mode === "external") {
+    if (server.running) return { label: "reachable", tone: "ok" };
+    const since = server.unreachableSince ? ` since ${hhmm(server.unreachableSince)}` : "";
+    return { label: `unreachable${since}`, tone: "warn" };
+  }
+  return server.running ? { label: "running", tone: "ok" } : { label: "stopped", tone: "neutral" };
 }
 
 function detailRows(server: ServerLine): Row[] {
@@ -68,6 +74,15 @@ function detailRows(server: ServerLine): Row[] {
   }
   if (server.mode === "external") {
     rows.push({ icon: "◌", text: "Run by someone else; the rib doesn't start, stop or reset it." });
+    if (server.checkedAt) {
+      rows.push({
+        icon: server.running ? "✓" : "!",
+        glyph: server.running ? "ok" : "warn",
+        text: server.running
+          ? `answered the last probe at ${hhmm(server.checkedAt)}`
+          : `did not answer at ${hhmm(server.checkedAt)}${server.unreachableSince ? `; unreachable since ${hhmm(server.unreachableSince)}` : ""}`,
+      });
+    }
     return rows;
   }
   if (server.pid) {
@@ -84,6 +99,16 @@ function detailRows(server: ServerLine): Row[] {
 
 function verbs(state: ServerPanelState): Item[] {
   const { server, op, live } = state;
+  if (server?.mode === "external") {
+    return [
+      {
+        type: "server-probe",
+        label: "Retry",
+        glyph: "↻",
+        hint: "Probes the server again and updates the footer.",
+      },
+    ];
+  }
   if (server?.mode !== "managed") return [];
   const busy = op?.phase === "running" ? `A ${op.verb} is still running.` : undefined;
   const waits =
@@ -135,31 +160,18 @@ function verbs(state: ServerPanelState): Item[] {
 }
 
 export function buildServerPanel(state: ServerPanelState): CanvasBoardView {
+  const op = state.op ? opRow(state.op) : undefined;
   const rows = [
     ...(state.server ? detailRows(state.server) : [{ icon: "◌", text: "Checking the server…" }]),
-    ...(state.op ? [opRow(state.op)] : []),
+    ...(op ? [op] : []),
   ];
   const items = verbs(state);
   return {
     view: "board",
     title: "ClickClack",
-    header: { status: pill(state.server) },
+    header: { status: pill(state) },
     sections: [
       { kind: "rows", items: rows },
-      ...(state.refused.length > 0
-        ? [
-            {
-              kind: "rows" as const,
-              title: "Gates the host keeps for you",
-              items: state.refused.map((w) => ({
-                icon: "!",
-                glyph: "warn" as const,
-                text: w,
-                trailing: "answer in the Workflows tab",
-              })),
-            },
-          ]
-        : []),
       ...(items.length > 0 ? [{ kind: "actions" as const, wrap: true, items }] : []),
     ],
   };

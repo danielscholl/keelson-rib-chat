@@ -228,8 +228,10 @@ waits.
 
 A swarm with a live run is not idle, so it is never nudged or stalled while a run
 is in flight. Neither is a swarm with an open question for the operator: an agent
-asks one by writing \`@operator\` (or the owner's ClickClack handle), and the
-operator's next message in the channel, or a steer, answers it. Its wall clock still applies, so give long runs a larger
+asks one by writing \`@operator\` (or the owner's ClickClack handle). A reply in
+the question's thread, a channel post that mentions the asker, or Dismiss on the
+Swarms tab answers it; a note to the lead answers the lead's own questions and
+no one else's. Its wall clock still applies, so give long runs a larger
 \`max_minutes\`. The lead cannot conclude while a run is live. A swarm that ends
 any other way cancels its live runs.
 
@@ -348,35 +350,48 @@ status and reason, and the summary is the run's last progress frame.
 
 # Swarms tab
 
-> The Keelson tab that shows every swarm, what needs the operator, and each swarm's gate, runs, and agents.
+> The Keelson tab that shows every swarm, what each asks of the operator, and each swarm's budget, agents, runs and outcome.
 
 The rib publishes a Swarms tab. Live swarms are cards, sorted with the ones
-that need the operator first, then starting, then running. Each card names the
-swarm's size and model, and hovering Open spells both out. Ended swarms are
-rows, newest first. Open shows a swarm's board: vitals, context, open gates,
-runs with their evidence, agents, and the outcome, with Steer and Stop while it
-is live. Read in full opens the conclusion or a gate's prompt as markdown.
+that ask something of the operator first, then starting, then running. A card
+that asks something leads with the request as its title (Review the plan for
+…, @planner asked: …, ClickClack stopped answering, No agent has worked since
+…) and its verb as the first button (Review plan, Read question, Open swarm,
+Message the lead); the task drops to the footnote. A running card leads with
+what the swarm is doing this minute, then a named turn-budget meter. Ended
+swarms are rows: the lifecycle word, the task, then the id, model, turns, time
+and how many runs verified.
 
-A swarm needs the operator when ClickClack stopped answering (its socket closed
-twice without reopening), when a run waits at a gate the swarm cannot answer
-(the host refused it under \`ribApprovalGrants\`, or offers no respond), or when
-a run waits at a gate and the swarm went idle. A refusal is remembered per
-workflow, so the next gate on that workflow is flagged at once. Open run on a
-gate card or a run row opens the run beside the tab, where the operator answers
-the gate. The Swarms tab shows how many live swarms need the operator.
+Requests come in a ladder: decide (a run waits at an approval only the operator
+can answer, because the host refused the workflow under \`ribApprovalGrants\`
+or offers no respond), question (an agent addressed \`@operator\`), connection
+(ClickClack's socket closed twice without reopening), quiet (a run waits at an
+approval the swarm could answer and no agent has worked since). The tab's badge
+counts swarms with any request. An approval a peer is reviewing is shown as
+reviewing and counted nowhere.
 
-The Start a swarm header starts one from the tab. Discuss takes a task,
-project, tool access, size, and model. Dispatch adds the workflows the lead may
-start, and needs a project. In chat opens a chat that gathers issue and PR
-context and calls \`chat_swarm_start\`. An ended swarm's board offers Run again,
-which starts a new swarm with the same task, project, workflows, and context,
-with the size and model open to change.
+Open swarm shows the board. Live, it runs: the requests, the outcome once a
+report exists, a budget strip (turns with what is left, time, agents, fresh
+tokens with cached beside them), Message the lead and Stop, then the record.
+Ended, it runs: the outcome (the report, the conclusion, or the cause, such as
+Stopped by you at 21:50 or Out of turns at 40), the result strip, Run again,
+then the record. The record is the same in both: the agents as a bench with an
+open seat per unfilled slot and a waiting pill on agents with messages and no
+slot, the runs (only when the launch named workflows), the task and each
+context item with its text under a disclosure, the activity with repeats
+counted, and About.
 
-A folded ClickClack footer shows the server's address, process, binary, data
-directory, and the workflows whose gates the host keeps for the operator. For a
-managed server it offers Start or Stop, Reset (typed confirm, refused while a
-swarm is live), and the last 200 lines of the server log. Start, Stop, and
-Reset run in the background and report on the footer.
+The Start a swarm header is one form. Workflows named means the lead may
+dispatch them; none named means the swarm investigates. A task that names a
+URL or #N with no context is refused, since agents cannot open links; Prepare
+in chat opens a chat that gathers the evidence and calls \`chat_swarm_start\`.
+An ended swarm's board offers Run again, whose hint names what it reuses.
+
+A folded ClickClack footer carries the server's state in its head pill,
+including an operation in progress, and for an external server whether it
+answered the last probe. For a managed server it offers Start or Stop, Reset
+(typed confirm, refused while a swarm is live), and the last 200 lines of the
+server log.
 
 # Restarts
 

@@ -207,6 +207,7 @@ let surface: SwarmsSurface | undefined;
 let serverLine: ServerLine | undefined;
 let serverPoll: ReturnType<typeof setInterval> | undefined;
 const SERVER_POLL_MS = 60_000;
+const PROBE_TIMEOUT_MS = 3_000;
 
 function surfaceState(): SurfaceState {
   return {
@@ -233,6 +234,25 @@ function changed(id: string, kind: SwarmChange): void {
   if (kind === "start" || kind === "end") void refreshServer();
 }
 
+// An external server is asked on each refresh whether it answers; the footer's
+// pill says since when it has not.
+async function probeExternal(url: string, token: string | undefined): Promise<ServerLine> {
+  const checkedAt = new Date().toISOString();
+  const was = serverLine?.mode === "external" ? serverLine : undefined;
+  try {
+    await new ClickClackClient(url, token ?? "").ready(PROBE_TIMEOUT_MS);
+    return { mode: "external", url, running: true, checkedAt };
+  } catch {
+    return {
+      mode: "external",
+      url,
+      running: false,
+      checkedAt,
+      unreachableSince: was && !was.running ? (was.unreachableSince ?? checkedAt) : checkedAt,
+    };
+  }
+}
+
 // The ClickClack row reads a cached status: probed on swarm start and end, after
 // the server tools, and every minute while a swarm is live.
 async function refreshServer(): Promise<void> {
@@ -254,7 +274,7 @@ async function refreshServer(): Promise<void> {
         ...(startedAt ? { startedAt } : {}),
       };
     } else {
-      serverLine = { mode: "external", url: t.url, running: true };
+      serverLine = await probeExternal(t.url, t.token);
     }
   } catch {
     serverLine = undefined;
@@ -306,6 +326,7 @@ function launchState(): LaunchState {
   return {
     projects,
     live: swarms.size + starting.size,
+    refused: [...refusedApprovals],
     ...(classes.length > 0 ? { classes } : {}),
     ...(canDispatch
       ? {}
@@ -333,7 +354,6 @@ function serverPanel(): ServerPanelState {
     ...(serverLine ? { server: serverLine } : {}),
     ...(serverOps.current() ? { op: serverOps.current() } : {}),
     live: swarms.size + starting.size,
-    refused: [...refusedApprovals],
   };
 }
 
@@ -602,6 +622,7 @@ const rib: Rib = {
       launchOf: (id) => launches.load(id),
       server: serverOps,
       hasReport: (id) => reports.has(id),
+      probe: refreshServer,
     }),
 
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
@@ -634,7 +655,7 @@ const rib: Rib = {
         state: surfaceState,
         find: findSwarm,
         launch: launchState,
-        rerunnable: (id) => ended.has(id) && launches.has(id),
+        launchOf: (id) => (ended.has(id) ? launches.load(id) : undefined),
         server: serverPanel,
         report: (id) => reports.load(id),
         readLog: readServerLog,

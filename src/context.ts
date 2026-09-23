@@ -86,7 +86,11 @@ export interface ContextItem {
   baseSha?: string;
 }
 
-export type ContextIndexEntry = Omit<ContextItem, "body"> & { chars: number };
+// The first EXCERPT_CHARS of the body ride on the summary so the board can show
+// what the agents were given.
+export const EXCERPT_CHARS = 4_000;
+
+export type ContextIndexEntry = Omit<ContextItem, "body"> & { chars: number; excerpt?: string };
 
 function isShaBound(kind: string): boolean {
   return (SHA_BOUND_KINDS as readonly string[]).includes(kind);
@@ -105,8 +109,15 @@ export function toContextItems(input: z.infer<typeof contextSchema>): ContextIte
   }));
 }
 
-export function contextIndex(items: readonly ContextItem[]): ContextIndexEntry[] {
-  return items.map(({ body, ...rest }) => ({ ...rest, chars: body.length }));
+export function contextIndex(
+  items: readonly ContextItem[],
+  opts: { excerpts?: boolean } = {},
+): ContextIndexEntry[] {
+  return items.map(({ body, ...rest }) => ({
+    ...rest,
+    chars: body.length,
+    ...(opts.excerpts ? { excerpt: body.slice(0, EXCERPT_CHARS) } : {}),
+  }));
 }
 
 function attribution(entry: ContextIndexEntry): string {

@@ -17,6 +17,7 @@ import {
   type ChatMessage,
   CONCLUSION_MAX,
   type DispatchGrant,
+  isLive,
   readTurnContext,
   SIZE_PRESETS,
   type StartingSwarm,
@@ -610,7 +611,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         }
         const summary = summaryOf(args.swarm);
         if (!summary) return emitText(ctx, `no swarm '${args.swarm}'`, true);
-        const state = summary.status === "running" ? "RUNNING" : "ENDED";
+        const state = isLive(summary.status) ? "RUNNING" : "ENDED";
         emitText(ctx, `${state}\n${JSON.stringify(summary, null, 1)}`);
       }),
     },
