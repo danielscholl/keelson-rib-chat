@@ -195,6 +195,20 @@ export async function handleSwarmsAction(
       await swarm.steer(note);
       return { ok: true };
     }
+    case "reply": {
+      const swarm = id ? deps.live(id) : undefined;
+      if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
+      const runId = typeof payload.runId === "string" ? payload.runId : "";
+      const run = swarm.summary().runs?.find((r) => r.runId === runId);
+      if (run?.status !== "paused" || !run.pendingApproval?.threadId) {
+        return fail(`run '${runId}' is not waiting at a gate`);
+      }
+      const note = typeof payload.note === "string" ? payload.note.trim() : "";
+      if (!note) return fail("a reply needs a note");
+      if (note.length > BODY_MAX) return fail(`a reply is at most ${BODY_MAX} characters`);
+      await swarm.replyToGate(runId, note);
+      return { ok: true };
+    }
     case "stop-swarm": {
       const swarm = id ? deps.live(id) : undefined;
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);

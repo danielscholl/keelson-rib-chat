@@ -148,6 +148,26 @@ function gateCard(s: SwarmSummary, run: ChildRun, need: Need | undefined): Card 
       { label: "run", value: shortRun(run.runId), copyable: true },
     ],
     footnote: firstLine(gate?.prompt ?? "", 200),
+    ...(gate?.threadId
+      ? {
+          actions: [
+            {
+              type: "reply",
+              label: "Reply in thread",
+              binding: { id: s.id, runId: run.runId },
+              fields: [
+                {
+                  name: "note",
+                  label: "Reply",
+                  placeholder: "Posts in the gate thread as you · Enter sends",
+                  required: true,
+                },
+              ],
+              submitLabel: "Reply",
+            },
+          ],
+        }
+      : {}),
     reason: need
       ? (needReason(s, need) ?? { text: "waiting on you" })
       : {

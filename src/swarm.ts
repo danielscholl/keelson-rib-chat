@@ -1226,6 +1226,17 @@ export class Swarm {
     this.enqueueMessage(message);
   }
 
+  // Posted as the owner in the gate's thread, so it wakes everyone working there.
+  async replyToGate(runId: string, note: string): Promise<void> {
+    const run = this.runs.get(runId);
+    const threadId = run?.status === "paused" ? run.pendingApproval?.threadId : undefined;
+    if (this.status !== "running" || !threadId) {
+      throw new Error(`run ${runId} has no open gate thread`);
+    }
+    const message = await this.owner.replyInThread(threadId, `**Operator:** ${note}`);
+    this.enqueueMessage(message);
+  }
+
   stop(reason = "stopped by operator"): Promise<SwarmSummary> {
     void this.finish("stopped", reason);
     return this.finished;
