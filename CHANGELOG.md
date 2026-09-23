@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.7.0...v0.8.0) (2026-09-23)
+
+
+### Added
+
+* **surface:** copy the conclusion and read gate files in the pane ([#40](https://github.com/danielscholl/keelson-rib-chat/issues/40)) ([272b883](https://github.com/danielscholl/keelson-rib-chat/commit/272b88399c9154ee20753d2b5b6e071997afa5c5))
+* **surface:** reply in a gate thread from the swarm drawer ([#37](https://github.com/danielscholl/keelson-rib-chat/issues/37)) ([bd0bb82](https://github.com/danielscholl/keelson-rib-chat/commit/bd0bb829d71a4b530559b595cab29e0fedc0bcbb))
+* **surface:** show a swarm's recent activity ([#39](https://github.com/danielscholl/keelson-rib-chat/issues/39)) ([e66a358](https://github.com/danielscholl/keelson-rib-chat/commit/e66a358c7603a5d1f6b7f63735effaa5e4ba16ad))
+* **swarm:** count the tokens each agent and swarm spends ([#38](https://github.com/danielscholl/keelson-rib-chat/issues/38)) ([ffb979e](https://github.com/danielscholl/keelson-rib-chat/commit/ffb979e52b16cd916d7dbc843e2b89b7ca083448))
+* **swarm:** flag an agent's question to the operator and hold the swarm for it ([#36](https://github.com/danielscholl/keelson-rib-chat/issues/36)) ([1d5f49b](https://github.com/danielscholl/keelson-rib-chat/commit/1d5f49b19954d9f409d5baa3e50e084f3183e692))
+
+
+### Fixed
+
+* **surface:** show a long question in full and clean up the drawer's text ([#44](https://github.com/danielscholl/keelson-rib-chat/issues/44)) ([40dfd06](https://github.com/danielscholl/keelson-rib-chat/commit/40dfd06aaa793464d1412952dd2ff3cf240866b4))
+
+
+### Documentation
+
+* **design:** mark the shipped tiers and settled decisions ([#41](https://github.com/danielscholl/keelson-rib-chat/issues/41)) ([2f8a440](https://github.com/danielscholl/keelson-rib-chat/commit/2f8a440be80d898c94a7051aa401b8ffa27d0260))
+
 ## [0.7.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.6.0...v0.7.0) (2026-09-22)
 
 
