@@ -111,7 +111,9 @@ active. That source is the rib's operating contract, packaged with it.
 - **A registered project**, only if agents should read a checkout. Without one a
   swarm is chat only.
 
-Chat has no Keelson surface. Its live view is the swarm's ClickClack channel.
+Chat adds a **Swarms** tab to Keelson, where swarms start, ask, and end. See
+[Watch swarms in the Swarms tab](../swarms-tab/). The conversation itself is the swarm's
+ClickClack channel.
 
 ## Remove the rib
 

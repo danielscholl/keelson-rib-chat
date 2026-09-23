@@ -1,0 +1,663 @@
+<title>Swarms Tab Iteration Three</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --surface-2:#e9eeec; --line:#d2dad6; --line-strong:#98a6a0;
+  --ink:#1a2320; --ink-2:#48554f; --ink-3:#78857f;
+  --o1:#3d5aa8;  --o1-bg:#e6ebf8;  --o1-ink:#2b4180;
+  --o2:#7a4aa6; --o2-bg:#efe6f7; --o2-ink:#5a3380;
+  --o3:#0e7c7c;   --o3-bg:#dcf2f1;   --o3-ink:#0a5a5a;
+  --o4:#5f6f7a; --o4-bg:#eaeef0; --o4-ink:#45535c;
+  --ok:#2c7a4e; --ok-bg:#dff0e5; --bad:#a83a2f; --bad-bg:#f5dcd8;
+  --warn:#9a6a12; --warn-bg:#fbefd9;
+  --brand:#6d4fe0; --brand-bg:#ece7fb;
+  --idb:#3b6fd6; --ida:#b7791f; --idt:#0e8a7d; --idr:#c2417a; --ido:#6b8e23;
+  --term:#14201d; --term-ink:#dfe8e4; --term-dim:#8fa39c; --term-red:#f08a7e; --term-green:#7fd1a0; --term-cyan:#7cc8c8;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#121817; --surface:#1a2220; --surface-2:#222d2a; --line:#31403c; --line-strong:#5a6c66;
+    --ink:#e6ecea; --ink-2:#b3bfba; --ink-3:#7f8d88;
+    --o1:#8b9ae6;  --o1-bg:#232b49;  --o1-ink:#c3cbf5;
+    --o2:#b08ad9; --o2-bg:#2c2140; --o2-ink:#d9c6f0;
+    --o3:#45bdbd;   --o3-bg:#123636;   --o3-ink:#a3e3e3;
+    --o4:#93a3ad; --o4-bg:#242d33; --o4-ink:#c4cfd6;
+    --ok:#7fd1a0; --ok-bg:#173226; --bad:#f08a7e; --bad-bg:#3d1f1b;
+    --warn:#e0b45c; --warn-bg:#3b2f14;
+    --brand:#a58cff; --brand-bg:#2a2347;
+    --idb:#8fb0ff; --ida:#e0b45c; --idt:#4fc9bb; --idr:#f08bb4; --ido:#a6c85a;
+    --term:#0c1311;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121817; --surface:#1a2220; --surface-2:#222d2a; --line:#31403c; --line-strong:#5a6c66;
+  --ink:#e6ecea; --ink-2:#b3bfba; --ink-3:#7f8d88;
+  --o1:#8b9ae6;  --o1-bg:#232b49;  --o1-ink:#c3cbf5;
+  --o2:#b08ad9; --o2-bg:#2c2140; --o2-ink:#d9c6f0;
+  --o3:#45bdbd;   --o3-bg:#123636;   --o3-ink:#a3e3e3;
+  --o4:#93a3ad; --o4-bg:#242d33; --o4-ink:#c4cfd6;
+  --ok:#7fd1a0; --ok-bg:#173226; --bad:#f08a7e; --bad-bg:#3d1f1b;
+  --warn:#e0b45c; --warn-bg:#3b2f14;
+  --brand:#a58cff; --brand-bg:#2a2347;
+  --idb:#8fb0ff; --ida:#e0b45c; --idt:#4fc9bb; --idr:#f08bb4; --ido:#a6c85a;
+  --term:#0c1311;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
+.wrap{max-width:1120px;margin:0 auto;padding-block:32px 64px;padding-inline:20px}
+h1{font-size:clamp(26px,4vw,36px);font-weight:600;letter-spacing:-.01em;margin:0 0 10px;text-wrap:balance}
+h2{font-size:22px;font-weight:600;margin:0 0 8px;text-wrap:balance}
+h3{font-size:15px;font-weight:600;margin:0 0 6px}
+p{margin:0 0 10px;max-width:72ch;color:var(--ink-2)}
+p.lead{font-size:17px;color:var(--ink);max-width:66ch}
+p b, li b{color:var(--ink);font-weight:500}
+.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
+section{margin-top:48px;padding-top:30px;border-top:1px solid var(--line)}
+code{font-family:var(--mono);font-size:.92em}
+a{color:var(--o1-ink)}
+.problem{margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.problem p{max-width:78ch}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:16px;font-size:13.5px}
+.owner{display:inline-flex;align-items:center;gap:7px;font-weight:600;white-space:nowrap}
+.owner::before{content:"";width:10px;height:10px;border-radius:2px;background:var(--c);flex:none}
+.o-o1{--c:var(--o1);color:var(--o1-ink)} .o-o2{--c:var(--o2);color:var(--o2-ink)} .o-o3{--c:var(--o3);color:var(--o3-ink)} .o-o4{--c:var(--o4);color:var(--o4-ink)}
+.owner.dashed::before{background:none;border:1.5px dashed var(--line-strong)} .owner.dashed{color:var(--ink-2);font-weight:500}
+.status{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap}
+.status.ok{background:var(--ok-bg);color:var(--ok)} .status.bad{background:var(--bad-bg);color:var(--bad)}
+
+.flow,.mock{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 16px;overflow-x:auto}
+.flow svg,.mock svg{display:block;width:100%;height:auto;min-width:820px}
+.flow text,.mock text{font-family:var(--sans);fill:var(--ink);font-size:12px}
+.flow .t,.mock .t{font-size:14px;font-weight:600}
+.flow .mono,.mock .mono{font-family:var(--mono)}
+.flow .sub,.mock .sub{fill:var(--ink-2)}
+.flow .tiny,.mock .tiny{fill:var(--ink-3);font-size:11px}
+.flow .box{rx:8;stroke-width:1.3}
+.flow .b-o1{fill:var(--o1-bg);stroke:var(--o1)}
+.flow .b-o2{fill:var(--o2-bg);stroke:var(--o2)}
+.flow .b-o3{fill:var(--o3-bg);stroke:var(--o3)}
+.flow .b-o4{fill:var(--o4-bg);stroke:var(--o4)}
+.flow .b-mute{fill:var(--surface-2);stroke:var(--line-strong);stroke-dasharray:4 3}
+.flow .arrow{stroke:var(--line-strong);stroke-width:1.5;fill:none;marker-end:url(#ah)}
+.flow .lanebg{fill:none;stroke:var(--line);stroke-dasharray:3 4}
+.flow .lanelbl,.mock .lbl{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;fill:var(--ink-3)}
+.note{font-size:13px;color:var(--ink-3);margin-top:10px;max-width:80ch}
+
+/* mockups of host-rendered surfaces */
+.mock{padding:14px}
+.mock .frame{fill:var(--bg);stroke:var(--line);rx:10}
+.mock .card{fill:var(--surface);stroke:var(--line);rx:8}
+.mock .well{fill:var(--surface-2);stroke:var(--line);rx:8}
+.mock .field{fill:var(--surface);stroke:var(--line-strong);rx:6}
+.mock .rule{stroke:var(--line);stroke-width:1}
+.mock .btn{fill:var(--surface);stroke:var(--line-strong);rx:6}
+.mock .btn-brand{fill:var(--brand);rx:6}
+.mock .btnt{font-size:12px;font-weight:600}
+.mock .btnt-brand{fill:#ffffff;font-size:12px;font-weight:600}
+.mock .pill{rx:10;stroke-width:1}
+.mock .pill-ok{fill:var(--ok-bg);stroke:var(--ok)} .mock .pill-info{fill:var(--o1-bg);stroke:var(--o1)}
+.mock .pill-warn{fill:var(--warn-bg);stroke:var(--warn)} .mock .pill-neutral{fill:var(--surface-2);stroke:var(--line-strong)}
+.mock .pill-brand{fill:var(--brand-bg);stroke:var(--brand)}
+.mock .pt{font-size:10.5px;font-weight:600}
+.mock .pt-ok{fill:var(--ok)} .mock .pt-info{fill:var(--o1-ink)} .mock .pt-warn{fill:var(--warn)} .mock .pt-neutral{fill:var(--ink-2)} .mock .pt-brand{fill:var(--brand)}
+.mock .chip{rx:4;fill:var(--surface-2);stroke:var(--line)}
+.mock .track{fill:var(--line)} .mock .fill{fill:var(--brand)}
+.mock .seg{rx:3}
+.mock .idb{fill:var(--idb)} .mock .ida{fill:var(--ida)} .mock .idt{fill:var(--idt)} .mock .idr{fill:var(--idr)} .mock .ido{fill:var(--ido)}
+.mock .okt{fill:var(--ok)} .mock .badt{fill:var(--bad)} .mock .brandt{fill:var(--brand)} .mock .warnt{fill:var(--warn)}
+.mock .ghost{fill:none;stroke:var(--line-strong);stroke-dasharray:4 3;rx:8}
+.mock .lane{fill:none;stroke:var(--line);stroke-dasharray:3 4;rx:6}
+.mock .span{rx:3}
+.mock .span-bad{fill:var(--bad-bg);stroke:var(--bad);stroke-dasharray:3 2;rx:3}
+.mock .tick{stroke:var(--line);stroke-dasharray:2 3}
+.mock .mark{stroke:var(--surface);stroke-width:1}
+.mock .segbar{stroke:none}
+
+.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14px;margin-top:16px}
+.tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.tbl td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2);overflow-wrap:anywhere}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td b{color:var(--ink);font-weight:500}
+.tbl td:first-child{min-width:118px}
+.tblwrap{overflow-x:auto;margin-top:16px}
+.tblwrap .tbl{margin-top:0;min-width:640px}
+.tbl.compact td{padding:8px 12px;font-size:13.5px}
+.tbl td.mono{font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap}
+.callout{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--ink-2);border-radius:10px;padding:12px 16px;margin-top:14px;font-size:14px;color:var(--ink-2)}
+.callout b{color:var(--ink)}
+.appendix{margin-top:56px;padding-top:30px;border-top:3px solid var(--line)}
+.appendix h2{font-size:18px}
+.appendix section{margin-top:32px;padding-top:22px}
+@media (max-width:520px){ .wrap{padding-inline:16px} }
+@media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important} }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">keelson-rib-chat · swarms surface · design, iteration three</p>
+  <h1>A Swarms tab that shows its work</h1>
+  <p class="lead">What the tab shows a human in its third pass: a launcher that stays out of the way, a history that reads by outcome, a board that says who did what at what cost, and a record page the rib draws for every swarm. Every part renders on the canvas Keelson 0.112 already ships.</p>
+
+  <div class="problem">
+    <p>Today the tab opens on the launcher whenever no swarm is live, so an operator who comes back to read a result scrolls past the form to reach it. Ended swarms are a list of identical <b>done</b> rows keyed by the task that was asked, not by what came of it; a rerun is a twin of the row above it, and the time column switches from a clock to a date part way down. What a swarm did, meaning who worked when, what each agent spent, and which run made which branch and pull request, sits on the swarm summary and never reaches the tab.</p>
+    <p>This pass keeps the routing, the limits and the three places (the board, the run drawer, ClickClack) as they are and changes what the rib composes. The launcher folds to one line once a swarm exists and opens as a two-field quick start, with <b>adjust</b> revealing the rest. Ended rows lead with the outcome and group by day. The board carries one outcome card, run rows with the branch and every pull request, a spend strip by agent, and an activity feed that names its actors. A <b>record</b> page, drawn by the rib as an html view, shows the swarm's timeline: a lane per agent, turns as spans, and gates, questions and operator posts as marks. Every element is canvas vocabulary Keelson 0.112 renders today; appendix B lists the rib-side changes.</p>
+    <p>No Keelson change and no version bump. The tab still does not mirror the channel, answer approvals, or run tools from a page: an action posted from inside an html view can raise a toast and nothing else, so every verb stays on the board. Spend stays in tokens, since the summary carries no prices. Search and filters stay out, because a frame is shared by every viewer. Cancelling one run from the tab is not part of this change.</p>
+  </div>
+
+  <p class="eyebrow" style="margin-top:28px">Colors identify who owns each part</p>
+  <div class="legend">
+    <span class="owner o-o1">Rib · composes every frame from the swarm summary</span>
+    <span class="owner o-o2">Host · renders the vocabulary, the drawer, forms and toasts</span>
+    <span class="owner o-o3">Operator · reads, answers, messages, stops</span>
+    <span class="owner o-o4">ClickClack · holds the conversation and the transcript</span>
+    <span class="owner dashed">Dashed · a section or seat that appears only when it has content</span>
+  </div>
+  <p class="note">The mockups draw agents in the tab's own identity tones, the way the host draws them on the bench, and reproduce the host's board parts. Ids, tasks, handles and figures are example values.</p>
+
+  <section>
+    <h2>Four moments</h2>
+    <p>The tab was built around three reasons an operator opens it. This pass adds a fourth, reviewing what a swarm did after the fact, and changes what each surface puts first.</p>
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Moment</th><th>The question</th><th>Surface</th><th>What this pass puts first</th></tr></thead>
+      <tbody>
+        <tr><td><b>Glance</b></td><td>Does anything need me? What is running, and what did the rest produce?</td><td>Index</td><td>Requests, then live cards, then ended rows that name their outcome. The launcher is one folded line.</td></tr>
+        <tr><td><b>Inspect</b></td><td>What should I read or decide right now?</td><td>Swarm board</td><td>Live: the request, the budget, the way to reach the lead. Ended: one outcome card, then the result in numbers, then the runs.</td></tr>
+        <tr><td><b>Launch</b></td><td>Can this swarm do my task, and what will it cost?</td><td>Launcher</td><td>The task and the project. The defaults are named on the form; adjusting is one click.</td></tr>
+        <tr><td><b>Review</b></td><td>What happened, in what order, by whom, at what cost?</td><td>Record</td><td>The timeline, then who woke whom, then spend by agent, then the runs and the evidence the agents were given.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The index at rest</h2>
+    <p>The launch board carries the host's fold hint, <code>defaultCollapsed</code>, set whenever the store holds a swarm, so the region is open on an empty tab and folds after the first launch. The host folds it once when the hint turns on and keeps the operator's own fold after that; a store emptied by a reset opens it again. The folded head's byline names the launch a click would start, so an operator who never opens the form knows what <b>Start</b> does.</p>
+    <p>An ended row leads with what came of the swarm: the report's title when the lead published one, else the first sentence of the conclusion cut at 60 characters, else the cause (<b>Stopped by you</b>, <b>Out of turns at 20</b>, <b>Failed: ClickClack unreachable</b>). The task follows after <b>· for:</b>, cut so the line stays under 90 characters and on one line at the tab's usual width. A done row carries a muted check; the other four lifecycles carry a toned chip, so emphasis is spent on the exceptions. A rerun carries ↻ before its text and keeps its own row, because reruns exist to compare outcomes. Rows group under the day they ended: Today, Yesterday, then the weekday and date, and within a day the time is always a clock. The eight newest rows stay on the tab; the history drawer shows every ended swarm in the same day groups.</p>
+
+    <div class="mock">
+      <svg viewBox="0 0 1000 634" role="img" aria-label="The Swarms tab at rest: a folded launcher, one running card, and ended rows grouped by day that lead with their outcome.">
+        <rect x="8" y="8" width="984" height="618" class="frame"/>
+        <text x="28" y="34" class="t brandt">Keelson</text>
+        <text x="112" y="34" class="sub">Chat</text>
+        <text x="160" y="34" class="sub">Workflows</text>
+        <rect x="236" y="17" width="72" height="24" class="card"/>
+        <text x="248" y="34" class="t" font-size="12.5">Swarms</text>
+        <text x="330" y="34" class="sub">Beads</text>
+        <line x1="8" y1="52" x2="992" y2="52" class="rule"/>
+
+        <rect x="24" y="66" width="952" height="42" class="card"/>
+        <text x="40" y="92" class="t">▸ Start a swarm</text>
+        <text x="176" y="92" class="tiny">medium · 5 agents · 40 turns · 30 min · balanced · the power's model · Prepare in chat attaches an issue or PR</text>
+
+        <rect x="24" y="124" width="952" height="432" class="card"/>
+        <text x="40" y="150" class="t">Swarms</text>
+        <rect x="104" y="136" width="46" height="20" class="pill pill-info"/>
+        <text x="127" y="150" text-anchor="middle" class="pt pt-info">1 live</text>
+        <circle cx="958" cy="146" r="3.5" class="okt"/>
+
+        <text x="40" y="182" class="lbl">Live</text>
+        <rect x="40" y="192" width="920" height="118" class="card"/>
+        <text x="56" y="216" class="t">Debate whether uptime shows as a percentage or as a duration · sq4mz</text>
+        <rect x="874" y="202" width="70" height="20" class="pill pill-info"/>
+        <text x="909" y="216" text-anchor="middle" class="pt pt-info">running</text>
+        <text x="56" y="240" class="tiny">Turn budget used</text>
+        <rect x="56" y="246" width="600" height="4" class="track"/>
+        <rect x="56" y="246" width="120" height="4" class="fill"/>
+        <text x="668" y="250" class="tiny">8 of 40 · 32 remaining</text>
+        <text x="56" y="272" class="sub">@lead is writing the conclusion · since 2 min · 2 of 3 agents busy · 24 min left</text>
+        <rect x="56" y="284" width="92" height="20" class="btn-brand"/>
+        <text x="102" y="298" text-anchor="middle" class="btnt-brand">Open swarm</text>
+        <rect x="158" y="284" width="98" height="20" class="btn"/>
+        <text x="207" y="298" text-anchor="middle" class="btnt">Stop swarm…</text>
+
+        <text x="40" y="342" class="lbl">Today</text>
+        <text x="46" y="364" class="okt" font-weight="600">✓</text>
+        <text x="68" y="364">Use “Degraded Performance” · for: propose a name for the degraded state</text>
+        <text x="950" y="364" text-anchor="end" class="tiny mono">gpt-5.6-luna · 5 turns · 1 min · 11:15 · ◧ report</text>
+        <line x1="40" y1="374" x2="960" y2="374" class="rule"/>
+        <text x="46" y="394" class="okt" font-weight="600">✓</text>
+        <text x="64" y="394" class="sub">↻</text>
+        <text x="80" y="394">Degraded Performance, both agreed · for: propose a name for the degraded state</text>
+        <text x="950" y="394" text-anchor="end" class="tiny mono">gpt-5.6-luna · 7 turns · 1 min · 11:11</text>
+        <line x1="40" y1="404" x2="960" y2="404" class="rule"/>
+        <rect x="42" y="412" width="56" height="16" class="pill pill-neutral"/>
+        <text x="70" y="423.5" text-anchor="middle" class="pt pt-neutral">stopped</text>
+        <text x="108" y="424">Stopped by you at 08:03 · for: debate whether uptime shows as a percentage or a duration</text>
+        <text x="950" y="424" text-anchor="end" class="tiny mono">gpt-5.6-luna · 8 turns · 50 s · 08:02</text>
+        <line x1="40" y1="434" x2="960" y2="434" class="rule"/>
+
+        <text x="40" y="460" class="lbl">Yesterday</text>
+        <text x="46" y="482" class="okt" font-weight="600">✓</text>
+        <text x="68" y="482">“Waiting” over “Pending” · for: two workers argue for one word each</text>
+        <text x="950" y="482" text-anchor="end" class="tiny mono">claude-sonnet-5 · 3 turns · 38 s · 14:20 · ◧ report</text>
+        <line x1="40" y1="492" x2="960" y2="492" class="rule"/>
+        <rect x="42" y="500" width="78" height="16" class="pill pill-warn"/>
+        <text x="81" y="511.5" text-anchor="middle" class="pt pt-warn">out of turns</text>
+        <text x="130" y="512">Out of turns at 20 · for: three workers named after planets write haiku</text>
+        <text x="950" y="512" text-anchor="end" class="tiny mono">gpt-5.6-luna · 20 turns · 4 min · 09:46</text>
+        <line x1="40" y1="522" x2="960" y2="522" class="rule"/>
+        <text x="46" y="544" class="sub">… 14 earlier</text>
+
+        <rect x="24" y="570" width="952" height="42" class="card"/>
+        <text x="40" y="596" class="t">▸ ClickClack</text>
+        <rect x="150" y="584" width="58" height="18" class="pill pill-ok"/>
+        <text x="179" y="597" text-anchor="middle" class="pt pt-ok">running</text>
+        <text x="222" y="596" class="tiny">127.0.0.1:18080 · managed</text>
+      </svg>
+    </div>
+    <p class="note">The running card is unchanged from the second pass. The launcher and the footer fold to their heads; the ended rows carry the outcome first and the task second.</p>
+
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Index part</th><th>Today</th><th>Proposed</th></tr></thead>
+      <tbody>
+        <tr><td><b>Launch region</b></td><td>Open whenever no swarm is live; the byline lists the three sizes.</td><td>Open only on the empty tab. Folded, the byline names the launch a click would start.</td></tr>
+        <tr><td><b>Ended row text</b></td><td>The task's first line cut at 72 characters, then the id.</td><td>The outcome, then <b>· for:</b> and the task, under 90 characters together. The id moves to the board's header.</td></tr>
+        <tr><td><b>Lifecycle</b></td><td>A toned chip on every row, so eight green <b>done</b> chips read as one block.</td><td>A muted check for done; a toned chip for stopped, stalled, out of turns and failed.</td></tr>
+        <tr><td><b>Time</b></td><td>A clock for today, a date for anything older, in one column.</td><td>Rows sit under a day heading and always show a clock. The trailing keeps the model, turns, took and the report mark.</td></tr>
+        <tr><td><b>Model</b></td><td>The served model on every row.</td><td>Unchanged: it is what the operator compares across reruns.</td></tr>
+        <tr><td><b>Rerun</b></td><td>Indistinguishable from the swarm it repeats.</td><td>↻ before the text; its own outcome makes the difference readable.</td></tr>
+        <tr><td><b>History drawer</b></td><td>Every ended row, one list.</td><td>The same rows under the same day headings, with a <b>N kept</b> chip.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The launcher</h2>
+    <p>The form keeps every field it has and shows three of them at rest: the task, the project, and a <b>Setup</b> segment with two choices, <b>defaults</b> and <b>adjust</b>. The size, power and model override fields carry <code>showWhen</code> on the segment with <code>equals: "adjust"</code>, a host primitive since 0.112, so they appear only when the operator asks for them. <b>Agents may</b> and <b>workflows</b> keep the rule they have today and appear once a project is chosen: a field takes one <code>showWhen</code>, and those two mean nothing without a project. A hidden field is never dispatched, so a launch on defaults carries no size or model in its payload and the rib fills in medium, balanced and the power's model. The defaults are written on the segment itself and in the folded byline, and the size segments keep their agent and turn counts when they appear.</p>
+    <p>The host keeps a form's values between frames, so choosing <b>adjust</b>, changing the size, then choosing <b>defaults</b> again launches on defaults while the typed task survives; a line under the segment says so. <b>Prepare in chat</b> stays as the second button and says what it is for. The link refusal is unchanged: a task that names a URL or an issue number with no context item is refused inline before a channel exists.</p>
+
+    <div class="mock">
+      <svg viewBox="0 0 1000 262" role="img" aria-label="The launcher open: a task field, a project select, a Setup segment reading defaults or adjust, and two buttons.">
+        <text x="24" y="30" class="t">▾ Start a swarm</text>
+        <text x="160" y="30" class="tiny">medium · 5 agents · 40 turns · 30 min · balanced · the power's model</text>
+        <rect x="24" y="46" width="952" height="200" class="well"/>
+        <text x="40" y="70" class="tiny">Task</text>
+        <rect x="40" y="78" width="920" height="54" class="field"/>
+        <text x="52" y="100" class="sub">What should the swarm work out? Agents can't open links: describe the issue or PR here,</text>
+        <text x="52" y="118" class="sub">or prepare in chat to attach it.</text>
+        <text x="40" y="156" class="tiny">Project</text>
+        <rect x="40" y="164" width="440" height="28" class="field"/>
+        <text x="52" y="183">no project</text>
+        <text x="466" y="183" class="sub">⌃</text>
+        <text x="520" y="156" class="tiny">Setup</text>
+        <rect x="520" y="164" width="440" height="28" class="field"/>
+        <rect x="523" y="167" width="250" height="22" class="card"/>
+        <text x="648" y="182" text-anchor="middle" class="t" font-size="12.5">defaults · medium · balanced</text>
+        <text x="866" y="182" text-anchor="middle" class="sub">adjust</text>
+        <text x="520" y="208" class="tiny">adjust shows size, power and model override</text>
+        <rect x="40" y="206" width="112" height="26" class="btn-brand"/>
+        <text x="96" y="223" text-anchor="middle" class="btnt-brand">▶ Start swarm</text>
+        <rect x="164" y="206" width="238" height="26" class="btn"/>
+        <text x="283" y="223" text-anchor="middle" class="btnt">→ Prepare in chat · attach an issue or PR</text>
+      </svg>
+    </div>
+    <p class="note">With adjust chosen, size, power and model override appear under the segment in the order they have today. Choosing a project adds agents may and workflows beside it.</p>
+
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Launcher part</th><th>Today</th><th>Proposed</th></tr></thead>
+      <tbody>
+        <tr><td><b>Fields at rest</b></td><td>Task, project, agents may, workflows, size, power, model override: seven, all visible.</td><td>Task, project, setup. Size, power and model override appear with <b>adjust</b>; agents may and workflows with a project.</td></tr>
+        <tr><td><b>Where the numbers live</b></td><td>The byline lists all three sizes; the size segments carry agents and turns.</td><td>The byline and the setup segment name the default launch; the size segments are unchanged when shown.</td></tr>
+        <tr><td><b>Payload</b></td><td>Every field dispatches.</td><td>Hidden fields do not dispatch; the rib fills the defaults, and the kept launch records only what was sent, so <b>Run again</b> repeats a choice and not a default.</td></tr>
+        <tr><td><b>Second button</b></td><td><b>Prepare in chat</b>, below the form's border.</td><td>The same action, labelled <b>Prepare in chat · attach an issue or PR</b>.</td></tr>
+        <tr><td><b>Fold</b></td><td>Open while nothing is live.</td><td>Open on the empty tab; folded once a swarm exists, then left as the operator leaves it.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The swarm board</h2>
+    <p>The board keeps its two orders, live and ended, and its one actions section. What changes is how the outcome, the runs, the bench and the activity are composed. The report card and the conclusion card become one outcome card: the report's title is the card's title, the conclusion is its prose, the footnote names the author, the time, the length and the report's size, <b>Open the report</b> and <b>Read the conclusion</b> sit on the card, the prose carries the host's copy button, and a field links the swarm's channel in ClickClack. When the lead published no report the card is titled <b>Conclusion</b>; when the swarm did not conclude the cause card stays as it is.</p>
+    <p>The ended board's actions row carries <b>Run again</b> as today and gains <b>Open the record</b>. The channel link moves up to the outcome card, since an action button carries no link, and stays in About. The live board's row carries <b>Message the lead</b>, <b>Open the record</b> and <b>Stop</b> at the far end.</p>
+    <p>Run rows keep the evidence bar and the <b>Open run</b> verb and say more in their text: the branch the run checked out, every pull request rather than the first, how long it took, and for a failed or cancelled run the first 90 characters of why. The full error and the CI detail go to the reading pane, because a row that carries a verb cannot also carry a disclosure. Bench cards gain a footnote with the agent's last event and its time. A <b>Spend</b> section of inline bars follows the bench with one bar per agent, fresh tokens against the swarm's fresh total, the handle as the label and no tone, since spend is a magnitude and not a judgment. Activity rows name their actor: a chip in the agent's identity tone, or <b>you</b> for the operator, then the event without the handle repeated in the text. A turn is one row, written when it ends, with its outcome, duration and the messages it answered; its start goes to the op's progress log only.</p>
+
+    <div class="mock">
+      <svg viewBox="0 0 1000 836" role="img" aria-label="An ended swarm's board: one outcome card, five result tiles, an actions row, a run row with its branch and PR, the bench, spend bars by agent, and activity rows with actor chips.">
+        <text x="24" y="24" class="lbl">Swarm sk7p1</text>
+        <text x="968" y="26" text-anchor="end" class="sub">✕</text>
+        <line x1="8" y1="36" x2="992" y2="36" class="rule"/>
+
+        <rect x="24" y="48" width="48" height="22" class="pill pill-ok"/>
+        <text x="48" y="63" text-anchor="middle" class="pt pt-ok">done</text>
+        <rect x="82" y="48" width="290" height="22" class="pill pill-neutral"/>
+        <text x="227" y="63" text-anchor="middle" class="tiny mono">MEDIUM · 14 TURNS · 11 MIN · GPT-5.6-LUNA</text>
+        <text x="384" y="64" class="t">Fix the smoke test that times out on cold start · sk7p1</text>
+        <circle cx="928" cy="59" r="4" class="brandt"/><circle cx="940" cy="59" r="4" class="idb"/><circle cx="952" cy="59" r="4" class="ida"/><circle cx="964" cy="59" r="4" class="idt"/>
+
+        <text x="24" y="100" class="lbl">Outcome</text>
+        <rect x="24" y="110" width="952" height="126" class="card"/>
+        <text x="40" y="134" class="t">Cold start timeout fix</text>
+        <rect x="900" y="120" width="58" height="18" class="pill pill-brand"/>
+        <text x="929" y="133" text-anchor="middle" class="pt pt-brand">report</text>
+        <text x="40" y="158" class="sub">The smoke test waited 30 s for a server that takes 45 s to warm on a cold cache. PR #41 raises the wait to 90 s and adds a</text>
+        <text x="40" y="176" class="sub">readiness probe so the test starts when the server answers. CI passed on the branch and the run is verified.</text>
+        <text x="40" y="198" class="tiny">by @lead · Sep 23 11:53 · 214 characters · report 3 KB</text>
+        <rect x="40" y="208" width="118" height="20" class="btn-brand"/>
+        <text x="99" y="222" text-anchor="middle" class="btnt-brand">◧ Open the report</text>
+        <rect x="166" y="208" width="132" height="20" class="btn"/>
+        <text x="232" y="222" text-anchor="middle" class="btnt">Read the conclusion</text>
+        <text x="958" y="158" text-anchor="end" class="sub">⧉</text>
+        <text x="958" y="222" text-anchor="end" class="tiny">↗ #swarm-sk7p1 in ClickClack</text>
+
+        <text x="24" y="262" class="lbl">Result</text>
+        <rect x="24" y="272" width="180" height="70" class="card"/>
+        <text x="38" y="300" class="mono" font-size="20" font-weight="500">14</text>
+        <text x="38" y="318" class="lbl">Turns</text>
+        <text x="38" y="333" class="tiny">of 40 · ▂▃▅▃▂▁ pace</text>
+        <rect x="217" y="272" width="180" height="70" class="card"/>
+        <text x="231" y="300" class="mono" font-size="20" font-weight="500">11 min</text>
+        <text x="231" y="318" class="lbl">Time</text>
+        <text x="231" y="333" class="tiny">of 30 min</text>
+        <rect x="410" y="272" width="180" height="70" class="card"/>
+        <text x="424" y="300" class="mono" font-size="20" font-weight="500">4 of 5</text>
+        <text x="424" y="318" class="lbl">Agents</text>
+        <text x="424" y="333" class="tiny">one seat open</text>
+        <rect x="603" y="272" width="180" height="70" class="card"/>
+        <text x="617" y="300" class="mono" font-size="20" font-weight="500">212k</text>
+        <text x="617" y="318" class="lbl">Tokens</text>
+        <text x="617" y="333" class="tiny">fresh · 1.8M cached</text>
+        <rect x="796" y="272" width="180" height="70" class="card"/>
+        <text x="810" y="300" class="mono" font-size="20" font-weight="500">1 of 1</text>
+        <text x="810" y="318" class="lbl">Runs verified</text>
+        <text x="810" y="333" class="tiny">PR #41 · CI passed</text>
+
+        <rect x="24" y="356" width="96" height="22" class="btn"/>
+        <text x="72" y="371" text-anchor="middle" class="btnt">↻ Run again</text>
+        <rect x="128" y="356" width="118" height="22" class="btn"/>
+        <text x="187" y="371" text-anchor="middle" class="btnt">Open the record</text>
+
+        <text x="24" y="412" class="lbl">Runs</text>
+        <text x="24" y="436">fix-issue · isolated · swarm/sk7p1-fix-issue</text>
+        <rect x="340" y="429" width="60" height="6" class="seg okt"/>
+        <rect x="404" y="429" width="60" height="6" class="seg okt"/>
+        <rect x="468" y="429" width="60" height="6" class="seg okt"/>
+        <text x="960" y="436" text-anchor="end" class="tiny mono">PR #41 · CI passed · 6 steps · 7 min · verified</text>
+        <line x1="24" y1="446" x2="960" y2="446" class="rule"/>
+        <text x="40" y="466" class="sub">↳ approve-plan · approved by @lead at 11:41, citing @reviewer's review of the plan</text>
+        <line x1="24" y1="476" x2="960" y2="476" class="rule"/>
+
+        <text x="24" y="508" class="lbl">Agents · 4 of 5</text>
+        <rect x="24" y="518" width="180" height="96" class="card"/>
+        <text x="38" y="540" class="mono brandt" font-weight="500">lead</text>
+        <text x="38" y="562" class="sub">Lead: owns the outcome</text>
+        <text x="38" y="580" class="sub">96k tokens · 6 turns</text>
+        <text x="38" y="600" class="tiny">last: concluded · 11:53</text>
+        <rect x="217" y="518" width="180" height="96" class="card"/>
+        <text x="231" y="540" class="mono idb" font-weight="500">fixer</text>
+        <rect x="231" y="547" width="152" height="3" class="track"/><rect x="231" y="547" width="38" height="3" class="fill"/>
+        <text x="231" y="568" class="sub">writes the fix</text>
+        <text x="231" y="586" class="sub">48k tokens · 3 turns</text>
+        <text x="231" y="604" class="tiny">last: turn 3 ok · 11:50</text>
+        <rect x="410" y="518" width="180" height="96" class="card"/>
+        <text x="424" y="540" class="mono ida" font-weight="500">reviewer</text>
+        <rect x="424" y="547" width="152" height="3" class="track"/><rect x="424" y="547" width="25" height="3" class="fill"/>
+        <text x="424" y="568" class="sub">reviews the plan</text>
+        <text x="424" y="586" class="sub">40k tokens · 2 turns</text>
+        <text x="424" y="604" class="tiny">last: turn 2 ok · 11:40</text>
+        <rect x="603" y="518" width="180" height="96" class="card"/>
+        <text x="617" y="540" class="mono idt" font-weight="500">tester</text>
+        <rect x="617" y="547" width="152" height="3" class="track"/><rect x="617" y="547" width="38" height="3" class="fill"/>
+        <text x="617" y="568" class="sub">reproduces the timeout</text>
+        <text x="617" y="586" class="sub">28k tokens · 3 turns</text>
+        <text x="617" y="604" class="tiny">last: turn 3 ok · 11:47</text>
+        <rect x="796" y="518" width="180" height="96" class="ghost"/>
+        <text x="886" y="571" text-anchor="middle" class="tiny">open seat</text>
+
+        <text x="24" y="648" class="lbl">Spend</text>
+        <text x="24" y="670" class="mono brandt" font-size="11.5">lead</text>
+        <rect x="120" y="663" width="560" height="8" class="track"/><rect x="120" y="663" width="254" height="8" class="fill"/>
+        <text x="692" y="671" class="tiny mono">96k · 45%</text>
+        <text x="24" y="690" class="mono idb" font-size="11.5">fixer</text>
+        <rect x="120" y="683" width="560" height="8" class="track"/><rect x="120" y="683" width="127" height="8" class="fill"/>
+        <text x="692" y="691" class="tiny mono">48k · 23%</text>
+        <text x="24" y="710" class="mono ida" font-size="11.5">reviewer</text>
+        <rect x="120" y="703" width="560" height="8" class="track"/><rect x="120" y="703" width="106" height="8" class="fill"/>
+        <text x="692" y="711" class="tiny mono">40k · 19%</text>
+        <text x="24" y="730" class="mono idt" font-size="11.5">tester</text>
+        <rect x="120" y="723" width="560" height="8" class="track"/><rect x="120" y="723" width="74" height="8" class="fill"/>
+        <text x="692" y="731" class="tiny mono">28k · 13%</text>
+
+        <text x="24" y="764" class="lbl">Activity</text>
+        <rect x="24" y="774" width="44" height="16" class="chip"/><text x="46" y="785.5" text-anchor="middle" class="mono brandt" font-size="10.5">lead</text>
+        <text x="80" y="786">concluded the swarm</text>
+        <text x="960" y="786" text-anchor="end" class="tiny mono">11:53</text>
+        <rect x="24" y="796" width="44" height="16" class="chip"/><text x="46" y="807.5" text-anchor="middle" class="mono brandt" font-size="10.5">lead</text>
+        <text x="80" y="808">published the report “Cold start timeout fix”</text>
+        <text x="960" y="808" text-anchor="end" class="tiny mono">11:52</text>
+        <rect x="24" y="818" width="44" height="16" class="chip"/><text x="46" y="829.5" text-anchor="middle" class="mono idt" font-size="10.5">you</text>
+        <text x="80" y="830">posted in #swarm-sk7p1: approve the plan, the probe is fine</text>
+        <text x="960" y="830" text-anchor="end" class="tiny mono">11:41</text>
+      </svg>
+    </div>
+    <p class="note">On the real board the task and context rows, the twelve newest events and the About rows follow the Spend section, as today.</p>
+
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Board part</th><th>Today</th><th>Proposed</th></tr></thead>
+      <tbody>
+        <tr><td><b>Outcome</b></td><td>A report card with a brand button, then a conclusion card with its own footnote and <b>Read in full</b>.</td><td>One card: the report's title, the conclusion as prose with a copy button, one footnote, <b>Open the report</b> and <b>Read the conclusion</b>, and the channel link.</td></tr>
+        <tr><td><b>Verbs</b></td><td>Ended: <b>Run again</b> alone, drawn as a full-width row. The channel link is an About row.</td><td>Ended: <b>Run again</b> and <b>Open the record</b> in one row; the channel link on the outcome card. Live: <b>Message the lead</b>, <b>Open the record</b>, <b>Stop</b> at the end.</td></tr>
+        <tr><td><b>Runs</b></td><td>Workflow, purpose, the evidence bar, the first PR, and a status word. A failed run shows only the word.</td><td>The branch, every PR, took, and the first 90 characters of an error. The reading pane carries the full error and the CI detail.</td></tr>
+        <tr><td><b>Bench</b></td><td>Handle, status, turn meter, role, fresh tokens, pinned model; spawned by and served by in the footnote.</td><td>The same, plus <b>last:</b> the agent's latest event and its time in the footnote.</td></tr>
+        <tr><td><b>Spend</b></td><td>A number on each bench card and a sum in About.</td><td>An inline bar per agent, fresh tokens against the fresh total, with the share as the trailing.</td></tr>
+        <tr><td><b>Activity</b></td><td>Plain strings that begin with the handle; a turn is two rows.</td><td>An actor chip in the identity tone, the event without the handle, one row per finished turn with its outcome and duration. Entries recorded before this pass keep their plain text.</td></tr>
+        <tr><td><b>Turns tile</b></td><td>The pace sparkline shows while the swarm runs and is lost when it ends.</td><td>The pace history stays on the summary, so the ended tile keeps the spark.</td></tr>
+        <tr><td><b>Reading pane</b></td><td>Reachable only from an ask, a conclusion, or a long activity log.</td><td>Also carries each run's full error and CI detail, reached from the outcome card and the activity log.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The swarm record</h2>
+    <p>The record is a page the rib draws for each swarm and registers as an html view, <code>rib:chat:record:&lt;id&gt;</code>, beside the swarm's board, doc and report keys. It is composed from the same summary the board is and released with the swarm's other keys. Each swarm's record is registered with its board and reading pane, because the host has to know a key holds an html page before an action opens it. A live record recomposes when a turn, an agent, a run, a gate, the report or the conclusion changes, at most every five seconds, because the host reloads a frame whenever its document changes; an ended one is composed once. So an operator can watch the shape of the work form and read it back later. The host pushes the theme into the frame and sizes it to its content, and the page paints from the kit's tokens, so it matches the tab in both themes.</p>
+    <p>The page is a drawing, not a control surface. An action posted from inside an html frame produces a toast and no effect, and each new frame reloads the document, so the record carries no buttons and holds no state; the board keeps every verb. It also does not carry the lead's report or the transcript. The report has its own page, and the transcript is ClickClack's.</p>
+    <p>The timeline is the page's first figure. One lane per agent in the order they first took a turn, the operator's lane at the top, and one lane per run at the bottom. A turn is a span from its start to its end in the agent's identity tone, hatched when it timed out or errored. Marks sit on the lanes for what changed the swarm's course: a spawn, a gate opening and its answer, a question to the operator, an operator post, the report, the conclusion, a run's verification. The axis is minutes since the swarm started. While the swarm is live the axis runs a quarter past the elapsed time, at least ten minutes and at most to the wall clock limit, with a marker at now and the end time named at the right edge; a four-hour axis would squeeze the first half hour into a sliver. After the swarm ends the axis ends where it did.</p>
+
+    <div class="mock">
+      <svg viewBox="0 0 1000 400" role="img" aria-label="The record's timeline for a dispatch swarm: lanes for the operator, four agents and one run, turns as spans, and marks for spawns, the gate, an operator post, the report and the conclusion.">
+        <text x="24" y="26" class="lbl">Swarm record · sk7p1</text>
+        <text x="24" y="52" class="t" font-size="18">Fix the smoke test that times out on cold start</text>
+        <text x="24" y="72" class="sub">done · 14 of 40 turns · 11 min of 30 · 4 agents · 212k fresh tokens · 1 of 1 runs verified (PR #41)</text>
+
+        <text x="24" y="104" class="lbl">Timeline</text>
+        <text x="136" y="122" text-anchor="middle" class="tiny mono">0</text>
+        <text x="274" y="122" text-anchor="middle" class="tiny mono">2 min</text>
+        <text x="412" y="122" text-anchor="middle" class="tiny mono">4</text>
+        <text x="550" y="122" text-anchor="middle" class="tiny mono">6</text>
+        <text x="688" y="122" text-anchor="middle" class="tiny mono">8</text>
+        <text x="826" y="122" text-anchor="middle" class="tiny mono">10</text>
+        <text x="964" y="122" text-anchor="middle" class="tiny mono">12</text>
+        <line x1="136" y1="128" x2="136" y2="352" class="tick"/>
+        <line x1="274" y1="128" x2="274" y2="352" class="tick"/>
+        <line x1="412" y1="128" x2="412" y2="352" class="tick"/>
+        <line x1="550" y1="128" x2="550" y2="352" class="tick"/>
+        <line x1="688" y1="128" x2="688" y2="352" class="tick"/>
+        <line x1="826" y1="128" x2="826" y2="352" class="tick"/>
+        <line x1="964" y1="128" x2="964" y2="352" class="tick"/>
+
+        <text x="24" y="151" class="mono idt" font-size="11.5">operator</text>
+        <rect x="136" y="132" width="828" height="30" class="lane"/>
+        <polygon points="641,139 648,153 634,153" class="idt mark"/>
+        <text x="654" y="151" class="tiny">you: approve the plan, the probe is fine</text>
+
+        <text x="24" y="189" class="mono brandt" font-size="11.5">lead</text>
+        <rect x="136" y="170" width="828" height="30" class="lane"/>
+        <rect x="136" y="178" width="57" height="14" class="span brandt"/>
+        <rect x="360" y="178" width="52" height="14" class="span brandt"/>
+        <rect x="521" y="178" width="29" height="14" class="span brandt"/>
+        <rect x="590" y="178" width="12" height="14" class="span brandt"/>
+        <rect x="647" y="178" width="27" height="14" class="span brandt"/>
+        <rect x="877" y="178" width="41" height="14" class="span brandt"/>
+        <rect x="895" y="180" width="8" height="10" class="mark" fill="var(--ink)"/>
+        <circle cx="912" cy="185" r="4.5" class="mark" fill="var(--ink)"/>
+        <text x="870" y="189" text-anchor="end" class="tiny">report · concluded</text>
+
+        <text x="24" y="227" class="mono idb" font-size="11.5">fixer</text>
+        <rect x="136" y="208" width="828" height="30" class="lane"/>
+        <circle cx="193" cy="223" r="4" fill="none" stroke="var(--idb)" stroke-width="1.5"/>
+        <rect x="199" y="216" width="156" height="14" class="span idb"/>
+
+        <text x="24" y="265" class="mono ida" font-size="11.5">reviewer</text>
+        <rect x="136" y="246" width="828" height="30" class="lane"/>
+        <circle cx="527" cy="261" r="4" fill="none" stroke="var(--ida)" stroke-width="1.5"/>
+        <rect x="533" y="254" width="52" height="14" class="span ida"/>
+
+        <text x="24" y="303" class="mono idt" font-size="11.5">tester</text>
+        <rect x="136" y="284" width="828" height="30" class="lane"/>
+        <circle cx="193" cy="299" r="4" fill="none" stroke="var(--idt)" stroke-width="1.5"/>
+        <rect x="199" y="292" width="98" height="14" class="span idt"/>
+
+        <text x="24" y="341" class="mono" font-size="11.5" fill="var(--ink-2)">fix-issue</text>
+        <rect x="136" y="322" width="828" height="30" class="lane"/>
+        <rect x="400" y="333" width="472" height="8" class="span" fill="var(--o4)"/>
+        <polygon points="516,328 522,337 516,346 510,337" fill="var(--surface)" stroke="var(--warn)" stroke-width="1.5"/>
+        <polygon points="596,328 602,337 596,346 590,337" class="warnt"/>
+        <text x="524" y="360" class="tiny">approve-plan opened 5:30 · answered 6:40</text>
+        <text x="872" y="343" class="okt" font-weight="600" font-size="13">✓</text>
+        <text x="884" y="360" class="tiny">PR #41 verified</text>
+
+        <text x="24" y="390" class="tiny">▬ a turn (hatched: timed out or errored) · ○ spawned · ◇ gate opened · ◆ gate answered · ▲ operator post · ? question to the operator · ▪ report · ● conclusion · ✓ run verified</text>
+      </svg>
+    </div>
+    <p class="note">Turn spans come from the summary's turn list; the marks come from activity entries that carry a kind and an actor, the agents' join times and the runs' gate history. The lead's fourth turn is twelve seconds wide: it answered the gate and stopped.</p>
+
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Mark</th><th>Meaning</th><th>Source on the summary</th></tr></thead>
+      <tbody>
+        <tr><td><b>Span</b></td><td>One turn, start to end, in the agent's identity tone. Hatched with a red edge when it timed out or errored.</td><td><code>spans[]</code>, one per turn, with <code>agentId</code>, <code>startedAt</code>, <code>endedAt</code>, <code>outcome</code>, <code>messages</code> and <code>wokeBy</code>. New in this pass; today only the count survives.</td></tr>
+        <tr><td><b>○ spawned</b></td><td>The agent's seat was taken, on its own lane at the time.</td><td>The agent's <code>joinedAt</code>, new in this pass, and its <code>spawnedBy</code>.</td></tr>
+        <tr><td><b>◇ ◆ gate</b></td><td>A run paused at a gate, and the answer, on the run's lane.</td><td><code>runs[].gates[]</code>, new in this pass: the node, when it opened, when it closed, and whether the swarm or the operator answered.</td></tr>
+        <tr><td><b>? question</b></td><td>An agent addressed the operator, on the agent's lane; the answer or dismissal on the operator's.</td><td>The <code>ask</code> entries, one per question, with its thread id.</td></tr>
+        <tr><td><b>▲ operator post</b></td><td>A message or reply the operator sent from the tab or in ClickClack.</td><td>The <code>operator</code> entries.</td></tr>
+        <tr><td><b>▪ report, ● conclusion</b></td><td>On the lead's lane at the time they landed.</td><td>The <code>report</code> and <code>conclusion</code> entries.</td></tr>
+        <tr><td><b>✓ verified</b></td><td>The run's PR passed CI, at the end of the run's span.</td><td><code>runs[].completedAt</code> and <code>verified</code>.</td></tr>
+        <tr><td><b>now</b></td><td>A vertical rule with the clock, only while the swarm is live.</td><td>The frame's compose time, to the minute; the record recomposes as the work changes, so it moves with the work.</td></tr>
+      </tbody>
+    </table></div>
+
+    <p style="margin-top:18px">Below the timeline the page carries what the board cannot draw and what an operator reading back wants beside the timeline.</p>
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Part</th><th>What it shows</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td><b>Who woke whom</b></td><td>The agents as nodes in their identity tones, the operator as one more, and an edge for each pair with a count: spawned, woke ×3, asked. The lead is at the top and the graph reads down.</td><td>Each span's <code>wokeBy</code>: the agents, the operator, the runs or a nudge whose messages started the turn. An edge counts the turns it caused.</td></tr>
+        <tr><td><b>Spend by agent</b></td><td>The same bars as the board's Spend section, with cached tokens as a second, lighter bar after each, so the two figures are never summed and the larger reads as larger.</td><td><code>agents[].usage</code>.</td></tr>
+        <tr><td><b>Runs</b></td><td>One block per run: workflow, purpose, branch, every PR, CI verdict and detail, steps done, took, and the gates it paused at with who answered and why.</td><td><code>runs[]</code>, which already carry the branch, every PR, the times, the error and the CI detail.</td></tr>
+        <tr><td><b>Evidence given</b></td><td>Each context item with its id, kind, title, source, retrieval time and the commit it was taken against.</td><td><code>context[]</code>, which already carries the id agents cite.</td></tr>
+        <tr><td><b>Provenance</b></td><td>Composed from the swarm summary at the frame's time, the data window (the swarm's start and end), and what is not on the page: the transcript, the report, prices.</td><td>The frame.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">A swarm at the start bounds, 12 agents and 200 turns, draws in about 100 KB: each span is one rect and one title, each mark one shape, and long text is cut before it is escaped (the task at 1,000 characters, titles at 120, a gate's reason and an error at 300). The page stays inside the 128 KB budget the doc pane already has.</p>
+  </section>
+
+  <section>
+    <h2>Vocabulary</h2>
+    <p>One word per thing, the same on the tab, in the tool's output and in the docs. The table lists only the changes; anything not in it keeps its current name.</p>
+    <div class="tblwrap"><table class="tbl compact">
+      <thead><tr><th>Today</th><th>Proposed</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td>Read in full</td><td><b>Read the conclusion</b></td><td>Outcome card</td></tr>
+        <tr><td>◧ (an unlabelled glyph)</td><td><b>◧ report</b></td><td>Ended rows</td></tr>
+        <tr><td>N earlier ended swarms</td><td><b>N earlier</b>, under the last day heading</td><td>Index</td></tr>
+        <tr><td>Prepare in chat</td><td><b>Prepare in chat · attach an issue or PR</b></td><td>Launcher</td></tr>
+        <tr><td>Size · Power · Model override, all visible</td><td><b>Setup: defaults · adjust</b>; the three fields keep their names when shown</td><td>Launcher</td></tr>
+        <tr><td>∑ in · out · cached (About row)</td><td><b>Spend</b>, a section of bars; About keeps the sum</td><td>Board, record</td></tr>
+        <tr><td>Read the full log · N earlier</td><td>Unchanged, and <b>Open the record</b> beside it names the drawing</td><td>Board</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Validation</h2>
+    <p>Every board and the record are pure functions of the swarm summary, so the builders are tested against fixture summaries, one per state the design names: a running swarm with no request; each request kind alone; an ended swarm with a report; one with a conclusion and no report; one stopped with one of three runs verified; one out of turns; one that failed before boot; a rerun of an ended swarm; swarms that ended today, yesterday and last week; and a swarm at the start bounds, 12 agents and 200 turns, for the record's size. Each frame passes <code>expectView(key, kind)</code>, the validator the host applies before it broadcasts. The frame budgets stay: the index under 48 KB with six live swarms, the board under 48 KB, the doc pane and the record under 128 KB.</p>
+    <p>The launcher is tested at the action: a launch on defaults dispatches no size, power or model and the swarm records medium and balanced; a launch with adjust and a size sends the size and the swarm records it; a task that names a link with no context is refused before a channel exists. The fold is tested on the launch board: the hint is off when the store is empty and on once it holds a swarm.</p>
+    <p>The record is rendered once from the caps fixture with headless Chrome in both themes, and the screenshots go in the pull request beside the index and the board at 1200 and 640 pixels. The live smoke test asserts that a scripted swarm registers its record view at start, that the view recomposes through running and done, and that the ended row's text leads with the conclusion's first sentence. The record's text is escaped and the page carries no script, which a fixture with markup in its task, handles and errors checks.</p>
+    <p>The <code>chat</code> docs corpus in <code>src/docs.ts</code> restates the tab's layout in prose and changes with it, and <code>deferred.md</code> drops the Keelson surface it still lists as not done.</p>
+  </section>
+
+  <div class="appendix">
+    <p class="eyebrow">Appendix · reference material</p>
+    <h2>Reference detail</h2>
+
+    <section>
+      <h3>A · Board sections and the primitive each uses</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Section</th><th>Primitive</th><th>Live</th><th>Ended</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Header</td><td class="mono">header</td><td>status pill · chip medium · 8 of 40 turns · model · people</td><td>lifecycle pill · chip medium · 14 turns · 11 min · model · people</td><td>Host-rendered; the rib supplies the text.</td></tr>
+          <tr><td>Requests</td><td class="mono">cards</td><td>one card per request, ladder order</td><td>absent</td><td>Unchanged from the second pass.</td></tr>
+          <tr><td>Outcome</td><td class="mono">cards</td><td>report card once published</td><td>one card: report title, conclusion prose, two verbs, the channel link; or the cause card</td><td>Conclusion preview 1,200 characters.</td></tr>
+          <tr><td>Budget / Result</td><td class="mono">stats</td><td>turns (spark) · time (clock) · agents · tokens</td><td>turns (spark) · time · agents · tokens · runs verified</td><td>The spark persists after end.</td></tr>
+          <tr><td>Verbs</td><td class="mono">actions</td><td>Message the lead (expanded) · Open the record · Stop (align end)</td><td>Run again (form) · Open the record</td><td>One actions section per board.</td></tr>
+          <tr><td>Runs</td><td class="mono">rows</td><td>evidence bar, branch, every PR, took, error gist; Open run</td><td>same</td><td>Only when the launch named workflows.</td></tr>
+          <tr><td>Agents</td><td class="mono">cards grid columns 4</td><td>bench with ghosts, status pills, last event</td><td>bench, no ghosts, no pills, last event</td><td>Handle mono in the identity tone.</td></tr>
+          <tr><td>Spend</td><td class="mono">bars inline</td><td>one bar per agent, fresh tokens of fresh total</td><td>same</td><td>No tone. Trailing is tokens and share.</td></tr>
+          <tr><td>Task and context</td><td class="mono">rows detail</td><td>as today</td><td>as today</td><td>Context rows gain the item id.</td></tr>
+          <tr><td>Activity</td><td class="mono">rows</td><td>12 newest, actor chip, one row per finished turn</td><td>same</td><td>Read the full log opens the reading pane.</td></tr>
+          <tr><td>About</td><td class="mono">rows</td><td>channel · started · limits · models · sum · health</td><td>same plus ran and ← Ended swarms</td><td>Unchanged.</td></tr>
+          <tr><td>Record</td><td class="mono">html view</td><td>timeline with now, who woke whom, spend, runs, evidence</td><td>same without now</td><td>Opened from the verbs row; no controls.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>B · Rib-side changes, ranked by what they unlock</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>#</th><th>Change</th><th>For</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td>Turn spans on the summary: agent, start, end, outcome, messages delivered, and what woke the turn. Today the turn runner reports durations only to the op's progress log. The status tools and the op record leave them out, so MCP output stays its size.</td><td>Timeline, activity rows</td></tr>
+          <tr><td class="mono">2</td><td>Activity entries carry <code>kind</code> and <code>actor</code> beside the text; a turn is one entry written when it ends; the 200-entry trim drops turn entries before milestones.</td><td>Actor chips, timeline marks</td></tr>
+          <tr><td class="mono">3</td><td>Outcome composed as one card; the ended row's gist taken from the conclusion's first sentence when the row is composed.</td><td>Index, board</td></tr>
+          <tr><td class="mono">4</td><td>Ended rows grouped by day into one rows section per day, lifecycle chips only on exceptions, ↻ on a rerun. The history drawer uses the same groups.</td><td>Index, history</td></tr>
+          <tr><td class="mono">5</td><td>Run rows show the branch, every PR, how long the run took and an error gist; the reading pane shows the full error and the CI detail. Runs keep a gate history.</td><td>Runs, record</td></tr>
+          <tr><td class="mono">6</td><td>The launcher's Setup segment with <code>showWhen</code> on size, power and model override; the rib fills the defaults for hidden fields and keeps only what was sent in the launch it stores.</td><td>Launcher</td></tr>
+          <tr><td class="mono">7</td><td>The launch board sets <code>defaultCollapsed</code> from the store's contents; the byline names the default launch.</td><td>Index</td></tr>
+          <tr><td class="mono">8</td><td>A record view per swarm: registered with the swarm's other keys, recomposed on course changes at most every five seconds while live, released with them and past the 100-swarm trim.</td><td>Record</td></tr>
+          <tr><td class="mono">9</td><td>Each agent's <code>joinedAt</code>, and a rerun's <code>rerunOf</code>, on the summary.</td><td>Record</td></tr>
+          <tr><td class="mono">10</td><td>Spend section: fresh tokens per agent against the swarm's fresh total.</td><td>Board, record</td></tr>
+          <tr><td class="mono">11</td><td>Each agent's last event, taken from the activity entries it is the actor of.</td><td>Bench footnote</td></tr>
+          <tr><td class="mono">12</td><td>Pace history kept on the summary after the swarm ends.</td><td>Turns tile</td></tr>
+          <tr><td class="mono">13</td><td>Context rows show the item id the summary already carries.</td><td>Context rows, record</td></tr>
+          <tr><td class="mono">14</td><td><code>src/docs.ts</code>, the tab guide and <code>deferred.md</code> updated with each slice. The board's lower half, which the docs called the record, becomes the details.</td><td>Docs</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>C · Alternatives not chosen</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Alternative</th><th>Why not</th></tr></thead>
+        <tbody>
+          <tr><td><b>The host's <code>graph</code> view for who woke whom</b></td><td>Its nodes take a label and a plain chip, no tone and no link, so the agents would lose the identity colors the bench gives them. The record draws the same graph with them.</td></tr>
+          <tr><td><b>The host's <code>log</code> kind for the activity log</b></td><td>It renders verbatim text with no links, and the reading pane's log links each ask to its thread.</td></tr>
+          <tr><td><b>A <code>table</code> section for runs</b></td><td>Cells carry links, not actions, so the rows would lose Open run. Rows keep the evidence bar and the verb.</td></tr>
+          <tr><td><b>Search or a filter on the history drawer</b></td><td>A frame is shared by every viewer, so a filter would be shared state. Day groups keep thirty rows scannable.</td></tr>
+          <tr><td><b>Cards for ended swarms</b></td><td>Eight rows fit above the fold; eight cards do not.</td></tr>
+          <tr><td><b>Collapsing reruns into one row</b></td><td>Reruns exist to compare outcomes; a collapsed row hides the comparison.</td></tr>
+          <tr><td><b>The timeline as a <code>chart</code> section</b></td><td>A chart plots values over time and caps at six series; a timeline is spans on lanes.</td></tr>
+          <tr><td><b>A cost figure in currency</b></td><td>The summary carries no prices, and a rate table kept in the rib goes stale with every model change.</td></tr>
+          <tr><td><b>Verbs on the record page</b></td><td>An action from inside an html frame produces a toast and no effect; a button that only toasts is a dead end.</td></tr>
+          <tr><td><b>A one-line inline launcher instead of the fold</b></td><td>An action form renders as a block. The folded head gives the same one-line rest state without a new primitive.</td></tr>
+          <tr><td><b>A router <code>wakes</code> list counted at dispatch</b></td><td>Run notes and nudges wake the lead without passing the router, so a count there misses them. The turn runner sees every cause, so each span records its own.</td></tr>
+          <tr><td><b>Folding a turn's start entry into its end in place</b></td><td>The activity list is oldest first, and an in-place update would put a finished turn at its start time and break the newest-last reading the index relies on.</td></tr>
+          <tr><td><b>Registering an ended swarm's record when it is first opened</b></td><td>The host has to know a key holds html before an action opens it; a key registered by the opening action is drawn as an unknown view.</td></tr>
+          <tr><td><b>A record composed on every change</b></td><td>The host reloads an html frame whenever its document changes, so a busy swarm's record would reload several times a second and lose its scroll.</td></tr>
+          <tr><td><b>Mirror the channel, embed ClickClack, answer approvals from the tab</b></td><td>Decided against in the first design; nothing here changes those reasons.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>D · Sequence</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Slice</th><th>Ships</th><th>Needs</th></tr></thead>
+        <tbody>
+          <tr><td><b>1 · Read</b></td><td>Ended rows by outcome and day, the rerun mark, one outcome card, run rows with branch, PRs and error, Spend, context ids, the reading pane's runs</td><td>Rib changes 3, 4, 5, 10, 13, and <code>rerunOf</code> from 9</td></tr>
+          <tr><td><b>2 · Launch</b></td><td>The Setup segment, the fold hint, the byline, the second button's label</td><td>Rib changes 6 and 7</td></tr>
+          <tr><td><b>3 · Turns</b></td><td>Turn spans, actor chips, one row per turn, bench last event, the persistent spark, gate history</td><td>Rib changes 1, 2, 9, 11, 12</td></tr>
+          <tr><td><b>4 · Record</b></td><td>The record view, the timeline, who woke whom, spend, runs and evidence blocks, both themes, the verbs row</td><td>Rib change 8, on 1, 2 and 9</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+  </div>
+</div>
