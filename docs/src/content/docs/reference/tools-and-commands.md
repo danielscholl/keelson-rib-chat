@@ -71,11 +71,16 @@ With an id, returns the summary: `id`, `task`, `status`, `channelId`,
 `clickclack` (its URL and workspace), `health` (present only while something is
 wrong: socket drops, a ClickClack fault, lead failures, nudges, refused
 conclusions, or `quietSince` when the swarm went idle at an open gate),
-`context` (the item list without bodies), `conclusion`, `draftConclusion`, and
-`error`. `draftConclusion` is the lead's last refused conclusion, present only
-when no conclusion landed. Each agent carries the model it asks for and the
-provider that served its last turn, and the tokens its turns spent, as the
-provider reported them. `usage` sums them for the swarm. Without an id, returns
+`context` (the item list without bodies), `runs`, `activity`, `pace`,
+`conclusion`, `draftConclusion`, `error`, and `rerunOf` for a swarm started
+with Run again. `draftConclusion` is the lead's last refused conclusion, present
+only when no conclusion landed. Each agent carries the model it asks for and the
+provider that served its last turn, the tokens its turns spent, as the provider
+reported them, and when it joined. `usage` sums them for the swarm. Each
+`activity` entry carries its time, text, `kind` (such as `turn`, `spawn`,
+`ask`, `gate` or `conclusion`), the `actor` (an agent id, or `operator`) and
+what it is about; a turn is one entry, written when it ends. The per-turn spans
+the Swarms tab draws from are kept in the rib and left out of this output. Without an id, returns
 a short row per swarm, starting swarms first, with its size, model, and tokens. The last 50 ended swarms
 are kept in the rib's data directory, so they survive a restart.
 

@@ -123,3 +123,12 @@ export function plural(n: number, word: string): string {
 export function activityText(swarmId: string, text: string): string {
   return text.replaceAll(`@${swarmId}-`, "@");
 }
+
+// An activity line under its actor's chip: the handle or "you" it starts with
+// would say the name twice.
+export function actorText(swarmId: string, text: string, actor: string | undefined): string {
+  const shown = activityText(swarmId, text);
+  if (!actor) return shown;
+  const lead = actor === "operator" ? "you " : `@${shortHandle(actor, swarmId)} `;
+  return shown.startsWith(lead) ? shown.slice(lead.length) : shown;
+}

@@ -118,6 +118,8 @@ export interface SwarmAgent {
   status: AgentStatus;
   // Messages waiting in the agent's inbox, when any are.
   queued?: number;
+  // When its seat was taken.
+  joinedAt?: string;
 }
 
 export interface GateFileText {
@@ -127,11 +129,59 @@ export interface GateFileText {
   truncated?: boolean;
 }
 
+export const ACTIVITY_KINDS = [
+  "start",
+  "turn",
+  "spawn",
+  "ask",
+  "answer",
+  "operator",
+  "run",
+  "gate",
+  "gate-answer",
+  "report",
+  "conclusion",
+  "nudge",
+  "cap",
+  "retire",
+  "fault",
+  "end",
+] as const;
+export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
 export interface ActivityEntry {
   at: string;
   text: string;
   // Consecutive identical events collapse into one entry that counts them.
   count?: number;
+  // Absent on entries recorded before kinds were kept.
+  kind?: ActivityKind;
+  // The agent id the event is by, or `operator`; absent for the rib's own events.
+  actor?: string;
+  // What it is about: a spawned agent's id, a run id, a question's thread.
+  subject?: string;
+}
+
+// Who a turn answered: agent ids, `operator`, `rib` for the kickoff and notices,
+// `runs` for run updates, `nudge` for an idle nudge.
+export interface TurnSpan {
+  agentId: string;
+  n: number;
+  startedAt: string;
+  endedAt?: string;
+  outcome?: "ok" | "error" | "timeout" | "aborted";
+  // The messages the turn was woken with.
+  messages: number;
+  wokeBy: string[];
+}
+
+// An approval a run paused at: `by` is who let the run go on, absent when the
+// run ended at it.
+export interface RunGate {
+  nodeId: string;
+  openedAt: string;
+  closedAt?: string;
+  by?: "swarm" | "operator";
 }
 
 // Tokens summed over turns. `input` counts cache writes too; `cached` is cache reads.
@@ -201,6 +251,8 @@ export interface ChildRun {
   };
   // Gates the swarm answered for the operator.
   approvals?: GateAnswer[];
+  // Every gate the run paused at, answered or not.
+  gates?: RunGate[];
   prUrls: string[];
   // The CI verdict the run's workflow printed, if it printed one.
   ci?: { verdict: CiVerdict; detail?: string };
@@ -262,8 +314,10 @@ export interface SwarmSummary {
   // Workflow runs the lead started, with their evidence.
   runs?: readonly ChildRun[];
   // Turns started per minute over the last 30 minutes, oldest first, once two
-  // minutes have passed.
+  // minutes have passed; for an ended swarm, over its whole run.
   pace?: readonly number[];
+  // Every turn, oldest first. Left out of the status tools' output.
+  spans?: readonly TurnSpan[];
   conclusion?: string;
   // The lead's designed report page, when it published one.
   report?: ReportMeta;
@@ -276,6 +330,13 @@ export interface SwarmSummary {
   error?: string;
   // The ended swarm this one was started from with Run again.
   rerunOf?: string;
+}
+
+// A summary as the status tools and the op record carry it: the turn spans are
+// for drawing, and would triple a long swarm's output.
+export function publicSummary(s: SwarmSummary): Omit<SwarmSummary, "spans"> {
+  const { spans: _spans, ...rest } = s;
+  return rest;
 }
 
 export interface SwarmHealth {

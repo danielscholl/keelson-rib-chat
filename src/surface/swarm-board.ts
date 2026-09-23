@@ -21,6 +21,7 @@ import {
 } from "../types.ts";
 import {
   activityText,
+  actorText,
   channelHref,
   day,
   firstLine,
@@ -200,7 +201,7 @@ function stats(s: SwarmSummary): Leaf {
       value: isLiveNow ? `${s.turnsUsed} of ${s.limits.maxTurns}` : s.turnsUsed,
       sub: isLiveNow ? `${left} remaining` : `of ${s.limits.maxTurns}`,
       ...(isLiveNow && left === 0 ? { tone: "warn" as const } : {}),
-      ...(isLiveNow && s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
+      ...(s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
     },
     isLiveNow
       ? {
@@ -260,7 +261,11 @@ function agentCard(s: SwarmSummary, a: SwarmSummary["agents"][number]): Card {
   const turns = a.lead
     ? plural(a.turns, "turn")
     : `${a.turns} of ${s.limits.maxTurnsPerAgent} turns`;
+  const last = [...(s.activity ?? [])].reverse().find((e) => e.actor === a.id);
   const foot = [
+    ...(last
+      ? [`last: ${firstLine(actorText(s.id, last.text, a.id), 40)} · ${hhmm(last.at)}`]
+      : []),
     ...(a.spawnedBy ? [`spawned by @${shortHandle(a.spawnedBy, s.id)}`] : []),
     ...(a.queued ? [`${plural(a.queued, "message")} waiting`] : []),
     ...(a.servedModel && a.servedModel !== a.model ? [`served by ${a.servedModel}`] : []),
@@ -500,6 +505,13 @@ function taskAndContext(s: SwarmSummary): Leaf[] {
 
 // ---- Activity, newest first, repeats counted. ----
 
+// Who an event is by, in the colors the bench gives them.
+function actorChip(s: SwarmSummary, actor: string | undefined): Row["chip"] {
+  if (actor === "operator") return { label: "you", tone: "neutral" };
+  const a = actor ? s.agents.find((x) => x.id === actor) : undefined;
+  return a ? { label: shortHandle(a.handle, s.id), tone: a.tone } : undefined;
+}
+
 function activity(s: SwarmSummary): Leaf[] {
   const all = s.activity ?? [];
   const entries = [...all].reverse().slice(0, RECENT_SHOWN);
@@ -510,10 +522,14 @@ function activity(s: SwarmSummary): Leaf[] {
       kind: "rows",
       title: "Activity",
       items: [
-        ...entries.map((e) => ({
-          text: `${firstLine(activityText(s.id, e.text), 90)}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`,
-          trailing: hhmm(e.at),
-        })),
+        ...entries.map((e) => {
+          const chip = actorChip(s, e.actor);
+          return {
+            ...(chip ? { chip } : {}),
+            text: `${firstLine(actorText(s.id, e.text, chip ? e.actor : undefined), 90)}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`,
+            trailing: hhmm(e.at),
+          };
+        }),
         ...(earlier > 0
           ? [
               {

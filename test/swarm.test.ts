@@ -4,7 +4,9 @@ import { needsYou } from "../src/needs.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
 import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import {
+  keepActivity,
   MAX_TURN_FAILURES,
+  paceOf,
   Swarm,
   type SwarmChange,
   type SwarmOptions,
@@ -200,6 +202,123 @@ describe("Swarm", () => {
     expect(summary.status).toBe("stalled");
     expect(summary.turnsUsed).toBe(3);
     expect(logs.filter((l) => l.includes("nudging")).length).toBe(2);
+    expect(summary.spans?.map((t) => t.wokeBy)).toEqual([["rib"], ["nudge"], ["nudge"]]);
+    const turns = summary.activity?.filter((e) => e.kind === "turn") ?? [];
+    expect(turns.at(-1)?.text).toMatch(/^@s1-lead turn 3 ok · \d+ s · nudged$/);
+    // Over a run shorter than a minute the spark has one bucket, so none is kept.
+    expect(summary.pace).toBeUndefined();
+  });
+
+  test("each turn leaves a span naming who woke it, and one activity entry", async () => {
+    const { start, logs, tools } = harness(async ({ agentId, turn, prompt, call }) => {
+      if (agentId === "s1-lead" && turn === 1) {
+        await call("chat_spawn", { handle: "scout", role: "reads logs", brief: "Report back." });
+      } else if (agentId === "s1-scout") {
+        const briefId = prompt.match(/top-level (msg_\d+)/)?.[1];
+        await call("chat_reply", { message_id: briefId, body: "Linking is slow." });
+      } else {
+        await call("chat_done", { summary: "Linking." });
+      }
+    });
+    const summary = await (await start()).finished;
+    expect(summary.spans?.map((t) => [t.agentId, t.n, t.outcome, t.messages, t.wokeBy])).toEqual([
+      ["s1-lead", 1, "ok", 1, ["rib"]],
+      ["s1-scout", 1, "ok", 1, ["s1-lead"]],
+      ["s1-lead", 2, "ok", 1, ["s1-scout"]],
+    ]);
+    for (const t of summary.spans ?? []) {
+      expect(Date.parse(t.endedAt ?? "")).toBeGreaterThanOrEqual(Date.parse(t.startedAt));
+    }
+    const turns = summary.activity?.filter((e) => e.kind === "turn") ?? [];
+    expect(turns.map((e) => e.text.split(" · ")[0])).toEqual([
+      "@s1-lead turn 1 ok",
+      "@s1-scout turn 1 ok",
+      "@s1-lead turn 2 ok",
+    ]);
+    expect(turns[1]).toMatchObject({ actor: "s1-scout", subject: "turn:1" });
+    expect(turns[1]?.text.endsWith(" · 1 new")).toBe(true);
+    expect(summary.activity?.find((e) => e.kind === "spawn")).toMatchObject({
+      actor: "s1-lead",
+      subject: "s1-scout",
+    });
+    expect(summary.activity?.find((e) => e.kind === "conclusion")?.actor).toBe("s1-lead");
+    expect(summary.activity?.[0]?.kind).toBe("start");
+    expect(summary.activity?.at(-1)?.kind).toBe("end");
+    // The op's progress keeps both ends of every turn; the tab keeps one line.
+    expect(logs).toContain("@s1-lead turn 1 (1 new)");
+    expect(logs).toContain("@s1-lead turn 1 ok");
+    expect(summary.activity?.some((e) => e.text.endsWith("(1 new)"))).toBe(false);
+    expect(summary.agents.every((a) => Number.isFinite(Date.parse(a.joinedAt ?? "")))).toBe(true);
+    // The spans are for drawing; the status tools leave them out.
+    for (const tool of ["chat_swarm_status", "chat_swarm_wait"]) {
+      const out = await callTool(tools, tool, { swarm: "s1" });
+      expect(out.content).toContain('"activity"');
+      expect(out.content).not.toContain('"spans"');
+    }
+  });
+
+  test("a failed turn's span says so, and an operator post wakes the lead", async () => {
+    let swarmRef: Swarm | undefined;
+    const { start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId !== "s1-lead") return;
+      if (turn === 1) throw new Error("provider hiccup");
+      if (turn === 2) await swarmRef?.steer("Wrap it up.");
+      else await call("chat_done", { summary: "ok" });
+    });
+    swarmRef = await start();
+    const summary = await swarmRef.finished;
+    expect(summary.spans?.map((t) => [t.outcome, t.wokeBy])).toEqual([
+      ["error", ["rib"]],
+      ["ok", ["rib"]],
+      ["ok", ["operator"]],
+    ]);
+    expect(summary.activity?.find((e) => e.kind === "operator")).toMatchObject({
+      actor: "operator",
+      text: "you posted in #swarm-s1: Wrap it up.",
+    });
+  });
+
+  test("a turn in flight when the swarm stops closes as aborted", async () => {
+    const { start } = harness(async () => {
+      await never;
+    });
+    const swarm = await start();
+    await new Promise((r) => setTimeout(r, 10));
+    const summary = await swarm.stop();
+    expect(summary.spans).toHaveLength(1);
+    expect(summary.spans?.[0]).toMatchObject({ outcome: "aborted", endedAt: expect.any(String) });
+  });
+
+  test("the activity trim drops turn entries before the events that mark the course", () => {
+    const entries = [
+      { at: "t", text: "start", kind: "start" as const },
+      { at: "t", text: "t1", kind: "turn" as const },
+      { at: "t", text: "spawn", kind: "spawn" as const },
+      { at: "t", text: "t2", kind: "turn" as const },
+      { at: "t", text: "ask", kind: "ask" as const },
+    ];
+    keepActivity(entries, 3);
+    expect(entries.map((e) => e.text)).toEqual(["start", "spawn", "ask"]);
+    const legacy = [
+      { at: "t", text: "a" },
+      { at: "t", text: "b" },
+    ];
+    keepActivity(legacy, 1);
+    expect(legacy.map((e) => e.text)).toEqual(["b"]);
+  });
+
+  test("an ended swarm's pace spreads its whole run over at most thirty buckets", () => {
+    const t0 = Date.parse("2026-09-22T14:00:00.000Z");
+    const min = 60_000;
+    const starts = [0, 1, 2, 59, 60, 90, 119].map((m) => t0 + m * min);
+    const ended = paceOf(starts, t0, t0 + 120 * min, true);
+    expect(ended).toHaveLength(30);
+    expect(ended?.reduce((a, b) => a + b, 0)).toBe(7);
+    expect(ended?.[0]).toBe(3);
+    const live = paceOf(starts, t0, t0 + 120 * min, false);
+    expect(live).toHaveLength(30);
+    expect(live?.reduce((a, b) => a + b, 0)).toBe(2);
+    expect(paceOf([t0], t0, t0 + 30_000, true)).toBeUndefined();
   });
 
   test("the turn budget ends a swarm that would otherwise ping-pong", async () => {
@@ -581,6 +700,17 @@ describe("Workflow dispatch", () => {
       prUrls: ["https://github.com/o/r/pull/7"],
       ci: { verdict: "pass" },
     });
+    // The host moved the run past its gate, so the operator answered it.
+    expect(summary.runs?.[0]?.gates).toEqual([
+      {
+        nodeId: "approve-plan",
+        openedAt: expect.any(String),
+        closedAt: expect.any(String),
+        by: "operator",
+      },
+    ]);
+    expect(summary.spans?.map((t) => t.wokeBy)).toEqual([["rib"], ["runs"], ["runs"]]);
+    expect(summary.activity?.filter((e) => e.kind === "gate")).toHaveLength(1);
     // Waiting on a live run is not idleness: the lead was never nudged.
     expect(logs.some((l) => l.includes("nudging"))).toBe(false);
     const leadTools = provider.requests[0]?.tools?.map((t) => t.name) ?? [];
@@ -690,6 +820,11 @@ describe("Workflow dispatch", () => {
     const lead = provider.requests.find((r) => r.turnContext?.agentId === "s1-lead");
     expect(lead?.tools?.map((t) => t.name)).toContain("chat_workflow_respond");
     expect(lead?.system).toContain("your own review checks nothing");
+    expect(summary.runs?.[0]?.gates?.map((g) => g.by)).toEqual(["swarm"]);
+    expect(summary.activity?.find((e) => e.kind === "gate-answer")).toMatchObject({
+      actor: "s1-lead",
+      subject: "run_1",
+    });
     const transcript = await callTool(tools, "chat_swarm_transcript", { swarm: summary.id });
     expect(transcript.content).toContain("**Approved** `approve-plan` on run `run_1`");
   });

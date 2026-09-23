@@ -664,7 +664,22 @@ ${"detail ".repeat(1000)}`,
       runs,
       task: "t".repeat(8000),
       conclusion: "c".repeat(20_000),
-      activity: Array.from({ length: ACTIVITY_KEPT }, () => ({ at: T0, text: "a".repeat(400) })),
+      activity: Array.from({ length: ACTIVITY_KEPT }, (_, i) => ({
+        at: T0,
+        text: "a".repeat(400),
+        kind: "turn" as const,
+        actor: agents[i % agents.length]?.id,
+      })),
+      spans: Array.from({ length: 200 }, (_, i) => ({
+        agentId: agents[i % agents.length]?.id ?? "",
+        n: i,
+        startedAt: T0,
+        endedAt: T0,
+        outcome: "ok" as const,
+        messages: 3,
+        wokeBy: ["s9big-lead", "operator"],
+      })),
+      pace: Array.from({ length: 30 }, (_, i) => i),
       usage: { input: 9_000_000, output: 400_000, cached: 7_000_000 },
     });
     const many = Array.from({ length: 50 }, (_, i) =>
@@ -810,6 +825,60 @@ describe("the details", () => {
       agents: [agent("s8one", 0, { usage: { input: 10, output: 1, cached: 0 } })],
     });
     expect(buildSwarmBoard(one).sections.some((x) => x.kind === "bars")).toBe(false);
+  });
+
+  test("activity rows chip their actor, and the bench names each agent's last event", () => {
+    const at = (m: number) => `2026-09-22T14:0${m}:00.000Z`;
+    const s = swarm("s7chp", {
+      status: "done",
+      endedAt: at(6),
+      pace: [1, 3, 2],
+      activity: [
+        {
+          at: at(1),
+          text: "@s7chp-lead spawned @s7chp-w1: reads logs",
+          kind: "spawn",
+          actor: "s7chp-lead",
+          subject: "s7chp-w1",
+        },
+        { at: at(2), text: "@s7chp-w1 turn 1 ok · 42 s · 1 new", kind: "turn", actor: "s7chp-w1" },
+        {
+          at: at(3),
+          text: "you posted in #swarm-s7chp: keep going",
+          kind: "operator",
+          actor: "operator",
+        },
+        { at: at(4), text: "swarm s7chp done", kind: "end" },
+        { at: at(5), text: "@s7chp-lead turn 3 ok" },
+      ],
+    });
+    const view = buildSwarmBoard(s);
+    board(swarmKey(s.id), view);
+    expect(rowsTitled(view, "Activity")).toEqual([
+      { text: "@lead turn 3 ok", trailing: hhmm(at(5)) },
+      { text: "swarm s7chp done", trailing: hhmm(at(4)) },
+      {
+        chip: { label: "you", tone: "neutral" },
+        text: "posted in #swarm-s7chp: keep going",
+        trailing: hhmm(at(3)),
+      },
+      {
+        chip: { label: "w1", tone: "id-blue" },
+        text: "turn 1 ok · 42 s · 1 new",
+        trailing: hhmm(at(2)),
+      },
+      {
+        chip: { label: "lead", tone: "brand" },
+        text: "spawned @w1: reads logs",
+        trailing: hhmm(at(1)),
+      },
+    ]);
+    const bench = view.sections.find((x) => x.kind === "cards" && x.title?.startsWith("Agents"));
+    const cards = bench?.kind === "cards" ? bench.items : [];
+    expect(cards[0]?.footnote).toBe(`last: spawned @w1: reads logs · ${hhmm(at(1))}`);
+    expect(cards[1]?.footnote).toBe(`last: turn 1 ok · 42 s · 1 new · ${hhmm(at(2))}`);
+    const turns = view.sections.find((x) => x.kind === "stats");
+    expect(turns?.kind === "stats" ? turns.items[0]?.spark : undefined).toEqual([1, 3, 2]);
   });
 
   test("an answered approval names its reviewer and discloses the reason", () => {

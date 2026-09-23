@@ -42,6 +42,29 @@ describe("swarm history", () => {
     expect(history.refusedApprovals).toEqual(["fix-issue"]);
   });
 
+  test("keeps turn spans, activity kinds and gate history", () => {
+    const path = historyPath(join(tempDir(), "rib-chat"));
+    const full: SwarmSummary = {
+      ...summary("s3"),
+      spans: [
+        {
+          agentId: "s3-lead",
+          n: 1,
+          startedAt: "2026-09-22T10:00:01.000Z",
+          endedAt: "2026-09-22T10:00:40.000Z",
+          outcome: "ok",
+          messages: 1,
+          wokeBy: ["rib"],
+        },
+      ],
+      activity: [{ at: "2026-09-22T10:00:00.000Z", text: "swarm s3 started", kind: "start" }],
+      pace: [1, 0, 2],
+      rerunOf: "s1",
+    };
+    saveHistory(path, { ended: [full], refusedApprovals: [] });
+    expect(loadHistory(path).ended[0]).toEqual(full);
+  });
+
   test("leaves no temp file behind", () => {
     const dir = tempDir();
     saveHistory(historyPath(dir), { ended: [summary("s1")], refusedApprovals: [] });

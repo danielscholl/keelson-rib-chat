@@ -97,7 +97,7 @@ Live, the board runs in this order:
 - the requests, one card each, with **reviewing** approvals after them
 - the report, once the lead has published one
 - the budget strip: turns used with what is left and a sparkline of turns per
-  minute, the time left on a live clock, agents against the cap with how many are
+  minute (an ended board keeps the sparkline, spread over the whole run), the time left on a live clock, agents against the cap with how many are
   busy or waiting, and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
 - **Message the lead**, which posts in the channel as you and wakes the lead,
@@ -121,8 +121,9 @@ The details follow in both and read the same:
 - **Agents**: a bench with one card per agent, its handle in its identity
   color, a status pill while live (**busy**, **waiting** when it has messages
   and no free slot, **idle**, **capped**, **failed**), its turns against the
-  per-worker cap, its role and its tokens; open seats up to the swarm's cap show
-  as dashed ghosts
+  per-worker cap, its role and its tokens, and in its footnote its last event
+  and when (**last: turn 3 ok · 42 s · 2 new · 11:52**); open seats up to the
+  swarm's cap show as dashed ghosts
 - **Spend**, once two agents have spent: a bar per agent, its fresh tokens
   against the swarm's, with the count and share beside it
 - **Runs**, only when the launch named workflows: each run with its purpose,
@@ -135,7 +136,10 @@ The details follow in both and read the same:
 - **Task and context**: the task in full under a disclosure, and each context
   item with its id, retrieval time, commit and text under its own
 - **Activity**: the last twelve events, newest first, with repeats counted,
-  then **Read the full log**, which opens the last 200 in the reading pane
+  then **Read the full log**, which opens the last 200 in the reading pane.
+  Each row starts with who it is by: the agent's handle in its color, or
+  **you**. A turn is one row, written when it ends: **turn 3 ok · 42 s · 2
+  new**, or **nudged** or **run update** when no message woke it
 - **About**: the channel, the times, the size's limits, the model per role, the
   tokens, and any problems with ClickClack or the lead's turns; an ended board
   ends with a row back to the ended swarms
