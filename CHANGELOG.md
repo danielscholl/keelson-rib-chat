@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.12.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.11.0...v0.12.0) (2026-09-23)
+
+
+### Added
+
+* **surface:** draw each swarm's record ([#62](https://github.com/danielscholl/keelson-rib-chat/issues/62)) ([65e9ab9](https://github.com/danielscholl/keelson-rib-chat/commit/65e9ab98f70feece0ab8f513c21189fba22c3656))
+* **surface:** fold the launcher to its defaults ([#60](https://github.com/danielscholl/keelson-rib-chat/issues/60)) ([31cef0e](https://github.com/danielscholl/keelson-rib-chat/commit/31cef0e5d01666d8b6be7fac6956f89043447843))
+* **surface:** lead ended swarms with their outcome ([#59](https://github.com/danielscholl/keelson-rib-chat/issues/59)) ([a348c1e](https://github.com/danielscholl/keelson-rib-chat/commit/a348c1e3fc8aa6b22db23147fae494c52979b775))
+* **swarm:** record each turn, its cause and its actor ([#61](https://github.com/danielscholl/keelson-rib-chat/issues/61)) ([00c2642](https://github.com/danielscholl/keelson-rib-chat/commit/00c264288b797863c8cd0a1bca4c92014ba1c655))
+
+
+### Documentation
+
+* **design:** add the third Swarms tab iteration ([#58](https://github.com/danielscholl/keelson-rib-chat/issues/58)) ([f78723b](https://github.com/danielscholl/keelson-rib-chat/commit/f78723b26ef02a2c1727af09a5030fe0c33d3a20))
+
 ## [0.11.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.10.0...v0.11.0) (2026-09-23)
 
 
