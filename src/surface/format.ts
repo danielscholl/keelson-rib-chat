@@ -75,3 +75,8 @@ export function span(fromIso: string, toIso: string | undefined): string {
 export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
+
+// An activity line with the swarm's handle prefix dropped, as the board shows agents.
+export function activityText(swarmId: string, text: string): string {
+  return text.replaceAll(`@${swarmId}-`, "@");
+}

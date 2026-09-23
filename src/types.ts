@@ -107,6 +107,11 @@ export interface SwarmAgent {
   status: AgentStatus;
 }
 
+export interface ActivityEntry {
+  at: string;
+  text: string;
+}
+
 // Tokens summed over turns. `input` counts cache writes too; `cached` is cache reads.
 export interface TokenTally {
   input: number;
@@ -222,6 +227,8 @@ export interface SwarmSummary {
   report?: ReportMeta;
   // Every agent's tokens summed; absent when the provider reported none.
   usage?: TokenTally;
+  // The swarm's latest events, oldest first.
+  activity?: readonly ActivityEntry[];
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;
   error?: string;

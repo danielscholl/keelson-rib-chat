@@ -18,6 +18,7 @@ import {
   sizeOf,
 } from "../types.ts";
 import {
+  activityText,
   channelHref,
   day,
   firstLine,
@@ -125,6 +126,8 @@ function statusReason(s: SwarmSummary): Card["reason"] | undefined {
   if (h?.nudges) {
     return { label: "idle", text: `nudged the lead ${h.nudges} of ${s.limits.maxNudges} times` };
   }
+  const last = s.activity?.at(-1);
+  if (last) return { label: hhmm(last.at), text: firstLine(activityText(s.id, last.text), 120) };
   return undefined;
 }
 

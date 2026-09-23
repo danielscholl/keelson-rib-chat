@@ -12,6 +12,7 @@ import { modelLabel, tokenCount, tokensText, tokenTotal } from "../labels.ts";
 import { type Need, needsYou } from "../needs.ts";
 import { type ChildRun, type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
 import {
+  activityText,
   channelHref,
   day,
   firstLine,
@@ -350,6 +351,23 @@ function agentRows(s: SwarmSummary): Row[] {
   });
 }
 
+const RECENT_SHOWN = 8;
+
+function recent(s: SwarmSummary): Leaf[] {
+  const entries = (s.activity ?? []).slice(-RECENT_SHOWN).reverse();
+  if (entries.length === 0) return [];
+  return [
+    {
+      kind: "rows",
+      title: "Recent",
+      items: entries.map((e) => ({
+        text: firstLine(activityText(s.id, e.text), 90),
+        trailing: hhmm(e.at),
+      })),
+    },
+  ];
+}
+
 function reportCard(s: SwarmSummary): Card[] {
   if (!s.report) return [];
   const lead = s.agents.find((a) => a.lead);
@@ -473,6 +491,7 @@ export function buildSwarmBoard(
                 title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`,
                 items: agentRows(s),
               },
+              ...recent(s),
             ],
           },
         ],
