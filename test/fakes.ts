@@ -244,6 +244,9 @@ export interface ScriptTurn {
 
 export type Script = (t: ScriptTurn) => Promise<void>;
 
+// What each scripted turn reports spending, errors included.
+export const TURN_USAGE = { inputTokens: 1_200, outputTokens: 300, cacheReadInputTokens: 800 };
+
 export function scriptedProvider(tools: readonly ToolDefinition[], script: Script) {
   const turns = new Map<string, number>();
   const requests: RibAgentTurnRequest[] = [];
@@ -288,8 +291,9 @@ export function scriptedProvider(tools: readonly ToolDefinition[], script: Scrip
           text: "",
           sessionId: `sess_${agentId}`,
           providerId: req.provider ?? "fake",
+          usage: TURN_USAGE,
         }),
-        (e) => ({ status: "error" as const, text: "", error: String(e) }),
+        (e) => ({ status: "error" as const, text: "", error: String(e), usage: TURN_USAGE }),
       ),
       aborted,
     ]);

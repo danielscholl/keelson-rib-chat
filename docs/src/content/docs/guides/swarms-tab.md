@@ -53,6 +53,8 @@ the plan in the gate thread.
 **Open** shows the swarm's board. It includes:
 
 - the channel, times, size, and model
+- the tokens the swarm spent, as the provider reported them; each agent's row
+  shows its own
 - any problems with ClickClack or the lead's turns
 - the task context
 - open gates

@@ -34,6 +34,7 @@ import { checkReport, reportMeta, type SwarmReport, unwrapReport } from "./repor
 import { mentionedHandles, route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
+  addTokens,
   BODY_MAX,
   type ChatMessage,
   type ChildRun,
@@ -599,6 +600,14 @@ export class Swarm {
 
     if (outcome.sessionId) agent.sessionId = outcome.sessionId;
     if (outcome.providerId) agent.providerId = outcome.providerId;
+    if (outcome.usage) {
+      const u = outcome.usage;
+      agent.usage = addTokens(agent.usage, {
+        input: u.inputTokens + (u.cacheCreationInputTokens ?? 0),
+        output: u.outputTokens,
+        cached: u.cacheReadInputTokens ?? 0,
+      });
+    }
     this.busy--;
     if (agent.status === "busy") agent.status = "idle";
     this.log(`@${agent.handle} turn ${agent.turns} ${outcome.status}`, {
@@ -1149,6 +1158,14 @@ export class Swarm {
     return `@${author.handle}`;
   }
 
+  private usage(): { usage?: SwarmSummary["usage"] } {
+    const tallies = [...this.agents.values()].flatMap((a) => (a.usage ? [a.usage] : []));
+    if (tallies.length === 0) return {};
+    return {
+      usage: tallies.reduce<SwarmSummary["usage"]>((sum, t) => addTokens(sum, t), undefined),
+    };
+  }
+
   roster(): SwarmSummary["agents"] {
     return [...this.agents.values()].map(({ tokenId: _t, sessionId: _s, ...rest }) => rest);
   }
@@ -1280,6 +1297,7 @@ export class Swarm {
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
       ...(health ? { health } : {}),
       agents: this.roster(),
+      ...this.usage(),
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
       ...(this.conclusion !== undefined ? { conclusion: this.conclusion } : {}),

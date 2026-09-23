@@ -73,8 +73,9 @@ conclusions, or `quietSince` when the swarm went idle at an open gate),
 `context` (the item list without bodies), `conclusion`, `draftConclusion`, and
 `error`. `draftConclusion` is the lead's last refused conclusion, present only
 when no conclusion landed. Each agent carries the model it asks for and the
-provider that served its last turn. Without an id, returns a short row per
-swarm, starting swarms first, with its size and model. The last 50 ended swarms
+provider that served its last turn, and the tokens its turns spent, as the
+provider reported them. `usage` sums them for the swarm. Without an id, returns
+a short row per swarm, starting swarms first, with its size, model, and tokens. The last 50 ended swarms
 are kept in the rib's data directory, so they survive a restart.
 
 ### `chat_swarm_wait`

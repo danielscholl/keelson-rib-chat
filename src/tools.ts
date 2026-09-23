@@ -9,7 +9,7 @@
 import { type ToolContext, type ToolDefinition, z } from "@keelson/shared";
 import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
 import { describeRun } from "./dispatch.ts";
-import { modelLabel, sizeText } from "./labels.ts";
+import { modelLabel, sizeText, tokensText } from "./labels.ts";
 import { REPORT_HTML_MAX, REPORT_TITLE_MAX } from "./report.ts";
 import type { Swarm } from "./swarm.ts";
 import {
@@ -570,6 +570,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
                 turnsUsed: s.turnsUsed,
                 size: s.size,
                 model: modelLabel(s),
+                ...(s.usage ? { tokens: tokensText(s.usage) } : {}),
                 task: s.task.slice(0, 120),
               })),
             ],
