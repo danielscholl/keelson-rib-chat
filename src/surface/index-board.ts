@@ -7,16 +7,9 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
-import { modelLabel, sizeText } from "../labels.ts";
+import { modelLabel } from "../labels.ts";
 import { type Need, needsYou, oldestNeed } from "../needs.ts";
-import {
-  SIZE_PRESETS,
-  type StartingSwarm,
-  SWARM_SIZES,
-  type SwarmStatus,
-  type SwarmSummary,
-  sizeOf,
-} from "../types.ts";
+import { type StartingSwarm, type SwarmStatus, type SwarmSummary, sizeOf } from "../types.ts";
 import {
   activityText,
   channelHref,
@@ -24,24 +17,12 @@ import {
   firstLine,
   firstPr,
   hhmm,
-  minutes,
   prLabel,
   shortHandle,
   shortRun,
   span,
 } from "./format.ts";
-
-export interface ServerLine {
-  mode: "managed" | "external";
-  url?: string;
-  running: boolean;
-  pid?: number;
-  adopted?: boolean;
-  operator?: boolean;
-  binary?: string;
-  dataDir?: string;
-  startedAt?: string;
-}
+import { endedOutcome, needReason, openHint, type ServerLine } from "./parts.ts";
 
 export interface SurfaceState {
   live: readonly SwarmSummary[];
@@ -65,52 +46,6 @@ export const STATUS_GLYPH: Record<SwarmStatus, { icon: string; tone: Row["glyph"
   error: { icon: "✕", tone: "error" },
 };
 
-// The hover on Start and the tool's size input share these words.
-export function sizesHint(): string {
-  return SWARM_SIZES.map((k) => `${k}: ${sizeText(SIZE_PRESETS[k])}`).join(" · ");
-}
-
-export function sizeDetail(s: Pick<SwarmSummary, "limits" | "size" | "sizeBase">): string {
-  const l = s.limits;
-  const word = s.size === "custom" ? `custom, from ${s.sizeBase}` : s.size;
-  return `${word}: up to ${l.maxAgents} agents · ${l.maxTurns} turns, ${l.maxTurnsPerAgent} per worker · ${l.maxConcurrent} at once · ${minutes(l.turnTimeoutMs)} min a turn`;
-}
-
-export function needReason(s: SwarmSummary, need: Need): Card["reason"] {
-  const run = need.run;
-  const gate = run?.pendingApproval;
-  if (need.kind === "clickclack") {
-    return {
-      label: "needs you",
-      text: "ClickClack stopped answering: the swarm's socket closed twice without reopening.",
-    };
-  }
-  if (need.kind === "only-you" && run && gate) {
-    return {
-      label: "needs you",
-      text: `${run.workflow} ${shortRun(run.runId)} waits at ${gate.nodeId} since ${hhmm(gate.openedAt)}. This swarm can't answer ${run.workflow} gates: answer it in the Workflows tab.`,
-    };
-  }
-  if (need.kind === "quiet" && run && gate) {
-    return {
-      label: "needs you",
-      text: `No agent has worked since ${hhmm(need.since)} and ${run.workflow} ${shortRun(run.runId)} still waits at ${gate.nodeId}. Reply in the gate thread, steer the lead, or answer it in the Workflows tab.`,
-    };
-  }
-  if (need.kind === "ask" && need.ask) {
-    return {
-      label: "needs you",
-      text: `@${shortHandle(need.ask.handle, s.id)} asked at ${hhmm(need.ask.at)}: ${firstLine(askText(need.ask.text), 160)}`,
-    };
-  }
-  return { label: "needs you", text: `swarm ${s.id} is waiting on you` };
-}
-
-// The question without the @operator that addressed it.
-export function askText(body: string): string {
-  return body.replace(/(^|\s)@operator\b[,:]?\s*/gi, "$1").trim();
-}
-
 // One line on what the swarm is doing, when nothing needs the operator.
 function statusReason(s: SwarmSummary): Card["reason"] | undefined {
   const gated = s.runs?.find((r) => r.status === "paused" && r.pendingApproval);
@@ -129,16 +64,6 @@ function statusReason(s: SwarmSummary): Card["reason"] | undefined {
   const last = s.activity?.at(-1);
   if (last) return { label: hhmm(last.at), text: firstLine(activityText(s.id, last.text), 120) };
   return undefined;
-}
-
-export function openHint(
-  s: Pick<SwarmSummary, "limits" | "size" | "sizeBase"> & {
-    model?: string;
-    workerModel?: string;
-    agents: SwarmSummary["agents"];
-  },
-): string {
-  return `${sizeDetail(s)}. Model: ${modelLabel(s)}.`;
 }
 
 function stopAction(s: SwarmSummary): CanvasActionItem {
@@ -231,12 +156,6 @@ function startingCard(s: StartingSwarm): Card {
       },
     ],
   };
-}
-
-export function endedOutcome(s: SwarmSummary): string {
-  const verified = s.runs?.find((r) => r.verified && r.prUrls.length > 0);
-  if (verified?.prUrls[0]) return `${prLabel(verified.prUrls[0])} verified`;
-  return s.status;
 }
 
 export function endedRow(s: SwarmSummary): Row {

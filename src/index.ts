@@ -16,10 +16,12 @@ import { ManagedServer, realServerDeps } from "./server.ts";
 import { makeServerTools } from "./server-tools.ts";
 import { createSwarmFileStore } from "./store.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
-import type { ServerLine, SurfaceState } from "./surface/index-board.ts";
+import type { SurfaceState } from "./surface/index-board.ts";
 import { INDEX_KEY, LAUNCH_KEY, SERVER_KEY, SURFACE_ID } from "./surface/keys.ts";
 import { type LaunchState, sizesByline } from "./surface/launch-board.ts";
-import { createServerOps, LOG_LINES, type ServerPanelState } from "./surface/server-panel.ts";
+import type { ServerLine } from "./surface/parts.ts";
+import { createServerOps } from "./surface/server-ops.ts";
+import { LOG_LINES, type ServerPanelState } from "./surface/server-panel.ts";
 import { createSwarmsSurface, type SwarmRecord, type SwarmsSurface } from "./surface/surface.ts";
 import {
   type ApprovalRefusals,

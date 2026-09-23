@@ -24,8 +24,8 @@ import {
   span,
   threadHref,
 } from "./format.ts";
-import { askText, endedOutcome, needReason, openHint, sizeDetail } from "./index-board.ts";
 import { runAgainItem } from "./launch-board.ts";
+import { askText, endedOutcome, needReason, openHint, sizeDetail } from "./parts.ts";
 
 type Section = CanvasBoardView["sections"][number];
 type Leaf = Exclude<Section, { kind: "columns" }>;

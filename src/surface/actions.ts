@@ -10,7 +10,6 @@ import type { RibAction, RibActionResult } from "@keelson/shared";
 import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import { BODY_MAX, SWARM_SIZES, type SwarmSize } from "../types.ts";
-import { sizesHint } from "./index-board.ts";
 import {
   docKey,
   HISTORY_KEY,
@@ -20,7 +19,9 @@ import {
   SURFACE_TAB,
   swarmKey,
 } from "./keys.ts";
-import type { ServerOps, ServerVerb } from "./server-panel.ts";
+import { sizesHint } from "./parts.ts";
+import type { ServerOps } from "./server-ops.ts";
+import type { ServerVerb } from "./server-panel.ts";
 import type { SwarmRecord, SwarmsSurface } from "./surface.ts";
 
 export interface ActionDeps {
