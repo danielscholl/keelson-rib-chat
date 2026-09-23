@@ -143,12 +143,13 @@ export class ClickClackClient {
     throw new Error(`ClickClack is not reachable at ${this.baseUrl} (${why})`);
   }
 
-  async me(): Promise<{ id: string; kind: string; displayName: string }> {
+  async me(): Promise<{ id: string; kind: string; displayName: string; handle: string }> {
     const data = await this.request<{ user: RawAuthor }>("/me");
     return {
       id: data.user.id ?? "",
       kind: data.user.kind ?? "human",
       displayName: data.user.display_name ?? "",
+      handle: data.user.handle ?? "",
     };
   }
 

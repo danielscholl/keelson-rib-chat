@@ -23,7 +23,7 @@ import {
   span,
   threadHref,
 } from "./format.ts";
-import { endedOutcome, needReason, openHint, sizeDetail } from "./index-board.ts";
+import { askText, endedOutcome, needReason, openHint, sizeDetail } from "./index-board.ts";
 import { runAgainItem } from "./launch-board.ts";
 
 type Section = CanvasBoardView["sections"][number];
@@ -159,16 +159,39 @@ function gateCard(s: SwarmSummary, run: ChildRun, need: Need | undefined): Card 
   };
 }
 
+function askCard(s: SwarmSummary, need: Need): Card[] {
+  const ask = need.ask;
+  if (!ask) return [];
+  const channel = channelHref(s);
+  return [
+    {
+      title: `@${shortHandle(ask.handle, s.id)} asked you · ${hhmm(ask.at)}`,
+      pill: { label: "needs you", tone: "caution" },
+      fields: [
+        {
+          label: "message",
+          value: `#${s.channelName}`,
+          ...(channel ? { href: channel } : {}),
+        },
+      ],
+      footnote: askText(ask.text),
+      reason: { text: `clears when you post in #${s.channelName} or steer the lead` },
+    },
+  ];
+}
+
 function gateSection(s: SwarmSummary, needs: readonly Need[]): Leaf[] {
+  if (!live(s)) return [];
   const gates = (s.runs ?? []).filter((r) => r.status === "paused" && r.pendingApproval);
-  if (gates.length === 0 || !live(s)) return [];
+  const asks = needs.filter((n) => n.kind === "ask").flatMap((n) => askCard(s, n));
+  if (gates.length === 0 && asks.length === 0) return [];
   const needFor = (run: ChildRun) => needs.find((n) => n.run?.runId === run.runId);
-  const waiting = gates.some((r) => needFor(r));
+  const waiting = asks.length > 0 || gates.some((r) => needFor(r));
   return [
     {
       kind: "cards",
       title: waiting ? "Waiting on you" : "Gate",
-      items: gates.map((r) => gateCard(s, r, needFor(r))),
+      items: [...asks, ...gates.map((r) => gateCard(s, r, needFor(r)))],
     },
   ];
 }

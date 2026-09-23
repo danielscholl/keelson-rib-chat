@@ -219,6 +219,16 @@ export interface SwarmHealth {
   refusedConclusions?: number;
   // When the swarm went idle with a run paused at a gate; the next turn clears it.
   quietSince?: string;
+  // Questions agents put to the operator; the operator's next message clears them.
+  asks?: readonly OperatorAsk[];
+}
+
+export interface OperatorAsk {
+  agentId: string;
+  handle: string;
+  messageId: string;
+  text: string;
+  at: string;
 }
 
 export interface SwarmProject {

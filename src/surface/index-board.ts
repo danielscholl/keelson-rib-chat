@@ -96,7 +96,18 @@ export function needReason(s: SwarmSummary, need: Need): Card["reason"] {
       text: `No agent has worked since ${hhmm(need.since)} and ${run.workflow} ${shortRun(run.runId)} still waits at ${gate.nodeId}. Reply in the gate thread, steer the lead, or answer it in the Workflows tab.`,
     };
   }
+  if (need.kind === "ask" && need.ask) {
+    return {
+      label: "needs you",
+      text: `@${shortHandle(need.ask.handle, s.id)} asked at ${hhmm(need.ask.at)}: ${firstLine(askText(need.ask.text), 160)}`,
+    };
+  }
   return { label: "needs you", text: `swarm ${s.id} is waiting on you` };
+}
+
+// The question without the @operator that addressed it.
+export function askText(body: string): string {
+  return body.replace(/(^|\s)@operator\b[,:]?\s*/gi, "$1").trim();
 }
 
 // One line on what the swarm is doing, when nothing needs the operator.
