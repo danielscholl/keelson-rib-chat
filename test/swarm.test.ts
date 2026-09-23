@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { RibRunStatus } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { needsYou } from "../src/needs.ts";
+import { handleSwarmsAction } from "../src/surface/actions.ts";
 import {
   MAX_TURN_FAILURES,
   Swarm,
@@ -1113,6 +1114,61 @@ describe("health and needs", () => {
     expect(answerers[0]).toBe("swarm");
     expect(refused.has("fix-issue")).toBe(true);
     expect(answerers[1]).toBe("operator");
+  });
+
+  test("the operator's reply lands in the gate thread and wakes the lead there", async () => {
+    const fake = fakeDispatcher();
+    let swarmRef: Swarm | undefined;
+    const prompts: string[] = [];
+    const { start, server } = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId !== "sgate-lead") return;
+        prompts.push(prompt);
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "p" });
+          later(40, () => {
+            fake.set("run_1", {
+              status: "paused",
+              pendingApproval: { nodeId: "approve-plan", prompt: "Approve?" },
+            });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else if (prompt.includes("Keep the retry cap")) {
+          await call("chat_workflow_cancel", { run_id: "run_1" });
+          await call("chat_done", { summary: "ok" });
+        }
+      },
+      {},
+      {
+        id: "sgate",
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    const swarm = swarmRef;
+    const deps = {
+      surface: undefined,
+      find: () => ({ live: swarm.summary() }),
+      live: (id: string) => (id === "sgate" ? swarm : undefined),
+      begin: () => "s0",
+      launchOf: () => undefined,
+    };
+    const reply = (runId: string, note: string) =>
+      handleSwarmsAction({ type: "reply", payload: { id: "sgate", runId, note } }, deps);
+    while (!swarm.summary().runs?.[0]?.pendingApproval?.threadId) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const threadId = swarm.summary().runs?.[0]?.pendingApproval?.threadId;
+    expect((await reply("run_9", "x")).ok).toBe(false);
+    expect((await reply("run_1", "  ")).ok).toBe(false);
+    expect(await reply("run_1", "Keep the retry cap at 30 s.")).toEqual({ ok: true });
+    await swarm.finished;
+    const posted = server.messages.find(
+      (m) => m.body === "**Operator:** Keep the retry cap at 30 s.",
+    );
+    expect(posted?.thread_root_id).toBe(threadId ?? "");
+    expect(prompts.some((p) => p.includes("Keep the retry cap"))).toBe(true);
+    expect((await reply("run_1", "late")).ok).toBe(false);
   });
 
   test("a gate with no respond seam is the operator's", async () => {

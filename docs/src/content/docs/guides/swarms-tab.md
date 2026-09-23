@@ -64,6 +64,10 @@ the plan in the gate thread.
 **Stop swarm** ends the swarm and cancels any live runs after you confirm.
 Steer goes away once the lead concludes, since no new turn would read the note.
 
+A gate card has **Reply in thread**. It posts your note in the gate's thread,
+which wakes every agent working there, such as the lead and the reviewer. Use it
+to review a plan yourself, or to point the reviewer at what to check.
+
 **Open the report** opens the swarm's report: a designed page the lead
 publishes with `chat_report` before it concludes, with the answer first and the
 evidence behind it, and tables, charts, or diagrams where they help. The lead
