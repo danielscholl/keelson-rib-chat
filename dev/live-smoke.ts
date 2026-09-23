@@ -105,12 +105,25 @@ const provider = scriptedProvider(tools, script);
 // Every change the tab would publish must compose a frame the host accepts.
 let frames = 0;
 let badFrame: string | undefined;
+// What the index said along the way: its head, the card's pill, and the card's reason.
+const heads = new Set<string>();
+const pills = new Set<string>();
+let reasons = 0;
 let started: Swarm | undefined;
 const checkFrames = (s: SwarmSummary, live: boolean) => {
+  const index = buildIndex({ live: live ? [s] : [], starting: [], ended: live ? [] : [s] });
   const views: [string, unknown][] = [
-    [INDEX_KEY, buildIndex({ live: live ? [s] : [], starting: [], ended: live ? [] : [s] })],
+    [INDEX_KEY, index],
     [swarmKey(s.id), buildSwarmBoard(s)],
   ];
+  if (index.header?.status) heads.add(index.header.status.label);
+  for (const section of index.sections) {
+    if (section.kind !== "cards") continue;
+    for (const card of section.items) {
+      if (card.pill) pills.add(card.pill.label);
+      if (card.reason) reasons++;
+    }
+  }
   for (const [key, view] of views) {
     try {
       expectView(key, "board")(view);
@@ -164,10 +177,21 @@ console.log(
 
 checkFrames(summary, false);
 console.log(`boards: ${frames} frames valid${badFrame ? `; first invalid: ${badFrame}` : ""}`);
+const endedIndex = JSON.stringify(buildIndex({ live: [], starting: [], ended: [summary] }));
+const indexOk =
+  heads.has("1 live") &&
+  pills.has("running") &&
+  reasons > 0 &&
+  endedIndex.includes(`${summary.id} `) &&
+  endedIndex.includes("done");
+console.log(
+  `index: heads=${[...heads].join("|")} pills=${[...pills].join("|")} reasons=${reasons} ended row=${endedIndex.includes("done")}`,
+);
 
 let ok =
   !badFrame &&
   frames > 0 &&
+  indexOk &&
   summary.status === "done" &&
   mine.length === summary.agents.length &&
   live.length === 0 &&

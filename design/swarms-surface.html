@@ -239,14 +239,14 @@ ul.plain li{margin:3px 0}
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">keelson-rib-chat · swarms surface · design for review</p>
+  <p class="eyebrow">keelson-rib-chat · swarms surface · tiers 1a, 1b and 2 shipped; tier 3 waits on the host</p>
   <h1>A Swarms tab for the chat rib</h1>
   <p class="lead">What the chat rib shows inside Keelson: one tab that says which swarm needs you, what each swarm is doing, and what it produced. The conversation stays in ClickClack.</p>
 
   <div class="problem">
     <p>Today a swarm has no home in Keelson. The rib publishes no surface, and Keelson renders nothing for durable ops, so the only live view is the swarm's ClickClack channel. An operator running three swarms finds the one waiting on a gate, or the one that went quiet, by walking channels one at a time. Only the last 20 ended swarms are kept, in memory, and a restart loses them.</p>
     <p>This change adds one Keelson tab, <b>Swarms</b>. A live index sorts swarm cards by whether they need you. A drawer board per swarm shows its gate, dispatched runs with their evidence, and its agents, with steer and stop. A markdown reading pane shows a conclusion or a gate prompt, and a history drawer reads ended swarms from disk. Each swarm starts with a <b>size</b> (small, medium or large) and a <b>power</b> (fast, balanced or deep), and every card names both along with the model its agents run. Tiers 1 and 2 use only board primitives in <code>@keelson/shared</code> 0.110.0, so they are rib-side only.</p>
-    <p>The tab does not copy the transcript, answer approval gates, or open a run's trace. Every channel, gate thread and ask links out to ClickClack. A gate only you can answer is flagged here and answered in the Workflows tab until Keelson gains an effect that opens an existing run. Power, and hover text on each size and power, wait on small host changes. Five decisions are open at <a href="#decisions">the end of the page</a>.</p>
+    <p>The tab does not copy the transcript, answer approval gates, or open a run's trace. Every channel, gate thread and ask links out to ClickClack. A gate only you can answer is flagged here and answered in the Workflows tab until Keelson gains an effect that opens an existing run. Power, and hover text on each size and power, wait on small host changes. The five decisions it raised are settled; <a href="#decisions">the end of the page</a> records them.</p>
   </div>
 
   <p class="eyebrow" style="margin-top:28px">Colors in the diagrams identify who owns each part</p>
@@ -858,28 +858,29 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
     <h2>Tiers</h2>
     <div class="tblwrap">
       <table class="tbl compact">
-        <thead><tr><th>Tier</th><th>Ships</th><th>Needs</th><th>Done when</th></tr></thead>
+        <thead><tr><th>Tier</th><th>Ships</th><th>Needs</th><th>Done when</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><td class="mono">1a</td><td>Index, swarm drawer, reading pane, history, ClickClack row, Start in Chat, context rows. Size and model on cards and in the drawer; <code>size</code> on <code>chat_swarm_start</code>. Verbs: open, history, read, steer, stop, start in chat. Needs-you N1, N2, N4.</td><td>Rib changes 1 to 7, 9 to 15 (appendix C)</td><td>All boards pass <code>expectView</code>; a fix-issue gate goes in review → answered row; removing the grant raises N1 by the next gate.</td></tr>
-          <tr><td class="mono">1b</td><td>Asks: N3 from <code>@operator</code></td><td>Change 8, after D2</td><td>A question to the operator raises needs-you in managed mode, where the owner has no handle.</td></tr>
-          <tr><td class="mono">2</td><td>Launch tabs with size and model picker · Run again on ended swarms · reply in the gate thread · recent activity rows · ClickClack footer · token counts · copy and explore the conclusion</td><td>Tier 2 changes (appendix C)</td><td>Start folds the header on the first live swarm; a reset completes in the background with its outcome on the footer.</td></tr>
-          <tr><td class="mono">3</td><td>Power on the tool and the form; hover on each size and power; the served model on cards. Open a run from its gate card; a needs-you badge on the tab</td><td>Host changes (appendix D), and rib change T3</td><td>A swarm started at deep power runs gpt-6-astra on Copilot and its card says so; a gate card opens the run drawer with its approval composer.</td></tr>
+          <tr><td class="mono">1a</td><td>Index, swarm drawer, reading pane, history, ClickClack row, Start in Chat, context rows. Size and model on cards and in the drawer; <code>size</code> on <code>chat_swarm_start</code>. Verbs: open, history, read, steer, stop, start in chat. Needs-you N1, N2, N4.</td><td>Rib changes 1 to 7, 9 to 15 (appendix C)</td><td>All boards pass <code>expectView</code>; a fix-issue gate goes in review → answered row; removing the grant raises N1 by the next gate.</td><td>Shipped in 0.7.0.</td></tr>
+          <tr><td class="mono">1b</td><td>Asks: N3 from <code>@operator</code></td><td>Change 8, after D2</td><td>A question to the operator raises needs-you in managed mode, where the owner has no handle.</td><td>Shipped in 0.8.0.</td></tr>
+          <tr><td class="mono">2</td><td>Launch tabs with size and model picker · Run again on ended swarms · reply in the gate thread · recent activity rows · ClickClack footer · token counts · copy and explore the conclusion</td><td>Tier 2 changes (appendix C)</td><td>Start folds the header on the first live swarm; a reset completes in the background with its outcome on the footer.</td><td>Launch tabs, Run again and the footer shipped in 0.7.0; the rest in 0.8.0. Explore the conclusion was dropped: the report page below covers it. The header folds its Discuss tab once a swarm is live; the region itself stays open, since a rib can't fold it.</td></tr>
+          <tr><td class="mono">3</td><td>Power on the tool and the form; hover on each size and power; the served model on cards. Open a run from its gate card; a needs-you badge on the tab</td><td>Host changes (appendix D), and rib change T3</td><td>A swarm started at deep power runs gpt-6-astra on Copilot and its card says so; a gate card opens the run drawer with its approval composer.</td><td>Next: the host changes in D5 order, then the rib.</td></tr>
         </tbody>
       </table>
     </div>
+    <p>Shipped beside the tiers: the lead's report. Before it concludes, the lead publishes a designed page with <code>chat_report</code>, following the rules of Keelson's <code>canvas_publish</code> and the canvas design guide. The drawer opens it with <b>Open the report</b>, and a card shows <b>Report</b> once it exists. The conclusion stays a short summary.</p>
   </section>
 
   <section id="decisions">
-    <h2>Open decisions</h2>
+    <h2>Decisions</h2>
     <div class="tblwrap">
       <table class="tbl compact">
-        <thead><tr><th></th><th>Decision</th><th>Options</th><th>Leaning</th></tr></thead>
+        <thead><tr><th></th><th>Decision</th><th>Options</th><th>Decided</th></tr></thead>
         <tbody>
-          <tr><td class="mono">D1</td><td><b>Answering gates from the tab</b></td><td>(a) No answer buttons. (b) Approve and Request changes through <code>respondToRun</code>, sharing <code>ribApprovalGrants.chat</code> with the lead and subject to policy. (c) Wait for an operator-originated respond in the host.</td><td>(a), and ask the host for an effect that opens the run.</td></tr>
-          <tr><td class="mono">D2</td><td><b>What an open ask does</b></td><td>(a) Detect <code>@operator</code> only; the swarm still stalls after two nudges. (b) An open ask holds the swarm open like a live run, so only the wall clock ends it. (c) No asks.</td><td>(b). An agent that asked a question should not stall out while the question is open.</td></tr>
-          <tr><td class="mono">D3</td><td><b>Where needs-you lives</b></td><td>(a) Index head and card order only. (b) Also a row region above the index, hidden when empty.</td><td>(a). A second region repeats the same fact; the banner slot cannot hide at all.</td></tr>
-          <tr><td class="mono">D4</td><td><b>A start form on the tab</b></td><td>(a) Start in Chat only. (b) Launch tabs: Discuss, Dispatch, In chat.</td><td>(b), in tier 2.</td></tr>
-          <tr><td class="mono">D5</td><td><b>First host change to ask for</b></td><td>(a) An <code>open-run</code> effect. (b) A badge on rib tabs. (c) An operator <code>respondToRun</code>. (d) Model classes and the served model on rib turns.</td><td>(d), then (a). (d) is two small changes to the host's rib turn seam and is the only thing Power waits on; (a) turns the N1 card into one click and reuses the host's run drawer.</td></tr>
+          <tr><td class="mono">D1</td><td><b>Answering gates from the tab</b></td><td>(a) No answer buttons. (b) Approve and Request changes through <code>respondToRun</code>, sharing <code>ribApprovalGrants.chat</code> with the lead and subject to policy. (c) Wait for an operator-originated respond in the host.</td><td>(a). The host's <code>open-run</code> effect is part of tier 3.</td></tr>
+          <tr><td class="mono">D2</td><td><b>What an open ask does</b></td><td>(a) Detect <code>@operator</code> only; the swarm still stalls after two nudges. (b) An open ask holds the swarm open like a live run, so only the wall clock ends it. (c) No asks.</td><td>(b). An agent that asked a question does not stall out while the question is open.</td></tr>
+          <tr><td class="mono">D3</td><td><b>Where needs-you lives</b></td><td>(a) Index head and card order only. (b) Also a row region above the index, hidden when empty.</td><td>(a). A second region would repeat the same fact, and the banner slot cannot hide at all.</td></tr>
+          <tr><td class="mono">D4</td><td><b>A start form on the tab</b></td><td>(a) Start in Chat only. (b) Launch tabs: Discuss, Dispatch, In chat.</td><td>(b), shipped in tier 2.</td></tr>
+          <tr><td class="mono">D5</td><td><b>First host change to ask for</b></td><td>(a) An <code>open-run</code> effect. (b) A badge on rib tabs. (c) An operator <code>respondToRun</code>. (d) Model classes and the served model on rib turns.</td><td>(d), then (a), then option hints and (b). (d) is two small changes to the host's rib turn seam and is the only thing Power waits on; (a) turns the N1 card into one click and reuses the host's run drawer.</td></tr>
         </tbody>
       </table>
     </div>
