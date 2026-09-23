@@ -183,6 +183,17 @@ describe("Swarm", () => {
     expect(board).toContain('"value":"3k","sub":"fresh · 2k cached"');
   });
 
+  test("a rerun names the swarm it repeats", async () => {
+    const { start } = harness(
+      async ({ call }) => {
+        await call("chat_done", { summary: "ok" });
+      },
+      {},
+      { rerunOf: "s0old" },
+    );
+    expect((await (await start()).finished).rerunOf).toBe("s0old");
+  });
+
   test("an idle swarm nudges its lead, then ends as stalled", async () => {
     const { start, logs } = harness(async () => {}, { maxNudges: 2 });
     const summary = await (await start()).finished;

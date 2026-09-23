@@ -14,7 +14,7 @@ import rib from "../src/index.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
-import { hhmm } from "../src/surface/format.ts";
+import { day, dayHeading, gist, hhmm, shortRun } from "../src/surface/format.ts";
 import {
   buildBadge,
   buildHistory,
@@ -380,30 +380,88 @@ describe("Swarms boards", () => {
     expect(view.header).toBeUndefined();
   });
 
-  test("ended rows show eight, newest first, then a row that opens the rest", () => {
+  test("ended rows lead with the outcome, group by day, and keep eight", () => {
+    const now = new Date(T0);
+    const ago = (days: number) => new Date(Date.parse(T0) - days * 86_400_000).toISOString();
     const ended = Array.from({ length: 11 }, (_, i) =>
-      swarm(`s${String(i).padStart(4, "0")}`, { status: "done", endedAt: T0 }),
+      swarm(`s${String(i).padStart(4, "0")}`, {
+        status: "done",
+        endedAt: i < 5 ? ago(7) : i < 8 ? ago(1) : T0,
+        conclusion: "The count is twelve. The README said eleven.",
+      }),
     );
-    const view = buildIndex(state({ ended }));
-    const rows = view.sections.find((s) => s.kind === "rows" && s.title === "Ended");
-    const items = rows?.kind === "rows" ? rows.items : [];
-    expect(items).toHaveLength(9);
-    expect(items[0]).toMatchObject({
-      chip: { label: "done", tone: "ok" },
-      text: "Fix issue #27: README undercounts frontend-mix nodes · s0010",
+    const view = buildIndex(state({ ended }), now);
+    const days = view.sections.filter((x) => x.kind === "rows");
+    expect(days.map((x) => x.title)).toEqual(["Today", "Yesterday", dayHeading(ago(7), now)]);
+    const today = days[0]?.kind === "rows" ? days[0].items : [];
+    expect(today).toHaveLength(3);
+    expect(today[0]).toEqual({
+      icon: "✓",
+      text: "The count is twelve. · for: Fix issue #27: README undercounts frontend-mix nodes",
+      trailing: `gpt-5.6-sol · 11 turns · 0 s · ${hhmm(T0)}`,
+      action: { type: "swarm-open", payload: { id: "s0010" } },
     });
-    expect(items[0]?.trailing?.startsWith("gpt-5.6-sol · 11 turns · ")).toBe(true);
+    const last = days[2]?.kind === "rows" ? days[2].items : [];
+    expect(last.map((r) => r.text.slice(0, 5))).toEqual(["The c", "The c", "3 ear"]);
+    expect(last.at(-1)).toMatchObject({ icon: "…", action: { type: "history-open" } });
+    const history = buildHistory(state({ ended }), now).sections;
+    expect(history.map((x) => (x.kind === "rows" ? x.items.length : 0))).toEqual([3, 3, 5]);
+
     const done = fixtures.done!;
-    expect(endedRow(done, new Date("2026-09-30T12:00:00Z")).trailing).toBe(
-      "gpt-6-astra · workers gpt-5.6-sol · 11 turns · 29 min · Sep 22 · 1 of 1 run verified",
-    );
-    expect(endedRow(done, new Date(done.endedAt!)).trailing).toBe(
+    expect(endedRow(done).trailing).toBe(
       `gpt-6-astra · workers gpt-5.6-sol · 11 turns · 29 min · ${hhmm(done.endedAt)} · 1 of 1 run verified`,
     );
-    expect(items.at(-1)).toMatchObject({
-      text: "3 earlier ended swarms",
-      action: { type: "history-open" },
+  });
+
+  test("an ended row names the report, a rerun, or why it stopped, and stays short", () => {
+    const again = endedRow(
+      swarm("s2rer", {
+        status: "done",
+        endedAt: T0,
+        rerunOf: "s1old",
+        conclusion: "## Summary\n\n**Raise the wait** to 90 s. PR #41 does it.",
+        report: { title: "Cold start timeout fix", at: T0, bytes: 3000 },
+      }),
+    );
+    expect(again.text).toBe(
+      "↻ Cold start timeout fix · for: Fix issue #27: README undercounts frontend-mix nodes",
+    );
+    expect(again.trailing?.endsWith("· ◧ report")).toBe(true);
+    const said = endedRow(
+      swarm("s2say", {
+        status: "done",
+        endedAt: T0,
+        conclusion: "## Summary\n\n**Raise the wait** to 90 s. PR #41 does it.",
+      }),
+    );
+    expect(said.text.startsWith("Raise the wait to 90 s. · for: ")).toBe(true);
+    const stopped = endedRow(
+      swarm("s2stp", { status: "stopped", endedAt: T0, error: "stopped from the Swarms tab" }),
+    );
+    expect(stopped).toMatchObject({
+      chip: { label: "stopped", tone: "neutral" },
+      text: "Stopped by you · for: Fix issue #27: README undercounts frontend-mix nodes",
     });
+    expect(stopped.icon).toBeUndefined();
+    const long = endedRow(
+      swarm("s2lng", {
+        status: "done",
+        endedAt: T0,
+        task: "word ".repeat(80),
+        conclusion: `${"long ".repeat(40)}end.`,
+      }),
+    );
+    expect(long.text.length).toBeLessThanOrEqual(90);
+    expect(gist("Linking dominates the build, and disabled caching makes every run pay.", 60)).toBe(
+      "Linking dominates the build, and disabled caching makes…",
+    );
+  });
+
+  test("day headings read today, yesterday, then the weekday and date", () => {
+    const now = new Date(2026, 8, 22, 9, 0);
+    expect(dayHeading(new Date(2026, 8, 22, 0, 5).toISOString(), now)).toBe("Today");
+    expect(dayHeading(new Date(2026, 8, 21, 23, 55).toISOString(), now)).toBe("Yesterday");
+    expect(dayHeading(new Date(2026, 8, 15, 12, 0).toISOString(), now)).toBe("Tue Sep 15");
   });
 
   test("the drawer spells out the size and names the models per role", () => {
@@ -420,7 +478,7 @@ describe("Swarms boards", () => {
     expect(text).not.toContain('"type":"steer"');
     expect(text).toContain('"label":"Runs verified","value":"1 of 1","tone":"ok"');
     expect(JSON.stringify(buildIndex(state({ ended: [fixtures.done!] })))).toContain(
-      "· Sep 22 · 1 of 1 run verified",
+      `· ${hhmm(fixtures.done!.endedAt)} · 1 of 1 run verified`,
     );
   });
 
@@ -571,11 +629,11 @@ ${"detail ".repeat(1000)}`,
     expect(rows[0]?.trailing).toBe("first 4,000 of 7,014 characters");
     expect(rows[1]).toMatchObject({
       text: "issue: README count",
-      trailing: "retrieved Sep 22 13:00 · first 4,000 of 5,000 chars",
+      trailing: "issue-27 · retrieved Sep 22 13:00 · first 4,000 of 5,000 chars",
     });
     expect(rows[1]?.detail?.length).toBe(4000);
     expect(rows[1]?.href).toBeUndefined();
-    expect(rows[2]).toMatchObject({ trailing: "12 chars", detail: "twelve chars" });
+    expect(rows[2]).toMatchObject({ trailing: "note-1 · 12 chars", detail: "twelve chars" });
     board(swarmKey("s8ctx"), buildSwarmBoard(s));
     expect(buildDoc(s, "s8ctx")).toContain("## issue: README count");
   });
@@ -614,6 +672,8 @@ ${"detail ".repeat(1000)}`,
         status: "done",
         endedAt: T0,
         task: "t".repeat(8000),
+        conclusion: "c".repeat(20_000),
+        report: { title: "r".repeat(200), at: T0, bytes: 512_000 },
       }),
     );
     const live = Array.from({ length: 6 }, (_, i) => ({ ...big, id: `s9bi${i}` }));
@@ -626,7 +686,7 @@ ${"detail ".repeat(1000)}`,
   });
 });
 
-describe("the record", () => {
+describe("the details", () => {
   const rowsTitled = (view: ReturnType<typeof buildSwarmBoard>, title: string) => {
     const section = view.sections.find((x) => x.kind === "rows" && x.title === title);
     return section?.kind === "rows" ? section.items : [];
@@ -650,6 +710,106 @@ describe("the record", () => {
     expect(doc).toContain("- 14:00 event 0\n");
     const short = buildSwarmBoard(swarm("s7few", { activity: [{ at: T0, text: "one" }] }));
     expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
+  });
+
+  test("one outcome card holds the report, the conclusion and the channel", () => {
+    const s = swarm("s8out", {
+      status: "done",
+      endedAt: T0,
+      conclusion: "The count is twelve.",
+      report: { title: "README count", at: T0, bytes: 3072 },
+    });
+    const view = buildSwarmBoard(s);
+    board(swarmKey(s.id), view);
+    const outcome = view.sections.find((x) => x.kind === "cards" && x.title === "Outcome");
+    const cards = outcome?.kind === "cards" ? outcome.items : [];
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      title: "README count",
+      pill: { label: "report", tone: "brand" },
+      footnote: `by @lead · ${day(T0)} ${hhmm(T0)} · 20 characters · report 3 KB`,
+      fields: [
+        { value: "The count is twelve." },
+        {
+          value: "↗ #swarm-s8out in ClickClack",
+          href: "http://127.0.0.1:18080/app/ws_1/ch_s8out",
+        },
+      ],
+    });
+    expect(cards[0]?.actions?.map((a) => a.label)).toEqual([
+      "Open the report",
+      "Read the conclusion",
+    ]);
+    const plainCard = buildSwarmBoard({ ...s, report: undefined }).sections.find(
+      (x) => x.kind === "cards" && x.title === "Outcome",
+    );
+    const only = plainCard?.kind === "cards" ? plainCard.items[0] : undefined;
+    expect(only?.title).toBe("Conclusion");
+    expect(only?.pill).toBeUndefined();
+    expect(only?.actions?.map((a) => a.label)).toEqual(["Read the conclusion"]);
+  });
+
+  test("run rows name the branch, every PR, how long, and why a run failed", () => {
+    const s = swarm("s8run", {
+      status: "done",
+      endedAt: T0,
+      runs: [
+        run("ra", {
+          status: "succeeded",
+          prUrls: ["https://github.com/o/r/pull/41", "https://github.com/o/r/pull/42"],
+          ci: { verdict: "pass" },
+          verified: true,
+          completedAt: "2026-09-22T14:07:00.000Z",
+        }),
+        run("rb", {
+          status: "failed",
+          isolated: false,
+          error: "node build failed: tsc exited 2\nsrc/a.ts(1,1): error TS1005",
+          ci: { verdict: "fail", detail: "2 checks failed" },
+          completedAt: "2026-09-22T14:03:00.000Z",
+        }),
+      ],
+    });
+    const rows = rowsTitled(buildSwarmBoard(s), "Runs");
+    expect(rows[0]).toMatchObject({
+      text: "fix-issue Fix issue #27: README undercounts frontend-mix nodes · keelson/ra",
+      trailing: "PR #41, #42 · 7 min · verified",
+      href: "https://github.com/o/r/pull/41",
+    });
+    expect(rows[1]).toMatchObject({
+      text: "fix-issue Fix issue #27: README undercounts frontend-mix nodes · keelson/rb · live checkout · node build failed: tsc exited 2",
+      trailing: "3 min · failed",
+    });
+    const doc = buildDoc(s, s.id);
+    expect(doc).toContain(`### fix-issue · ${shortRun("rb0000-1111-2222")} · failed`);
+    expect(doc).toContain("[PR #42](https://github.com/o/r/pull/42)");
+    expect(doc).toContain("src/a.ts(1,1): error TS1005");
+    expect(doc).toContain("CI: 2 checks failed");
+  });
+
+  test("spend bars each agent's fresh tokens against the swarm's", () => {
+    const s = swarm("s8spd", {
+      agents: [
+        agent("s8spd", 0, { usage: { input: 3000, output: 1000, cached: 9000 } }),
+        agent("s8spd", 1, { usage: { input: 900, output: 100, cached: 0 } }),
+        agent("s8spd", 2),
+      ],
+    });
+    const view = buildSwarmBoard(s);
+    board(swarmKey(s.id), view);
+    expect(view.sections.find((x) => x.kind === "bars")).toEqual({
+      kind: "bars",
+      title: "Spend",
+      inline: true,
+      items: [
+        { label: "lead", value: 4000, total: 5000, trailing: "4k · 80%" },
+        { label: "w1", value: 1000, total: 5000, trailing: "1k · 20%" },
+      ],
+    });
+    const one = swarm("s8one", {
+      agents: [agent("s8one", 0, { usage: { input: 10, output: 1, cached: 0 } })],
+    });
+    expect(buildSwarmBoard(one).sections.some((x) => x.kind === "bars")).toBe(false);
   });
 
   test("an answered approval names its reviewer and discloses the reason", () => {
@@ -836,6 +996,7 @@ describe("publishing", () => {
 });
 
 const begun: StartSwarmInput[] = [];
+const origins: ({ rerunOf?: string } | undefined)[] = [];
 const oldLaunch: StartSwarmInput = {
   task: "Fix issue #27",
   workTools: "read",
@@ -859,9 +1020,10 @@ const actionDeps = {
         ? { ended: fixtures.done as SwarmSummary }
         : {},
   live: (id: string) => (id === "s9hjx" ? (liveSwarm as unknown as Swarm) : undefined),
-  begin: (input: StartSwarmInput) => {
+  begin: (input: StartSwarmInput, origin?: { rerunOf?: string }) => {
     if (input.task === "refuse") throw new Error("no registered project 'nope'");
     begun.push(input);
+    origins.push(origin);
     return "s0new1";
   },
   launchOf: (id: string): StartSwarmInput | undefined => (id === "s8pln" ? oldLaunch : undefined),
@@ -1184,6 +1346,7 @@ describe("start and run again", () => {
       key: swarmKey("s0new1"),
     });
     expect(begun[0]).toEqual({ ...oldLaunch, size: "large", power: "balanced" });
+    expect(origins.at(-1)).toEqual({ rerunOf: "s8pln" });
     begun.length = 0;
     await act("run-again", {
       id: "s8pln",

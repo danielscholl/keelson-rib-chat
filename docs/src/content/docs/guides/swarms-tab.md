@@ -48,11 +48,21 @@ A running card leads with the task and the id, then:
 
 Hover **Open swarm** to see the size's numbers and the model.
 
-Ended swarms are rows: the lifecycle word (done, stopped, stalled, out of
-budget, failed), the task with the id at its end, then the model that served
-it, the turns, how long it ran, when it ended (the time for today, the date
-before that), how many of its runs verified, and ◧ when a report exists. The index shows the latest eight, and the last row opens the rest. The
-rib keeps the last 50 in its data directory, so they survive a restart.
+Ended swarms are rows grouped under the day they ended: **Today**,
+**Yesterday**, then the weekday and date. A row leads with what came of the
+swarm, then **for:** and the task:
+
+- the report's title, when the lead published one
+- else the conclusion's first sentence
+- else why it ended: **Stopped by you**, **Out of turns at 40**, **Failed: …**
+
+A done row carries a check; stopped, stalled, out of budget and failed rows
+carry a chip, so the ones that did not finish stand out. ↻ marks a swarm
+started with **Run again**. The trailing names the model that served it, the
+turns, how long it ran, when it ended, how many of its runs verified, and
+**◧ report** when a report exists. The index shows the latest eight, and the
+last row opens the rest in the same day groups. The rib keeps the last 50 in
+its data directory, so they survive a restart.
 
 An empty tab shows the three steps: start a swarm above, agents talk in
 `#swarm-<id>`, the lead concludes here.
@@ -95,24 +105,35 @@ Live, the board runs in this order:
   **Sending…** until the note is posted, the toast says where it went, and
   the note shows at once under Activity as **you posted in #swarm-<id>: …**
 
-Ended, it runs: the outcome (the report, the conclusion with **Read in full**,
-or the cause, such as **Stopped by you at 21:50**, **Out of turns at 40** or
-**Failed: …**), the result strip with how many runs verified, and **Run again**.
+Ended, it runs: the outcome, the result strip with how many runs verified, and
+**Run again**.
 
-The record follows in both and reads the same:
+The outcome is one card. When the lead published a report, the card carries
+its title, the conclusion with a copy button, **Open the report** and **Read
+the conclusion**, the channel in ClickClack, and a footnote with who concluded,
+when, the conclusion's length and the report's size. Without a report the card
+is titled **Conclusion**. A swarm that did not conclude shows its cause
+instead, such as **Stopped by you at 21:50**, **Out of turns at 40** or
+**Failed: …**.
+
+The details follow in both and read the same:
 
 - **Agents**: a bench with one card per agent, its handle in its identity
   color, a status pill while live (**busy**, **waiting** when it has messages
   and no free slot, **idle**, **capped**, **failed**), its turns against the
   per-worker cap, its role and its tokens; open seats up to the swarm's cap show
   as dashed ghosts
-- **Runs**, only when the launch named workflows: each run with its worktree,
-  PR and CI strip and its steps done; clicking a run opens it beside the tab.
+- **Spend**, once two agents have spent: a bar per agent, its fresh tokens
+  against the swarm's, with the count and share beside it
+- **Runs**, only when the launch named workflows: each run with its purpose,
+  its branch, every pull request it opened, how long it took, and for a failed
+  or cancelled run the start of its error, then its worktree, PR and CI strip;
+  clicking a run opens it beside the tab.
   Each approval the swarm answered sits under its run with the reviewer, a link
   to the review, and the reason under a disclosure. It says which workflows the
   lead may start while none has
 - **Task and context**: the task in full under a disclosure, and each context
-  item with its retrieval time, commit and text under its own
+  item with its id, retrieval time, commit and text under its own
 - **Activity**: the last twelve events, newest first, with repeats counted,
   then **Read the full log**, which opens the last 200 in the reading pane
 - **About**: the channel, the times, the size's limits, the model per role, the
@@ -130,13 +151,14 @@ evidence behind it, and tables, charts, or diagrams where they help. The lead
 reads Keelson's canvas design guide first, and the page follows the same rules
 as Keelson's canvas artifacts, so it matches the app's theme in light and dark.
 A card shows **Report** once the page exists, even while the swarm is still
-running, and an ended row marks it with ◧. The lead skips the report when the
+running, and an ended row marks it with **◧ report**. The lead skips the report when the
 whole answer fits in a sentence or two.
 
-**Read in full** and **Read question** open the reading pane. It shows the
-conclusion, a refused draft, each open question with a link to its thread, or an
-open approval's prompt and the files it names, such as the plan, with
-formatting, then the task in full and each context item's text. The copy button
+**Read the conclusion** and **Read question** open the reading pane. It shows
+the conclusion, a refused draft, each open question with a link to its thread,
+or an open approval's prompt and the files it names, such as the plan, with
+formatting, then the task in full, each context item's text, and each run with
+its pull requests, full error and CI detail. The copy button
 beside the conclusion copies all of it, not just the preview on the board.
 
 ## Starting a swarm

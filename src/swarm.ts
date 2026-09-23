@@ -131,6 +131,8 @@ export interface SwarmOptions {
   quiesceMs?: number;
   reconnectMs?: number;
   id?: string;
+  // The ended swarm this one reruns.
+  rerunOf?: string;
 }
 
 // Thrown by Swarm.start when boot fails, carrying the ended summary so the
@@ -1458,6 +1460,7 @@ export class Swarm {
         ? { draftConclusion: this.draftConclusion }
         : {}),
       ...(this.error ? { error: this.error } : {}),
+      ...(this.opts.rerunOf ? { rerunOf: this.opts.rerunOf } : {}),
     };
   }
 

@@ -402,6 +402,7 @@ function failedStart(record: StartingSwarm, error: string): SwarmSummary {
     ...(record.opId ? { opId: record.opId } : {}),
     agents: [],
     error,
+    ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),
   };
 }
 
@@ -458,7 +459,10 @@ type Booted = { swarm: Swarm; opId?: string; url: string };
 
 // Checks and admits a start, then boots it in the background. A refusal throws
 // here, before the swarm has an id; a failure after that is an ended error row.
-function beginSwarm(input: StartSwarmInput): { id: string; booted: Promise<Booted> } {
+function beginSwarm(
+  input: StartSwarmInput,
+  origin: { rerunOf?: string } = {},
+): { id: string; booted: Promise<Booted> } {
   const launch = prepare(input);
   const sizeBase = input.size ?? "medium";
   const record: StartingSwarm = {
@@ -472,6 +476,7 @@ function beginSwarm(input: StartSwarmInput): { id: string; booted: Promise<Boote
     ...(input.workerModel ? { workerModel: input.workerModel } : {}),
     power: input.power ?? "balanced",
     ...(launch.project ? { project: launch.project } : {}),
+    ...(origin.rerunOf ? { rerunOf: origin.rerunOf } : {}),
   };
   starting.set(record.id, record);
   launches.save(record.id, input);
@@ -544,6 +549,7 @@ async function launchSwarm(
       ...(input.model ? { model: input.model } : {}),
       ...(input.workerModel ? { workerModel: input.workerModel } : {}),
       ...(record.power ? { power: record.power } : {}),
+      ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),
       ...(dispatcher && input.workflows
         ? { dispatch: { grants: input.workflows, dispatcher } }
         : {}),
@@ -614,8 +620,8 @@ const rib: Rib = {
       surface,
       find: findSwarm,
       live: (id) => swarms.get(id),
-      begin: (input) => {
-        const { id, booted } = beginSwarm(input);
+      begin: (input, origin) => {
+        const { id, booted } = beginSwarm(input, origin);
         booted.catch(() => undefined);
         return id;
       },

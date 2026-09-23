@@ -361,8 +361,13 @@ that asks something leads with the request as its title (Review the plan for
 …) and its verb as the first button (Review plan, Read question, Open swarm,
 Message the lead); the task drops to the footnote. A running card leads with
 what the swarm is doing this minute, then a named turn-budget meter. Ended
-swarms are rows: the lifecycle word, the task and id, then the model, turns,
-time, when it ended and how many runs verified.
+swarms are rows grouped under the day they ended (Today, Yesterday, then the
+weekday and date), the newest eight on the tab and every one in the history
+drawer. A row leads with what came of the swarm: the report's title, the
+conclusion's first sentence, or why it ended (Stopped by you, Out of turns at
+40), then · for: and the task. A done row carries a check and the rest a
+lifecycle chip; ↻ marks a rerun. The trailing names the model, turns, time,
+the clock when it ended, how many runs verified, and ◧ report.
 
 Requests come in a ladder: decide (a run waits at an approval only the operator
 can answer, because the host refused the workflow under \`ribApprovalGrants\`
@@ -375,15 +380,21 @@ reviewing and counted nowhere.
 
 Open swarm shows the board. Live, it runs: the requests, the outcome once a
 report exists, a budget strip (turns with what is left, time, agents, fresh
-tokens with cached beside them), Message the lead and Stop, then the record.
-Ended, it runs: the outcome (the report, the conclusion, or the cause, such as
-Stopped by you at 21:50 or Out of turns at 40), the result strip, Run again,
-then the record. The record is the same in both: the agents as a bench with an
-open seat per unfilled slot and a waiting pill on agents with messages and no
-slot, the runs (only when the launch named workflows), the task and each
-context item with its text under a disclosure, the activity with repeats
-counted (the last 200 events are in the reading pane), and About. A note posted
-with Message the lead shows in the activity at once.
+tokens with cached beside them), Message the lead and Stop, then the details.
+Ended, it runs: the outcome, the result strip, Run again, then the details.
+The outcome is one card: under the report's title when the lead published one
+(else Conclusion), the conclusion with a copy button, Open the report, Read the
+conclusion, and the channel in ClickClack; a swarm that did not conclude shows
+its cause instead, such as Stopped by you at 21:50 or Out of turns at 40. The
+details are the same in both: the agents as a bench with an open seat per
+unfilled slot and a waiting pill on agents with messages and no slot, Spend
+(each agent's fresh tokens against the swarm's, once two agents have spent),
+the runs (only when the launch named workflows; each names its branch, every
+pull request, how long it took, and why it failed), the task and each context
+item by id with its text under a disclosure, the activity with repeats counted
+(the last 200 events are in the reading pane, with each run's full error and
+CI detail), and About. A note posted with Message the lead shows in the
+activity at once.
 
 The Start a swarm header is one form. Workflows named means the lead may
 dispatch them; none named means the swarm investigates. A task that names a

@@ -357,8 +357,8 @@ export function stopAction(s: SwarmSummary, inline = false): CanvasActionItem {
 }
 
 // The cause an ended swarm names in its outcome card's title.
-export function causeTitle(s: SwarmSummary): string {
-  const at = s.endedAt ? ` at ${hhmm(s.endedAt)}` : "";
+export function causeTitle(s: SwarmSummary, withTime = true): string {
+  const at = withTime && s.endedAt ? ` at ${hhmm(s.endedAt)}` : "";
   const why = s.error ?? "";
   switch (s.status) {
     case "stopped":

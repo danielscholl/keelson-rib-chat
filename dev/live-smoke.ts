@@ -184,10 +184,9 @@ const indexOk =
   heads.has("1 live") &&
   pills.has("running") &&
   meters > 0 &&
-  endedIndex.includes(` · ${summary.id}","trailing":"`) &&
-  endedIndex.includes('"label":"done"');
+  endedIndex.includes('"icon":"✓","text":"Linking dominates the build');
 console.log(
-  `index: heads=${[...heads].join("|")} pills=${[...pills].join("|")} meters=${meters} ended row=${endedIndex.includes('"label":"done"')}`,
+  `index: heads=${[...heads].join("|")} pills=${[...pills].join("|")} meters=${meters} ended row=${endedIndex.match(/"text":"([^"]*)"/)?.[1]}`,
 );
 
 // ---- Scene two: a peer reviews one approval, and only the operator can answer the next. ----

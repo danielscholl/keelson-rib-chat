@@ -30,7 +30,7 @@ export interface ActionDeps {
   find: (id: string) => SwarmRecord;
   live: (id: string) => Swarm | undefined;
   // Admits a start and boots it in the background; a refusal throws.
-  begin: (input: StartSwarmInput) => string;
+  begin: (input: StartSwarmInput, origin?: { rerunOf?: string }) => string;
   launchOf: (id: string) => StartSwarmInput | undefined;
   server?: ServerOps;
   hasReport?: (id: string) => boolean;
@@ -135,10 +135,11 @@ function started(
   deps: ActionDeps,
   input: StartSwarmInput,
   open: "index" | "drawer",
+  origin?: { rerunOf?: string },
 ): RibActionResult {
   let id: string;
   try {
-    id = deps.begin(input);
+    id = deps.begin(input, origin);
     deps.surface?.track([id]);
   } catch (e) {
     return fail(errText(e));
@@ -285,7 +286,7 @@ export async function handleSwarmsAction(
       const record = id ? deps.find(id) : {};
       const old = id ? deps.launchOf(id) : undefined;
       if (!id || !record.ended || !old) return fail(`swarm '${String(raw)}' can't run again`);
-      return started(deps, againInput(old, payload, record.ended), "drawer");
+      return started(deps, againInput(old, payload, record.ended), "drawer", { rerunOf: id });
     }
     case "copy-conclusion": {
       const record = id ? deps.find(id) : {};
