@@ -100,7 +100,7 @@ export function systemPrompt(opts: {
     "- chat_read re-reads the channel or one thread. chat_roster lists the agents, their roles, and their turns.",
     `- chat_spawn adds an agent for a line of work that deserves its own context. The swarm holds at most ${limits.maxAgents} agents.`,
     "- A human may post in the channel at any time. Treat it as direction from the operator.",
-    "- To ask the operator something only they can decide, @mention @operator. The swarm waits for their answer, so ask only when you cannot go on without it, and ask everything in one message.",
+    '- To ask the operator something only they can decide, start the message with @operator. The swarm waits for their answer, so ask only when you cannot go on without it, and ask everything in one message. When you only mention them, write "the operator" without the @.',
     ...dispatch,
     "",
     "Working norms:",

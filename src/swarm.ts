@@ -31,7 +31,7 @@ import {
 } from "./dispatch.ts";
 import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
 import { checkReport, reportMeta, type SwarmReport, unwrapReport } from "./report.ts";
-import { mentionedHandles, route } from "./router.ts";
+import { addressedHandles, mentionedHandles, route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
   type ActivityEntry,
@@ -826,9 +826,10 @@ export class Swarm {
   }
 
   // An agent's message addressed to @operator, or the owner's own handle, is a
-  // question the swarm waits on until the operator next writes.
+  // question the swarm waits on until the operator next writes. A passing
+  // mention ("I'll present both to @operator") is not.
   private noteAsk(agent: SwarmAgent, message: ChatMessage): void {
-    const handles = mentionedHandles(message.body);
+    const handles = addressedHandles(message.body);
     const asked =
       handles.includes("operator") ||
       (this.ownerHandle !== "" && handles.includes(this.ownerHandle));
