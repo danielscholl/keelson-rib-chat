@@ -38,6 +38,7 @@ durable ops, a run id.
 | `model` | string | the power's model | Every agent, or the lead alone when `worker_model` is set. |
 | `worker_model` | string | `model` | Workers only. |
 | `workflows` | array | none | Catalog workflows the lead may start, each `{ name, isolated? }`, at most 10. `isolated` defaults to `true`. Needs `project`. See [Dispatch workflows](../../guides/dispatch-workflows/). |
+| `lead_tools` | string[] | none | Other ribs' tools the lead holds, such as `beads_ready` or `beads_close`, at most 20. Each needs the operator's `crossRibGrants` entry for the chat rib; one without it is dropped from the lead's turns. |
 
 Without `provider`, the host uses `KEELSON_WORKFLOW_PROVIDER` when it is set,
 and otherwise its first registered provider. Without `model`, that provider
@@ -103,6 +104,19 @@ poll `chat_swarm_status`.
 
 Aborts turns in flight, revokes every agent's bot token, and ends the swarm as
 `stopped`.
+
+### `chat_swarm_forget`
+
+| Input | Type | Default | Notes |
+|---|---|---|---|
+| `swarm` | string | none | One ended swarm's id. |
+| `older_than_days` | number | none | Every ended swarm that ended more than this many days ago. `0` forgets every ended swarm. |
+| `confirm` | boolean | false | Without it, the tool reports what it would forget. |
+
+Pass exactly one of `swarm` or `older_than_days`. Drops the swarms from the
+Swarms tab, `chat_swarm_status`, and the rib's history, with their launches and
+reports. A live swarm is refused. Each channel's transcript stays in ClickClack;
+`chat_server_reset` wipes those too.
 
 ### `chat_swarm_transcript`
 

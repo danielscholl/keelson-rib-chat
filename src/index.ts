@@ -336,6 +336,13 @@ function launchState(): LaunchState {
   };
 }
 
+function forget(ids: readonly string[]): void {
+  for (const id of ids) ended.delete(id);
+  pruneLaunches();
+  persistHistory();
+  surface?.forget(ids);
+}
+
 function clearEnded(): void {
   ended.clear();
   launches.clear();
@@ -552,6 +559,7 @@ async function launchSwarm(
       ...(input.workerModel ? { workerModel: input.workerModel } : {}),
       ...(record.power ? { power: record.power } : {}),
       ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),
+      ...(input.leadTools?.length ? { leadTools: input.leadTools } : {}),
       ...(dispatcher && input.workflows
         ? { dispatch: { grants: input.workflows, dispatcher } }
         : {}),
@@ -674,7 +682,7 @@ const rib: Rib = {
       void refreshServer();
     }
     return [
-      ...makeChatTools({ swarms, starting, ended, startSwarm, readChannel }),
+      ...makeChatTools({ swarms, starting, ended, startSwarm, readChannel, forget }),
       ...makeServerTools({
         target,
         liveCount: () => swarms.size + starting.size,

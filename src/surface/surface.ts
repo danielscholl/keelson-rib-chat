@@ -69,6 +69,8 @@ export interface SwarmsSurface {
   // Recompose the index and history, for a change no swarm reports: the server
   // row, or history cleared by a reset.
   refresh(): void;
+  // Release forgotten swarms' keys and recompose the index and history.
+  forget(ids: readonly string[]): void;
   // Reads the server log afresh for the log pane.
   logOpened(): void;
   dispose(): void;
@@ -323,6 +325,14 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
         server.schedule();
         launch.schedule();
       }
+    },
+    forget(ids) {
+      for (const id of ids) release(id);
+      deps.invalidateManifest?.();
+      index.schedule();
+      badge.schedule();
+      history.schedule();
+      launch.schedule();
     },
     refresh() {
       index.schedule();

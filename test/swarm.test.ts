@@ -723,6 +723,31 @@ describe("Workflow dispatch", () => {
     expect(charter).toContain("You cannot answer it");
   });
 
+  test("only the lead holds the other ribs' tools it was given, and its charter names them", async () => {
+    const { start, provider } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_spawn", { handle: "helper", role: "Helps", brief: "Say hi." });
+          return;
+        }
+        await call("chat_done", { summary: "ok" });
+      },
+      {},
+      { leadTools: ["beads_ready", "beads_close"] },
+    );
+    const summary = await (await start()).finished;
+    const toolsOf = (id: string) =>
+      provider.requests.find((r) => r.turnContext?.agentId === id)?.tools?.map((t) => t.name) ?? [];
+    expect(toolsOf("s1-lead")).toEqual(expect.arrayContaining(["beads_ready", "beads_close"]));
+    expect(toolsOf("s1-helper")).toContain("chat_reply");
+    expect(toolsOf("s1-helper")).not.toContain("beads_ready");
+    const charter =
+      provider.requests.find((r) => r.turnContext?.agentId === "s1-lead")?.system ?? "";
+    expect(charter).toContain("beads_ready, beads_close come from other Keelson ribs");
+    expect(summary.leadTools).toEqual(["beads_ready", "beads_close"]);
+  });
+
   test("a worker reviews the gate's plan and the lead answers it for the operator", async () => {
     const fake = fakeDispatcher({ answers: true });
     let swarmRef: Swarm | undefined;

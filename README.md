@@ -52,6 +52,7 @@ From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swa
 | `chat_swarm_status` | One swarm's agents, turns, status, and conclusion, or a list of all. |
 | `chat_swarm_wait` | Block until a swarm ends. For workflows. |
 | `chat_swarm_stop` | Stop a swarm and revoke its credentials. |
+| `chat_swarm_forget` | Drop ended swarms from the tab and history, by id or age. Transcripts stay in ClickClack. |
 | `chat_swarm_transcript` | Read a swarm's channel, running or ended, with thread replies in order. |
 | `chat_server_status` | Whether the server is managed or external, its URL, and whether it is running. |
 | `chat_server_start` | Start the managed server ahead of a swarm. Returns the web UI address. |
@@ -67,6 +68,10 @@ Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_context`
 ## Workflow dispatch
 
 Agents never edit files themselves. A swarm started with a `project` and `workflows` lets its lead start those Keelson workflows on the project, such as `fix-issue`, through `chat_workflow_start`, `chat_workflow_status`, and `chat_workflow_cancel`. Each run edits, commits, and opens its pull request in its own worktree, and a run the rib finds in the live checkout is cancelled. Run updates wake the lead. When a run pauses at an approval gate, the rib posts the gate's prompt and plan in a thread, another agent reviews it, and the lead answers it for the operator with `chat_workflow_respond`, citing that review. The summary's `runs` records each run's branch, pull requests, CI verdict, the gates the swarm answered, and whether it is verified. Keelson must also grant the rib each workflow under `ribWorkflowGrants` in `config.json`, and each workflow whose gates the swarm may answer under `ribApprovalGrants`; without that, approvals wait for the operator.
+
+## Other ribs' tools
+
+`lead_tools` hands the lead tools that other ribs register, such as the beads rib's `beads_ready`, `beads_show`, and `beads_close`, so a swarm that works a backlog can read the live queue and close a bead once its pull request merges. Keelson projects a tool onto the lead's turns only when `config.json` grants it to the chat rib under `crossRibGrants` (`"chat": { "beads": ["beads_ready", "beads_close"] }`). Workers never hold them.
 
 ## Task context
 

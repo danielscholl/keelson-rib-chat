@@ -48,6 +48,8 @@ export interface StartSwarmInput {
   workerModel?: string;
   power?: SwarmPower;
   workflows?: DispatchGrant[];
+  // Other ribs' tools the lead holds, each cleared by the operator's crossRibGrants.
+  leadTools?: string[];
 }
 
 export interface ToolDeps {
@@ -61,9 +63,13 @@ export interface ToolDeps {
   // Reads a swarm's channel as the owner, ended swarms included. Absent in tests
   // that never read a transcript.
   readChannel?: (channelId: string, threadId?: string) => Promise<ChatMessage[]>;
+  // Drops ended swarms from history, with their launches and reports. Absent in
+  // tests that never forget one.
+  forget?: (ids: readonly string[]) => void;
 }
 
 export const START_BOUNDS = {
+  maxLeadTools: 20,
   maxAgents: 12,
   maxTurns: 200,
   maxTurnsPerAgent: 100,
@@ -252,6 +258,18 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .describe(
           "Workflows the lead may start on the project, which must be set. Each also needs the operator's ribWorkflowGrants entry for the chat rib.",
         ),
+      lead_tools: z
+        .array(
+          z
+            .string()
+            .regex(/^[a-z][a-z0-9_]{1,63}$/, "a tool name such as beads_ready")
+            .refine((n) => !n.startsWith("chat_"), "chat_* tools are the swarm's own"),
+        )
+        .max(START_BOUNDS.maxLeadTools)
+        .optional()
+        .describe(
+          "Other ribs' tools the lead holds, e.g. beads_ready, beads_show, beads_close. The host projects a tool onto the lead's turns only when the operator's crossRibGrants lets the chat rib call it.",
+        ),
       context: contextSchema
         .optional()
         .describe(
@@ -314,6 +332,26 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     })
     .strict();
   const swarmRef = z.object({ swarm: z.string().min(1).describe("The swarm id.") }).strict();
+  const forgetSchema = z
+    .object({
+      swarm: z.string().min(1).optional().describe("One ended swarm's id."),
+      older_than_days: z
+        .number()
+        .min(0)
+        .max(3650)
+        .optional()
+        .describe(
+          "Every ended swarm that ended more than this many days ago. 0 means every ended swarm.",
+        ),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe("Must be true to forget. Omitted, the tool reports what it would forget."),
+    })
+    .strict()
+    .refine((a) => (a.swarm === undefined) !== (a.older_than_days === undefined), {
+      message: "pass exactly one of swarm or older_than_days",
+    });
   const transcriptSchema = z
     .object({
       swarm: z.string().min(1).describe("The swarm id."),
@@ -542,6 +580,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
               }
             : {}),
           ...(args.context?.length ? { context: toContextItems(args.context) } : {}),
+          ...(args.lead_tools?.length ? { leadTools: [...new Set(args.lead_tools)] } : {}),
         });
         const s = swarm.summary();
         emitText(
@@ -639,6 +678,52 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         const head = `#${summary.channelName}${args.thread ? ` thread ${args.thread}` : ""}: ${messages.length} messages, ${text.length} characters. Showing ${offset}-${end}.`;
         const more = end < text.length ? `\n\nMore: call again with offset ${end}.` : "";
         emitText(ctx, `${head}\n\n${text.slice(offset, end)}${more}`);
+      }),
+    },
+    {
+      name: "chat_swarm_forget",
+      description:
+        "Forget ended swarms: drop them from the Swarms tab, chat_swarm_status, and the rib's history, with their launches and reports. Takes one `swarm` id or `older_than_days`. Never touches a live swarm, and leaves each channel's transcript in ClickClack. Without confirm: true it only reports what it would forget. To wipe transcripts too, use chat_server_reset.",
+      inputSchema: forgetSchema,
+      state_changing: true,
+      execute: guarded(async (input, ctx) => {
+        const args = forgetSchema.parse(input);
+        if (!deps.forget) return emitText(ctx, "this host cannot forget swarms", true);
+        if (args.swarm && (deps.swarms.has(args.swarm) || deps.starting?.has(args.swarm))) {
+          return emitText(ctx, `swarm '${args.swarm}' is live; stop it first`, true);
+        }
+        const cutoff =
+          args.older_than_days === undefined
+            ? undefined
+            : Date.now() - args.older_than_days * 86_400_000;
+        const ids = [...deps.ended.values()]
+          .filter((s) =>
+            args.swarm !== undefined
+              ? s.id === args.swarm
+              : cutoff !== undefined && Date.parse(s.endedAt ?? s.startedAt) <= cutoff,
+          )
+          .map((s) => s.id);
+        if (ids.length === 0) {
+          return emitText(
+            ctx,
+            args.swarm
+              ? `no ended swarm '${args.swarm}'`
+              : "no ended swarm matches; nothing to forget",
+            Boolean(args.swarm),
+          );
+        }
+        const list = ids.join(", ");
+        if (!args.confirm) {
+          return emitText(
+            ctx,
+            `would forget ${ids.length} ended swarm(s): ${list}. Re-issue with confirm: true.`,
+          );
+        }
+        deps.forget(ids);
+        emitText(
+          ctx,
+          `forgot ${ids.length} ended swarm(s): ${list}. Their transcripts stay in ClickClack.`,
+        );
       }),
     },
     {
