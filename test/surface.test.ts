@@ -1537,6 +1537,18 @@ describe("launching from the tab", () => {
     expect(power?.options?.find((o) => o.value === "deep")?.hint).toBe(
       "claude: opus-9 · copilot: gpt-6-pro",
     );
+    const flat = buildLaunch({
+      projects,
+      live: 0,
+      ended: 0,
+      classes: [{ provider: "copilot", classes: { fast: "auto", balanced: "auto", deep: "auto" } }],
+    }).sections[0];
+    const flatPower = (flat?.kind === "actions" ? flat.items[0]?.fields : [])?.find(
+      (f) => f.name === "power",
+    );
+    expect(flatPower?.options?.find((o) => o.value === "fast")?.hint).toBe(
+      "copilot: auto (every power)",
+    );
     expect(
       buildLaunch({ projects, live: 0, ended: 0 }).sections.flatMap((x) =>
         x.kind === "actions" ? (x.items[0]?.fields ?? []) : [],
