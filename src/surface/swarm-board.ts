@@ -241,7 +241,15 @@ function stats(s: SwarmSummary): Leaf {
   return { kind: "stats", title: isLiveNow ? "Budget" : "Result", items };
 }
 
-// ---- Reaching the lead, and stopping. ----
+// ---- Reaching the lead, reading the record, and stopping. ----
+
+const openRecord = (s: SwarmSummary) => ({
+  type: "open-record",
+  label: "Open the record",
+  glyph: "◷",
+  hint: "The swarm's timeline, who woke whom, spend, runs and evidence.",
+  payload: { id: s.id },
+});
 
 function controls(s: SwarmSummary): Leaf[] {
   if (!live(s)) return [];
@@ -249,8 +257,9 @@ function controls(s: SwarmSummary): Leaf[] {
   if (s.status === "running" && s.conclusion === undefined) {
     items.push({ ...messageLead(s), expanded: true });
   }
+  items.push(openRecord(s));
   if (s.status === "running") items.push(stopAction(s, true));
-  return items.length > 0 ? [{ kind: "actions", items }] : [];
+  return [{ kind: "actions", wrap: true, items }];
 }
 
 // ---- The bench: one card per agent, a ghost per open seat. ----
@@ -678,9 +687,15 @@ function outcome(s: SwarmSummary): Leaf[] {
   return [{ kind: "cards", title: "Outcome", items: [...reportCard(s), cause] }];
 }
 
-function rerun(s: SwarmSummary, launch: StartSwarmInput | undefined): Leaf[] {
-  if (live(s) || !launch) return [];
-  return [{ kind: "actions", items: [runAgainItem(s, launch)] }];
+function verbs(s: SwarmSummary, launch: StartSwarmInput | undefined): Leaf[] {
+  if (live(s)) return [];
+  return [
+    {
+      kind: "actions",
+      wrap: true,
+      items: [...(launch ? [runAgainItem(s, launch)] : []), openRecord(s)],
+    },
+  ];
 }
 
 export interface BoardOptions {
@@ -722,7 +737,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
     },
     sections: isLiveNow
       ? [...requests(s, needs, opts.server), ...outcome(s), stats(s), ...controls(s), ...details]
-      : [...outcome(s), stats(s), ...rerun(s, opts.launch), ...details],
+      : [...outcome(s), stats(s), ...verbs(s, opts.launch), ...details],
   };
 }
 

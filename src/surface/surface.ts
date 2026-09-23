@@ -25,6 +25,7 @@ import {
   HISTORY_KEY,
   INDEX_KEY,
   LAUNCH_KEY,
+  recordKey,
   reportKey,
   SERVER_KEY,
   SERVER_LOG_KEY,
@@ -32,6 +33,7 @@ import {
 } from "./keys.ts";
 import { buildLaunch, type LaunchState } from "./launch-board.ts";
 import { createKeyPublisher, type KeyPublisher } from "./publisher.ts";
+import { buildGoneRecord, buildRecord } from "./record.ts";
 import { buildServerPanel, type ServerPanelState } from "./server-panel.ts";
 import { buildGoneBoard, buildStartingBoard, buildSwarmBoard } from "./swarm-board.ts";
 
@@ -80,6 +82,19 @@ const DOC_KINDS = new Set<SwarmChange>([
   "conclusion",
   "health",
   "activity",
+  "end",
+]);
+
+// A record reloads its frame on every new document, so it redraws when the
+// swarm's course changes, at most this often.
+const RECORD_WINDOW_MS = 5_000;
+const RECORD_KINDS = new Set<SwarmChange>([
+  "turn",
+  "agent",
+  "run",
+  "gate",
+  "conclusion",
+  "report",
   "end",
 ]);
 
@@ -215,7 +230,46 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     return true;
   }
 
+  const records = new Map<string, KeyPublisher>();
+
+  // Registered with the swarm's other keys, since the host must know a key is
+  // html before an action opens it. An ended swarm's record composes once.
+  function ensureRecord(id: string): boolean {
+    if (records.has(id)) return false;
+    const found = deps.find(id);
+    if (!found.live && !found.ended) return false;
+    const key = recordKey(id);
+    records.set(
+      id,
+      createKeyPublisher<string>(
+        sm,
+        key,
+        () => {
+          const now = deps.find(id);
+          const summary = now.live ?? now.ended;
+          return summary ? buildRecord(summary, new Date()) : buildGoneRecord(id);
+        },
+        (data: unknown) => {
+          if (typeof data !== "string" || data.length === 0) {
+            throw new Error(`${key} expects a non-empty html page`);
+          }
+          return data;
+        },
+        windowMs ?? RECORD_WINDOW_MS,
+      ),
+    );
+    deps.views.push({ key, canvasKind: "html", title: `Record · ${id}` });
+    return true;
+  }
+
   function release(id: string): void {
+    const record = records.get(id);
+    if (record) {
+      record.release();
+      records.delete(id);
+      const at = deps.views.findIndex((v) => v.key === recordKey(id));
+      if (at >= 0) deps.views.splice(at, 1);
+    }
     const report = reports.get(id);
     if (report) {
       report.release();
@@ -245,6 +299,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     for (const id of ids) {
       added = register(id) || added;
       added = ensureReport(id) || added;
+      added = ensureRecord(id) || added;
     }
     if (!added) return;
     trim();
@@ -261,6 +316,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       const entry = swarms.get(id);
       entry?.board.schedule();
       if (DOC_KINDS.has(kind)) entry?.doc.schedule();
+      if (RECORD_KINDS.has(kind)) records.get(id)?.schedule();
       if (kind === "end") history.schedule();
       if (kind === "start" || kind === "end") launch.schedule();
       if (kind === "gate" || kind === "start" || kind === "end") {
@@ -279,7 +335,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       log.schedule();
     },
     dispose() {
-      for (const id of [...swarms.keys()]) release(id);
+      for (const id of [...swarms.keys(), ...records.keys()]) release(id);
       index.release();
       badge.release();
       history.release();

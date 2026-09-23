@@ -27,12 +27,14 @@ import {
   HISTORY_KEY,
   INDEX_KEY,
   LAUNCH_KEY,
+  recordKey,
   SERVER_KEY,
   SERVER_LOG_KEY,
   swarmKey,
 } from "../src/surface/keys.ts";
 import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
+import { buildRecord } from "../src/surface/record.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
 import { buildServerPanel, type ServerPanelState } from "../src/surface/server-panel.ts";
 import {
@@ -504,7 +506,14 @@ describe("Swarms boards", () => {
     expect(text).toContain('"title":"Stopped by you at 14:00"');
     expect(text).toContain('"value":"1 turn"');
     expect(text).not.toContain('"pill":{"label":"busy"');
-    expect(view.sections.map((x) => x.kind)).toEqual(["cards", "stats", "cards", "rows", "rows"]);
+    expect(view.sections.map((x) => x.kind)).toEqual([
+      "cards",
+      "stats",
+      "actions",
+      "cards",
+      "rows",
+      "rows",
+    ]);
     const row = JSON.stringify(buildIndex({ live: [], starting: [], ended: [stopped] }));
     expect(row).toContain('"chip":{"label":"stopped","tone":"neutral"}');
     expect(row).toContain("· 11 turns · 23 s · ");
@@ -514,7 +523,7 @@ describe("Swarms boards", () => {
     expect(JSON.stringify(out)).toContain('"title":"Out of turns at 40"');
   });
 
-  test("a live board runs requests, budget, the lead's line and stop, then the record", () => {
+  test("a live board runs requests, budget, the lead's line, the record and stop, then the details", () => {
     const view = buildSwarmBoard(fixtures.review!);
     expect(view.sections.map((x) => x.kind)).toEqual([
       "cards",
@@ -528,9 +537,10 @@ describe("Swarms boards", () => {
     const actions = view.sections.filter((s) => s.kind === "actions");
     expect(actions).toHaveLength(1);
     const items = actions[0]?.kind === "actions" ? actions[0].items : [];
-    expect(items.map((i) => i.type)).toEqual(["message-lead", "stop-swarm"]);
+    expect(items.map((i) => i.type)).toEqual(["message-lead", "open-record", "stop-swarm"]);
     expect(items[0]).toMatchObject({ label: "Message the lead", expanded: true });
-    expect(items[1]).toMatchObject({ inline: true, align: "end" });
+    expect(items[1]).toMatchObject({ label: "Open the record", payload: { id: "s9hjy" } });
+    expect(items[2]).toMatchObject({ inline: true, align: "end" });
     const review = view.sections[0];
     expect(review?.kind === "cards" ? review.title : "").toBe("Approvals in review");
     expect(JSON.stringify(review)).toContain('"pill":{"label":"reviewing","tone":"info"}');
@@ -1045,6 +1055,8 @@ describe("publishing", () => {
     expect(refreshes).toBe(1);
     expect(views[0]).toEqual({ key: SERVER_LOG_KEY, canvasKind: "log", title: "ClickClack log" });
     expect(views.filter((v) => v.canvasKind === "markdown")).toHaveLength(MAX_SWARM_KEYS);
+    expect(views.filter((v) => v.canvasKind === "html")).toHaveLength(MAX_SWARM_KEYS);
+    expect(sm.keys()).not.toContain(recordKey("s0000"));
     expect(views[1]).toEqual({
       key: docKey("s0005"),
       canvasKind: "markdown",
@@ -1058,6 +1070,249 @@ describe("publishing", () => {
     await Bun.sleep(10);
     expect(sm.frames.get(docKey("s0104"))?.length).toBeGreaterThan(1);
     expect(sm.frames.get(HISTORY_KEY)?.length).toBeGreaterThan(1);
+    surface.dispose();
+    expect(sm.keys()).toEqual([]);
+    expect(views).toEqual([]);
+  });
+});
+
+describe("the record page", () => {
+  const at = (m: number) => new Date(Date.parse(T0) + m * 60_000).toISOString();
+  const traced = (patch: Partial<SwarmSummary> = {}): SwarmSummary =>
+    swarm("s6rec", {
+      status: "done",
+      endedAt: at(20),
+      agents: [
+        agent("s6rec", 0, { joinedAt: at(0) }),
+        agent("s6rec", 1, { joinedAt: at(4), spawnedBy: "s6rec-lead" }),
+        agent("s6rec", 2, { joinedAt: at(2), spawnedBy: "s6rec-lead" }),
+      ],
+      spans: [
+        {
+          agentId: "s6rec-lead",
+          n: 1,
+          startedAt: at(0),
+          endedAt: at(1),
+          outcome: "ok",
+          messages: 1,
+          wokeBy: ["rib"],
+        },
+        {
+          agentId: "s6rec-w2",
+          n: 1,
+          startedAt: at(3),
+          endedAt: at(6),
+          outcome: "ok",
+          messages: 1,
+          wokeBy: ["s6rec-lead"],
+        },
+        {
+          agentId: "s6rec-w1",
+          n: 1,
+          startedAt: at(5),
+          endedAt: at(9),
+          outcome: "timeout",
+          messages: 1,
+          wokeBy: ["s6rec-lead"],
+        },
+        {
+          agentId: "s6rec-lead",
+          n: 2,
+          startedAt: at(10),
+          endedAt: at(12),
+          outcome: "ok",
+          messages: 2,
+          wokeBy: ["s6rec-w1", "s6rec-w2", "operator"],
+        },
+      ],
+      activity: [
+        { at: at(7), text: "@s6rec-w1 asked the operator", kind: "ask", actor: "s6rec-w1" },
+        {
+          at: at(8),
+          text: "you posted in #swarm-s6rec: 60 s",
+          kind: "operator",
+          actor: "operator",
+        },
+        {
+          at: at(12),
+          text: "@s6rec-lead concluded the swarm",
+          kind: "conclusion",
+          actor: "s6rec-lead",
+        },
+      ],
+      runs: [
+        run("r1", {
+          status: "succeeded",
+          startedAt: at(2),
+          completedAt: at(15),
+          verified: true,
+          prUrls: ["https://github.com/o/r/pull/41"],
+          ci: { verdict: "pass" },
+          gates: [{ nodeId: "approve-plan", openedAt: at(4), closedAt: at(8), by: "operator" }],
+        }),
+      ],
+      conclusion: "Done.",
+      ...patch,
+    });
+
+  test("the timeline draws a lane per agent in turn order, the operator above and runs below", () => {
+    const html = buildRecord(traced(), new Date(at(30)));
+    const labels = [...html.matchAll(/<text class="lbl[^"]*"[^>]*>([^<]*)<\/text>/g)].map(
+      (m) => m[1],
+    );
+    expect(labels).toEqual(["you", "@lead", "@w2", "@w1", "fix-issue r10000-1"]);
+    for (const x of html.matchAll(/<rect class="t-[^"]*" x="([\d.]+)"/g)) {
+      expect(Number(x[1])).toBeGreaterThanOrEqual(112);
+      expect(Number(x[1])).toBeLessThanOrEqual(708);
+    }
+    expect(html).toContain('class="hatch"');
+    for (const glyph of ["○", "?", "▲", "●", "◇", "◆", "✓"])
+      expect(html).toContain(`${glyph}</text>`);
+    expect(html).toContain("approve-plan answered by you");
+    expect(html).toContain("ended ");
+    expect(html).toContain(">×1</text>");
+    expect(html).toContain(">asked ×1</text>");
+    expect(html).not.toMatch(/<script/i);
+  });
+
+  test("an ended record is the same whenever it is composed; a live one runs to now", () => {
+    const ended = traced();
+    expect(buildRecord(ended, new Date(at(30)))).toBe(buildRecord(ended, new Date(at(90))));
+    const live = buildRecord(
+      traced({ status: "running", endedAt: undefined, conclusion: undefined }),
+      new Date(at(14)),
+    );
+    expect(live).toContain('class="now"');
+    expect(live).toContain(`now ${hhmm(at(14))}`);
+    expect(live).toContain(`ends ${hhmm(at(30))} →`);
+    const legacy = buildRecord(traced({ spans: undefined }), new Date(at(30)));
+    expect(legacy).toContain("recorded before turns were kept");
+  });
+
+  test("every string from the summary comes out escaped", () => {
+    const evil = '<img src=x onerror="alert(1)"> & <script>alert(2)</script>';
+    const html = buildRecord(
+      traced({
+        task: evil,
+        channelName: evil,
+        runs: [
+          run("r2", {
+            purpose: evil,
+            error: evil,
+            checkout: { path: "/p", branch: evil, worktreeEstablished: true },
+          }),
+        ],
+        context: [{ id: "c1", kind: "note", title: evil, sourceUrl: evil, chars: 1 }],
+        activity: [{ at: at(3), text: evil, kind: "ask", actor: "s6rec-w1" }],
+      }),
+      new Date(at(30)),
+    );
+    expect(html).not.toMatch(/<script/i);
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;script&gt;alert(2)&lt;/script&gt;");
+    expect(html).toContain("onerror=&quot;alert(1)&quot;");
+  });
+
+  test("a swarm at the start bounds draws inside the doc pane's budget", () => {
+    const agents = Array.from({ length: 12 }, (_, i) =>
+      agent("s9cap", i, { joinedAt: at(i), ...(i > 0 ? { spawnedBy: "s9cap-lead" } : {}) }),
+    );
+    const big = swarm("s9cap", {
+      status: "done",
+      endedAt: at(240),
+      task: "t".repeat(8000),
+      agents,
+      limits: { ...SIZE_PRESETS.large, maxAgents: 12, maxTurns: 200, wallClockMs: 240 * 60_000 },
+      spans: Array.from({ length: 200 }, (_, i) => ({
+        agentId: agents[i % 12]?.id ?? "",
+        n: Math.floor(i / 12) + 1,
+        startedAt: at(i),
+        endedAt: at(i + 0.5),
+        outcome: i % 17 ? ("ok" as const) : ("timeout" as const),
+        messages: 3,
+        wokeBy: [agents[(i + 1) % 12]?.id ?? "", "operator", "runs"],
+      })),
+      activity: Array.from({ length: ACTIVITY_KEPT }, (_, i) => ({
+        at: at(i),
+        text: `@s9cap-w${(i % 11) + 1} asked the operator ${"q".repeat(300)}`,
+        kind: "ask" as const,
+        actor: agents[(i % 11) + 1]?.id,
+      })),
+      runs: Array.from({ length: 12 }, (_, i) =>
+        run(`r${i}`, {
+          status: "succeeded",
+          completedAt: at(200),
+          prUrls: Array.from({ length: 3 }, (_, k) => `https://github.com/o/r/pull/${i * 3 + k}`),
+          ci: { verdict: "pass", detail: "d".repeat(2000) },
+          error: "e".repeat(8000),
+          gates: [
+            { nodeId: "approve-plan", openedAt: at(10), closedAt: at(20), by: "swarm" },
+            { nodeId: "approve-release", openedAt: at(30), closedAt: at(40), by: "operator" },
+          ],
+          approvals: [
+            {
+              nodeId: "approve-plan",
+              decision: "changes",
+              reason: "r".repeat(4000),
+              feedback: "f".repeat(8000),
+              review: "msg_1",
+              reviewer: "@s9cap-w1",
+              at: at(15),
+            },
+          ],
+        }),
+      ),
+      context: Array.from({ length: 20 }, (_, i) => ({
+        id: `item-${i}`,
+        kind: "issue",
+        title: "x".repeat(400),
+        sourceUrl: `https://github.com/o/r/issues/${i}`,
+        chars: 4000,
+      })),
+      usage: { input: 9_000_000, output: 400_000, cached: 7_000_000 },
+    });
+    expect(buildRecord(big, new Date(at(300))).length).toBeLessThan(128_000);
+  });
+
+  test("each swarm's record registers with its other keys, and Open the record opens it", async () => {
+    const sm = new FakeSnapshots();
+    const views: RibViewDescriptor[] = [];
+    const live = swarm("s6liv");
+    const done = traced();
+    const surface = createSwarmsSurface({
+      sm,
+      state: () => state({ live: [live], ended: [done] }),
+      find: (id): SwarmRecord =>
+        id === live.id ? { live } : id === done.id ? { ended: done } : {},
+      launch: () => ({ projects: [], live: 1, ended: 1 }),
+      launchOf: () => undefined,
+      server: () => ({ live: 0 }),
+      readLog: async () => "log",
+      report: () => undefined,
+      views,
+      windowMs: 1,
+    });
+    surface.track([live.id, done.id]);
+    expect(sm.keys()).toContain(recordKey(live.id));
+    expect(sm.keys()).toContain(recordKey(done.id));
+    expect(views).toContainEqual({
+      key: recordKey(live.id),
+      canvasKind: "html",
+      title: "Record · s6liv",
+    });
+    const opened = await handleSwarmsAction(
+      { type: "open-record", payload: { id: done.id } },
+      { ...actionDeps, surface, find: (id) => (id === done.id ? { ended: done } : {}) },
+    );
+    expect(opened).toEqual({
+      ok: true,
+      data: { effect: "open-canvas", key: recordKey(done.id), title: "Record · s6rec" },
+    });
+    await Bun.sleep(10);
+    expect(sm.frames.get(recordKey(done.id))?.at(-1)).toContain("Swarm s6rec · record");
+    expect(
+      (await handleSwarmsAction({ type: "open-record", payload: { id: "s0none" } }, actionDeps)).ok,
+    ).toBe(false);
     surface.dispose();
     expect(sm.keys()).toEqual([]);
     expect(views).toEqual([]);
@@ -1296,7 +1551,8 @@ describe("launching from the tab", () => {
       buildSwarmBoard(fixtures.done!, launch ? { launch } : {})
         .sections.filter((x) => x.kind === "actions")
         .flatMap((x) => (x.kind === "actions" ? x.items : []));
-    expect(actions(undefined)).toEqual([]);
+    expect(actions(undefined).map((a) => a.type)).toEqual(["open-record"]);
+    expect(actions(oldLaunch).map((a) => a.type)).toEqual(["run-again", "open-record"]);
     const again = actions(oldLaunch)[0];
     expect(again).toMatchObject({ type: "run-again", binding: { id: "s8pln" } });
     expect(again?.hint).toBe(

@@ -19,8 +19,10 @@ import { expectView } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { needsYou } from "../src/needs.ts";
 import { ManagedServer, realServerDeps } from "../src/server.ts";
+import { shortHandle } from "../src/surface/format.ts";
 import { buildBadge, buildIndex } from "../src/surface/index-board.ts";
 import { INDEX_KEY, swarmKey } from "../src/surface/keys.ts";
+import { buildRecord } from "../src/surface/record.ts";
 import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import { Swarm } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
@@ -111,6 +113,9 @@ let badFrame: string | undefined;
 const heads = new Set<string>();
 const pills = new Set<string>();
 let meters = 0;
+// The record page composed on every change: its own header, and no script.
+let records = 0;
+let badRecord: string | undefined;
 let started: Swarm | undefined;
 const checkFrames = (s: SwarmSummary, live: boolean) => {
   const index = buildIndex({ live: live ? [s] : [], starting: [], ended: live ? [] : [s] });
@@ -133,6 +138,12 @@ const checkFrames = (s: SwarmSummary, live: boolean) => {
     } catch (e) {
       badFrame ??= `${key}: ${e instanceof Error ? e.message : String(e)}`;
     }
+  }
+  const record = buildRecord(s, new Date());
+  if (/<script/i.test(record) || !record.includes(`Swarm ${s.id} · record`)) {
+    badRecord ??= `record for ${s.id} at ${s.status}`;
+  } else {
+    records++;
   }
 };
 
@@ -180,7 +191,20 @@ console.log(
 checkFrames(summary, false);
 console.log(`boards: ${frames} frames valid${badFrame ? `; first invalid: ${badFrame}` : ""}`);
 const endedIndex = JSON.stringify(buildIndex({ live: [], starting: [], ended: [summary] }));
+// Every turn left a span, and every agent that took one has a lane on the record.
+const endedRecord = buildRecord(summary, new Date());
+const recordOk =
+  records > 1 &&
+  !badRecord &&
+  summary.spans?.length === summary.turnsUsed &&
+  summary.agents.every((a) =>
+    endedRecord.includes(`>@${shortHandle(a.handle, summary.id)}</text>`),
+  );
+console.log(
+  `record: ${records} pages, ${summary.spans?.length ?? 0} spans for ${summary.turnsUsed} turns${badRecord ? `; bad: ${badRecord}` : ""}`,
+);
 const indexOk =
+  recordOk &&
   heads.has("1 live") &&
   pills.has("running") &&
   meters > 0 &&
