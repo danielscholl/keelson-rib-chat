@@ -8,7 +8,7 @@
 
 import type { CanvasBoardView } from "@keelson/shared";
 import { SIZE_PRESETS, SWARM_SIZES, type SwarmSize, type SwarmSummary } from "../types.ts";
-import { sizesHint } from "./index-board.ts";
+import { sizesHint } from "./parts.ts";
 
 type ActionsSection = Extract<CanvasBoardView["sections"][number], { kind: "actions" }>;
 type Item = ActionsSection["items"][number];

@@ -25,11 +25,8 @@ import {
 } from "../src/surface/keys.ts";
 import { buildLaunch } from "../src/surface/launch-board.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
-import {
-  buildServerPanel,
-  createServerOps,
-  type ServerPanelState,
-} from "../src/surface/server-panel.ts";
+import { createServerOps } from "../src/surface/server-ops.ts";
+import { buildServerPanel, type ServerPanelState } from "../src/surface/server-panel.ts";
 import {
   createSwarmsSurface,
   MAX_SWARM_KEYS,
