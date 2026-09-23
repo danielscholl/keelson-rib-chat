@@ -622,6 +622,7 @@ export class Swarm {
 
     if (outcome.sessionId) agent.sessionId = outcome.sessionId;
     if (outcome.providerId) agent.providerId = outcome.providerId;
+    if (outcome.model) agent.servedModel = outcome.model;
     if (outcome.usage) {
       const u = outcome.usage;
       agent.usage = addTokens(agent.usage, {

@@ -19,7 +19,8 @@ Each card shows:
 
 - the channel and the agents
 - the project, when the swarm has one
-- its size and model
+- its size and model: a named model, or the model the host says served the
+  swarm's power
 - when it started
 - the first pull request its runs opened
 - a turns bar against the swarm's turn budget
@@ -53,7 +54,8 @@ the plan in the gate thread.
 
 **Open** shows the swarm's board. It includes:
 
-- the channel, times, size, and model
+- the channel, times, size, and model, such as `deep power on copilot · every
+  agent on <model>` once a turn has run
 - the tokens the swarm spent, as the provider reported them; each agent's row
   shows its own
 - any problems with ClickClack or the lead's turns

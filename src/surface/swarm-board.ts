@@ -8,7 +8,7 @@
 
 import type { CanvasBoardView } from "@keelson/shared";
 import { missingEvidence } from "../dispatch.ts";
-import { modelLabel, tokenCount, tokensText, tokenTotal } from "../labels.ts";
+import { modelLabel, servedModels, tokenCount, tokensText, tokenTotal } from "../labels.ts";
 import { type Need, needsYou } from "../needs.ts";
 import { type ChildRun, type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
 import {
@@ -65,7 +65,14 @@ function modelRow(s: SwarmSummary): string {
   if (lead) return `${provider} · every agent on ${lead}`;
   const power = s.power ? `${s.power} power` : undefined;
   if (workers) return `${provider} · lead at ${power ?? "its default"} · workers ${workers}`;
-  return power ? `${power} on ${provider}` : `${provider} · the provider's default model`;
+  const models = servedModels(s);
+  const on =
+    models.length === 1
+      ? ` · every agent on ${models[0]}`
+      : models.length > 1
+        ? ` · agents on ${models.join(", ")}`
+        : "";
+  return power ? `${power} on ${provider}${on}` : `${provider} · the provider's default model${on}`;
 }
 
 function vitals(s: SwarmSummary): Leaf {
@@ -354,7 +361,7 @@ function agentRows(s: SwarmSummary): Row[] {
     return {
       chip: { label: shortHandle(a.handle, s.id), tone: a.tone },
       text: differ
-        ? (a.model ?? (s.power ? `${s.power} power` : "provider default"))
+        ? (a.model ?? a.servedModel ?? (s.power ? `${s.power} power` : "provider default"))
         : firstLine(a.role, 40),
       trailing: live(s) ? `${a.status} · ${turns}` : turns,
       ...(glyph ? { glyph } : {}),

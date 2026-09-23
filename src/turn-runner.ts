@@ -22,8 +22,9 @@ export interface TurnOutcome {
   error?: string;
   // Passed back as resumeSessionId so an agent keeps one continuous session.
   sessionId?: string;
-  // The provider the host resolved the turn to.
+  // The provider the host resolved the turn to, and the model it says served it.
   providerId?: string;
+  model?: string;
   toolCalls: string[];
   usage?: TokenUsage;
   durationMs: number;
@@ -101,6 +102,7 @@ export async function runTurn(
     const kept = {
       ...(result.sessionId ? { sessionId: result.sessionId } : {}),
       ...(result.providerId ? { providerId: result.providerId } : {}),
+      ...(result.model ? { model: result.model } : {}),
       ...(result.usage ? { usage: result.usage } : {}),
     };
     if (controller.signal.aborted || result.status === "aborted") {
