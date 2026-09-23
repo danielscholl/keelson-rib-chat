@@ -239,14 +239,14 @@ ul.plain li{margin:3px 0}
 </style>
 
 <div class="wrap">
-  <p class="eyebrow">keelson-rib-chat · swarms surface · tiers 1a, 1b and 2 shipped; tier 3 waits on the host</p>
+  <p class="eyebrow">keelson-rib-chat · swarms surface · all four tiers shipped</p>
   <h1>A Swarms tab for the chat rib</h1>
   <p class="lead">What the chat rib shows inside Keelson: one tab that says which swarm needs you, what each swarm is doing, and what it produced. The conversation stays in ClickClack.</p>
 
   <div class="problem">
     <p>Today a swarm has no home in Keelson. The rib publishes no surface, and Keelson renders nothing for durable ops, so the only live view is the swarm's ClickClack channel. An operator running three swarms finds the one waiting on a gate, or the one that went quiet, by walking channels one at a time. Only the last 20 ended swarms are kept, in memory, and a restart loses them.</p>
     <p>This change adds one Keelson tab, <b>Swarms</b>. A live index sorts swarm cards by whether they need you. A drawer board per swarm shows its gate, dispatched runs with their evidence, and its agents, with steer and stop. A markdown reading pane shows a conclusion or a gate prompt, and a history drawer reads ended swarms from disk. Each swarm starts with a <b>size</b> (small, medium or large) and a <b>power</b> (fast, balanced or deep), and every card names both along with the model its agents run. Tiers 1 and 2 use only board primitives in <code>@keelson/shared</code> 0.110.0, so they are rib-side only.</p>
-    <p>The tab does not copy the transcript, answer approval gates, or open a run's trace. Every channel, gate thread and ask links out to ClickClack. A gate only you can answer is flagged here and answered in the Workflows tab until Keelson gains an effect that opens an existing run. Power, and hover text on each size and power, wait on small host changes. The five decisions it raised are settled; <a href="#decisions">the end of the page</a> records them.</p>
+    <p>The tab does not copy the transcript, answer approval gates, or open a run's trace. Every channel, gate thread and ask links out to ClickClack. A gate only you can answer is flagged here, and <b>Open run</b> opens that run beside the tab with its approval composer. Power picks each provider's fast, balanced or deep model, and the card names the model that served it. The five decisions it raised are settled; <a href="#decisions">the end of the page</a> records them.</p>
   </div>
 
   <p class="eyebrow" style="margin-top:28px">Colors in the diagrams identify who owns each part</p>
@@ -270,7 +270,7 @@ ul.plain li{margin:3px 0}
           <tr><td><b>What a swarm is doing and what it produced</b></td><td>The swarm drawer: gate, runs with worktree, PR and CI evidence, agents, conclusion.</td></tr>
           <tr><td><b>How big a swarm may get, and which model it runs</b></td><td>The card's size and model fields; the drawer spells out both. Chosen at start as a size and a power.</td></tr>
           <tr><td><b>A conclusion or gate prompt with formatting</b></td><td>The reading pane, a markdown drawer view.</td></tr>
-          <tr><td><b>A run's trace and its approval composer</b></td><td>The Workflows tab. A gate card names the run and carries its id to copy.</td></tr>
+          <tr><td><b>A run's trace and its approval composer</b></td><td>The run drawer, which <b>Open run</b> on a gate card or run row opens beside the tab.</td></tr>
           <tr><td><b>Start a swarm</b></td><td>Chat today, through <code>chat_swarm_start</code>; the Launch header on the tab in tier 2.</td></tr>
           <tr><td><b>Start, stop or reset the managed ClickClack</b></td><td>The <code>chat_server_*</code> tools today; a ClickClack footer on the tab in tier 2.</td></tr>
         </tbody>
@@ -324,7 +324,7 @@ ul.plain li{margin:3px 0}
                     <span class="kx-f"><span class="kx-fl">model</span><span class="kx-fv">gpt-6-astra</span></span>
                     <span class="kx-f"><span class="kx-fl">started</span><span class="kx-fv">13:58</span></span>
                   </div>
-                  <div class="kx-reason"><b>needs you</b>fix-issue 3f9c2a1e waits at approve-plan since 14:11. This swarm can't answer fix-issue gates: answer it in the Workflows tab.</div>
+                  <div class="kx-reason"><b>needs you</b>fix-issue 3f9c2a1e waits at approve-plan since 14:11. This swarm can't answer fix-issue gates: open the run to answer it.</div>
                   <div class="kx-cactions"><span class="kx-btn">Open →</span></div>
                 </div>
                 <div class="kx-card">
@@ -466,7 +466,7 @@ ul.plain li{margin:3px 0}
         <text x="640" y="206" class="tiny">no</text>
         <rect x="446" y="170" width="182" height="88" class="box b-bad"/>
         <text x="458" y="194" class="t">Needs you · N1</text>
-        <text x="458" y="214" class="sub">answer in Workflows tab</text>
+        <text x="458" y="214" class="sub">open the run to answer</text>
         <text x="458" y="244" class="tiny">clears on the run event</text>
 
         <path d="M334 136 L334 166" class="arrow"/>
@@ -498,13 +498,13 @@ ul.plain li{margin:3px 0}
             <div class="kx-card">
               <div class="kx-chead"><span class="kx-ctitle mono">approve-plan · fix-issue 3f9c2a1e</span><span class="kx-pill" data-t="caution">needs you</span></div>
               <div class="kx-fields"><span class="kx-f"><span class="kx-fl">opened</span><span class="kx-fv">14:11</span></span><span class="kx-f"><span class="kx-fl">thread</span><a class="kx-link">gate thread</a></span><span class="kx-f"><span class="kx-fl">run</span><span class="kx-fv">3f9c2a1e ⧉</span></span></div>
-              <div class="kx-reason"><b>why you</b>This swarm isn't granted fix-issue approvals (ribApprovalGrants.chat). Answer it in the Workflows tab, whose pip counts it.</div>
+              <div class="kx-reason"><b>why you</b>This swarm isn't granted fix-issue approvals (ribApprovalGrants.chat). Open run answers it; the Swarms tab's pip counts it.</div>
             </div></div>
           <div><div class="cap">N2 · quiet</div>
             <div class="kx-card">
               <div class="kx-chead"><span class="kx-ctitle mono">approve-plan · fix-issue 5c07aa94</span><span class="kx-pill" data-t="caution">needs you</span></div>
               <div class="kx-fields"><span class="kx-f"><span class="kx-fl">opened</span><span class="kx-fv">14:05</span></span><span class="kx-f"><span class="kx-fl">thread</span><a class="kx-link">gate thread</a></span><span class="kx-f"><span class="kx-fl">run</span><span class="kx-fv">5c07aa94 ⧉</span></span></div>
-              <div class="kx-reason"><b>quiet</b>No agent has worked since 14:19 and the gate is still open. Reply in the gate thread, steer the lead, or answer it in the Workflows tab.</div>
+              <div class="kx-reason"><b>quiet</b>No agent has worked since 14:19 and the gate is still open. Reply in the gate thread, steer the lead, or open the run to answer it.</div>
             </div></div>
           <div><div class="cap">N3 · ask <span class="tier">1b</span></div>
             <div class="kx-card">
@@ -863,7 +863,7 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
           <tr><td class="mono">1a</td><td>Index, swarm drawer, reading pane, history, ClickClack row, Start in Chat, context rows. Size and model on cards and in the drawer; <code>size</code> on <code>chat_swarm_start</code>. Verbs: open, history, read, steer, stop, start in chat. Needs-you N1, N2, N4.</td><td>Rib changes 1 to 7, 9 to 15 (appendix C)</td><td>All boards pass <code>expectView</code>; a fix-issue gate goes in review → answered row; removing the grant raises N1 by the next gate.</td><td>Shipped in 0.7.0.</td></tr>
           <tr><td class="mono">1b</td><td>Asks: N3 from <code>@operator</code></td><td>Change 8, after D2</td><td>A question to the operator raises needs-you in managed mode, where the owner has no handle.</td><td>Shipped in 0.8.0.</td></tr>
           <tr><td class="mono">2</td><td>Launch tabs with size and model picker · Run again on ended swarms · reply in the gate thread · recent activity rows · ClickClack footer · token counts · copy and explore the conclusion</td><td>Tier 2 changes (appendix C)</td><td>Start folds the header on the first live swarm; a reset completes in the background with its outcome on the footer.</td><td>Launch tabs, Run again and the footer shipped in 0.7.0; the rest in 0.8.0. Explore the conclusion was dropped: the report page below covers it. The header folds its Discuss tab once a swarm is live; the region itself stays open, since a rib can't fold it.</td></tr>
-          <tr><td class="mono">3</td><td>Power on the tool and the form; hover on each size and power; the served model on cards. Open a run from its gate card; a needs-you badge on the tab</td><td>Host changes (appendix D), and rib change T3</td><td>A swarm started at deep power runs gpt-6-astra on Copilot and its card says so; a gate card opens the run drawer with its approval composer.</td><td>Next: the host changes in D5 order, then the rib.</td></tr>
+          <tr><td class="mono">3</td><td>Power on the tool and the form; hover on each size and power; the served model on cards. Open a run from its gate card; a needs-you badge on the tab</td><td>Host changes (appendix D), and rib change T3</td><td>A swarm started at deep power runs gpt-6-astra on Copilot and its card says so; a gate card opens the run drawer with its approval composer.</td><td>Shipped in 0.9.0, on Keelson 0.111.0. Hover text covers each power; sizes keep their hover on Start. On Copilot every class maps to <code>auto</code> until <code>config.json</code> sets <code>modelClasses</code>.</td></tr>
         </tbody>
       </table>
     </div>
@@ -926,7 +926,7 @@ Not covered: the same race in the staging smoke job, which uses its own script. 
           <tr><td class="mono">steer</td><td>Drawer controls</td><td>Posts the note as the owner; refused once the swarm ended or concluded; resolves open asks</td><td>ok, toasts <code>steer ✓</code></td></tr>
           <tr><td class="mono">stop-swarm</td><td>Card ⋯, drawer controls</td><td>Stops in the background after a confirm naming the runs it cancels</td><td>ok</td></tr>
           <tr><td class="mono">start-in-chat</td><td>Index</td><td>Seeds a chat that gathers context and calls <code>chat_swarm_start</code></td><td><code>open-chat</code></td></tr>
-          <tr><td class="mono">start-swarm <span class="tier">2</span></td><td>Launch tabs</td><td>Checks, mints the id, registers keys, boots in the background. Reads <code>task</code>, <code>project</code>, <code>tools</code>, <code>size</code>, and <code>model</code> with its <code>provider</code> companion from the picker; <code>power</code> joins in tier 3</td><td><code>open-surface</code> to the index, no toast</td></tr>
+          <tr><td class="mono">start-swarm <span class="tier">2</span></td><td>Launch tabs</td><td>Checks, mints the id, registers keys, boots in the background. Reads <code>task</code>, <code>project</code>, <code>tools</code>, <code>size</code>, and <code>model</code> with its <code>provider</code> companion from the picker, and <code>power</code></td><td><code>open-surface</code> to the index, no toast</td></tr>
           <tr><td class="mono">run-again <span class="tier">2</span></td><td>Ended drawer</td><td>Starts a new swarm from the stored launch config, with size, model and provider seeded from the old one; same checks as start-swarm</td><td><code>open-surface</code> to the index, no toast</td></tr>
           <tr><td class="mono">reply <span class="tier">2</span></td><td>Gate card</td><td>Posts in the gate thread as the owner, waking the thread's agents</td><td>ok</td></tr>
           <tr><td class="mono">server-start, server-stop, server-reset <span class="tier">2</span></td><td>ClickClack footer</td><td>Same guards as the tools; runs in the background and reports on the footer</td><td>ok, meaning requested</td></tr>
