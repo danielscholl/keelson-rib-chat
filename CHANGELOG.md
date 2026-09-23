@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.10.0...v0.11.0) (2026-09-23)
+
+
+### Added
+
+* **surface:** adopt the 0.112 canvas: clocks, captioned meters, edges and toasts ([#55](https://github.com/danielscholl/keelson-rib-chat/issues/55)) ([5b25b2e](https://github.com/danielscholl/keelson-rib-chat/commit/5b25b2e1a78301a0fe1925edece23dee0c9c5010))
+
+
+### Fixed
+
+* **swarm:** count only messages addressed to the operator as questions ([#56](https://github.com/danielscholl/keelson-rib-chat/issues/56)) ([746902d](https://github.com/danielscholl/keelson-rib-chat/commit/746902dd1c668d739b19b197e5649956bec1d847))
+* **swarm:** tell the lead when only the operator can answer a gate ([#54](https://github.com/danielscholl/keelson-rib-chat/issues/54)) ([313df37](https://github.com/danielscholl/keelson-rib-chat/commit/313df371f108b64d63dc52fb753638a820feb399))
+
 ## [0.10.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.9.0...v0.10.0) (2026-09-23)
 
 
