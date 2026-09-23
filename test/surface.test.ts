@@ -31,7 +31,7 @@ import {
   SERVER_LOG_KEY,
   swarmKey,
 } from "../src/surface/keys.ts";
-import { buildLaunch } from "../src/surface/launch-board.ts";
+import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
 import { buildServerPanel, type ServerPanelState } from "../src/surface/server-panel.ts";
@@ -959,7 +959,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ ended: [...ended.values()] }),
       find: (id): SwarmRecord => (ended.has(id) ? { ended: ended.get(id) as SwarmSummary } : {}),
-      launch: () => ({ projects: [], live: 0 }),
+      launch: () => ({ projects: [], live: 0, ended: 0 }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
       readLog: async () => "log",
@@ -1109,11 +1109,11 @@ describe("actions", () => {
 describe("launching from the tab", () => {
   const projects = [{ id: "p1", name: "keelson-sample" }];
 
-  test("the Launch header is one form, open until a swarm is live, beside Prepare in chat", () => {
+  test("the Launch header is one form beside Prepare in chat, folded once the tab has a swarm", () => {
     for (const st of [
-      { projects, live: 0 },
-      { projects: [], live: 0 },
-      { projects, live: 2, dispatchBlocked: "no workflows", refused: ["fix-issue"] },
+      { projects, live: 0, ended: 0 },
+      { projects: [], live: 0, ended: 0 },
+      { projects, live: 2, ended: 3, dispatchBlocked: "no workflows", refused: ["fix-issue"] },
     ]) {
       board(LAUNCH_KEY, buildLaunch(st));
     }
@@ -1121,46 +1121,86 @@ describe("launching from the tab", () => {
       const section = buildLaunch(st).sections[0];
       return section?.kind === "actions" ? section.items : [];
     };
-    expect(items({ projects, live: 0 }).map((i) => i.type)).toEqual([
-      "start-swarm",
-      "start-in-chat",
+    expect(items({ projects, live: 0, ended: 0 }).map((i) => i.label)).toEqual([
+      "Start a swarm",
+      "Prepare in chat · attach an issue or PR",
     ]);
-    expect(items({ projects, live: 0 })[0]?.expanded).toBe(true);
-    expect(items({ projects, live: 1 })[0]?.expanded).toBeUndefined();
-    expect(items({ projects: [], live: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
+    expect(items({ projects, live: 1, ended: 0 })[0]?.expanded).toBe(true);
+    expect(buildLaunch({ projects, live: 0, ended: 0 }).header).toEqual({
+      defaultCollapsed: false,
+    });
+    expect(buildLaunch({ projects, live: 0, ended: 1 }).header).toEqual({
+      defaultCollapsed: true,
+    });
+    expect(buildLaunch({ projects, live: 1, ended: 0 }).header).toEqual({
+      defaultCollapsed: true,
+    });
+    expect(items({ projects, live: 0, ended: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
       "task",
+      "project",
+      "setup",
+      "tools",
       "workflows",
       "size",
       "power",
       "model",
     ]);
+    expect(items({ projects: [], live: 0, ended: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
+      "task",
+      "setup",
+      "workflows",
+      "size",
+      "power",
+      "model",
+    ]);
+    const adjusting = { field: "setup", equals: "adjust" };
+    const fieldsOf = items({ projects, live: 0, ended: 0 })[0]?.fields ?? [];
+    for (const name of ["size", "power", "model"]) {
+      expect(fieldsOf.find((f) => f.name === name)?.showWhen).toEqual(adjusting);
+    }
+    expect(fieldsOf.find((f) => f.name === "setup")).toMatchObject({
+      defaultValue: "defaults",
+      options: [
+        { value: "defaults", label: "defaults · medium · balanced" },
+        { value: "adjust", label: "adjust" },
+      ],
+    });
+    expect(launchByline()).toBe(
+      "Start runs medium · 5 agents · 40 turns · 30 min · balanced power",
+    );
     const field = (st: Parameters<typeof buildLaunch>[0], name: string) =>
       items(st)[0]?.fields?.find((f) => f.name === name);
-    expect(field({ projects: [], live: 0 }, "workflows")?.placeholder).toBe(
+    expect(field({ projects: [], live: 0, ended: 0 }, "workflows")?.placeholder).toBe(
       "needs a registered project",
     );
-    expect(field({ projects, live: 0, refused: ["fix-issue"] }, "workflows")?.placeholder).toBe(
+    expect(
+      field({ projects, live: 0, ended: 0, refused: ["fix-issue"] }, "workflows")?.placeholder,
+    ).toBe(
       "none: the swarm investigates · e.g. fix-issue · fix-issue approvals: you answer them in Workflows",
     );
-    expect(field({ projects, live: 0 }, "size")?.options?.map((o) => o.label)).toEqual([
+    expect(field({ projects, live: 0, ended: 0 }, "size")?.options?.map((o) => o.label)).toEqual([
       "small · 3 agents · 20 turns",
       "medium · 5 agents · 40 turns",
       "large · 8 agents · 80 turns",
     ]);
-    expect(field({ projects, live: 0 }, "project")?.placeholder).toBe("no project");
-    expect(field({ projects, live: 0 }, "workflows")?.showWhen).toEqual({ field: "project" });
-    expect(field({ projects, live: 0 }, "tools")?.showWhen).toEqual({ field: "project" });
-    expect(field({ projects: [], live: 0 }, "workflows")?.showWhen).toBeUndefined();
+    expect(field({ projects, live: 0, ended: 0 }, "project")?.placeholder).toBe("no project");
+    expect(field({ projects, live: 0, ended: 0 }, "workflows")?.showWhen).toEqual({
+      field: "project",
+    });
+    expect(field({ projects, live: 0, ended: 0 }, "tools")?.showWhen).toEqual({ field: "project" });
+    expect(field({ projects: [], live: 0, ended: 0 }, "workflows")?.showWhen).toBeUndefined();
     expect(
-      field({ projects, live: 0, dispatchBlocked: "no workflows" }, "workflows")?.showWhen,
+      field({ projects, live: 0, ended: 0, dispatchBlocked: "no workflows" }, "workflows")
+        ?.showWhen,
     ).toBeUndefined();
-    expect(items({ projects, live: 0 })[0]?.pendingLabel).toBe("Starting…");
+    expect(items({ projects, live: 0, ended: 0 })[0]?.pendingLabel).toBe("Starting…");
   });
 
   test("each power's hover names the model every provider runs at it", () => {
     const section = buildLaunch({
       projects,
       live: 0,
+      ended: 0,
       classes: [
         { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
         { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
@@ -1174,7 +1214,7 @@ describe("launching from the tab", () => {
       "claude: opus-9 · copilot: gpt-6-pro",
     );
     expect(
-      buildLaunch({ projects, live: 0 }).sections.flatMap((x) =>
+      buildLaunch({ projects, live: 0, ended: 0 }).sections.flatMap((x) =>
         x.kind === "actions" ? (x.items[0]?.fields ?? []) : [],
       ),
     ).toContainEqual(
@@ -1273,8 +1313,23 @@ describe("start and run again", () => {
       surfaceId: "surface:chat:swarms",
       regionKey: INDEX_KEY,
     });
+    expect(begun).toEqual([{ task: "Why is the build slow?", workTools: "none", size: "small" }]);
+  });
+
+  test("a launch on defaults sends no size, power or model; adjust sends what was picked", async () => {
+    begun.length = 0;
+    await act("start-swarm", {
+      task: "Why is the build slow?",
+      setup: "defaults",
+      size: "large",
+      power: "deep",
+      model: "gpt-6-astra",
+      provider: "copilot",
+    });
+    await act("start-swarm", { task: "Why is the build slow?", setup: "adjust", size: "small" });
     expect(begun).toEqual([
-      { task: "Why is the build slow?", workTools: "none", size: "small", power: "balanced" },
+      { task: "Why is the build slow?", workTools: "read" },
+      { task: "Why is the build slow?", workTools: "read", size: "small" },
     ]);
   });
 
