@@ -88,6 +88,7 @@ export function openHint(
   s: Pick<SwarmSummary, "limits" | "size" | "sizeBase"> & {
     model?: string;
     workerModel?: string;
+    power?: SwarmSummary["power"];
     agents: SwarmSummary["agents"];
   },
 ): string {

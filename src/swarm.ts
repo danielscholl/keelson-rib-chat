@@ -48,6 +48,7 @@ import {
   type SwarmAgent,
   type SwarmHealth,
   type SwarmLimits,
+  type SwarmPower,
   type SwarmProject,
   type SwarmSize,
   type SwarmStatus,
@@ -113,6 +114,8 @@ export interface SwarmOptions {
   model?: string;
   // Model for workers; the lead always uses `model`.
   workerModel?: string;
+  // The model class an agent with no model of its own runs at.
+  power?: SwarmPower;
   // Workflows whose gates the host refused to let a swarm answer, shared across
   // swarms so the next gate on one is flagged for the operator at once.
   approvalRefusals?: ApprovalRefusals;
@@ -610,7 +613,7 @@ export class Swarm {
         turnContext: { swarmId: this.id, agentId: agent.id },
         ...(this.opts.cwd ? { cwd: this.opts.cwd, allowedDirectories: [this.opts.cwd] } : {}),
         ...(this.opts.provider ? { provider: this.opts.provider } : {}),
-        ...(model ? { model } : {}),
+        ...(model ? { model } : this.opts.power ? { modelClass: this.opts.power } : {}),
         ...(agent.sessionId ? { resumeSessionId: agent.sessionId } : {}),
       },
       this.limits.turnTimeoutMs,
@@ -1312,6 +1315,7 @@ export class Swarm {
       ...(this.opts.provider ? { provider: this.opts.provider } : {}),
       ...(this.opts.model ? { model: this.opts.model } : {}),
       ...(this.opts.workerModel ? { workerModel: this.opts.workerModel } : {}),
+      ...(this.opts.power ? { power: this.opts.power } : {}),
       ...(this.opts.project ? { project: this.opts.project } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },

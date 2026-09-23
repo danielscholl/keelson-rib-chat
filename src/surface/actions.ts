@@ -9,7 +9,7 @@
 import type { RibAction, RibActionResult } from "@keelson/shared";
 import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
-import { BODY_MAX, SWARM_SIZES, type SwarmSize } from "../types.ts";
+import { BODY_MAX, SWARM_POWERS, SWARM_SIZES, type SwarmPower, type SwarmSize } from "../types.ts";
 import {
   docKey,
   HISTORY_KEY,
@@ -47,6 +47,11 @@ function sizeOf(payload: Record<string, unknown>): SwarmSize | undefined {
   return (SWARM_SIZES as readonly string[]).includes(v) ? (v as SwarmSize) : undefined;
 }
 
+function powerOf(payload: Record<string, unknown>): SwarmPower | undefined {
+  const v = text(payload, "power");
+  return (SWARM_POWERS as readonly string[]).includes(v) ? (v as SwarmPower) : undefined;
+}
+
 // The model picker sends its model and the model's provider; both empty is the host default.
 function modelOf(payload: Record<string, unknown>): Pick<StartSwarmInput, "model" | "provider"> {
   const model = text(payload, "model");
@@ -64,6 +69,7 @@ function startInput(payload: Record<string, unknown>): StartSwarmInput | string 
     task,
     workTools: tools === "none" ? "none" : "read",
     size: sizeOf(payload) ?? "medium",
+    power: powerOf(payload) ?? "balanced",
     ...(project ? { project } : {}),
     ...modelOf(payload),
   };
@@ -91,12 +97,13 @@ function againInput(
   payload: Record<string, unknown>,
   was: { model?: string; provider?: string },
 ): StartSwarmInput {
-  const { model, provider, workerModel, size, ...rest } = old;
+  const { model, provider, workerModel, size, power, ...rest } = old;
   const picked = modelOf(payload);
   const same = picked.model === was.model && picked.provider === was.provider;
   return {
     ...rest,
     size: sizeOf(payload) ?? size ?? "medium",
+    power: powerOf(payload) ?? power ?? "balanced",
     ...(same
       ? {
           ...(model ? { model } : {}),

@@ -101,7 +101,9 @@ These belong to Keelson, not to the rib:
 - `KEELSON_RIBS` selects which ribs activate. Chat's id is `chat`.
 - `KEELSON_WORKFLOW_PROVIDER`, or else the first registered provider, serves
   every agent turn unless `chat_swarm_start` is given `provider`. That
-  provider's default model runs unless it is given `model` or `worker_model`.
+  provider's model for the swarm's `power` runs unless it is given `model` or
+  `worker_model`. The host's `modelClasses` setting for a provider changes which
+  model each power picks.
 - A registered project is what `project` resolves against.
 
 ## Related

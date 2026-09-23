@@ -6,8 +6,15 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { CanvasBoardView } from "@keelson/shared";
-import { SIZE_PRESETS, SWARM_SIZES, type SwarmSize, type SwarmSummary } from "../types.ts";
+import type { CanvasBoardView, ModelClassMap } from "@keelson/shared";
+import {
+  SIZE_PRESETS,
+  SWARM_POWERS,
+  SWARM_SIZES,
+  type SwarmPower,
+  type SwarmSize,
+  type SwarmSummary,
+} from "../types.ts";
 import { sizesHint } from "./parts.ts";
 
 type ActionsSection = Extract<CanvasBoardView["sections"][number], { kind: "actions" }>;
@@ -19,6 +26,8 @@ export interface LaunchState {
   // Why Dispatch can't run on this host, when it can't.
   dispatchBlocked?: string;
   live: number;
+  // Each provider's class map, for the hover on each power.
+  classes?: readonly { provider: string; classes: ModelClassMap }[];
 }
 
 export const DISCUSS_SUBTITLE = "Agents talk it through in #swarm-<id> and conclude.";
@@ -44,11 +53,30 @@ export function sizeField(defaultValue: SwarmSize = "medium"): Field {
   };
 }
 
+// The hover names the model each provider runs at that power.
+export function powerField(
+  defaultValue: SwarmPower = "balanced",
+  classes: LaunchState["classes"] = [],
+): Field {
+  return {
+    name: "power",
+    label: "Power",
+    required: true,
+    segmented: true,
+    half: true,
+    defaultValue,
+    options: SWARM_POWERS.map((k) => {
+      const hint = classes.map((c) => `${c.provider}: ${c.classes[k]}`).join(" · ");
+      return { value: k, label: k, ...(hint ? { hint: hint.slice(0, 200) } : {}) };
+    }),
+  };
+}
+
 export function modelField(model?: string, provider?: string): Field {
   return {
     name: "model",
     label: "Model",
-    placeholder: "provider default",
+    placeholder: "use power",
     half: true,
     ...(model ? { defaultValue: model } : {}),
     modelPicker: { providerField: "provider", ...(provider ? { providerDefault: provider } : {}) },
@@ -101,6 +129,7 @@ function fields(state: LaunchState, dispatch: boolean): Field[] {
         ]
       : []),
     sizeField(),
+    powerField("balanced", state.classes),
     modelField(),
   ];
 }
@@ -149,14 +178,14 @@ export function buildLaunch(state: LaunchState): CanvasBoardView {
   };
 }
 
-// Run again reads the old swarm's size and model as its defaults.
+// Run again reads the old swarm's size, power and model as its defaults.
 export function runAgainItem(s: SwarmSummary): Item {
   return {
     type: "run-again",
     label: "Run again",
     glyph: "↻",
     hint: "Starts a new swarm with the same task, project, workflows and context.",
-    fields: [sizeField(s.sizeBase), modelField(s.model, s.provider)],
+    fields: [sizeField(s.sizeBase), powerField(s.power), modelField(s.model, s.provider)],
     submitLabel: "Run again",
     binding: { id: s.id },
   };

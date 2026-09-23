@@ -9,14 +9,18 @@
 import type { SwarmLimits, SwarmSummary, TokenTally } from "./types.ts";
 
 // What a swarm runs on, in one short label: the model asked for, the split when
-// lead and workers differ, or the provider's default once a turn named the provider.
-export function modelLabel(s: Pick<SwarmSummary, "model" | "workerModel" | "agents">): string {
+// lead and workers differ, else its power, or the provider's default before power existed.
+export function modelLabel(
+  s: Pick<SwarmSummary, "model" | "workerModel" | "power" | "agents">,
+): string {
   const lead = s.model;
   const workers = s.workerModel ?? s.model;
+  const power = s.power ? `${s.power} power` : undefined;
   if (lead && workers && lead !== workers) return `${lead} · workers ${workers}`;
-  if (workers && !lead) return `provider default · workers ${workers}`;
+  if (workers && !lead) return `${power ?? "provider default"} · workers ${workers}`;
   if (lead) return lead;
   const served = s.agents.find((a) => a.providerId)?.providerId;
+  if (power) return served ? `${power} on ${served}` : power;
   return served ? `${served} default` : "provider default";
 }
 

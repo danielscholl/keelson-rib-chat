@@ -53,9 +53,12 @@ once, 60 minutes). To set single ceilings on top of that, pass `max_agents`
 (up to 12), `max_turns` (up to 200), `max_turns_per_agent` (up to 100),
 `turn_timeout_s` (up to 1,800), and `max_minutes` (up to 240).
 
-To choose the model, pass `provider` and `model`. `model` runs every agent, or
-the lead alone when `worker_model` is also set, and workers then run
-`worker_model`. Without `model`, the provider serves its own default.
+To choose how much model the agents get, pass `power`: `fast`, `balanced` (the
+default) or `deep`. Each provider maps a power to one of its models, and the
+host's `modelClasses` setting can change that map. To name a model instead, pass
+`provider` and `model`. `model` runs every agent, or the lead alone when
+`worker_model` is also set, and workers then run `worker_model`. An agent with a
+named model ignores `power`.
 
 ## Or run the workflow
 

@@ -20,7 +20,9 @@ import {
   readTurnContext,
   SIZE_PRESETS,
   type StartingSwarm,
+  SWARM_POWERS,
   SWARM_SIZES,
+  type SwarmPower,
   type SwarmSize,
   type SwarmSummary,
   sizeOf,
@@ -42,6 +44,7 @@ export interface StartSwarmInput {
   provider?: string;
   model?: string;
   workerModel?: string;
+  power?: SwarmPower;
   workflows?: DispatchGrant[];
 }
 
@@ -222,6 +225,12 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .optional()
         .describe("Model for every agent, or for the lead alone when worker_model is set."),
       worker_model: z.string().optional().describe("Model for workers. Defaults to model."),
+      power: z
+        .enum(SWARM_POWERS)
+        .optional()
+        .describe(
+          "How much model the agents get: fast, balanced (default) or deep. Each provider maps the class to one of its models; a named model wins.",
+        ),
       workflows: z
         .array(
           z
@@ -521,6 +530,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           ...(args.provider ? { provider: args.provider } : {}),
           ...(args.model ? { model: args.model } : {}),
           ...(args.worker_model ? { workerModel: args.worker_model } : {}),
+          ...(args.power ? { power: args.power } : {}),
           ...(args.workflows?.length
             ? {
                 workflows: args.workflows.map((w) => ({

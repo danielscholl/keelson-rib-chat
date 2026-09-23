@@ -964,6 +964,18 @@ describe("size and model", () => {
     ]);
   });
 
+  test("power rides every turn as a model class, and a named model wins over it", async () => {
+    const h = harness(script, {}, { power: "deep", workerModel: "gpt-5.6-sol" });
+    const summary = await (await h.start()).finished;
+    const turnsOf = (id: string) =>
+      h.provider.requests.filter((r) => r.turnContext?.agentId === id);
+    expect(turnsOf("s1-lead").every((r) => r.modelClass === "deep" && !r.model)).toBe(true);
+    expect(turnsOf("s1-w").map((r) => [r.model, r.modelClass])).toEqual([
+      ["gpt-5.6-sol", undefined],
+    ]);
+    expect(summary.power).toBe("deep");
+  });
+
   test("with no model, agents record no model and the provider that served them", async () => {
     const summary = await (await harness(script).start()).finished;
     expect(summary.model).toBeUndefined();
