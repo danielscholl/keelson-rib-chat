@@ -359,13 +359,14 @@ that asks something leads with the request as its title (Review the plan for
 …) and its verb as the first button (Review plan, Read question, Open swarm,
 Message the lead); the task drops to the footnote. A running card leads with
 what the swarm is doing this minute, then a named turn-budget meter. Ended
-swarms are rows: the lifecycle word, the task, then the id, model, turns, time
-and how many runs verified.
+swarms are rows: the lifecycle word, the task and id, then the model, turns,
+time, when it ended and how many runs verified.
 
 Requests come in a ladder: decide (a run waits at an approval only the operator
 can answer, because the host refused the workflow under \`ribApprovalGrants\`
 or offers no respond), question (an agent addressed \`@operator\`), connection
-(ClickClack's socket closed twice without reopening), quiet (a run waits at an
+(ClickClack's socket closed twice without reopening; the card offers Start
+ClickClack when the managed server is down), quiet (a run waits at an
 approval the swarm could answer and no agent has worked since). The tab's badge
 counts swarms with any request. An approval a peer is reviewing is shown as
 reviewing and counted nowhere.
@@ -379,7 +380,8 @@ then the record. The record is the same in both: the agents as a bench with an
 open seat per unfilled slot and a waiting pill on agents with messages and no
 slot, the runs (only when the launch named workflows), the task and each
 context item with its text under a disclosure, the activity with repeats
-counted, and About.
+counted (the last 200 events are in the reading pane), and About. A note posted
+with Message the lead shows in the activity at once.
 
 The Start a swarm header is one form. Workflows named means the lead may
 dispatch them; none named means the swarm investigates. A task that names a

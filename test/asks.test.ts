@@ -84,6 +84,11 @@ describe("an agent asking the operator", () => {
     await settle();
     expect(needsYou(swarm.summary()).map((n) => n.kind)).toEqual(["question"]);
     await swarm.steer("Product decision; keep it.");
+    expect(
+      swarm
+        .summary()
+        .activity?.some((e) => e.text === "you posted in #swarm-s1: Product decision; keep it."),
+    ).toBe(true);
     await settle(40);
     expect(swarm.summary().health?.asks).toBeUndefined();
     expect((await swarm.finished).status).toBe("done");

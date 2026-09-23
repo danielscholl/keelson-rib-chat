@@ -11,6 +11,7 @@ import { modelLabel, sizeText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
 import { SIZE_PRESETS, SWARM_SIZES, type SwarmStatus, type SwarmSummary } from "../types.ts";
 import {
+  channelHref,
   firstLine,
   hhmm,
   minutes,
@@ -143,15 +144,21 @@ export interface Request {
   pill: Pill;
   // The second level: what happened and why it is the operator's.
   line: string;
+  // Where to look, when the request has a place outside the tab.
+  link?: { value: string; href: string };
   // The verb that clears it, first on the card.
   primary: CanvasActionItem;
   // Further verbs the board shows beside the primary one.
   more: CanvasActionItem[];
 }
 
+function linkTo(href: string | undefined, value: string): Pick<Request, "link"> {
+  return href ? { link: { value, href } } : {};
+}
+
 // One request the operator can act on, from a need. The title is the request
 // itself, in the words the operator would use; the id names nothing here.
-export function requestOf(s: SwarmSummary, need: Need): Request {
+export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Request {
   const run = need.run;
   const gate = run?.pendingApproval;
   if (need.kind === "decide" && run && gate) {
@@ -164,6 +171,7 @@ export function requestOf(s: SwarmSummary, need: Need): Request {
       title: what,
       pill: NEED_PILL.decide,
       line: `${run.workflow} ${shortRun(run.runId)} paused at ${gate.nodeId}${gate.openedAt ? ` since ${hhmm(gate.openedAt)}` : ""} · only you can approve ${run.workflow} on this host`,
+      ...linkTo(threadHref(s, gate.threadId), "the approval thread in ClickClack"),
       primary: {
         type: "open-run",
         label: verb,
@@ -182,6 +190,10 @@ export function requestOf(s: SwarmSummary, need: Need): Request {
       title: `@${who} asked: ${askGist(ask.text, 96)}`,
       pill: NEED_PILL.question,
       line: `asked at ${hhmm(ask.at)} in #${s.channelName} · a reply in its thread answers it; other questions stay open`,
+      ...linkTo(
+        threadHref(s, ask.threadRootId) ?? threadHref(s, ask.messageId),
+        "the question in ClickClack",
+      ),
       primary: {
         type: "read-doc",
         label: "Read question",
@@ -202,13 +214,23 @@ export function requestOf(s: SwarmSummary, need: Need): Request {
   }
   if (need.kind === "connection") {
     const fault = s.health?.channelFault;
+    const down = server?.mode === "managed" && !server.running;
     return {
       kind: "connection",
       title: "ClickClack stopped answering",
       pill: NEED_PILL.connection,
-      line: `the swarm's socket closed ${s.health?.socketDrops ?? 2} times without reopening${fault ? ` · ${firstLine(fault, 80)}` : ""} · check the server in the footer`,
-      primary: openSwarm(s, "brand"),
-      more: [],
+      line: `the swarm's socket closed ${s.health?.socketDrops ?? 2} times without reopening${fault ? ` · ${firstLine(fault, 80)}` : ""} · ${down ? "the managed server is not running" : "the swarm retries every 2 seconds"}`,
+      ...linkTo(channelHref(s), `#${s.channelName} in ClickClack`),
+      primary: down
+        ? {
+            type: "server-start",
+            label: "Start ClickClack",
+            tone: "brand",
+            glyph: "▶",
+            hint: "Starts the managed server. The swarm reconnects and replays what it missed.",
+          }
+        : openSwarm(s, "brand"),
+      more: down ? [openSwarm(s)] : [],
     };
   }
   const since = need.since ? hhmm(need.since) : hhmm(s.startedAt);
@@ -240,7 +262,7 @@ export function openSwarm(s: SwarmSummary, tone?: CanvasActionItem["tone"]): Can
 // A note to the lead, posted in the channel as the operator.
 export function messageLead(s: SwarmSummary, tone?: CanvasActionItem["tone"]): CanvasActionItem {
   return {
-    type: "steer",
+    type: "message-lead",
     label: "Message the lead",
     ...(tone ? { tone } : {}),
     binding: { id: s.id },

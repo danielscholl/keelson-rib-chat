@@ -95,16 +95,21 @@ function reportAction(s: SwarmSummary) {
 
 // A swarm that asks something: the request is the title, its verb the first
 // action, and the task drops to the footnote.
-function requestCard(s: SwarmSummary, needs: readonly Need[]): Card {
+function requestCard(s: SwarmSummary, needs: readonly Need[], server?: ServerLine): Card {
   const first = needs[0] as Need;
-  const request = requestOf(s, first);
+  const request = requestOf(s, first, server);
   const more = needs.length - 1;
   return {
     title: request.title,
     pill: request.pill,
     // One level per line: the request, the budget, the roster.
     stacked: true,
-    fields: [{ value: request.line }, { value: budgetLine(s) }, ...people(s)],
+    fields: [
+      { value: request.line },
+      ...(request.link ? [request.link] : []),
+      { value: budgetLine(s) },
+      ...people(s),
+    ],
     footnote: setup(s, true),
     ...(more > 0 ? { reason: { text: `+${plural(more, "more request")}` } } : {}),
     actions: [request.primary, openSwarm(s), ...reportAction(s), stopAction(s)],
@@ -149,22 +154,23 @@ function startingCard(s: StartingSwarm): Card {
   };
 }
 
-// An ended swarm leads with its lifecycle, then the task, then the result.
-export function endedRow(s: SwarmSummary): Row {
+// An ended swarm leads with its lifecycle, then the task, then the result. The
+// trailing text never shrinks on the host, so it carries only the short facts.
+export function endedRow(s: SwarmSummary, now = new Date()): Row {
   const life = LIFECYCLE[s.status];
   const took = span(s.startedAt, s.endedAt);
   const verified = verifiedText(s);
+  const when = s.endedAt ?? s.startedAt;
   return {
     chip: { label: life.label, tone: life.tone },
-    text: firstLine(s.task, 72),
+    text: `${firstLine(s.task, 72)} · ${s.id}`,
     trailing: [
-      s.id,
       modelLabel(s),
       plural(s.turnsUsed, "turn"),
       ...(took ? [took] : []),
-      `${day(s.startedAt)} ${hhmm(s.startedAt)}`,
+      day(when) === day(now.toISOString()) ? hhmm(when) : day(when),
       ...(verified ? [verified] : []),
-      ...(s.report ? ["◧ report"] : []),
+      ...(s.report ? ["◧"] : []),
     ].join(" · "),
     action: { type: "swarm-open", payload: { id: s.id } },
   };
@@ -186,7 +192,7 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
     .filter((x) => x.needs.length === 0)
     .sort((a, b) => a.s.startedAt.localeCompare(b.s.startedAt));
   const cards = [
-    ...needing.map((x) => requestCard(x.s, x.needs)),
+    ...needing.map((x) => requestCard(x.s, x.needs, state.server)),
     ...state.starting.map(startingCard),
     ...running.map((x) => runningCard(x.s)),
   ];
@@ -225,7 +231,7 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
               kind: "rows" as const,
               title: "Ended",
               items: [
-                ...shown.map(endedRow),
+                ...shown.map((s) => endedRow(s)),
                 ...(earlier > 0
                   ? [
                       {
@@ -271,7 +277,9 @@ export function buildHistory(state: SurfaceState): CanvasBoardView {
       {
         kind: "rows",
         items:
-          ended.length > 0 ? ended.map(endedRow) : [{ icon: "◌", text: "No ended swarms yet." }],
+          ended.length > 0
+            ? ended.map((s) => endedRow(s))
+            : [{ icon: "◌", text: "No ended swarms yet." }],
       },
     ],
   };

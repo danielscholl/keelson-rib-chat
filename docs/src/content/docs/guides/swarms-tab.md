@@ -44,9 +44,9 @@ A running card leads with the task and the id, then:
 Hover **Open swarm** to see the size's numbers and the model.
 
 Ended swarms are rows: the lifecycle word (done, stopped, stalled, out of
-budget, failed), the task, then the id, the model that served it, the turns, how
-long it ran, when it started, how many of its runs verified, and ◧ when a report
-exists. The index shows the latest eight, and the last row opens the rest. The
+budget, failed), the task with the id at its end, then the model that served
+it, the turns, how long it ran, when it ended (the time for today, the date
+before that), how many of its runs verified, and ◧ when a report exists. The index shows the latest eight, and the last row opens the rest. The
 rib keeps the last 50 in its data directory, so they survive a restart.
 
 An empty tab shows the three steps: start a swarm above, agents talk in
@@ -61,7 +61,7 @@ its own way of clearing. The tab's badge counts swarms with any request.
 |---|---|---|---|
 | **decide** | A run waits at an approval this swarm may not answer: the host refused the workflow under `ribApprovalGrants`, or offers the rib no way to answer. | **Review plan** for a plan approval, **Answer** for any other, opening the run beside the tab. **Reply** posts in the approval thread as you; it approves nothing. | The run leaves the approval. |
 | **question** | An agent addressed `@operator`, or your ClickClack handle. | **Read question** opens the reading pane. **Reply** posts in the question's thread. **Dismiss** clears it from the tab. | You reply in that thread, post in the channel mentioning the asker, or dismiss it. Other questions stay open. A note to the lead answers the lead's own questions only. |
-| **connection** | The swarm's ClickClack socket closed twice without reopening. | **Open swarm**; check the server in the footer. | The socket reopens. |
+| **connection** | The swarm's ClickClack socket closed twice without reopening. | **Start ClickClack** when the managed server is down, otherwise **Open swarm**; the card links the channel. | The socket reopens. |
 | **quiet** | A run waits at an approval the swarm could answer, and no agent has worked since. | **Message the lead** | Any agent takes a turn. |
 
 A swarm with an open question waits for you. It isn't nudged or stalled, and
@@ -86,7 +86,8 @@ Live, the board runs in this order:
   busy or waiting, and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
 - **Message the lead**, which posts in the channel as you and wakes the lead,
-  and **Stop swarm…** at the far end of the row
+  and **Stop swarm…** at the far end of the row. What you post shows at once
+  under Activity, as **you posted in #swarm-<id>: …**
 
 Ended, it runs: the outcome (the report, the conclusion with **Read in full**,
 or the cause, such as **Stopped by you at 21:50**, **Out of turns at 40** or
@@ -100,11 +101,14 @@ The record follows in both and reads the same:
   per-worker cap, its role and its tokens; open seats up to the swarm's cap show
   as dashed ghosts
 - **Runs**, only when the launch named workflows: each run with its worktree,
-  PR and CI strip and its steps done; clicking a run opens it beside the tab. It
-  says which workflows the lead may start while none has
+  PR and CI strip and its steps done; clicking a run opens it beside the tab.
+  Each approval the swarm answered sits under its run with the reviewer, a link
+  to the review, and the reason under a disclosure. It says which workflows the
+  lead may start while none has
 - **Task and context**: the task in full under a disclosure, and each context
   item with its retrieval time, commit and text under its own
-- **Activity**: the last twelve events, newest first, with repeats counted
+- **Activity**: the last twelve events, newest first, with repeats counted,
+  then **Read the full log**, which opens the last 200 in the reading pane
 - **About**: the channel, the times, the size's limits, the model per role, the
   tokens, and any problems with ClickClack or the lead's turns; an ended board
   ends with a row back to the ended swarms

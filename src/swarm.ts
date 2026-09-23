@@ -92,7 +92,7 @@ export const MAX_TURN_FAILURES = 3;
 const BACKGROUND_KEPT = 12;
 const ASKS_KEPT = 5;
 export const GATE_FILES_MAX = 64_000;
-export const ACTIVITY_KEPT = 12;
+export const ACTIVITY_KEPT = 200;
 const ASK_CHARS = 2_000;
 const PACE_MINUTES = 30;
 // Enough turn starts to fill PACE_MINUTES at any size's concurrency.
@@ -158,6 +158,7 @@ export type SwarmChange =
   | "conclusion"
   | "report"
   | "health"
+  | "activity"
   | "end";
 
 interface Deferred<T> {
@@ -1363,6 +1364,7 @@ export class Swarm {
     if (this.status !== "running") return;
     // Posted as the human owner, so it routes to the lead like any operator message.
     const message = await this.owner.postMessage(this.channel.id, `**Operator:** ${note}`);
+    this.noteOperator(`you posted in #${this.channel.name}`, note);
     this.enqueueMessage(message);
   }
 
@@ -1374,6 +1376,7 @@ export class Swarm {
       throw new Error(`run ${runId} has no open gate thread`);
     }
     const message = await this.owner.replyInThread(threadId, `**Operator:** ${note}`);
+    this.noteOperator("you replied in the approval thread", note);
     this.enqueueMessage(message);
   }
 
@@ -1381,7 +1384,15 @@ export class Swarm {
   async replyInThread(threadRootId: string, note: string): Promise<void> {
     if (this.status !== "running") throw new Error(`swarm ${this.id} is ${this.status}`);
     const message = await this.owner.replyInThread(threadRootId, `**Operator:** ${note}`);
+    this.noteOperator("you replied in the question's thread", note);
     this.enqueueMessage(message);
+  }
+
+  // The board shows the operator's own post at once, before the lead's turn does.
+  private noteOperator(where: string, note: string): void {
+    const gist = note.split("\n", 1)[0]?.trim() ?? "";
+    this.log(`${where}: ${gist.length > 80 ? `${gist.slice(0, 79).trimEnd()}…` : gist}`);
+    this.changed("activity");
   }
 
   stop(reason = "stopped by operator"): Promise<SwarmSummary> {
