@@ -11,6 +11,8 @@ export const SURFACE_ID = "swarms";
 // The host names a rib's surface tab by rib and surface id.
 export const SURFACE_TAB = `surface:chat:${SURFACE_ID}`;
 export const INDEX_KEY = "rib:chat:swarms";
+// The count on the Swarms tab: live swarms waiting on the operator.
+export const BADGE_KEY = "rib:chat:swarms-badge";
 export const HISTORY_KEY = "rib:chat:history";
 
 export function swarmKey(id: string): string {

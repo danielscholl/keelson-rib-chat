@@ -51,13 +51,13 @@ export function needReason(s: SwarmSummary, need: Need): Card["reason"] {
   if (need.kind === "only-you" && run && gate) {
     return {
       label: "needs you",
-      text: `${run.workflow} ${shortRun(run.runId)} waits at ${gate.nodeId} since ${hhmm(gate.openedAt)}. This swarm can't answer ${run.workflow} gates: answer it in the Workflows tab.`,
+      text: `${run.workflow} ${shortRun(run.runId)} waits at ${gate.nodeId} since ${hhmm(gate.openedAt)}. This swarm can't answer ${run.workflow} gates: open the run to answer it.`,
     };
   }
   if (need.kind === "quiet" && run && gate) {
     return {
       label: "needs you",
-      text: `No agent has worked since ${hhmm(need.since)} and ${run.workflow} ${shortRun(run.runId)} still waits at ${gate.nodeId}. Reply in the gate thread, steer the lead, or answer it in the Workflows tab.`,
+      text: `No agent has worked since ${hhmm(need.since)} and ${run.workflow} ${shortRun(run.runId)} still waits at ${gate.nodeId}. Reply in the gate thread, steer the lead, or open the run to answer it.`,
     };
   }
   if (need.kind === "ask" && need.ask) {
