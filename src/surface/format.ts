@@ -23,6 +23,42 @@ export function day(iso: string): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function localDay(d: Date): number {
+  return Math.round(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86_400_000);
+}
+
+// The heading a day's ended swarms sit under.
+export function dayHeading(iso: string, now: Date): string {
+  const d = new Date(iso);
+  const ago = localDay(now) - localDay(d);
+  if (ago === 0) return "Today";
+  if (ago === 1) return "Yesterday";
+  return `${WEEKDAYS[d.getDay()]} ${day(iso)}`;
+}
+
+// A board field renders text as is, so markdown's emphasis and code marks come off.
+export function plain(markdown: string): string {
+  return markdown.replace(/\*\*|__|`/g, "");
+}
+
+// The first sentence of a markdown text, headings skipped, cut to `max`.
+export function gist(markdown: string, max: number): string {
+  const text = plain(markdown)
+    .split("\n")
+    .filter((l) => !/^\s*#/.test(l))
+    .join(" ")
+    .replace(/^\s*[-*>]\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const sentence = text.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? text;
+  if (sentence.length <= max) return sentence;
+  const cut = sentence.slice(0, max - 1);
+  const word = cut.lastIndexOf(" ");
+  return `${(word > max / 2 ? cut.slice(0, word) : cut).replace(/[\s,;:]+$/, "")}…`;
+}
+
 // The first line of a task, cut to fit a card title.
 export function firstLine(text: string, max = 72): string {
   const line = text.trim().split("\n")[0]?.trim() ?? "";
@@ -53,6 +89,13 @@ export function threadHref(s: Linked, threadId: string | undefined): string | un
 export function prLabel(url: string): string {
   const n = url.match(/\/pull\/(\d+)/)?.[1];
   return n ? `PR #${n}` : "PR";
+}
+
+// Every pull request a run opened, as "PR #41, #42".
+export function prList(urls: readonly string[]): string {
+  if (urls.length === 0) return "";
+  const nums = urls.map((u) => u.match(/\/pull\/(\d+)/)?.[1]);
+  return nums.every(Boolean) ? `PR #${nums.join(", #")}` : plural(urls.length, "PR");
 }
 
 export function firstPr(s: Pick<SwarmSummary, "runs">): string | undefined {

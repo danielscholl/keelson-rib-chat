@@ -76,6 +76,7 @@ const DOC_KINDS = new Set<SwarmChange>([
   "start",
   "turn",
   "gate",
+  "run",
   "conclusion",
   "health",
   "activity",

@@ -274,6 +274,8 @@ export interface SwarmSummary {
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;
   error?: string;
+  // The ended swarm this one was started from with Run again.
+  rerunOf?: string;
 }
 
 export interface SwarmHealth {
@@ -321,6 +323,7 @@ export interface StartingSwarm {
   power?: SwarmPower;
   project?: SwarmProject;
   opId?: string;
+  rerunOf?: string;
 }
 
 // Carried on RibAgentTurnRequest.turnContext so a chat_* tool knows which agent

@@ -10,9 +10,19 @@ import type { CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
 import { modelLabel } from "../labels.ts";
 import { type Need, needsYou, oldestNeed } from "../needs.ts";
 import { type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
-import { activityText, day, firstLine, hhmm, plural, shortHandle, span } from "./format.ts";
+import {
+  activityText,
+  dayHeading,
+  firstLine,
+  gist,
+  hhmm,
+  plural,
+  shortHandle,
+  span,
+} from "./format.ts";
 import {
   budgetLine,
+  causeTitle,
   LIFECYCLE,
   livePill,
   openHint,
@@ -41,6 +51,9 @@ type Row = Extract<Section, { kind: "rows" }>["items"][number];
 type Field = NonNullable<Card["fields"]>[number];
 
 export const ENDED_SHOWN = 8;
+// An ended row's outcome and task together stay under this.
+const ENDED_TEXT = 90;
+const OUTCOME_CHARS = 60;
 
 // What the swarm is doing this minute, from its latest event or health.
 function activityLine(s: SwarmSummary): string {
@@ -159,26 +172,48 @@ function startingCard(s: StartingSwarm): Card {
   };
 }
 
-// An ended swarm leads with its lifecycle, then the task, then the result. The
-// trailing text never shrinks on the host, so it carries only the short facts.
-export function endedRow(s: SwarmSummary, now = new Date()): Row {
-  const life = LIFECYCLE[s.status];
+// What came of a swarm: the report's title, the conclusion's first sentence, or
+// why it ended.
+function outcomeOf(s: SwarmSummary): string {
+  if (s.report) return firstLine(s.report.title, OUTCOME_CHARS);
+  const said = s.conclusion ? gist(s.conclusion, OUTCOME_CHARS) : "";
+  return said || causeTitle(s, false);
+}
+
+// An ended swarm leads with its outcome, then the task it was for. A done row
+// carries a quiet check, so a chip marks only the swarms that did not finish.
+// The trailing text never shrinks on the host, so it carries only the short facts.
+export function endedRow(s: SwarmSummary): Row {
   const took = span(s.startedAt, s.endedAt);
   const verified = verifiedText(s);
-  const when = s.endedAt ?? s.startedAt;
+  const head = `${s.rerunOf ? "↻ " : ""}${outcomeOf(s)} · for: `;
   return {
-    chip: { label: life.label, tone: life.tone },
-    text: `${firstLine(s.task, 72)} · ${s.id}`,
+    ...(s.status === "done"
+      ? { icon: "✓" }
+      : { chip: { label: LIFECYCLE[s.status].label, tone: LIFECYCLE[s.status].tone } }),
+    text: `${head}${firstLine(s.task, Math.max(24, ENDED_TEXT - head.length))}`,
     trailing: [
       modelLabel(s),
       plural(s.turnsUsed, "turn"),
       ...(took ? [took] : []),
-      day(when) === day(now.toISOString()) ? hhmm(when) : day(when),
+      hhmm(s.endedAt ?? s.startedAt),
       ...(verified ? [verified] : []),
-      ...(s.report ? ["◧"] : []),
+      ...(s.report ? ["◧ report"] : []),
     ].join(" · "),
     action: { type: "swarm-open", payload: { id: s.id } },
   };
+}
+
+// Ended swarms, newest first, one rows section per day they ended.
+function byDay(ended: readonly SwarmSummary[], now: Date): Extract<Section, { kind: "rows" }>[] {
+  const groups: Extract<Section, { kind: "rows" }>[] = [];
+  for (const s of ended) {
+    const title = dayHeading(s.endedAt ?? s.startedAt, now);
+    const last = groups.at(-1);
+    if (last?.title === title) last.items.push(endedRow(s));
+    else groups.push({ kind: "rows", title, items: [endedRow(s)] });
+  }
+  return groups;
 }
 
 export function buildBadge(state: SurfaceState): RibSurfaceBadge {
@@ -188,7 +223,7 @@ export function buildBadge(state: SurfaceState): RibSurfaceBadge {
     : { count };
 }
 
-export function buildIndex(state: SurfaceState): CanvasBoardView {
+export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardView {
   const live = state.live.map((s) => ({ s, needs: needsYou(s) }));
   const needing = live
     .filter((x) => x.needs.length > 0)
@@ -223,6 +258,14 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
         ].filter((seg) => seg.n > 0)
       : [];
   const empty = cards.length === 0 && ended.length === 0;
+  const days = byDay(shown, now);
+  if (earlier > 0) {
+    days.at(-1)?.items.push({
+      icon: "…",
+      text: `${earlier} earlier`,
+      action: { type: "history-open" },
+    });
+  }
 
   return {
     view: "board",
@@ -230,26 +273,7 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
     ...(status ? { header: { status, ...(segments.length > 0 ? { segments } : {}) } } : {}),
     sections: [
       ...(cards.length > 0 ? [{ kind: "cards" as const, title: "Live", items: cards }] : []),
-      ...(shown.length > 0
-        ? [
-            {
-              kind: "rows" as const,
-              title: "Ended",
-              items: [
-                ...shown.map((s) => endedRow(s)),
-                ...(earlier > 0
-                  ? [
-                      {
-                        icon: "…",
-                        text: `${earlier} earlier ended swarm${earlier === 1 ? "" : "s"}`,
-                        action: { type: "history-open" },
-                      },
-                    ]
-                  : []),
-              ],
-            },
-          ]
-        : []),
+      ...days,
       ...(empty
         ? [
             {
@@ -272,20 +296,15 @@ export function buildIndex(state: SurfaceState): CanvasBoardView {
   };
 }
 
-export function buildHistory(state: SurfaceState): CanvasBoardView {
+export function buildHistory(state: SurfaceState, now = new Date()): CanvasBoardView {
   const ended = [...state.ended].reverse();
   return {
     view: "board",
     title: "Ended swarms",
     header: { chip: `${ended.length} kept` },
-    sections: [
-      {
-        kind: "rows",
-        items:
-          ended.length > 0
-            ? ended.map((s) => endedRow(s))
-            : [{ icon: "◌", text: "No ended swarms yet." }],
-      },
-    ],
+    sections:
+      ended.length > 0
+        ? byDay(ended, now)
+        : [{ kind: "rows", items: [{ icon: "◌", text: "No ended swarms yet." }] }],
   };
 }

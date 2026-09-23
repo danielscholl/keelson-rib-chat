@@ -26,8 +26,10 @@ import {
   firstLine,
   hhmm,
   minutes,
+  plain,
   plural,
   prLabel,
+  prList,
   shortHandle,
   shortRun,
   span,
@@ -67,11 +69,6 @@ export const DETAIL_CHARS = 4_000;
 const CONTEXT_DETAIL_BUDGET = 24_000;
 export const RECENT_SHOWN = 12;
 const BENCH_COLUMNS = 4;
-
-// A board field renders text as is, so markdown's emphasis and code marks come off.
-function plain(markdown: string): string {
-  return markdown.replace(/\*\*|__|`/g, "");
-}
 
 const AGENT_PILL: Record<AgentStatus, Card["pill"]> = {
   idle: { label: "idle", tone: "neutral" },
@@ -305,6 +302,30 @@ function bench(s: SwarmSummary): Leaf {
   };
 }
 
+// ---- Spend: each agent's fresh tokens against the swarm's. ----
+
+function spend(s: SwarmSummary): Leaf[] {
+  const spent = s.agents
+    .map((a) => ({ a, fresh: a.usage ? freshTokens(a.usage) : 0 }))
+    .filter((x) => x.fresh > 0);
+  // One agent's bar is always full, so the section starts at two.
+  if (spent.length < 2) return [];
+  const total = spent.reduce((n, x) => n + x.fresh, 0);
+  return [
+    {
+      kind: "bars",
+      title: "Spend",
+      inline: true,
+      items: spent.map(({ a, fresh }) => ({
+        label: shortHandle(a.handle, s.id),
+        value: fresh,
+        total,
+        trailing: `${tokenCount(fresh)} · ${Math.round((100 * fresh) / total)}%`,
+      })),
+    },
+  ];
+}
+
 // ---- Runs, present only when the launch named workflows. ----
 
 function evidence(run: ChildRun): Segment[] {
@@ -346,13 +367,38 @@ function runStatus(run: ChildRun): string {
     return `paused at ${run.pendingApproval?.nodeId ?? run.lastNode ?? "an approval"} · ${steps}`;
   }
   if (run.status === "running") return `running · ${steps}`;
-  const pr = run.prUrls[0];
   if (run.status === "succeeded") {
-    if (run.verified) return `${pr ? `${prLabel(pr)} · ` : ""}verified`;
+    if (run.verified) return "verified";
     const missing = missingEvidence(run);
     return missing.length > 0 ? `succeeded · lacks ${missing.join(", ")}` : "succeeded";
   }
   return run.status;
+}
+
+// A run's row: what it is for and where it worked, then what it made and how
+// it ended. The reading pane holds the full error and the CI detail.
+function runText(run: ChildRun): string {
+  const why =
+    (run.status === "failed" || run.status === "cancelled") && run.error
+      ? ` · ${firstLine(run.error, 90)}`
+      : "";
+  return [
+    `${run.workflow} ${firstLine(run.purpose, 60)}`,
+    ...(run.checkout?.branch ? [run.checkout.branch] : []),
+    ...(run.isolated ? [] : ["live checkout"]),
+  ]
+    .join(" · ")
+    .concat(why);
+}
+
+function runTrailing(run: ChildRun): string {
+  const settled = run.status !== "running" && run.status !== "paused";
+  const took = settled ? span(run.startedAt, run.completedAt) : "";
+  return [
+    ...(run.prUrls.length > 0 ? [prList(run.prUrls)] : []),
+    ...(took ? [took] : []),
+    runStatus(run),
+  ].join(" · ");
 }
 
 function runRows(s: SwarmSummary): Row[] {
@@ -373,8 +419,8 @@ function runRows(s: SwarmSummary): Row[] {
       run.status === "paused" ? threadHref(s, run.pendingApproval?.threadId) : run.prUrls[0];
     const row: Row = {
       icon: "▸",
-      text: `${run.workflow} ${firstLine(run.purpose, 60)}${run.isolated ? ", isolated worktree" : ", live checkout"}`,
-      trailing: runStatus(run),
+      text: runText(run),
+      trailing: runTrailing(run),
       bar: { segments: evidence(run) },
       ...(href ? { href } : {}),
       action: { type: "open-run", payload: { id: s.id, runId: run.runId } },
@@ -434,6 +480,7 @@ function taskAndContext(s: SwarmSummary): Leaf[] {
     budget -= excerpt.detail?.length ?? 0;
     const shown = excerpt.detail?.length ?? 0;
     const meta = [
+      c.id,
       ...(c.retrievedAt ? [`retrieved ${day(c.retrievedAt)} ${hhmm(c.retrievedAt)}`] : []),
       ...(c.headSha ? [`at ${c.headSha.slice(0, 7)}`] : []),
       shown > 0 && shown < c.chars
@@ -532,67 +579,87 @@ function about(s: SwarmSummary): Leaf {
 
 // ---- Outcome: the report, the conclusion, or the cause. ----
 
+function leadHandle(s: SwarmSummary): string {
+  return shortHandle(s.agents.find((a) => a.lead)?.handle ?? `${s.id}-lead`, s.id);
+}
+
+function reportKb(s: SwarmSummary): string {
+  return s.report ? `report ${Math.max(1, Math.round(s.report.bytes / 1024))} KB` : "";
+}
+
+const openReport = (s: SwarmSummary) => ({
+  type: "open-report",
+  label: "Open the report",
+  glyph: "◧",
+  tone: "brand" as const,
+  payload: { id: s.id },
+});
+
 function reportCard(s: SwarmSummary): Card[] {
   if (!s.report) return [];
-  const lead = s.agents.find((a) => a.lead);
   return [
     {
       title: s.report.title,
       pill: { label: "report", tone: "brand" },
-      footnote: `by @${shortHandle(lead?.handle ?? `${s.id}-lead`, s.id)} · ${day(s.report.at)} ${hhmm(s.report.at)} · ${Math.max(1, Math.round(s.report.bytes / 1024))} KB`,
-      actions: [
-        {
-          type: "open-report",
-          label: "Open the report",
-          glyph: "◧",
-          tone: "brand",
-          payload: { id: s.id },
-        },
-      ],
+      footnote: `by @${leadHandle(s)} · ${day(s.report.at)} ${hhmm(s.report.at)} · ${reportKb(s)}`,
+      actions: [openReport(s)],
     },
   ];
+}
+
+// The conclusion under the report's title when the lead published one: one
+// card holds the answer, its page, and the way into the channel.
+function conclusionCard(s: SwarmSummary, conclusion: string): Card {
+  const href = channelHref(s);
+  const when = s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : "";
+  return {
+    title: s.report?.title ?? "Conclusion",
+    ...(s.report ? { pill: { label: "report", tone: "brand" as const } } : {}),
+    prose: true,
+    fields: [
+      {
+        value:
+          conclusion.length > PREVIEW_CHARS
+            ? `${plain(conclusion.slice(0, PREVIEW_CHARS)).trimEnd()}…`
+            : plain(conclusion),
+        copyAction: { type: "copy-conclusion", payload: { id: s.id } },
+      },
+      ...(href ? [{ value: `↗ #${s.channelName || `swarm-${s.id}`} in ClickClack`, href }] : []),
+    ],
+    footnote: [
+      `by @${leadHandle(s)}${when}`,
+      `${conclusion.length.toLocaleString("en-US")} characters`,
+      ...(s.report ? [reportKb(s)] : []),
+    ].join(" · "),
+    actions: [
+      ...(s.report ? [openReport(s)] : []),
+      { type: "read-doc", label: "Read the conclusion", glyph: "▤", payload: { id: s.id } },
+    ],
+  };
 }
 
 function outcome(s: SwarmSummary): Leaf[] {
   if (live(s) && s.conclusion === undefined) {
     return s.report ? [{ kind: "cards", title: "Outcome", items: reportCard(s) }] : [];
   }
-  const text = s.conclusion ?? s.draftConclusion;
-  const byLead = s.agents.find((a) => a.lead);
-  const cards: Card[] = [...reportCard(s)];
   if (s.conclusion !== undefined) {
-    cards.push({
-      title: "Conclusion",
-      prose: true,
-      fields: [
-        {
-          value:
-            s.conclusion.length > PREVIEW_CHARS
-              ? `${plain(s.conclusion.slice(0, PREVIEW_CHARS)).trimEnd()}…`
-              : plain(s.conclusion),
-          copyAction: { type: "copy-conclusion", payload: { id: s.id } },
-        },
-      ],
-      footnote: `by @${shortHandle(byLead?.handle ?? `${s.id}-lead`, s.id)}${s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : ""} · ${s.conclusion.length.toLocaleString("en-US")} characters`,
-      actions: [{ type: "read-doc", label: "Read in full", glyph: "▤", payload: { id: s.id } }],
-    });
-  } else {
-    const life = LIFECYCLE[s.status];
-    cards.push({
-      title: causeTitle(s),
-      pill: { label: life.label, tone: life.tone },
-      fields: [{ value: s.error ?? "the swarm ended without a conclusion" }],
-      ...(text
-        ? {
-            footnote: "The lead's refused draft is in the reading pane.",
-            actions: [
-              { type: "read-doc", label: "Read the draft", glyph: "▤", payload: { id: s.id } },
-            ],
-          }
-        : {}),
-    });
+    return [{ kind: "cards", title: "Outcome", items: [conclusionCard(s, s.conclusion)] }];
   }
-  return [{ kind: "cards", title: "Outcome", items: cards }];
+  const life = LIFECYCLE[s.status];
+  const cause: Card = {
+    title: causeTitle(s),
+    pill: { label: life.label, tone: life.tone },
+    fields: [{ value: s.error ?? "the swarm ended without a conclusion" }],
+    ...(s.draftConclusion
+      ? {
+          footnote: "The lead's refused draft is in the reading pane.",
+          actions: [
+            { type: "read-doc", label: "Read the draft", glyph: "▤", payload: { id: s.id } },
+          ],
+        }
+      : {}),
+  };
+  return [{ kind: "cards", title: "Outcome", items: [...reportCard(s), cause] }];
 }
 
 function rerun(s: SwarmSummary, launch: StartSwarmInput | undefined): Leaf[] {
@@ -619,7 +686,14 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
   const chip = isLiveNow
     ? `${sizeWord(s)} · ${s.turnsUsed} of ${s.limits.maxTurns} turns · ${modelLabel(s)}`
     : `${sizeWord(s)} · ${plural(s.turnsUsed, "turn")}${took ? ` · ${took}` : ""} · ${modelLabel(s)}`;
-  const record: Leaf[] = [bench(s), ...runs(s), ...taskAndContext(s), ...activity(s), about(s)];
+  const details: Leaf[] = [
+    bench(s),
+    ...spend(s),
+    ...runs(s),
+    ...taskAndContext(s),
+    ...activity(s),
+    about(s),
+  ];
   return {
     view: "board",
     title: `${firstLine(s.task)} · ${s.id}`,
@@ -631,8 +705,8 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
         : {}),
     },
     sections: isLiveNow
-      ? [...requests(s, needs, opts.server), ...outcome(s), stats(s), ...controls(s), ...record]
-      : [...outcome(s), stats(s), ...rerun(s, opts.launch), ...record],
+      ? [...requests(s, needs, opts.server), ...outcome(s), stats(s), ...controls(s), ...details]
+      : [...outcome(s), stats(s), ...rerun(s, opts.launch), ...details],
   };
 }
 

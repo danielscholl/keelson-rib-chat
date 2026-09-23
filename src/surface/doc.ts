@@ -6,14 +6,17 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { GateFileText, SwarmSummary } from "../types.ts";
+import type { ChildRun, GateFileText, SwarmSummary } from "../types.ts";
 import {
   activityText,
   channelHref,
   day,
   firstLine,
   hhmm,
+  prLabel,
   shortHandle,
+  shortRun,
+  span,
   threadHref,
 } from "./format.ts";
 import { askText } from "./parts.ts";
@@ -24,9 +27,24 @@ function fileSection(f: GateFileText): string {
   return `### ${f.path}${f.truncated ? " (cut short)" : ""}\n\n${body}`;
 }
 
-// The task in full, then each context item's excerpt, so the pane holds what
-// the board's disclosures cut.
-function record(s: SwarmSummary): string {
+// A run in full: the board's row cuts the error and has no room for CI detail.
+function runSection(run: ChildRun): string {
+  const took = span(run.startedAt, run.completedAt);
+  const meta = [
+    firstLine(run.purpose, 160),
+    ...(run.checkout?.branch ? [`branch \`${run.checkout.branch}\``] : []),
+    ...run.prUrls.map((u) => `[${prLabel(u)}](${u})`),
+    ...(took ? [`took ${took}`] : []),
+    ...(run.ci ? [`CI ${run.ci.verdict}`] : []),
+  ].join(" · ");
+  const error = run.error ? `\n\n\`\`\`\`\n${run.error}\n\`\`\`\`` : "";
+  const ci = run.ci?.detail ? `\n\nCI: ${run.ci.detail}` : "";
+  return `### ${run.workflow} · ${shortRun(run.runId)} · ${run.status}\n\n*${meta}*${error}${ci}`;
+}
+
+// The task in full, each context item's excerpt, and every run, so the pane
+// holds what the board's rows cut.
+function details(s: SwarmSummary): string {
   const task = s.task.trim();
   const lines = task.split("\n");
   const rest = lines.slice(1).join("\n").trim();
@@ -45,6 +63,7 @@ function record(s: SwarmSummary): string {
       : "";
     parts.push(`## ${c.kind}: ${c.title}\n\n*${meta}*${body}`);
   }
+  if (s.runs?.length) parts.push(`## Runs\n\n${s.runs.map(runSection).join("\n\n")}`);
   const log = (s.activity ?? []).map(
     (e) =>
       `- ${hhmm(e.at)} ${firstLine(activityText(s.id, e.text), 160)}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`,
@@ -61,7 +80,7 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
   const channel = channelHref(s);
   const where = channel ? `[#${s.channelName}](${channel})` : `#${s.channelName}`;
   const title = `# ${s.task.trim().split("\n")[0]}`;
-  const tail = record(s);
+  const tail = details(s);
   const after = tail ? `\n\n${tail}` : "";
   if (s.conclusion !== undefined) {
     const by = s.agents.find((a) => a.lead)?.handle ?? `${s.id}-lead`;
