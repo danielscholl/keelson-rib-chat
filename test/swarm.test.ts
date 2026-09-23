@@ -1197,7 +1197,10 @@ describe("health and needs", () => {
     const threadId = swarm.summary().runs?.[0]?.pendingApproval?.threadId;
     expect((await reply("run_9", "x")).ok).toBe(false);
     expect((await reply("run_1", "  ")).ok).toBe(false);
-    expect(await reply("run_1", "Keep the retry cap at 30 s.")).toEqual({ ok: true });
+    expect(await reply("run_1", "Keep the retry cap at 30 s.")).toEqual({
+      ok: true,
+      data: { message: "Replied in the approve-plan thread as you" },
+    });
     await swarm.finished;
     const posted = server.messages.find(
       (m) => m.body === "**Operator:** Keep the retry cap at 30 s.",

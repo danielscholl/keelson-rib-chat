@@ -16,7 +16,7 @@ import {
 import type { SwarmReport } from "../report.ts";
 import type { SwarmChange } from "../swarm.ts";
 import type { StartSwarmInput } from "../tools.ts";
-import { isLive, type StartingSwarm, type SwarmSummary } from "../types.ts";
+import type { StartingSwarm, SwarmSummary } from "../types.ts";
 import { buildDoc } from "./doc.ts";
 import { buildBadge, buildHistory, buildIndex, type SurfaceState } from "./index-board.ts";
 import {
@@ -38,9 +38,6 @@ import { buildGoneBoard, buildStartingBoard, buildSwarmBoard } from "./swarm-boa
 // Keys outlive their swarm, since a client that gets a 404 on a key stops
 // listening for good. Past this many swarms the oldest ended ones are released.
 export const MAX_SWARM_KEYS = 100;
-// While a swarm is live the boards recompose on a clock too, so the time tile
-// and every "since" stay within a minute of true between events.
-export const LIVE_TICK_MS = 30_000;
 
 export interface SwarmRecord {
   live?: SwarmSummary;
@@ -62,7 +59,6 @@ export interface SurfaceDeps {
   views: RibViewDescriptor[];
   invalidateManifest?: () => void;
   windowMs?: number;
-  tickMs?: number;
 }
 
 export interface SwarmsSurface {
@@ -254,34 +250,10 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     deps.invalidateManifest?.();
   }
 
-  let ticker: ReturnType<typeof setInterval> | undefined;
-  const tickMs = deps.tickMs ?? LIVE_TICK_MS;
-
-  function tick(): void {
-    const state = deps.state();
-    const live = state.live.filter((s) => isLive(s.status));
-    if (live.length === 0 && state.starting.length === 0) {
-      if (ticker) clearInterval(ticker);
-      ticker = undefined;
-      return;
-    }
-    index.schedule();
-    for (const s of live) swarms.get(s.id)?.board.schedule();
-  }
-
-  function keepTicking(): void {
-    if (ticker) return;
-    const state = deps.state();
-    if (state.live.length === 0 && state.starting.length === 0) return;
-    ticker = setInterval(tick, tickMs);
-    (ticker as { unref?: () => void }).unref?.();
-  }
-
   return {
     track,
     changed(id, kind) {
       track([id]);
-      if (kind === "start" || kind === "turn") keepTicking();
       if (kind === "report" && ensureReport(id, true)) deps.invalidateManifest?.();
       index.schedule();
       badge.schedule();
@@ -306,8 +278,6 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       log.schedule();
     },
     dispose() {
-      if (ticker) clearInterval(ticker);
-      ticker = undefined;
       for (const id of [...swarms.keys()]) release(id);
       index.release();
       badge.release();

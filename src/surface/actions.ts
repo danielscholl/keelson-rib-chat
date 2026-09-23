@@ -10,6 +10,7 @@ import type { RibAction, RibActionResult } from "@keelson/shared";
 import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import { BODY_MAX, SWARM_POWERS, SWARM_SIZES, type SwarmPower, type SwarmSize } from "../types.ts";
+import { shortHandle } from "./format.ts";
 import {
   docKey,
   HISTORY_KEY,
@@ -162,6 +163,17 @@ function fail(error: string): RibActionResult {
   return { ok: false, error };
 }
 
+// The host shows `message` as the toast in place of the action's type.
+function done(message: string): RibActionResult {
+  return { ok: true, data: { message } };
+}
+
+const SERVER_TOAST = {
+  "server-start": "Starting ClickClack",
+  "server-stop": "Stopping ClickClack",
+  "server-reset": "Resetting ClickClack: a fresh data directory and a new owner session",
+} as const;
+
 // The system prompt for a chat that gathers context and then starts a swarm.
 export function startInChatPrompt(): string {
   return [
@@ -212,7 +224,7 @@ export async function handleSwarmsAction(
       if (!note) return fail("a message needs a note");
       if (note.length > BODY_MAX) return fail(`a message is at most ${BODY_MAX} characters`);
       await swarm.steer(note);
-      return { ok: true };
+      return done(`Posted in #${swarm.summary().channelName} as you`);
     }
     case "reply": {
       const swarm = id ? deps.live(id) : undefined;
@@ -226,7 +238,7 @@ export async function handleSwarmsAction(
       if (!note) return fail("a reply needs a note");
       if (note.length > BODY_MAX) return fail(`a reply is at most ${BODY_MAX} characters`);
       await swarm.replyToGate(runId, note);
-      return { ok: true };
+      return done(`Replied in the ${run.pendingApproval.nodeId} thread as you`);
     }
     case "reply-ask": {
       const swarm = id ? deps.live(id) : undefined;
@@ -238,15 +250,18 @@ export async function handleSwarmsAction(
       if (!note) return fail("a reply needs a note");
       if (note.length > BODY_MAX) return fail(`a reply is at most ${BODY_MAX} characters`);
       await swarm.replyInThread(ask.threadRootId, note);
-      return { ok: true };
+      return done(`Replied to @${shortHandle(ask.handle, id)}'s question as you`);
     }
     case "dismiss-ask": {
       const swarm = id ? deps.live(id) : undefined;
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
       const messageId = typeof payload.messageId === "string" ? payload.messageId : "";
-      if (!swarm.dismissAsk(messageId))
+      const asker = swarm.summary().health?.asks?.find((a) => a.messageId === messageId)?.handle;
+      if (!asker || !swarm.dismissAsk(messageId))
         return fail(`swarm ${id} has no open question '${messageId}'`);
-      return { ok: true };
+      return done(
+        `Dismissed @${shortHandle(asker, id)}'s question; the message stays in the channel`,
+      );
     }
     case "open-run": {
       const found = id ? deps.find(id) : {};
@@ -260,7 +275,7 @@ export async function handleSwarmsAction(
       const swarm = id ? deps.live(id) : undefined;
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
       void swarm.stop("stopped from the Swarms tab");
-      return { ok: true };
+      return done(`Stopping swarm ${id}: cancelling its runs and revoking its bots`);
     }
     case "start-swarm": {
       const input = startInput(payload);
@@ -298,7 +313,7 @@ export async function handleSwarmsAction(
     case "server-reset": {
       if (!deps.server) return fail("this rib can't manage ClickClack here");
       const why = await deps.server.run(action.type.slice("server-".length) as ServerVerb);
-      return why ? fail(why) : { ok: true };
+      return why ? fail(why) : done(SERVER_TOAST[action.type as keyof typeof SERVER_TOAST]);
     }
     case "server-probe":
       if (!deps.probe) return fail("this rib has no server to probe here");

@@ -15,13 +15,15 @@ import {
   budgetLine,
   LIFECYCLE,
   livePill,
-  meterLine,
   openHint,
   openSwarm,
   requestOf,
   type ServerLine,
+  sinceClock,
   sizeWord,
   stopAction,
+  timeLeft,
+  turnMeter,
   verifiedText,
 } from "./parts.ts";
 
@@ -102,12 +104,15 @@ function requestCard(s: SwarmSummary, needs: readonly Need[], server?: ServerLin
   return {
     title: request.title,
     pill: request.pill,
+    edge: request.pill.tone,
     // One level per line: the request, the budget, the roster.
     stacked: true,
     fields: [
       { value: request.line },
+      ...sinceClock(first),
       ...(request.link ? [request.link] : []),
       { value: budgetLine(s) },
+      timeLeft(s),
       ...people(s),
     ],
     footnote: setup(s, true),
@@ -122,9 +127,9 @@ function runningCard(s: SwarmSummary): Card {
   return {
     title: `${firstLine(s.task)} · ${s.id}`,
     pill: livePill(s),
-    bar: { value: s.turnsUsed, total: s.limits.maxTurns },
+    bar: turnMeter(s),
     stacked: true,
-    fields: [{ value: activityLine(s) }, { value: meterLine(s) }, ...people(s)],
+    fields: [{ value: activityLine(s) }, timeLeft(s), ...people(s)],
     footnote: setup(s, false),
     actions: [openSwarm(s, "brand"), ...reportAction(s), stopAction(s)],
   };
