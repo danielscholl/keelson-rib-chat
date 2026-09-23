@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.9.0...v0.10.0) (2026-09-23)
+
+
+### Added
+
+* **surface:** rebuild the Swarms tab around the decision ([#50](https://github.com/danielscholl/keelson-rib-chat/issues/50)) ([6619cea](https://github.com/danielscholl/keelson-rib-chat/commit/6619ceaf7da5e389987b3721a935aafec1dd4029))
+* **surface:** start ClickClack from a request and keep the full log ([#51](https://github.com/danielscholl/keelson-rib-chat/issues/51)) ([2173c43](https://github.com/danielscholl/keelson-rib-chat/commit/2173c43c38b29c988723907856bb7b9805e67e22))
+
 ## [0.9.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.8.0...v0.9.0) (2026-09-23)
 
 
