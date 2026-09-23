@@ -82,7 +82,9 @@ running, and an ended row marks it with ◧. The lead skips the report when the
 whole answer fits in a sentence or two.
 
 **Read in full** and **Read the gate** open the reading pane. It shows the
-conclusion, a refused draft, or an open gate's prompt, with formatting.
+conclusion, a refused draft, or an open gate's prompt and the files it names,
+such as the plan, with formatting. The copy button beside the conclusion copies
+all of it, not just the preview on the board.
 
 ## Starting a swarm
 

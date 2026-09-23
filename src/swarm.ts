@@ -42,6 +42,7 @@ import {
   CONCLUSION_MAX,
   type DispatchGrant,
   type GateAnswer,
+  type GateFileText,
   type OperatorAsk,
   SIZE_PRESETS,
   type SwarmAgent,
@@ -89,6 +90,7 @@ export const MAX_TURN_FAILURES = 3;
 // Thread replies an agent was not woken for, kept for its next turn.
 const BACKGROUND_KEPT = 12;
 const ASKS_KEPT = 5;
+export const GATE_FILES_MAX = 64_000;
 export const ACTIVITY_KEPT = 12;
 const ASK_CHARS = 280;
 
@@ -188,6 +190,18 @@ export function splitBody(text: string, max: number): string[] {
   }
   if (rest.length > 0) parts.push(rest);
   return parts;
+}
+
+// A gate's files as the reading pane keeps them, cut to a shared budget.
+function keptFiles(files: readonly GateFile[]): GateFileText[] {
+  let left = GATE_FILES_MAX;
+  return files.map((f) => {
+    if (f.text === undefined) return { path: f.path, error: f.error ?? "no text" };
+    const text = f.text.slice(0, Math.max(0, left));
+    left -= text.length;
+    const truncated = f.truncated === true || text.length < f.text.length;
+    return { path: f.path, text, ...(truncated ? { truncated } : {}) };
+  });
 }
 
 export function sanitizeHandle(raw: string): string {
@@ -1017,6 +1031,7 @@ export class Swarm {
     const client = this.leadClient();
     if (!gate || !client) return;
     gate.openedAt = new Date().toISOString();
+    gate.files = keptFiles(files);
     const prompt = files.some((f) => f.text !== undefined)
       ? withoutFileHints(gate.prompt)
       : gate.prompt;

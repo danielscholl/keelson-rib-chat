@@ -406,6 +406,8 @@ function outcome(s: SwarmSummary): Leaf[] {
             s.conclusion.length > PREVIEW_CHARS
               ? `${s.conclusion.slice(0, PREVIEW_CHARS).trimEnd()}…`
               : s.conclusion,
+          label: "Conclusion",
+          copyAction: { type: "copy-conclusion", payload: { id: s.id } },
         },
       ],
       footnote: `by @${byLead?.handle ?? `${s.id}-lead`}${s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : ""} · ${s.conclusion.length.toLocaleString("en-US")} characters`,
