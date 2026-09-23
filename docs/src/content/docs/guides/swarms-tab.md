@@ -101,12 +101,12 @@ Live, the board runs in this order:
   busy or waiting, and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
 - **Message the lead**, which posts in the channel as you and wakes the lead,
-  and **Stop swarm…** at the far end of the row. The button reads
+  then **Open the record**, and **Stop swarm…** at the far end of the row. The button reads
   **Sending…** until the note is posted, the toast says where it went, and
   the note shows at once under Activity as **you posted in #swarm-<id>: …**
 
 Ended, it runs: the outcome, the result strip with how many runs verified, and
-**Run again**.
+**Run again** beside **Open the record**.
 
 The outcome is one card. When the lead published a report, the card carries
 its title, the conclusion with a copy button, **Open the report** and **Read
@@ -164,6 +164,35 @@ or an open approval's prompt and the files it names, such as the plan, with
 formatting, then the task in full, each context item's text, and each run with
 its pull requests, full error and CI detail. The copy button
 beside the conclusion copies all of it, not just the preview on the board.
+
+## A swarm's record
+
+**Open the record** shows a page the rib draws for the swarm, live or ended. It
+answers what happened, in what order, by whom, and at what cost:
+
+- **Timeline**: a lane per agent in the order they first worked, yours above
+  and one per run below. Each turn is a bar in the agent's color, from its
+  start to its end, hatched when it timed out or failed and dashed while it
+  runs. Marks show when an agent was spawned (○), asked you something (?), when
+  you posted or answered (▲), the report (▪), the conclusion (●), a run's gate
+  opening and being answered (◇ ◆), and a verified run (✓); hover any bar or
+  mark for its detail. Live, a rule marks now and the right edge names when the
+  swarm's clock runs out; ended, a rule marks when it ended.
+- **Who woke whom**: the agents as nodes in their colors, you and the runs
+  beside the lead, a straight arrow for each spawn and a curve for the turns
+  one side started, counted
+- **Spend by agent**: fresh tokens, then cached tokens in a lighter bar after
+  them
+- **Runs**: each run in full, with its branch, every pull request, its CI
+  verdict and detail, its steps, how long it took, each gate it paused at, who
+  answered it, and why
+- **Evidence given**: each context item's id, kind, title, source, retrieval
+  time and commit
+
+The page has no buttons: the board keeps every verb. A live record redraws
+when the swarm's course changes, at most every five seconds. Swarms that ended
+before this page existed show their events and runs but no turn bars, since
+their turns were not kept.
 
 ## Starting a swarm
 

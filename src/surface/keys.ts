@@ -29,3 +29,7 @@ export const SERVER_LOG_KEY = "rib:chat:server-log";
 export function reportKey(id: string): string {
   return `rib:chat:report:${id}`;
 }
+
+export function recordKey(id: string): string {
+  return `rib:chat:record:${id}`;
+}

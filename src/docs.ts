@@ -381,8 +381,9 @@ reviewing and counted nowhere.
 
 Open swarm shows the board. Live, it runs: the requests, the outcome once a
 report exists, a budget strip (turns with what is left, time, agents, fresh
-tokens with cached beside them), Message the lead and Stop, then the details.
-Ended, it runs: the outcome, the result strip, Run again, then the details.
+tokens with cached beside them), Message the lead, Open the record and Stop,
+then the details. Ended, it runs: the outcome, the result strip, Run again and
+Open the record, then the details.
 The outcome is one card: under the report's title when the lead published one
 (else Conclusion), the conclusion with a copy button, Open the report, Read the
 conclusion, and the channel in ClickClack; a swarm that did not conclude shows
@@ -400,6 +401,16 @@ ends, with its outcome, how long it took and what woke it. Each bench card's
 footnote names the agent's last event, and the Turns tile keeps its spark after
 the swarm ends. A note posted with Message the lead shows in the activity at
 once.
+
+Open the record shows the swarm's record, a page the rib draws: a timeline with
+a lane per agent (turns as bars in the agent's color, hatched when a turn timed
+out or failed), the operator's lane above and a lane per run below, with marks
+for spawns, questions to the operator, operator posts, the report, the
+conclusion, gates opened and answered, and verification; a graph of who woke
+whom; spend by agent with fresh and cached tokens apart; each run in full; and
+the evidence the agents were given. It has no buttons; the board keeps every
+verb. A live record redraws when the swarm's course changes, at most every five
+seconds.
 
 The Start a swarm header is one form, open on an empty tab and folded once
 the tab has a swarm; its folded head names the default launch. Setup starts on

@@ -15,6 +15,7 @@ import {
   docKey,
   HISTORY_KEY,
   INDEX_KEY,
+  recordKey,
   reportKey,
   SERVER_LOG_KEY,
   SURFACE_TAB,
@@ -298,6 +299,16 @@ export async function handleSwarmsAction(
       const conclusion = (record.live ?? record.ended)?.conclusion;
       if (conclusion === undefined) return fail(`swarm '${String(raw)}' has no conclusion`);
       return { ok: true, data: conclusion };
+    }
+    case "open-record": {
+      const found = id ? deps.find(id) : {};
+      if (!id || !(found.live ?? found.ended))
+        return fail(`swarm '${String(raw)}' has no record yet`);
+      deps.surface?.track([id]);
+      return {
+        ok: true,
+        data: { effect: "open-canvas", key: recordKey(id), title: `Record · ${id}` },
+      };
     }
     case "open-report": {
       if (!id || !known(id) || !deps.hasReport?.(id))
