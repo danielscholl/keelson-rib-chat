@@ -125,7 +125,7 @@ nothing writes until after its approval gate.
 | `pendingApproval` | The node and prompt a paused run waits on, and the thread holding its prompt and files. |
 | `approvals` | Each gate the swarm answered: the node, `approve` or `changes`, the reason, the feedback sent, and the review and its author. |
 | `checkout` | The path and branch the run used, and whether it established its own worktree. |
-| `prUrls` | Pull request links found in the run's node output. |
+| `prUrls` | Pull request links found in the run's node output, less any another run already owns, such as a dependency's PR quoted in the bead. |
 | `ci` | The run's own CI verdict, `pass`, `fail`, or `unknown`, with the reason its workflow gave. |
 | `verified` | An isolated run succeeded in its own worktree, produced a pull request, and its CI verdict is `pass`. A non-isolated run succeeded and its CI did not fail. |
 

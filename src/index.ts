@@ -336,6 +336,14 @@ function launchState(): LaunchState {
   };
 }
 
+function prOwnedElsewhere(url: string, swarmId: string): boolean {
+  const owns = (s: SwarmSummary) => (s.runs ?? []).some((r) => r.prUrls.includes(url));
+  return (
+    [...ended.values()].some((s) => s.id !== swarmId && owns(s)) ||
+    [...swarms.values()].some((s) => s.id !== swarmId && owns(s.summary()))
+  );
+}
+
 function forget(ids: readonly string[]): void {
   for (const id of ids) ended.delete(id);
   pruneLaunches();
@@ -560,6 +568,7 @@ async function launchSwarm(
       ...(record.power ? { power: record.power } : {}),
       ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),
       ...(input.leadTools?.length ? { leadTools: input.leadTools } : {}),
+      prOwnedElsewhere,
       ...(dispatcher && input.workflows
         ? { dispatch: { grants: input.workflows, dispatcher } }
         : {}),

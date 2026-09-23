@@ -168,6 +168,40 @@ describe("dispatch evidence", () => {
     ).toBeUndefined();
   });
 
+  test("a run never claims a pull request another run owns", () => {
+    const r = run({ checkout: { path: "/wt", branch: "b", worktreeEstablished: true } });
+    const prior = "https://github.com/o/r/pull/6";
+    const mine = "https://github.com/o/r/pull/7";
+    const done = applyStatus(
+      r,
+      status({
+        status: "succeeded",
+        nodes: [
+          { nodeId: "context", status: "ok", output: `depends on a bead landed by ${prior}` },
+          { nodeId: "create-pr", status: "ok", output: mine },
+          { nodeId: "ci", status: "ok", output: "CI_GATE: PASS" },
+        ],
+      }),
+      (url) => url === prior,
+    );
+    expect(r.prUrls).toEqual([mine]);
+    expect(done).toContain("; verified.");
+    const onlyPrior = run({ checkout: { path: "/wt", branch: "b", worktreeEstablished: true } });
+    applyStatus(
+      onlyPrior,
+      status({
+        status: "succeeded",
+        nodes: [
+          { nodeId: "context", status: "ok", output: prior },
+          { nodeId: "ci", status: "ok", output: "CI_GATE: PASS" },
+        ],
+      }),
+      (url) => url === prior,
+    );
+    expect(onlyPrior.prUrls).toEqual([]);
+    expect(onlyPrior.verified).toBe(false);
+  });
+
   test("a status read reports only what changed", () => {
     const r = run();
     expect(applyStatus(r, status())).toBeUndefined();
