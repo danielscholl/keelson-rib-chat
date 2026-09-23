@@ -307,6 +307,22 @@ describe("Swarms boards", () => {
     expect(types).toEqual(["read-doc", "steer", "stop-swarm"]);
   });
 
+  test("recent activity lists the newest first, and the card falls back to the last line", () => {
+    const activity = Array.from({ length: 12 }, (_, i) => ({
+      at: `2026-09-22T14:${String(10 + i).padStart(2, "0")}:00.000Z`,
+      text: `@s7act-lead turn ${i + 1} ok`,
+    }));
+    const s = swarm("s7act", { activity });
+    const drawer = buildSwarmBoard(s);
+    expect(() => expectView(swarmKey("s7act"), "board")(drawer)).not.toThrow();
+    const recent = JSON.stringify(drawer).match(/"title":"Recent","items":(\[.*?\])/)?.[1];
+    const items = JSON.parse(recent ?? "[]");
+    expect(items).toHaveLength(8);
+    expect(items[0]).toMatchObject({ text: "@lead turn 12 ok", trailing: "14:21" });
+    const index = JSON.stringify(buildIndex(state({ live: [s] })));
+    expect(index).toContain('"label":"14:21","text":"@lead turn 12 ok"');
+  });
+
   test("frames stay inside their budgets at the limits", () => {
     const agents = Array.from({ length: 12 }, (_, i) => agent("s9big", i));
     const runs = Array.from({ length: 12 }, (_, i) =>
@@ -317,6 +333,8 @@ describe("Swarms boards", () => {
       runs,
       task: "t".repeat(8000),
       conclusion: "c".repeat(20_000),
+      activity: Array.from({ length: 12 }, () => ({ at: T0, text: "a".repeat(400) })),
+      usage: { input: 9_000_000, output: 400_000, cached: 7_000_000 },
     });
     const many = Array.from({ length: 50 }, (_, i) =>
       swarm(`s${String(i).padStart(4, "0")}`, {

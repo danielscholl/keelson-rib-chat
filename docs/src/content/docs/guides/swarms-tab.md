@@ -23,7 +23,8 @@ Each card shows:
 - when it started
 - the first pull request its runs opened
 - a turns bar against the swarm's turn budget
-- one line on what the swarm is doing, or what it needs
+- one line on what the swarm is doing, or what it needs; with nothing else to
+  say, its latest event
 
 Hover **Open** to see the size's numbers and the model for each role.
 
@@ -60,6 +61,7 @@ the plan in the gate thread.
 - open gates
 - the workflow runs, each with a worktree, PR, and CI strip
 - the agents
+- the last eight things the swarm did, newest first
 - the outcome, once there is one
 
 **Steer** posts a note in the channel as the operator, which wakes the lead.

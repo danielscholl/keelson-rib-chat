@@ -34,6 +34,7 @@ import { checkReport, reportMeta, type SwarmReport, unwrapReport } from "./repor
 import { mentionedHandles, route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
+  type ActivityEntry,
   addTokens,
   BODY_MAX,
   type ChatMessage,
@@ -88,6 +89,7 @@ export const MAX_TURN_FAILURES = 3;
 // Thread replies an agent was not woken for, kept for its next turn.
 const BACKGROUND_KEPT = 12;
 const ASKS_KEPT = 5;
+export const ACTIVITY_KEPT = 12;
 const ASK_CHARS = 280;
 
 export interface SwarmOptions {
@@ -243,6 +245,7 @@ export class Swarm {
   private socketDrops = 0;
   private quietSince: string | undefined;
   private readonly asks: OperatorAsk[] = [];
+  private readonly activity: ActivityEntry[] = [];
   private ownerHandle = "";
   // Messages the rib posts as the owner, which are not the operator talking.
   private readonly ownPosts = new Set<string>();
@@ -277,6 +280,8 @@ export class Swarm {
   }
 
   private log(message: string, data?: unknown): void {
+    this.activity.push({ at: new Date().toISOString(), text: message });
+    this.activity.splice(0, Math.max(0, this.activity.length - ACTIVITY_KEPT));
     try {
       this.opts.log?.(message, data);
     } catch {
@@ -1298,6 +1303,7 @@ export class Swarm {
       ...(health ? { health } : {}),
       agents: this.roster(),
       ...this.usage(),
+      ...(this.activity.length > 0 ? { activity: [...this.activity] } : {}),
       ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
       ...(this.conclusion !== undefined ? { conclusion: this.conclusion } : {}),
