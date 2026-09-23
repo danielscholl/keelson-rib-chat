@@ -63,7 +63,7 @@ export function needReason(s: SwarmSummary, need: Need): Card["reason"] {
   if (need.kind === "ask" && need.ask) {
     return {
       label: "needs you",
-      text: `@${shortHandle(need.ask.handle, s.id)} asked at ${hhmm(need.ask.at)}: ${firstLine(askText(need.ask.text), 160)}`,
+      text: `@${shortHandle(need.ask.handle, s.id)} asked at ${hhmm(need.ask.at)}: ${askGist(need.ask.text)}`,
     };
   }
   return { label: "needs you", text: `swarm ${s.id} is waiting on you` };
@@ -72,6 +72,16 @@ export function needReason(s: SwarmSummary, need: Need): Card["reason"] {
 // The question without the @operator that addressed it.
 export function askText(body: string): string {
   return body.replace(/(^|\s)@operator\b[,:]?\s*/gi, "$1").trim();
+}
+
+// The question in one plain line: the first line that asks something, else the first line.
+export function askGist(body: string, max = 160): string {
+  const lines = askText(body)
+    .split("\n")
+    .map((l) => l.replace(/[*_`#>]+/g, "").trim())
+    .filter((l) => l.length > 0);
+  const asking = lines.find((l) => l.includes("?"));
+  return firstLine(asking ?? lines[0] ?? "", max);
 }
 
 export function openHint(

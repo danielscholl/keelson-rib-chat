@@ -92,7 +92,7 @@ const BACKGROUND_KEPT = 12;
 const ASKS_KEPT = 5;
 export const GATE_FILES_MAX = 64_000;
 export const ACTIVITY_KEPT = 12;
-const ASK_CHARS = 280;
+const ASK_CHARS = 2_000;
 
 export interface SwarmOptions {
   task: string;

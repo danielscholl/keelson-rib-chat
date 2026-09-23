@@ -25,7 +25,7 @@ import {
   threadHref,
 } from "./format.ts";
 import { runAgainItem } from "./launch-board.ts";
-import { askText, endedOutcome, needReason, openHint, sizeDetail } from "./parts.ts";
+import { askGist, endedOutcome, needReason, openHint, sizeDetail } from "./parts.ts";
 
 type Section = CanvasBoardView["sections"][number];
 type Leaf = Exclude<Section, { kind: "columns" }>;
@@ -35,6 +35,11 @@ type Segment = Extract<NonNullable<Row["bar"]>, { segments: unknown }>["segments
 
 // The conclusion on the board is a preview; the reading pane has all of it.
 const PREVIEW_CHARS = 1_200;
+
+// A board field renders text as is, so markdown's emphasis and code marks come off.
+function plain(markdown: string): string {
+  return markdown.replace(/\*\*|__|`/g, "");
+}
 
 const ENDED_TITLE: Record<SwarmSummary["status"], string> = {
   running: "Running",
@@ -196,8 +201,11 @@ function askCard(s: SwarmSummary, need: Need): Card[] {
           ...(channel ? { href: channel } : {}),
         },
       ],
-      footnote: askText(ask.text),
+      footnote: askGist(ask.text, 300),
       reason: { text: `clears when you post in #${s.channelName} or steer the lead` },
+      actions: [
+        { type: "read-doc", label: "Read the question", glyph: "▤", payload: { id: s.id } },
+      ],
     },
   ];
 }
@@ -351,10 +359,8 @@ function agentRows(s: SwarmSummary): Row[] {
   });
 }
 
-const RECENT_SHOWN = 8;
-
 function recent(s: SwarmSummary): Leaf[] {
-  const entries = (s.activity ?? []).slice(-RECENT_SHOWN).reverse();
+  const entries = [...(s.activity ?? [])].reverse();
   if (entries.length === 0) return [];
   return [
     {
@@ -375,7 +381,7 @@ function reportCard(s: SwarmSummary): Card[] {
     {
       title: s.report.title,
       pill: { label: "report", tone: "brand" },
-      footnote: `by @${lead?.handle ?? `${s.id}-lead`} · ${day(s.report.at)} ${hhmm(s.report.at)} · ${Math.max(1, Math.round(s.report.bytes / 1024))} KB`,
+      footnote: `by @${shortHandle(lead?.handle ?? `${s.id}-lead`, s.id)} · ${day(s.report.at)} ${hhmm(s.report.at)} · ${Math.max(1, Math.round(s.report.bytes / 1024))} KB`,
       actions: [
         {
           type: "open-report",
@@ -404,8 +410,8 @@ function outcome(s: SwarmSummary): Leaf[] {
         {
           value:
             s.conclusion.length > PREVIEW_CHARS
-              ? `${s.conclusion.slice(0, PREVIEW_CHARS).trimEnd()}…`
-              : s.conclusion,
+              ? `${plain(s.conclusion.slice(0, PREVIEW_CHARS)).trimEnd()}…`
+              : plain(s.conclusion),
           copyAction: { type: "copy-conclusion", payload: { id: s.id } },
         },
       ],

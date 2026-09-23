@@ -69,7 +69,7 @@ export interface SwarmsSurface {
   dispose(): void;
 }
 
-const DOC_KINDS = new Set<SwarmChange>(["start", "gate", "conclusion", "end"]);
+const DOC_KINDS = new Set<SwarmChange>(["start", "gate", "conclusion", "health", "end"]);
 
 function text(key: string) {
   return (data: unknown): string => {
