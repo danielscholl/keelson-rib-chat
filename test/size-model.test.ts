@@ -65,7 +65,7 @@ describe("model label", () => {
       { providerId: "copilot", servedModel: "gpt-6-pro" },
       { providerId: "copilot", servedModel: "gpt-6-pro" },
     ] as unknown as SwarmSummary["agents"];
-    expect(modelLabel({ power: "deep", agents: served })).toBe("gpt-6-pro · deep power");
+    expect(modelLabel({ power: "deep", agents: served })).toBe("gpt-6-pro");
     expect(modelLabel({ agents: served })).toBe("gpt-6-pro");
   });
 });

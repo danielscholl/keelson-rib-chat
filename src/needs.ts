@@ -8,10 +8,13 @@
 
 import type { ChildRun, OperatorAsk, SwarmSummary } from "./types.ts";
 
-// What keeps a live swarm from progressing without the operator, in the order a
-// card shows them: ClickClack stopped answering, a gate only the operator can
-// answer, a gate nobody is working on, a question an agent put to the operator.
-export type NeedKind = "clickclack" | "only-you" | "quiet" | "ask";
+// What a live swarm asks of the operator, as a ladder: a decision only the
+// operator can make, a question an agent put to them, a ClickClack connection
+// that stopped answering, and a gate nobody is working on. The index, the
+// board, the badge and the reading pane all use this list in this order.
+export type NeedKind = "decide" | "question" | "connection" | "quiet";
+
+export const NEED_ORDER: readonly NeedKind[] = ["decide", "question", "connection", "quiet"];
 
 export interface Need {
   kind: NeedKind;
@@ -20,21 +23,24 @@ export interface Need {
   ask?: OperatorAsk;
 }
 
+const rank = (n: Need) => NEED_ORDER.indexOf(n.kind);
+
 export function needsYou(s: SwarmSummary): Need[] {
   if (s.status !== "running") return [];
   const needs: Need[] = [];
-  if ((s.health?.socketDrops ?? 0) >= 2) needs.push({ kind: "clickclack" });
   const gates = (s.runs ?? []).filter((r) => r.status === "paused" && r.pendingApproval);
   for (const run of gates) {
     if (run.pendingApproval?.answerer !== "operator") continue;
     const since = run.pendingApproval.openedAt;
-    needs.push({ kind: "only-you", run, ...(since ? { since } : {}) });
+    needs.push({ kind: "decide", run, ...(since ? { since } : {}) });
   }
+  for (const ask of s.health?.asks ?? []) needs.push({ kind: "question", since: ask.at, ask });
+  if ((s.health?.socketDrops ?? 0) >= 2) needs.push({ kind: "connection" });
   const quiet = s.health?.quietSince;
   const reviewed = gates.find((r) => r.pendingApproval?.answerer !== "operator");
   if (quiet && reviewed) needs.push({ kind: "quiet", since: quiet, run: reviewed });
-  for (const ask of s.health?.asks ?? []) needs.push({ kind: "ask", since: ask.at, ask });
-  return needs;
+  // The ladder first, then the oldest within a kind.
+  return needs.sort((a, b) => rank(a) - rank(b) || (a.since ?? "").localeCompare(b.since ?? ""));
 }
 
 // The oldest time among a swarm's needs, so the one waiting longest sorts first.

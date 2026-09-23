@@ -173,7 +173,8 @@ describe("Swarm", () => {
     expect(summary.usage).toEqual(two);
     const board = JSON.stringify(buildSwarmBoard(summary));
     expect(board).toContain("2k in · 600 out · 2k cached tokens");
-    expect(board).toContain("2 turns · 5k tokens");
+    expect(board).toContain("2 turns · 3k tokens");
+    expect(board).toContain('"value":"3k","sub":"fresh · 2k cached"');
   });
 
   test("an idle swarm nudges its lead, then ends as stalled", async () => {
@@ -1091,7 +1092,7 @@ describe("health and needs", () => {
     dropAll();
     await until(() => h.server.sockets.size === 1);
     expect(swarm.summary().health?.socketDrops).toBe(2);
-    expect(needsYou(swarm.summary()).map((n) => n.kind)).toEqual(["clickclack"]);
+    expect(needsYou(swarm.summary()).map((n) => n.kind)).toEqual(["connection"]);
     for (const socket of h.server.sockets) socket.open();
     expect(swarm.summary().health).toBeUndefined();
     release();

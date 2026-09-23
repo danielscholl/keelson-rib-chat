@@ -72,6 +72,11 @@ export function span(fromIso: string, toIso: string | undefined): string {
   return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
 }
 
+// Minutes since an ISO time, never negative.
+export function minutesSince(iso: string, now = Date.now()): number {
+  return Math.max(0, Math.round((now - Date.parse(iso)) / 60_000));
+}
+
 export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }

@@ -16,6 +16,30 @@ function fileSection(f: GateFileText): string {
   return `### ${f.path}${f.truncated ? " (cut short)" : ""}\n\n${body}`;
 }
 
+// The task in full, then each context item's excerpt, so the pane holds what
+// the board's disclosures cut.
+function record(s: SwarmSummary): string {
+  const task = s.task.trim();
+  const lines = task.split("\n");
+  const rest = lines.slice(1).join("\n").trim();
+  const parts = [rest ? `## Task\n\n${task}` : ""];
+  for (const c of s.context ?? []) {
+    const meta = [
+      c.sourceUrl ? `[source](${c.sourceUrl})` : "",
+      c.retrievedAt ? `retrieved ${day(c.retrievedAt)} ${hhmm(c.retrievedAt)}` : "",
+      c.headSha ? `head ${c.headSha.slice(0, 7)}` : "",
+      `${c.chars.toLocaleString("en-US")} characters`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const body = c.excerpt
+      ? `\n\n\`\`\`\`\n${c.excerpt}${c.chars > c.excerpt.length ? `\n… (first ${c.excerpt.length.toLocaleString("en-US")} of ${c.chars.toLocaleString("en-US")} characters; agents read the rest with chat_context)` : ""}\n\`\`\`\``
+      : "";
+    parts.push(`## ${c.kind}: ${c.title}\n\n*${meta}*${body}`);
+  }
+  return parts.filter(Boolean).join("\n\n");
+}
+
 // The reading pane: a markdown drawer view, one per swarm, so two viewers
 // reading different swarms never race on one key.
 export function buildDoc(s: SwarmSummary | undefined, id: string): string {
@@ -24,22 +48,27 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
   const channel = channelHref(s);
   const where = channel ? `[#${s.channelName}](${channel})` : `#${s.channelName}`;
   const title = `# ${s.task.trim().split("\n")[0]}`;
+  const tail = record(s);
+  const after = tail ? `\n\n${tail}` : "";
   if (s.conclusion !== undefined) {
     const by = s.agents.find((a) => a.lead)?.handle ?? `${s.id}-lead`;
     const when = s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : "";
-    return `${title}\n\n*Swarm ${s.id} · by @${by}${when} · ${where}*\n\n${s.conclusion}\n`;
+    return `${title}\n\n*Swarm ${s.id} · by @${by}${when} · ${where}*\n\n${s.conclusion}${after}\n`;
   }
-  if (s.status !== "running") {
+  if (s.status !== "running" && s.status !== "stopping") {
     const why = s.error ?? "the swarm ended without a conclusion";
     const draft = s.draftConclusion
       ? `\n\n> The lead's last conclusion was refused, and is kept below.\n\n${s.draftConclusion}`
       : "";
-    return `${title}\n\n*Swarm ${s.id} ended ${s.status}: ${why}. ${where}*${draft}\n`;
+    return `${title}\n\n*Swarm ${s.id} ended ${s.status}: ${why}. ${where}*${draft}${after}\n`;
   }
-  const asks = (s.health?.asks ?? []).map(
-    (a) =>
-      `## @${shortHandle(a.handle, s.id)} asked you · ${hhmm(a.at)}\n\n${askText(a.text)}\n\nPost in ${where} or steer the lead to answer.`,
-  );
+  const asks = (s.health?.asks ?? []).map((a) => {
+    const thread = threadHref(s, a.threadRootId);
+    const how = thread
+      ? `Reply [in its thread](${thread}), or mention @${shortHandle(a.handle, s.id)} in ${where}, to answer it.`
+      : `Mention @${shortHandle(a.handle, s.id)} in ${where} to answer it.`;
+    return `## @${shortHandle(a.handle, s.id)} asked you · ${hhmm(a.at)}\n\n${askText(a.text)}\n\n${how}`;
+  });
   const gates = (s.runs ?? []).filter((r) => r.status === "paused" && r.pendingApproval);
   if (gates.length > 0 || asks.length > 0) {
     const gateParts = gates.map((r) => {
@@ -50,9 +79,9 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
         .map((l) => `> ${l}`)
         .join("\n");
       const files = (gate?.files ?? []).map(fileSection).join("\n\n");
-      return `## ${gate?.nodeId} · ${r.workflow} ${r.runId}\n\n${quoted}${files ? `\n\n${files}` : ""}${thread ? `\n\n[The gate thread](${thread}) holds the review.` : ""}`;
+      return `## ${gate?.nodeId} · ${r.workflow} ${r.runId}\n\n${quoted}${files ? `\n\n${files}` : ""}${thread ? `\n\n[The approval thread](${thread}) holds the review.` : ""}`;
     });
-    return `${title}\n\n*Swarm ${s.id} · ${where}*\n\n${[...asks, ...gateParts].join("\n\n")}\n`;
+    return `${title}\n\n*Swarm ${s.id} · ${where}*\n\n${[...asks, ...gateParts].join("\n\n")}${after}\n`;
   }
-  return `${title}\n\n*Swarm ${s.id} is working in ${where}.* Nothing to read here yet: a conclusion, a question for you, or an open gate shows here.\n`;
+  return `${title}\n\n*Swarm ${s.id} is working in ${where}.* Nothing to read here yet: a conclusion, a question for you, or an open approval shows here.${after}\n`;
 }

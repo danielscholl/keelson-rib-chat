@@ -94,6 +94,9 @@ const ASKS_KEPT = 5;
 export const GATE_FILES_MAX = 64_000;
 export const ACTIVITY_KEPT = 12;
 const ASK_CHARS = 2_000;
+const PACE_MINUTES = 30;
+// Enough turn starts to fill PACE_MINUTES at any size's concurrency.
+const TURN_STARTS_KEPT = 400;
 
 export interface SwarmOptions {
   task: string;
@@ -269,6 +272,10 @@ export class Swarm {
   private lastLeadFailure: string | undefined;
   // The last time an agent's channel call failed because ClickClack itself did.
   private channelFault: string | undefined;
+  private cancelFault: string | undefined;
+  private lastWaiting = "";
+  // When each turn started, for the pace the board's Turns tile draws.
+  private readonly turnStarts: number[] = [];
   private readonly unrevoked: string[] = [];
   private error: string | undefined;
   private endedAt: string | undefined;
@@ -297,8 +304,15 @@ export class Swarm {
   }
 
   private log(message: string, data?: unknown): void {
-    this.activity.push({ at: new Date().toISOString(), text: message });
-    this.activity.splice(0, Math.max(0, this.activity.length - ACTIVITY_KEPT));
+    const at = new Date().toISOString();
+    const last = this.activity.at(-1);
+    if (last && last.text === message) {
+      last.at = at;
+      last.count = (last.count ?? 1) + 1;
+    } else {
+      this.activity.push({ at, text: message });
+      this.activity.splice(0, Math.max(0, this.activity.length - ACTIVITY_KEPT));
+    }
     try {
       this.opts.log?.(message, data);
     } catch {
@@ -403,8 +417,11 @@ export class Swarm {
     this.seen.add(message.id);
     const roster = [...this.agents.values()];
     const author = roster.find((a) => a.botUserId === message.authorId);
-    if (message.authorKind === "human" && !this.ownPosts.has(message.id)) this.clearAsks();
     const isRoot = message.threadRootId === message.id;
+    if (message.authorKind === "human" && !this.ownPosts.has(message.id)) {
+      this.answerAsks(message, isRoot);
+    }
+    if (author?.lead && !isRoot) this.noteReviewer(message);
     if (isRoot && author) this.threadStarters.set(message.id, author.id);
     const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
     const starter = this.threadStarters.get(message.threadRootId);
@@ -437,6 +454,31 @@ export class Swarm {
     }
   }
 
+  // Idle agents with messages queued: the ones the bench shows as waiting.
+  private waitingKey(): string {
+    return [...this.agents.values()]
+      .filter((a) => a.status === "idle" && (this.inboxes.get(a.id)?.length ?? 0) > 0)
+      .map((a) => a.id)
+      .sort()
+      .join(",");
+  }
+
+  // The lead's mention of another agent in a gate thread names the reviewer.
+  private noteReviewer(message: ChatMessage): void {
+    const run = [...this.runs.values()].find(
+      (r) => r.status === "paused" && r.pendingApproval?.threadId === message.threadRootId,
+    );
+    const gate = run?.pendingApproval;
+    if (!gate) return;
+    const handles = new Set(mentionedHandles(message.body));
+    const asked = [...this.agents.values()].find(
+      (a) => !a.lead && handles.has(a.handle.toLowerCase()),
+    );
+    if (!asked || gate.reviewer === asked.handle) return;
+    gate.reviewer = asked.handle;
+    this.changed("gate");
+  }
+
   private canWork(agentId: string): boolean {
     const status = this.agents.get(agentId)?.status;
     return status === "idle" || status === "busy";
@@ -467,6 +509,12 @@ export class Swarm {
         }
         void this.runAgent(agent, inbox.splice(0), undefined, notes.splice(0));
       }
+    }
+    // Whoever is still queued after the slots are handed out is waiting.
+    const waiting = this.waitingKey();
+    if (waiting !== this.lastWaiting) {
+      this.lastWaiting = waiting;
+      this.changed("agent");
     }
     if (this.busy === 0 && this.pendingEvents === 0) {
       this.quiesceTimer = setTimeout(() => this.onQuiescent(), this.opts.quiesceMs ?? 1_500);
@@ -580,6 +628,8 @@ export class Swarm {
         : {}),
     });
     this.log(`@${agent.handle} turn ${agent.turns} (${messages.length} new)`);
+    this.turnStarts.push(Date.now());
+    this.turnStarts.splice(0, Math.max(0, this.turnStarts.length - TURN_STARTS_KEPT));
     this.quietSince = undefined;
     this.changed("turn");
 
@@ -786,6 +836,7 @@ export class Swarm {
       agentId: agent.id,
       handle: agent.handle,
       messageId: message.id,
+      threadRootId: message.threadRootId || message.id,
       text:
         message.body.length > ASK_CHARS ? `${message.body.slice(0, ASK_CHARS - 1)}…` : message.body,
       at: message.createdAt || new Date().toISOString(),
@@ -795,10 +846,37 @@ export class Swarm {
     this.changed("health");
   }
 
-  private clearAsks(): void {
+  // A question clears when the operator replies in its thread or mentions the
+  // asker; a top-level note that mentions nobody goes to the lead, so it clears
+  // the lead's questions and no one else's.
+  private answerAsks(message: ChatMessage, isRoot: boolean): void {
     if (this.asks.length === 0) return;
-    this.asks.length = 0;
-    this.log("the operator answered");
+    const handles = new Set(mentionedHandles(message.body));
+    const toLead =
+      isRoot && ![...this.agents.values()].some((a) => handles.has(a.handle.toLowerCase()));
+    const answered = this.asks.filter((ask) => {
+      if (ask.threadRootId === message.threadRootId) return true;
+      if (handles.has(ask.handle.toLowerCase())) return true;
+      return toLead && this.agents.get(ask.agentId)?.lead === true;
+    });
+    if (answered.length === 0) return;
+    this.dropAsks(answered, "the operator answered");
+  }
+
+  // Dismiss from the tab: the question stays in the channel, the card goes.
+  dismissAsk(messageId: string): boolean {
+    const ask = this.asks.find((a) => a.messageId === messageId);
+    if (!ask) return false;
+    this.dropAsks([ask], `dismissed @${ask.handle}'s question`);
+    return true;
+  }
+
+  private dropAsks(gone: readonly OperatorAsk[], why: string): void {
+    for (const ask of gone) {
+      const at = this.asks.indexOf(ask);
+      if (at >= 0) this.asks.splice(at, 1);
+    }
+    this.log(why);
     this.changed("health");
   }
 
@@ -1190,8 +1268,28 @@ export class Swarm {
     };
   }
 
+  // `waiting` is derived: an idle agent with messages queued has no slot, or the
+  // swarm has concluded and starts nothing new.
   roster(): SwarmSummary["agents"] {
-    return [...this.agents.values()].map(({ tokenId: _t, sessionId: _s, ...rest }) => rest);
+    return [...this.agents.values()].map(({ tokenId: _t, sessionId: _s, ...rest }) => {
+      const queued = (this.inboxes.get(rest.id)?.length ?? 0) + (rest.lead ? this.notes.length : 0);
+      if (queued === 0) return rest;
+      return { ...rest, queued, ...(rest.status === "idle" ? { status: "waiting" as const } : {}) };
+    });
+  }
+
+  // Turns started per minute over the last PACE_MINUTES, once two have passed.
+  private pace(): number[] | undefined {
+    const now = Date.now();
+    const start = Math.max(Date.parse(this.startedAt), now - PACE_MINUTES * 60_000);
+    const minutes = Math.min(PACE_MINUTES, Math.floor((now - start) / 60_000) + 1);
+    if (minutes < 2) return undefined;
+    const buckets = new Array<number>(minutes).fill(0);
+    for (const t of this.turnStarts) {
+      const i = Math.floor((t - start) / 60_000);
+      if (i >= 0 && i < minutes) buckets[i] = (buckets[i] ?? 0) + 1;
+    }
+    return buckets;
   }
 
   // Records the conclusion before posting it: the answer is the deliverable, and
@@ -1243,8 +1341,9 @@ export class Swarm {
     const problem = checkReport(page);
     if (problem) throw new Error(problem);
     const report = { title, html: page, at: new Date().toISOString() };
+    const again = this.report?.title === title;
     this.report = report;
-    this.log(`@${agent.handle} published the report "${title}"`);
+    if (!again) this.log(`@${agent.handle} published the report "${title}"`);
     this.changed("report");
     return report;
   }
@@ -1278,6 +1377,13 @@ export class Swarm {
     this.enqueueMessage(message);
   }
 
+  // Posted as the owner in a question's thread, so it wakes the agent who asked.
+  async replyInThread(threadRootId: string, note: string): Promise<void> {
+    if (this.status !== "running") throw new Error(`swarm ${this.id} is ${this.status}`);
+    const message = await this.owner.replyInThread(threadRootId, `**Operator:** ${note}`);
+    this.enqueueMessage(message);
+  }
+
   stop(reason = "stopped by operator"): Promise<SwarmSummary> {
     void this.finish("stopped", reason);
     return this.finished;
@@ -1295,12 +1401,14 @@ export class Swarm {
       ...(this.refusedConclusions > 0 ? { refusedConclusions: this.refusedConclusions } : {}),
       ...(this.quietSince ? { quietSince: this.quietSince } : {}),
       ...(this.asks.length > 0 ? { asks: [...this.asks] } : {}),
+      ...(this.cancelFault ? { cancelFault: this.cancelFault } : {}),
     };
     return Object.keys(health).length > 0 ? health : undefined;
   }
 
   summary(): SwarmSummary {
     const health = this.health();
+    const pace = this.status === "running" ? this.pace() : undefined;
     return {
       id: this.id,
       task: this.task,
@@ -1316,16 +1424,21 @@ export class Swarm {
       ...(this.opts.provider ? { provider: this.opts.provider } : {}),
       ...(this.opts.model ? { model: this.opts.model } : {}),
       ...(this.opts.workerModel ? { workerModel: this.opts.workerModel } : {}),
-      ...(this.opts.power ? { power: this.opts.power } : {}),
+      // A named model overrides the power, so the power no longer applies.
+      ...(this.opts.power && !this.opts.model ? { power: this.opts.power } : {}),
       ...(this.opts.project ? { project: this.opts.project } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
       ...(health ? { health } : {}),
       agents: this.roster(),
       ...this.usage(),
-      ...(this.activity.length > 0 ? { activity: [...this.activity] } : {}),
-      ...(this.opts.context?.length ? { context: contextIndex(this.opts.context) } : {}),
+      ...(this.activity.length > 0 ? { activity: this.activity.map((e) => ({ ...e })) } : {}),
+      ...(this.opts.context?.length
+        ? { context: contextIndex(this.opts.context, { excerpts: true }) }
+        : {}),
+      ...(this.opts.dispatch ? { workflows: this.opts.dispatch.grants.map((g) => g.name) } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
+      ...(pace ? { pace } : {}),
       ...(this.conclusion !== undefined ? { conclusion: this.conclusion } : {}),
       ...(this.report ? { report: reportMeta(this.report) } : {}),
       ...(this.conclusion === undefined && this.draftConclusion !== undefined
@@ -1335,9 +1448,13 @@ export class Swarm {
     };
   }
 
-  private async finish(status: Exclude<SwarmStatus, "running">, reason?: string): Promise<void> {
+  private async finish(
+    status: Exclude<SwarmStatus, "running" | "stopping">,
+    reason?: string,
+  ): Promise<void> {
     if (this.status !== "running") return;
-    this.status = status;
+    // A stop has runs to cancel and tokens to revoke before it is stopped.
+    this.status = status === "stopped" ? "stopping" : status;
     this.endedAt = new Date().toISOString();
     if (status !== "done" && reason) this.error = reason;
     this.changed("end");
@@ -1347,7 +1464,10 @@ export class Swarm {
     this.controller.abort();
     if (this.runPoll) clearInterval(this.runPoll);
     for (const run of this.liveRuns()) {
-      await this.opts.dispatch?.dispatcher.cancel(run.runId).catch(() => undefined);
+      await this.opts.dispatch?.dispatcher.cancel(run.runId).catch((e) => {
+        this.cancelFault = `run ${run.runId} (${run.workflow}) could not be cancelled: ${errText(e)}`;
+        this.log(this.cancelFault);
+      });
       run.status = "cancelled";
       run.error = `the swarm ended (${status}) while the run was live`;
       run.verified = false;
@@ -1369,7 +1489,9 @@ export class Swarm {
       });
     }
     this.tokens.clear();
+    this.status = status;
     this.log(`swarm ${this.id} ${status}${reason ? `: ${reason}` : ""}`);
+    this.changed("end");
     this.done.resolve(this.summary());
   }
 }

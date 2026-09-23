@@ -14,7 +14,8 @@ export function servedModels(s: Pick<SwarmSummary, "agents">): string[] {
 }
 
 // What a swarm runs on, in one short label: the model asked for, the split when
-// lead and workers differ, else what served its power, or the provider's default.
+// lead and workers differ, else the model that served its power once a turn has
+// reported one, else the power, else the provider's default.
 export function modelLabel(
   s: Pick<SwarmSummary, "model" | "workerModel" | "power" | "agents">,
 ): string {
@@ -25,7 +26,8 @@ export function modelLabel(
   if (workers && !lead) return `${power ?? "provider default"} · workers ${workers}`;
   if (lead) return lead;
   const models = servedModels(s);
-  if (models.length === 1 && models[0]) return power ? `${models[0]} · ${power}` : models[0];
+  if (models.length === 1 && models[0]) return models[0];
+  if (models.length > 1 && models[0]) return `${models[0]} +${models.length - 1}`;
   const served = s.agents.find((a) => a.providerId)?.providerId;
   if (power) return served ? `${power} on ${served}` : power;
   return served ? `${served} default` : "provider default";
@@ -44,6 +46,12 @@ export function tokenCount(n: number): string {
 
 export function tokensText(t: TokenTally): string {
   return `${tokenCount(t.input)} in · ${tokenCount(t.output)} out${t.cached > 0 ? ` · ${tokenCount(t.cached)} cached` : ""}`;
+}
+
+// Fresh tokens: input and output. Cached reads cost a fraction of a fresh token,
+// so the tab shows them beside the total and never inside it.
+export function freshTokens(t: TokenTally): number {
+  return t.input + t.output;
 }
 
 export function tokenTotal(t: TokenTally): number {

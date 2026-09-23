@@ -240,7 +240,7 @@ describe("task context in a swarm", () => {
     expect(pages.map(text).join("")).toBe(body);
   });
 
-  test("the summary keeps the evidence index but not the bodies", async () => {
+  test("the summary keeps the evidence index with an excerpt, not the bodies", async () => {
     const { start } = harness(
       async ({ call }) => {
         await call("chat_done", { summary: "ok" });
@@ -250,6 +250,7 @@ describe("task context in a swarm", () => {
     const summary = await (await start()).finished;
     expect(summary.context?.map((c) => c.id)).toEqual(["issue-874", "pr-880"]);
     expect(summary.context?.[1]?.headSha).toBe(HEAD);
-    expect(JSON.stringify(summary)).not.toContain("never a GitHub login");
+    expect(summary.context?.[0]?.excerpt).toContain("never a GitHub login");
+    expect(summary.context?.[0]?.excerpt?.length).toBe(summary.context?.[0]?.chars);
   });
 });

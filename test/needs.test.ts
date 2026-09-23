@@ -44,11 +44,11 @@ describe("needsYou", () => {
   test("one socket close is a blip; two are ClickClack gone", () => {
     expect(needsYou(swarm({ health: { socketDrops: 1 } }))).toEqual([]);
     expect(needsYou(swarm({ health: { socketDrops: 2 } })).map((n) => n.kind)).toEqual([
-      "clickclack",
+      "connection",
     ]);
   });
 
-  test("needs come in precedence order, and a quiet gate is one the swarm could answer", () => {
+  test("needs come in ladder order, and a quiet gate is one the swarm could answer", () => {
     const needs = needsYou(
       swarm({
         health: { socketDrops: 2, quietSince: "2026-09-22T14:40:00.000Z" },
@@ -59,8 +59,8 @@ describe("needsYou", () => {
       }),
     );
     expect(needs.map((n) => [n.kind, n.run?.runId])).toEqual([
-      ["clickclack", undefined],
-      ["only-you", "r1"],
+      ["decide", "r1"],
+      ["connection", undefined],
       ["quiet", "r2"],
     ]);
     expect(oldestNeed(needs)).toBe("2026-09-22T14:11:00.000Z");
@@ -73,7 +73,7 @@ describe("needsYou", () => {
         runs: [run("r1", "operator", "2026-09-22T14:11:00.000Z")],
       }),
     );
-    expect(needs.map((n) => n.kind)).toEqual(["only-you"]);
+    expect(needs.map((n) => n.kind)).toEqual(["decide"]);
   });
 
   test("an ended swarm needs nothing", () => {

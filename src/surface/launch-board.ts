@@ -7,6 +7,7 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { CanvasBoardView, ModelClassMap } from "@keelson/shared";
+import type { StartSwarmInput } from "../tools.ts";
 import {
   SIZE_PRESETS,
   SWARM_POWERS,
@@ -15,6 +16,7 @@ import {
   type SwarmSize,
   type SwarmSummary,
 } from "../types.ts";
+import { day, hhmm, plural } from "./format.ts";
 import { sizesHint } from "./parts.ts";
 
 type ActionsSection = Extract<CanvasBoardView["sections"][number], { kind: "actions" }>;
@@ -23,24 +25,28 @@ type Field = NonNullable<Item["fields"]>[number];
 
 export interface LaunchState {
   projects: readonly { id: string; name: string }[];
-  // Why Dispatch can't run on this host, when it can't.
+  // Why the lead can't dispatch workflows on this host, when it can't.
   dispatchBlocked?: string;
   live: number;
   // Each provider's class map, for the hover on each power.
   classes?: readonly { provider: string; classes: ModelClassMap }[];
+  // Workflows whose approvals the host keeps for the operator.
+  refused?: readonly string[];
 }
 
-export const DISCUSS_SUBTITLE = "Agents talk it through in #swarm-<id> and conclude.";
+export const TASK_PLACEHOLDER =
+  "What should the swarm work out? Agents can't open links: describe the issue or PR here, or Prepare in chat to attach it.";
 
 // The region byline: every size's agents and wall clock, in one line.
 export function sizesByline(): string {
   return SWARM_SIZES.map((k, i) => {
     const l = SIZE_PRESETS[k];
     const agents = i === 0 ? `${l.maxAgents} agents` : String(l.maxAgents);
-    return `${k} ${agents} · ${l.wallClockMs / 60_000} min`;
+    return `${k} ${agents} · ${l.maxTurns} turns · ${l.wallClockMs / 60_000} min`;
   }).join("  ·  ");
 }
 
+// Each segment carries what the size costs, since the word alone does not.
 export function sizeField(defaultValue: SwarmSize = "medium"): Field {
   return {
     name: "size",
@@ -49,7 +55,14 @@ export function sizeField(defaultValue: SwarmSize = "medium"): Field {
     segmented: true,
     half: true,
     defaultValue,
-    options: SWARM_SIZES.map((k) => ({ value: k, label: k })),
+    options: SWARM_SIZES.map((k) => {
+      const l = SIZE_PRESETS[k];
+      return {
+        value: k,
+        label: `${k} · ${l.maxAgents} agents · ${l.maxTurns} turns`,
+        hint: `${l.maxTurnsPerAgent} turns per worker · ${l.maxConcurrent} at once · ${l.wallClockMs / 60_000} min`,
+      };
+    }),
   };
 }
 
@@ -75,15 +88,33 @@ export function powerField(
 export function modelField(model?: string, provider?: string): Field {
   return {
     name: "model",
-    label: "Model",
-    placeholder: "use power",
+    label: "Model override",
+    placeholder: "use the power's model",
     half: true,
     ...(model ? { defaultValue: model } : {}),
     modelPicker: { providerField: "provider", ...(provider ? { providerDefault: provider } : {}) },
   };
 }
 
-function fields(state: LaunchState, dispatch: boolean): Field[] {
+// The workflows field says who answers their approvals, from the refusals the
+// host has made so far, where the decision it informs is made.
+function workflowsField(state: LaunchState): Field {
+  const refused = state.refused ?? [];
+  const approvals =
+    refused.length > 0 ? ` · ${refused.join(", ")} approvals: you answer them in Workflows` : "";
+  const placeholder = state.dispatchBlocked
+    ? state.dispatchBlocked
+    : state.projects.length === 0
+      ? "needs a registered project"
+      : `none: the swarm investigates · e.g. fix-issue${approvals}`;
+  return {
+    name: "workflows",
+    label: "Workflows the lead may start",
+    placeholder,
+  };
+}
+
+function fields(state: LaunchState): Field[] {
   const hasProjects = state.projects.length > 0;
   return [
     {
@@ -91,7 +122,7 @@ function fields(state: LaunchState, dispatch: boolean): Field[] {
       label: "Task",
       required: true,
       multiline: true,
-      placeholder: "What should the swarm work out? Name the issue, PR or question.",
+      placeholder: TASK_PLACEHOLDER,
     },
     ...(hasProjects
       ? [
@@ -99,9 +130,7 @@ function fields(state: LaunchState, dispatch: boolean): Field[] {
             name: "project",
             label: "Project",
             half: true,
-            ...(dispatch
-              ? { required: true, defaultValue: state.projects[0]?.id ?? "" }
-              : { placeholder: "no project" }),
+            placeholder: "no project",
             options: state.projects.map((p) => ({ value: p.id, label: p.name })),
           },
           {
@@ -118,73 +147,66 @@ function fields(state: LaunchState, dispatch: boolean): Field[] {
           },
         ]
       : []),
-    ...(dispatch
-      ? [
-          {
-            name: "workflows",
-            label: "Workflows the lead may start",
-            required: true,
-            placeholder: "fix-issue",
-          },
-        ]
-      : []),
+    workflowsField(state),
     sizeField(),
     powerField("balanced", state.classes),
     modelField(),
   ];
 }
 
+// One form. A swarm with no workflows named investigates; one with workflows
+// named may dispatch them. Prepare in chat gathers evidence first.
 export function buildLaunch(state: LaunchState): CanvasBoardView {
-  const hint = `Sizes: ${sizesHint()}.`;
-  const blocked =
-    state.dispatchBlocked ??
-    (state.projects.length === 0
-      ? "Register a project first: dispatched runs need one."
-      : undefined);
   const items: Item[] = [
     {
       type: "start-swarm",
-      label: "Discuss",
-      subtitle: DISCUSS_SUBTITLE,
-      fields: fields(state, false),
+      label: "Start a swarm",
+      glyph: "▶",
+      fields: fields(state),
       submitLabel: "Start swarm",
       submitTone: "brand",
-      hint,
-      binding: { mode: "discuss" },
-      ...(state.live === 0 ? { defaultOpen: true } : {}),
-    },
-    {
-      type: "start-swarm",
-      label: "Dispatch",
-      subtitle: "The lead may start the named workflows in isolated worktrees.",
-      fields: fields(state, true),
-      submitLabel: "Start swarm",
-      submitTone: "brand",
-      hint,
-      binding: { mode: "dispatch" },
-      ...(blocked ? { disabled: true, reason: blocked } : {}),
+      hint: `Sizes: ${sizesHint()}.`,
+      ...(state.live === 0 ? { expanded: true } : {}),
     },
     {
       type: "start-in-chat",
-      label: "In chat",
-      subtitle: "Talk it through first; attach issue and PR context.",
-      hint: "Opens a chat that gathers issue and PR context, then starts the swarm.",
+      label: "Prepare in chat",
+      glyph: "→",
+      hint: "Opens a chat that gathers issue and PR context, then starts the swarm with it attached.",
     },
   ];
   return {
     view: "board",
     title: "Start a swarm",
-    sections: [{ kind: "actions", tabs: true, items }],
+    sections: [{ kind: "actions", wrap: true, items }],
   };
 }
 
-// Run again reads the old swarm's size, power and model as its defaults.
-export function runAgainItem(s: SwarmSummary): Item {
+// Run again reads the old swarm's size, power and model as its defaults, and
+// its hint names what it reuses, so stale evidence is rerun on purpose.
+export function runAgainItem(s: SwarmSummary, launch: StartSwarmInput): Item {
+  const context = launch.context ?? [];
+  const captured = context
+    .map((c) => c.retrievedAt)
+    .filter((t): t is string => Boolean(t))
+    .sort()[0];
+  const reuses = [
+    "the same task",
+    ...(launch.project ? ["project"] : []),
+    ...(launch.workflows?.length
+      ? [`workflows (${launch.workflows.map((w) => w.name).join(", ")})`]
+      : []),
+    ...(context.length > 0
+      ? [
+          `${plural(context.length, "context item")}${captured ? ` captured ${day(captured)} ${hhmm(captured)}` : ""}`,
+        ]
+      : []),
+  ];
   return {
     type: "run-again",
     label: "Run again",
     glyph: "↻",
-    hint: "Starts a new swarm with the same task, project, workflows and context.",
+    hint: `Starts a new swarm with ${reuses.join(", ")}. Context is not refreshed.`,
     fields: [sizeField(s.sizeBase), powerField(s.power), modelField(s.model, s.provider)],
     submitLabel: "Run again",
     binding: { id: s.id },

@@ -105,10 +105,11 @@ const provider = scriptedProvider(tools, script);
 // Every change the tab would publish must compose a frame the host accepts.
 let frames = 0;
 let badFrame: string | undefined;
-// What the index said along the way: its head, the card's pill, and the card's reason.
+// What the index said along the way: its head, the card's pill, and whether the
+// running card carried its named turn meter.
 const heads = new Set<string>();
 const pills = new Set<string>();
-let reasons = 0;
+let meters = 0;
 let started: Swarm | undefined;
 const checkFrames = (s: SwarmSummary, live: boolean) => {
   const index = buildIndex({ live: live ? [s] : [], starting: [], ended: live ? [] : [s] });
@@ -121,7 +122,7 @@ const checkFrames = (s: SwarmSummary, live: boolean) => {
     if (section.kind !== "cards") continue;
     for (const card of section.items) {
       if (card.pill) pills.add(card.pill.label);
-      if (card.reason) reasons++;
+      if (card.fields?.some((f) => String(f.value).startsWith("Turn budget used"))) meters++;
     }
   }
   for (const [key, view] of views) {
@@ -181,11 +182,11 @@ const endedIndex = JSON.stringify(buildIndex({ live: [], starting: [], ended: [s
 const indexOk =
   heads.has("1 live") &&
   pills.has("running") &&
-  reasons > 0 &&
-  endedIndex.includes(`${summary.id} `) &&
-  endedIndex.includes("done");
+  meters > 0 &&
+  endedIndex.includes(`"trailing":"${summary.id} · `) &&
+  endedIndex.includes('"label":"done"');
 console.log(
-  `index: heads=${[...heads].join("|")} pills=${[...pills].join("|")} reasons=${reasons} ended row=${endedIndex.includes("done")}`,
+  `index: heads=${[...heads].join("|")} pills=${[...pills].join("|")} meters=${meters} ended row=${endedIndex.includes('"label":"done"')}`,
 );
 
 let ok =

@@ -12,7 +12,7 @@ import {
 } from "@keelson/shared";
 import rib from "../src/index.ts";
 import { createSwarmFileStore } from "../src/store.ts";
-import { handleSwarmsAction } from "../src/surface/actions.ts";
+import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import {
   buildBadge,
@@ -90,7 +90,7 @@ function run(id: string, patch: Partial<ChildRun> = {}): ChildRun {
   };
 }
 
-function gate(answerer: "swarm" | "operator"): ChildRun["pendingApproval"] {
+function gate(answerer: "swarm" | "operator"): NonNullable<ChildRun["pendingApproval"]> {
   return {
     nodeId: "approve-plan",
     prompt: "Plan: set the README node count to 12.\n\nApprove?",
@@ -140,8 +140,34 @@ const fixtures: Record<string, SwarmSummary> = {
     sizeBase: "large",
     limits: SIZE_PRESETS.large,
     model: "gpt-6-astra",
+    workflows: ["fix-issue"],
     runs: [run("r2", { status: "paused", pendingApproval: gate("operator") })],
   }),
+  asked: swarm("s6ask", {
+    health: {
+      asks: [
+        {
+          agentId: "s6ask-w1",
+          handle: "s6ask-w1",
+          messageId: "msg_0101",
+          threadRootId: "msg_0100",
+          text: "@operator which retry cap, 30 s or 60 s?",
+          at: "2026-09-22T14:20:00.000Z",
+        },
+      ],
+    },
+    runs: [run("r5", { status: "paused", pendingApproval: gate("operator") })],
+  }),
+  waiting: swarm("s3wai", {
+    agents: [
+      agent("s3wai", 0, { status: "busy" }),
+      agent("s3wai", 1, { status: "waiting", queued: 2 }),
+    ],
+    pace: [1, 3, 2, 0, 1],
+    activity: [{ at: T0, text: "@s3wai-lead turn 3 ok", count: 2 }],
+  }),
+  stopping: swarm("s2stp", { status: "stopping", error: "stopped from the Swarms tab" }),
+  dispatchIdle: swarm("s1dis", { workflows: ["fix-issue", "docs-check"] }),
   quiet: swarm("s5c07", {
     health: { quietSince: "2026-09-22T14:40:00.000Z" },
     runs: [run("r3", { status: "paused", pendingApproval: gate("swarm") })],
@@ -226,7 +252,12 @@ describe("Swarms boards", () => {
     board(swarmKey("s0old"), buildGoneBoard("s0old"));
   });
 
-  test("the index sorts needs first, oldest need first, then starting, then running", () => {
+  const cardsOf = (view: ReturnType<typeof buildIndex>) => {
+    const cards = view.sections.find((s) => s.kind === "cards");
+    return cards?.kind === "cards" ? cards.items : [];
+  };
+
+  test("the index sorts requests first, oldest first, then starting, then running", () => {
     const view = buildIndex(
       state({
         live: [fixtures.running!, fixtures.quiet!, fixtures.onlyYou!],
@@ -234,22 +265,72 @@ describe("Swarms boards", () => {
       }),
     );
     expect(view.header?.status).toEqual({ label: "2 need you", tone: "caution" });
-    const cards = view.sections.find((s) => s.kind === "cards");
-    const titles =
-      cards?.kind === "cards" ? cards.items.map((c) => c.title.split(" · ").at(-1)) : [];
-    expect(titles).toEqual(["s7k1p", "s5c07", "s0new", "s9hjx"]);
+    expect(view.header?.segments).toEqual([
+      { label: "needs you", n: 2, tone: "caution" },
+      { label: "running", n: 1, tone: "info" },
+      { label: "starting", n: 1, tone: "neutral" },
+    ]);
+    expect(cardsOf(view).map((c) => c.title)).toEqual([
+      "Review the plan for Fix issue #27: README undercounts frontend-mix nodes",
+      "No agent has worked since 14:40",
+      "Summarize open deploy issues · s0new",
+      "Fix issue #27: README undercounts frontend-mix nodes · s9hjx",
+    ]);
   });
 
-  test("a card names its size and model, and its Open hover spells both out", () => {
-    const view = buildIndex(state({ live: [fixtures.onlyYou!] }));
-    const cards = view.sections.find((s) => s.kind === "cards");
-    const card = cards?.kind === "cards" ? cards.items[0] : undefined;
-    expect(card?.fields).toContainEqual({ label: "size", value: "large" });
-    expect(card?.fields).toContainEqual({ label: "model", value: "gpt-6-astra" });
-    expect(card?.reason?.text).toContain("open the run to answer it");
-    expect(card?.actions?.[0]?.hint).toBe(
+  test("a request card leads with the decision, its verb, and no meter", () => {
+    const card = cardsOf(buildIndex(state({ live: [fixtures.onlyYou!] })))[0];
+    expect(card?.pill).toEqual({ label: "decide", tone: "caution" });
+    expect(card?.bar).toBeUndefined();
+    expect(card?.fields?.[0]?.value).toBe(
+      "fix-issue r20000-1 paused at approve-plan since 14:31 · only you can approve fix-issue on this host",
+    );
+    expect(card?.fields?.[1]?.value).toMatch(
+      /^11 of 80 turns used · 69 remaining · \d+ of 60 min$/,
+    );
+    expect(card?.footnote).toBe(
+      "Fix issue #27: README undercounts frontend-mix nodes · keelson-sample · large · gpt-6-astra · 2 agents · started 14:00",
+    );
+    expect(card?.reason).toBeUndefined();
+    expect(card?.actions?.map((a) => a.label)).toEqual([
+      "Review plan",
+      "Open swarm",
+      "Stop swarm…",
+    ]);
+    expect(card?.actions?.[0]).toMatchObject({ type: "open-run", tone: "brand" });
+    expect(card?.actions?.[1]?.hint).toBe(
       "large: up to 8 agents · 80 turns, 16 per worker · 4 at once · 5 min a turn. Model: gpt-6-astra.",
     );
+  });
+
+  test("a second request is counted, never shown in the reason", () => {
+    const card = cardsOf(buildIndex(state({ live: [fixtures.asked!] })))[0];
+    expect(card?.title).toBe(
+      "Review the plan for Fix issue #27: README undercounts frontend-mix nodes",
+    );
+    expect(card?.reason).toEqual({ text: "+1 more request" });
+    const question = cardsOf(buildIndex(state({ live: [{ ...fixtures.asked!, runs: [] }] })))[0];
+    expect(question?.title).toBe("@w1 asked: which retry cap, 30 s or 60 s?");
+    expect(question?.pill).toEqual({ label: "question", tone: "caution" });
+    expect(question?.actions?.[0]).toMatchObject({ type: "read-doc", label: "Read question" });
+  });
+
+  test("a running card names the activity, then the budget as a named meter", () => {
+    const card = cardsOf(buildIndex(state({ live: [fixtures.waiting!] })))[0];
+    expect(card?.pill).toEqual({ label: "running", tone: "info" });
+    expect(card?.bar).toEqual({ value: 11, total: 40 });
+    expect(card?.fields?.[0]?.value).toBe("@lead working · @lead turn 3 ok");
+    expect(card?.fields?.[1]?.value).toBe("Turn budget used · 11 of 40 · 29 remaining");
+    expect(card?.footnote).toBe("keelson-sample · medium · gpt-5.6-sol · 2 agents · started 14:00");
+    expect(card?.actions?.[0]).toMatchObject({ type: "swarm-open", label: "Open swarm" });
+    const stopping = cardsOf(buildIndex(state({ live: [fixtures.stopping!] })))[0];
+    expect(stopping?.pill).toEqual({ label: "stopping", tone: "neutral" });
+  });
+
+  test("an empty tab shows the journey, not a placeholder row", () => {
+    const view = buildIndex(state());
+    expect(view.sections.map((x) => x.kind)).toEqual(["journey"]);
+    expect(view.header).toBeUndefined();
   });
 
   test("ended rows show eight, newest first, then a row that opens the rest", () => {
@@ -260,7 +341,11 @@ describe("Swarms boards", () => {
     const rows = view.sections.find((s) => s.kind === "rows" && s.title === "Ended");
     const items = rows?.kind === "rows" ? rows.items : [];
     expect(items).toHaveLength(9);
-    expect(items[0]?.text.startsWith("s0010 ")).toBe(true);
+    expect(items[0]).toMatchObject({
+      chip: { label: "done", tone: "ok" },
+      text: "Fix issue #27: README undercounts frontend-mix nodes",
+    });
+    expect(items[0]?.trailing?.startsWith("s0010 · gpt-5.6-sol · 11 turns · ")).toBe(true);
     expect(items.at(-1)).toMatchObject({
       text: "3 earlier ended swarms",
       action: { type: "history-open" },
@@ -269,48 +354,174 @@ describe("Swarms boards", () => {
 
   test("the drawer spells out the size and names the models per role", () => {
     const view = buildSwarmBoard(fixtures.done!);
-    expect(view.header?.chip).toBe("medium · 11/40 turns · gpt-6-astra · workers gpt-5.6-sol");
+    expect(view.header?.status).toEqual({ label: "done", tone: "ok" });
+    expect(view.header?.chip).toBe(
+      "medium · 11 turns · 29 min · gpt-6-astra · workers gpt-5.6-sol",
+    );
     const text = JSON.stringify(view);
     expect(text).toContain(
       "medium: up to 5 agents · 40 turns, 12 per worker · 3 at once · 5 min a turn",
     );
     expect(text).toContain("copilot · lead gpt-6-astra · workers gpt-5.6-sol");
     expect(text).not.toContain('"type":"steer"');
+    expect(text).toContain('"label":"Runs verified","value":"1 of 1","tone":"ok"');
+    expect(JSON.stringify(buildIndex(state({ ended: [fixtures.done!] })))).toContain(
+      "· Sep 22 14:00 · 1 of 1 run verified",
+    );
   });
 
-  test("a custom size names its base", () => {
+  test("a custom size says which preset it was adjusted from", () => {
     const view = buildSwarmBoard(
       swarm("s2cus", { size: "custom", limits: { ...SIZE_PRESETS.medium, maxTurns: 60 } }),
     );
-    expect(JSON.stringify(view)).toContain("custom, from medium: up to 5 agents · 60 turns");
+    expect(view.header?.chip).toBe("medium, adjusted · 11 of 60 turns · gpt-5.6-sol");
+    expect(JSON.stringify(view)).toContain("medium, adjusted: up to 5 agents · 60 turns");
   });
 
-  test("an ended swarm shows how long it ran, a plain outcome, and no agent status", () => {
+  test("an ended swarm leads with its cause, shows how long it ran, and no agent status", () => {
     const stopped = swarm("s3stp", {
       status: "stopped",
       endedAt: "2026-09-22T14:00:23.000Z",
       error: "stopped from the Swarms tab",
       agents: [agent("s3stp", 0, { turns: 1 }), agent("s3stp", 1, { status: "busy" })],
     });
-    const text = JSON.stringify(buildSwarmBoard(stopped));
-    expect(text).toContain("· 23 s");
-    expect(text).toContain('"title":"Stopped"');
-    expect(text).toContain('"trailing":"1 turn"');
-    expect(text).not.toContain('"glyph":"info"');
-    expect(JSON.stringify(buildIndex({ live: [], starting: [], ended: [stopped] }))).toContain(
-      "· 23 s · stopped",
+    const view = buildSwarmBoard(stopped);
+    const text = JSON.stringify(view);
+    expect(view.header?.status).toEqual({ label: "stopped", tone: "neutral" });
+    expect(view.header?.chip).toBe("medium · 11 turns · 23 s · gpt-5.6-sol");
+    expect(text).toContain('"title":"Stopped by you at 14:00"');
+    expect(text).toContain('"value":"1 turn"');
+    expect(text).not.toContain('"pill":{"label":"busy"');
+    expect(view.sections.map((x) => x.kind)).toEqual(["cards", "stats", "cards", "rows", "rows"]);
+    const row = JSON.stringify(buildIndex({ live: [], starting: [], ended: [stopped] }));
+    expect(row).toContain('"chip":{"label":"stopped","tone":"neutral"}');
+    expect(row).toContain("· 11 turns · 23 s · ");
+    const out = buildSwarmBoard(
+      swarm("s4out", { status: "exhausted", endedAt: T0, error: "turn budget of 40 spent" }),
     );
+    expect(JSON.stringify(out)).toContain('"title":"Out of turns at 40"');
   });
 
-  test("a live swarm has one actions section, with steer and stop", () => {
+  test("a live board runs requests, budget, the lead's line and stop, then the record", () => {
     const view = buildSwarmBoard(fixtures.review!);
+    expect(view.sections.map((x) => x.kind)).toEqual([
+      "cards",
+      "stats",
+      "actions",
+      "cards",
+      "rows",
+      "rows",
+      "rows",
+    ]);
     const actions = view.sections.filter((s) => s.kind === "actions");
     expect(actions).toHaveLength(1);
-    const types = actions[0]?.kind === "actions" ? actions[0].items.map((i) => i.type) : [];
-    expect(types).toEqual(["read-doc", "steer", "stop-swarm"]);
+    const items = actions[0]?.kind === "actions" ? actions[0].items : [];
+    expect(items.map((i) => i.type)).toEqual(["steer", "stop-swarm"]);
+    expect(items[0]).toMatchObject({ label: "Message the lead", expanded: true });
+    expect(items[1]).toMatchObject({ inline: true, align: "end" });
+    const review = view.sections[0];
+    expect(review?.kind === "cards" ? review.title : "").toBe("Approvals in review");
+    expect(JSON.stringify(review)).toContain('"pill":{"label":"reviewing","tone":"info"}');
+    expect(JSON.stringify(review)).toContain("a peer reviews the plan");
+    const named = buildSwarmBoard({
+      ...fixtures.review!,
+      runs: [
+        run("r1", {
+          status: "paused",
+          pendingApproval: { ...gate("swarm"), reviewer: "s9hjy-w1" },
+        }),
+      ],
+    });
+    expect(JSON.stringify(named.sections[0])).toContain("@w1 reviews the plan in its thread");
   });
 
-  test("recent activity lists the newest first, and the card falls back to the last line", () => {
+  test("the bench shows each agent, waiting seats, and ghosts up to the cap", () => {
+    const view = buildSwarmBoard(fixtures.waiting!);
+    const bench = view.sections.find((x) => x.kind === "cards" && x.title?.startsWith("Agents"));
+    const items = bench?.kind === "cards" ? bench.items : [];
+    expect(bench).toMatchObject({ grid: true, columns: 4, title: "Agents · 2 of 5" });
+    expect(items).toHaveLength(5);
+    expect(items[0]).toMatchObject({
+      title: "lead",
+      titleTone: "brand",
+      mono: true,
+      pill: { label: "busy", tone: "info" },
+    });
+    expect(items[0]?.bar).toBeUndefined();
+    expect(items[1]).toMatchObject({
+      pill: { label: "waiting", tone: "caution" },
+      bar: { value: 3, total: 12 },
+      footnote: "2 messages waiting",
+    });
+    expect(items.slice(2).every((c) => c.ghost === true)).toBe(true);
+    const stats = view.sections.find((x) => x.kind === "stats");
+    const tiles = stats?.kind === "stats" ? stats.items : [];
+    expect(tiles[0]).toMatchObject({
+      label: "Turns",
+      value: "11 of 40",
+      sub: "29 remaining",
+      spark: [1, 3, 2, 0, 1],
+    });
+    expect(tiles[2]).toMatchObject({ label: "Agents", value: "2 of 5", sub: "1 busy · 1 waiting" });
+    expect(JSON.stringify(view)).toContain('"text":"@lead turn 3 ok ×2"');
+    const ended = buildSwarmBoard(fixtures.done!);
+    const endedBench = ended.sections.find(
+      (x) => x.kind === "cards" && x.title?.startsWith("Agents"),
+    );
+    expect(endedBench?.kind === "cards" ? endedBench.items : []).toHaveLength(2);
+  });
+
+  test("Runs appear only when the launch named workflows, and say so while none ran", () => {
+    const titles = (s: SwarmSummary) =>
+      buildSwarmBoard(s).sections.flatMap((x) => (x.kind === "rows" && x.title ? [x.title] : []));
+    expect(titles(fixtures.running!)).toEqual(["Task and context", "About"]);
+    expect(titles(fixtures.dispatchIdle!)).toEqual(["Runs", "Task and context", "About"]);
+    expect(JSON.stringify(buildSwarmBoard(fixtures.dispatchIdle!))).toContain(
+      "The lead may start fix-issue, docs-check; none started yet.",
+    );
+    expect(JSON.stringify(buildSwarmBoard(fixtures.done!))).toContain(
+      '"trailing":"PR #28 · verified"',
+    );
+    expect(JSON.stringify(buildSwarmBoard(fixtures.review!))).toContain("4 steps done");
+  });
+
+  test("the task and each context item disclose their text under the row", () => {
+    const s = swarm("s8ctx", {
+      task: `Fix issue #27
+
+${"detail ".repeat(1000)}`,
+      context: [
+        {
+          id: "issue-27",
+          kind: "issue",
+          title: "README count",
+          sourceUrl: "https://github.com/o/r/issues/27",
+          retrievedAt: "2026-09-22T13:00:00.000Z",
+          chars: 5000,
+          excerpt: "x".repeat(4000),
+        },
+        { id: "note-1", kind: "note", title: "a note", chars: 12, excerpt: "twelve chars" },
+      ],
+    });
+    const section = buildSwarmBoard(s).sections.find(
+      (x) => x.kind === "rows" && x.title === "Task and context",
+    );
+    const rows = section?.kind === "rows" ? section.items : [];
+    expect(rows[0]?.text).toBe("Task: Fix issue #27");
+    expect(rows[0]?.detail?.length).toBe(4000);
+    expect(rows[0]?.trailing).toBe("first 4,000 of 7,014 characters");
+    expect(rows[1]).toMatchObject({
+      text: "issue: README count",
+      trailing: "retrieved Sep 22 13:00 · first 4,000 of 5,000 chars",
+    });
+    expect(rows[1]?.detail?.length).toBe(4000);
+    expect(rows[1]?.href).toBeUndefined();
+    expect(rows[2]).toMatchObject({ trailing: "12 chars", detail: "twelve chars" });
+    board(swarmKey("s8ctx"), buildSwarmBoard(s));
+    expect(buildDoc(s, "s8ctx")).toContain("## issue: README count");
+  });
+
+  test("activity lists the newest first, and the running card carries the last line", () => {
     const activity = Array.from({ length: 12 }, (_, i) => ({
       at: `2026-09-22T14:${String(10 + i).padStart(2, "0")}:00.000Z`,
       text: `@s7act-lead turn ${i + 1} ok`,
@@ -318,12 +529,12 @@ describe("Swarms boards", () => {
     const s = swarm("s7act", { activity });
     const drawer = buildSwarmBoard(s);
     expect(() => expectView(swarmKey("s7act"), "board")(drawer)).not.toThrow();
-    const recent = JSON.stringify(drawer).match(/"title":"Recent","items":(\[.*?\])/)?.[1];
+    const recent = JSON.stringify(drawer).match(/"title":"Activity","items":(\[.*?\])/)?.[1];
     const items = JSON.parse(recent ?? "[]");
     expect(items).toHaveLength(12);
     expect(items[0]).toMatchObject({ text: "@lead turn 12 ok", trailing: "14:21" });
     const index = JSON.stringify(buildIndex(state({ live: [s] })));
-    expect(index).toContain('"label":"14:21","text":"@lead turn 12 ok"');
+    expect(index).toContain('"value":"14:21 @lead turn 12 ok"');
   });
 
   test("frames stay inside their budgets at the limits", () => {
@@ -494,8 +705,8 @@ describe("publishing", () => {
       state: () => state({ ended: [...ended.values()] }),
       find: (id): SwarmRecord => (ended.has(id) ? { ended: ended.get(id) as SwarmSummary } : {}),
       launch: () => ({ projects: [], live: 0 }),
-      rerunnable: () => false,
-      server: () => ({ live: 0, refused: [] }),
+      launchOf: () => undefined,
+      server: () => ({ live: 0 }),
       readLog: async () => "log",
       report: () => undefined,
       views,
@@ -618,28 +829,45 @@ describe("actions", () => {
 describe("launching from the tab", () => {
   const projects = [{ id: "p1", name: "keelson-sample" }];
 
-  test("the Launch header composes for every host shape and opens Discuss until a swarm is live", () => {
+  test("the Launch header is one form, open until a swarm is live, beside Prepare in chat", () => {
     for (const st of [
       { projects, live: 0 },
       { projects: [], live: 0 },
-      { projects, live: 2, dispatchBlocked: "no workflows" },
+      { projects, live: 2, dispatchBlocked: "no workflows", refused: ["fix-issue"] },
     ]) {
       board(LAUNCH_KEY, buildLaunch(st));
     }
-    const tabs = (st: Parameters<typeof buildLaunch>[0]) => {
+    const items = (st: Parameters<typeof buildLaunch>[0]) => {
       const section = buildLaunch(st).sections[0];
       return section?.kind === "actions" ? section.items : [];
     };
-    expect(tabs({ projects, live: 0 })[0]?.defaultOpen).toBe(true);
-    expect(tabs({ projects, live: 1 })[0]?.defaultOpen).toBeUndefined();
-    expect(tabs({ projects: [], live: 0 })[1]).toMatchObject({ disabled: true });
-    expect(tabs({ projects, live: 0 })[1]?.disabled).toBeUndefined();
-    expect(tabs({ projects: [], live: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
+    expect(items({ projects, live: 0 }).map((i) => i.type)).toEqual([
+      "start-swarm",
+      "start-in-chat",
+    ]);
+    expect(items({ projects, live: 0 })[0]?.expanded).toBe(true);
+    expect(items({ projects, live: 1 })[0]?.expanded).toBeUndefined();
+    expect(items({ projects: [], live: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
       "task",
+      "workflows",
       "size",
       "power",
       "model",
     ]);
+    const field = (st: Parameters<typeof buildLaunch>[0], name: string) =>
+      items(st)[0]?.fields?.find((f) => f.name === name);
+    expect(field({ projects: [], live: 0 }, "workflows")?.placeholder).toBe(
+      "needs a registered project",
+    );
+    expect(field({ projects, live: 0, refused: ["fix-issue"] }, "workflows")?.placeholder).toBe(
+      "none: the swarm investigates · e.g. fix-issue · fix-issue approvals: you answer them in Workflows",
+    );
+    expect(field({ projects, live: 0 }, "size")?.options?.map((o) => o.label)).toEqual([
+      "small · 3 agents · 20 turns",
+      "medium · 5 agents · 40 turns",
+      "large · 8 agents · 80 turns",
+    ]);
+    expect(field({ projects, live: 0 }, "project")?.placeholder).toBe("no project");
   });
 
   test("each power's hover names the model every provider runs at it", () => {
@@ -662,23 +890,28 @@ describe("launching from the tab", () => {
       buildLaunch({ projects, live: 0 }).sections.flatMap((x) =>
         x.kind === "actions" ? (x.items[0]?.fields ?? []) : [],
       ),
-    ).toContainEqual(expect.objectContaining({ name: "model", placeholder: "use power" }));
+    ).toContainEqual(
+      expect.objectContaining({ name: "model", placeholder: "use the power's model" }),
+    );
   });
 
   test("an ended swarm offers Run again, seeded with its size and model, only when its launch is kept", () => {
-    const actions = (rerunnable: boolean) =>
-      buildSwarmBoard(fixtures.done!, { rerunnable })
+    const actions = (launch: StartSwarmInput | undefined) =>
+      buildSwarmBoard(fixtures.done!, launch ? { launch } : {})
         .sections.filter((x) => x.kind === "actions")
         .flatMap((x) => (x.kind === "actions" ? x.items : []));
-    expect(actions(false)).toEqual([]);
-    const again = actions(true)[0];
+    expect(actions(undefined)).toEqual([]);
+    const again = actions(oldLaunch)[0];
     expect(again).toMatchObject({ type: "run-again", binding: { id: "s8pln" } });
+    expect(again?.hint).toBe(
+      "Starts a new swarm with the same task, project, workflows (fix-issue), 1 context item. Context is not refreshed.",
+    );
     expect(again?.fields?.find((f) => f.name === "size")?.defaultValue).toBe("medium");
     expect(again?.fields?.find((f) => f.name === "model")).toMatchObject({
       defaultValue: "gpt-6-astra",
       modelPicker: { providerField: "provider", providerDefault: "copilot" },
     });
-    board(swarmKey("s8pln"), buildSwarmBoard(fixtures.done!, { rerunnable: true }));
+    board(swarmKey("s8pln"), buildSwarmBoard(fixtures.done!, { launch: oldLaunch }));
   });
 });
 
@@ -686,7 +919,7 @@ describe("opening a run and the tab's count", () => {
   test("a gate card and a run row open the run, and the action names its workflow", async () => {
     const drawer = buildSwarmBoard(fixtures.onlyYou!);
     const json = JSON.stringify(drawer);
-    expect(json).toContain('"label":"Open run"');
+    expect(json).toContain('"label":"Review plan"');
     expect(json).toContain(
       '"action":{"type":"open-run","payload":{"id":"s7k1p","runId":"r20000-1111-2222"}}',
     );
@@ -736,11 +969,11 @@ describe("start and run again", () => {
   const act = (type: string, payload: Record<string, unknown>) =>
     handleSwarmsAction({ type, payload }, actionDeps);
 
-  test("Discuss starts a swarm from the form and opens the index", async () => {
+  test("a form with no workflows starts an investigating swarm and opens the index", async () => {
     begun.length = 0;
     const result = await act("start-swarm", {
-      mode: "discuss",
       task: "  Why is the build slow?  ",
+      workflows: "",
       project: "",
       tools: "none",
       size: "small",
@@ -758,11 +991,10 @@ describe("start and run again", () => {
     ]);
   });
 
-  test("Dispatch grants the named workflows, and refusals come back to the form", async () => {
+  test("workflows named grant them to the lead, and refusals come back to the form", async () => {
     begun.length = 0;
     const ok = await act("start-swarm", {
-      mode: "dispatch",
-      task: "Fix issue #27",
+      task: "Fix the README node count",
       project: "p1",
       tools: "read",
       size: "large",
@@ -773,7 +1005,7 @@ describe("start and run again", () => {
     });
     expect(ok.ok).toBe(true);
     expect(begun[0]).toEqual({
-      task: "Fix issue #27",
+      task: "Fix the README node count",
       workTools: "read",
       size: "large",
       power: "deep",
@@ -786,14 +1018,32 @@ describe("start and run again", () => {
       ],
     });
     for (const payload of [
-      { mode: "dispatch", task: "t", project: "", workflows: "fix-issue" },
-      { mode: "dispatch", task: "t", project: "p1", workflows: " " },
-      { mode: "dispatch", task: "t", project: "p1", workflows: "../x" },
-      { mode: "discuss", task: " " },
-      { mode: "discuss", task: "refuse" },
+      { task: "t", project: "", workflows: "fix-issue" },
+      { task: "t", project: "p1", workflows: "../x" },
+      { task: " " },
+      { task: "refuse" },
     ]) {
       expect((await act("start-swarm", payload)).ok).toBe(false);
     }
+    expect(await act("start-swarm", { task: "t", project: "p1", workflows: " " })).toMatchObject({
+      ok: true,
+    });
+  });
+
+  test("a task that names a link with no context is refused before a swarm exists", async () => {
+    begun.length = 0;
+    for (const task of [
+      "Fix https://github.com/o/r/issues/27",
+      "Review #41 please",
+      "See (#7) for the plan",
+    ]) {
+      const result = await act("start-swarm", { task });
+      expect(result).toEqual({ ok: false, error: LINK_REFUSAL });
+    }
+    expect((await act("start-swarm", { task: "Issue twenty-seven undercounts nodes" })).ok).toBe(
+      true,
+    );
+    expect(begun).toHaveLength(1);
   });
 
   test("Run again keeps the launch, and swaps the model only when the picker changed", async () => {
@@ -846,52 +1096,69 @@ describe("the ClickClack footer", () => {
 
   test("composes for every server state, and holds stop and reset while a swarm is live", () => {
     const at = "2026-09-22T14:10:00.000Z";
+    const external = {
+      mode: "external" as const,
+      url: "https://cc.example",
+      running: true,
+      checkedAt: at,
+    };
     for (const st of [
-      { live: 0, refused: [] },
-      { server: running, live: 0, refused: ["fix-issue"] },
-      {
-        server: { mode: "managed" as const, url: running.url, running: false },
-        live: 0,
-        refused: [],
-      },
-      {
-        server: { mode: "external" as const, url: "https://cc.example", running: true },
-        live: 1,
-        refused: [],
-      },
+      { live: 0 },
+      { server: running, live: 0 },
+      { server: { mode: "managed" as const, url: running.url, running: false }, live: 0 },
+      { server: external, live: 1 },
+      { server: running, live: 0, op: { verb: "reset" as const, phase: "running" as const, at } },
       {
         server: running,
         live: 0,
-        refused: [],
-        op: { verb: "reset" as const, phase: "running" as const, at },
-      },
-      {
-        server: running,
-        live: 0,
-        refused: [],
         op: { verb: "stop" as const, phase: "failed" as const, at, error: "boom" },
       },
     ]) {
       board(SERVER_KEY, buildServerPanel(st));
     }
-    expect(verbsOf({ server: running, live: 0, refused: [] }).map((i) => i.type)).toEqual([
+    expect(verbsOf({ server: running, live: 0 }).map((i) => i.type)).toEqual([
       "server-stop",
       "server-reset",
       "server-log",
     ]);
-    const held = verbsOf({ server: running, live: 2, refused: [] });
+    const held = verbsOf({ server: running, live: 2 });
     expect(held.find((i) => i.type === "server-stop")).toMatchObject({ disabled: true });
     expect(held.find((i) => i.type === "server-reset")).toMatchObject({
       disabled: true,
       confirm: { irreversible: true, subject: "reset" },
     });
+    expect(verbsOf({ server: external, live: 0 }).map((i) => i.type)).toEqual(["server-probe"]);
+  });
+
+  test("the head pill carries the operation, and an external server's reachability", () => {
+    const at = "2026-09-22T14:10:00.000Z";
+    const status = (st: ServerPanelState) => buildServerPanel(st).header?.status;
+    expect(status({ server: running, live: 0 })).toEqual({ label: "running", tone: "ok" });
     expect(
-      verbsOf({
-        server: { mode: "external", url: "https://cc.example", running: true },
+      status({ server: running, live: 0, op: { verb: "reset", phase: "running", at } }),
+    ).toEqual({ label: "resetting…", tone: "info" });
+    expect(
+      status({ server: running, live: 0, op: { verb: "stop", phase: "failed", at, error: "x" } }),
+    ).toEqual({ label: "stop failed", tone: "error" });
+    expect(status({ server: running, live: 0, op: { verb: "start", phase: "done", at } })).toEqual({
+      label: "running",
+      tone: "ok",
+    });
+    expect(
+      status({
+        server: {
+          mode: "external",
+          url: "https://cc.example",
+          running: false,
+          checkedAt: at,
+          unreachableSince: "2026-09-22T13:40:00.000Z",
+        },
         live: 0,
-        refused: [],
       }),
-    ).toEqual([]);
+    ).toEqual({ label: "unreachable since 13:40", tone: "warn" });
+    expect(JSON.stringify(buildServerPanel({ server: running, live: 0 }))).not.toContain(
+      "Gates the host keeps",
+    );
   });
 
   test("a verb runs in the background, reports on the footer, and refuses while it or a swarm is busy", async () => {

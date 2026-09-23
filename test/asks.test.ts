@@ -60,7 +60,7 @@ describe("an agent asking the operator", () => {
     expect(held.status).toBe("running");
     expect(held.turnsUsed).toBe(1);
     expect(held.health?.nudges).toBeUndefined();
-    expect(needsYou(held).map((n) => n.kind)).toEqual(["ask"]);
+    expect(needsYou(held).map((n) => n.kind)).toEqual(["question"]);
     expect(held.health?.asks?.[0]).toMatchObject({ handle: "s1-lead", text: QUESTION });
 
     server.postAsOwner(server.channels[0]?.id ?? "", "A guess.");
@@ -82,11 +82,55 @@ describe("an agent asking the operator", () => {
     });
     const swarm = await start();
     await settle();
-    expect(needsYou(swarm.summary()).map((n) => n.kind)).toEqual(["ask"]);
+    expect(needsYou(swarm.summary()).map((n) => n.kind)).toEqual(["question"]);
     await swarm.steer("Product decision; keep it.");
     await settle(40);
     expect(swarm.summary().health?.asks).toBeUndefined();
     expect((await swarm.finished).status).toBe("done");
+  });
+
+  test("two questions clear one at a time: a reply in one thread leaves the other open", async () => {
+    const { server, start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId !== "s1-lead") return;
+      if (turn === 1) {
+        await call("chat_spawn", { handle: "w", role: "worker", brief: "ask the operator" });
+        await call("chat_post", { body: "@operator lead question: keep the cap?" });
+      }
+      if (turn >= 3) await call("chat_done", { summary: "ok" });
+    });
+    // The worker asks its own question, in a thread of its own.
+    const swarm = await start();
+    await settle();
+    const channel = server.channels[0]?.id ?? "";
+    const lead = swarm.summary().health?.asks ?? [];
+    expect(lead.map((a) => a.handle)).toEqual(["s1-lead"]);
+    // A note that mentions the worker answers nothing of the lead's.
+    server.postAsOwner(channel, "@s1-w carry on");
+    await settle(40);
+    expect(swarm.summary().health?.asks?.map((a) => a.handle)).toEqual(["s1-lead"]);
+    // A reply in the lead's thread clears the lead's question.
+    server.postAsOwner(channel, "Keep it.", lead[0]?.threadRootId);
+    await settle(40);
+    expect(swarm.summary().health?.asks).toBeUndefined();
+    await swarm.stop();
+  });
+
+  test("Dismiss clears one question and logs it", async () => {
+    const { start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId === "s1-lead" && turn === 1) {
+        await call("chat_post", { body: "@operator first?" });
+        await call("chat_post", { body: "@operator second?" });
+      }
+    });
+    const swarm = await start();
+    await settle();
+    const asks = swarm.summary().health?.asks ?? [];
+    expect(asks).toHaveLength(2);
+    expect(swarm.dismissAsk("nope")).toBe(false);
+    expect(swarm.dismissAsk(asks[0]?.messageId ?? "")).toBe(true);
+    expect(swarm.summary().health?.asks?.map((a) => a.text)).toEqual(["@operator second?"]);
+    expect(swarm.summary().activity?.at(-1)?.text).toBe("dismissed @s1-lead's question");
+    await swarm.stop();
   });
 
   test("an unanswered ask ends only at the wall clock", async () => {
@@ -137,10 +181,10 @@ describe("an agent asking the operator", () => {
     const s = swarm.summary();
     const index = JSON.stringify(buildIndex({ live: [s], starting: [], ended: [] }));
     expect(index).toContain("asked at");
-    expect(index).toContain(": Which do you prefer, 8 of 12 or all 12?");
+    expect(index).toContain("@lead asked: Which do you prefer, 8 of 12 or all 12?");
     const drawer = JSON.stringify(buildSwarmBoard(s));
-    expect(drawer).toContain('"footnote":"Which do you prefer, 8 of 12 or all 12?"');
-    expect(drawer).toContain("Read the question");
+    expect(drawer).toContain('"title":"@lead asked: Which do you prefer, 8 of 12 or all 12?"');
+    expect(drawer).toContain("Read question");
     const doc = buildDoc(s, "s1");
     expect(doc).toContain("## @lead asked you");
     expect(doc).toContain("2. Show all 12.");
@@ -157,17 +201,15 @@ describe("an agent asking the operator", () => {
     const s = swarm.summary();
     const index = buildIndex({ live: [s], starting: [], ended: [] });
     expect(() => expectView(INDEX_KEY, "board")(index)).not.toThrow();
-    expect(JSON.stringify(index)).toContain("@lead asked at");
     expect(JSON.stringify(index)).toContain(
-      "is the 30 s backoff cap a product decision or a guess?",
+      "@lead asked: is the 30 s backoff cap a product decision or a guess?",
     );
     const drawer = buildSwarmBoard(s);
     expect(() => expectView(swarmKey("s1"), "board")(drawer)).not.toThrow();
-    const waiting = drawer.sections.find((x) => x.kind === "cards" && x.title === "Waiting on you");
-    expect(JSON.stringify(waiting)).toContain("@lead asked you");
-    expect(JSON.stringify(waiting)).toContain(
-      "clears when you post in #swarm-s1 or steer the lead",
-    );
+    const waiting = drawer.sections.find((x) => x.kind === "cards" && x.title === "1 request");
+    expect(JSON.stringify(waiting)).toContain("@lead asked:");
+    expect(JSON.stringify(waiting)).toContain("a reply in its thread answers it");
+    expect(JSON.stringify(waiting)).toContain('"type":"dismiss-ask"');
     await swarm.stop();
   });
 });
