@@ -6,17 +6,18 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { ChildRun, SwarmSummary } from "./types.ts";
+import type { ChildRun, OperatorAsk, SwarmSummary } from "./types.ts";
 
 // What keeps a live swarm from progressing without the operator, in the order a
 // card shows them: ClickClack stopped answering, a gate only the operator can
-// answer, a gate nobody is working on.
-export type NeedKind = "clickclack" | "only-you" | "quiet";
+// answer, a gate nobody is working on, a question an agent put to the operator.
+export type NeedKind = "clickclack" | "only-you" | "quiet" | "ask";
 
 export interface Need {
   kind: NeedKind;
   since?: string;
   run?: ChildRun;
+  ask?: OperatorAsk;
 }
 
 export function needsYou(s: SwarmSummary): Need[] {
@@ -32,6 +33,7 @@ export function needsYou(s: SwarmSummary): Need[] {
   const quiet = s.health?.quietSince;
   const reviewed = gates.find((r) => r.pendingApproval?.answerer !== "operator");
   if (quiet && reviewed) needs.push({ kind: "quiet", since: quiet, run: reviewed });
+  for (const ask of s.health?.asks ?? []) needs.push({ kind: "ask", since: ask.at, ask });
   return needs;
 }
 

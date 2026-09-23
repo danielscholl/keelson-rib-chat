@@ -31,7 +31,7 @@ import {
 } from "./dispatch.ts";
 import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
 import { checkReport, reportMeta, type SwarmReport, unwrapReport } from "./report.ts";
-import { route } from "./router.ts";
+import { mentionedHandles, route } from "./router.ts";
 import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
 import {
   BODY_MAX,
@@ -40,6 +40,7 @@ import {
   CONCLUSION_MAX,
   type DispatchGrant,
   type GateAnswer,
+  type OperatorAsk,
   SIZE_PRESETS,
   type SwarmAgent,
   type SwarmHealth,
@@ -85,6 +86,8 @@ const AUTH_REVOKED = 1008;
 export const MAX_TURN_FAILURES = 3;
 // Thread replies an agent was not woken for, kept for its next turn.
 const BACKGROUND_KEPT = 12;
+const ASKS_KEPT = 5;
+const ASK_CHARS = 280;
 
 export interface SwarmOptions {
   task: string;
@@ -238,6 +241,10 @@ export class Swarm {
   private refusedConclusions = 0;
   private socketDrops = 0;
   private quietSince: string | undefined;
+  private readonly asks: OperatorAsk[] = [];
+  private ownerHandle = "";
+  // Messages the rib posts as the owner, which are not the operator talking.
+  private readonly ownPosts = new Set<string>();
   private lastLeadFailure: string | undefined;
   // The last time an agent's channel call failed because ClickClack itself did.
   private channelFault: string | undefined;
@@ -290,6 +297,10 @@ export class Swarm {
     // human's message does.
     this.cursor = await this.owner.tailCursor(this.opts.workspaceId);
     this.channel = await this.owner.createChannel(this.opts.workspaceId, `swarm-${this.id}`);
+    this.ownerHandle = await this.owner
+      .me()
+      .then((me) => me.handle.toLowerCase())
+      .catch(() => "");
     await this.addAgent({ handle: "lead", role: "Lead: owns the outcome", lead: true });
     this.connect();
     this.wallClockTimer = setTimeout(
@@ -300,6 +311,7 @@ export class Swarm {
       this.channel.id,
       `**Swarm ${this.id}**\n\n${this.task}`,
     );
+    this.ownPosts.add(kickoff.id);
     this.log(`swarm ${this.id} started in #${this.channel.name}`);
     this.changed("start");
     this.enqueueMessage(kickoff);
@@ -368,6 +380,7 @@ export class Swarm {
     this.seen.add(message.id);
     const roster = [...this.agents.values()];
     const author = roster.find((a) => a.botUserId === message.authorId);
+    if (message.authorKind === "human" && !this.ownPosts.has(message.id)) this.clearAsks();
     const isRoot = message.threadRootId === message.id;
     if (isRoot && author) this.threadStarters.set(message.id, author.id);
     const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
@@ -453,7 +466,10 @@ export class Swarm {
     this.background.delete(agent.id);
     void this.owner
       .postMessage(this.channel.id, notice)
-      .then((m) => this.enqueueMessage(m))
+      .then((m) => {
+        this.ownPosts.add(m.id);
+        this.enqueueMessage(m);
+      })
       .catch(() => {});
   }
 
@@ -475,6 +491,8 @@ export class Swarm {
       }
       return;
     }
+    // An open question to the operator holds the swarm; only the wall clock ends it.
+    if (this.asks.length > 0) return;
     const lead = [...this.agents.values()].find((a) => a.lead);
     if (!lead || !this.canWork(lead.id) || this.nudges >= this.limits.maxNudges) {
       void this.finish("stalled", this.stallReason());
@@ -704,22 +722,52 @@ export class Swarm {
   }
 
   async post(agentId: string, body: string): Promise<ChatMessage> {
-    const { client } = this.as(agentId);
+    const { agent, client } = this.as(agentId);
     const message = await this.onChannel(() => client.postMessage(this.channel.id, body));
+    this.noteAsk(agent, message);
     this.enqueueMessage(message);
     return message;
   }
 
   async reply(agentId: string, messageId: string, body: string): Promise<ChatMessage> {
-    const { client } = this.as(agentId);
+    const { agent, client } = this.as(agentId);
     // Replies attach to a thread root, so a reply-to-a-reply is lifted to it.
     const target = await this.onChannel(() => client.getMessage(messageId));
     if (target.channelId !== this.channel.id) {
       throw new Error(`message ${messageId} is not in this swarm's channel`);
     }
     const message = await this.onChannel(() => client.replyInThread(target.threadRootId, body));
+    this.noteAsk(agent, message);
     this.enqueueMessage(message);
     return message;
+  }
+
+  // An agent's message addressed to @operator, or the owner's own handle, is a
+  // question the swarm waits on until the operator next writes.
+  private noteAsk(agent: SwarmAgent, message: ChatMessage): void {
+    const handles = mentionedHandles(message.body);
+    const asked =
+      handles.includes("operator") ||
+      (this.ownerHandle !== "" && handles.includes(this.ownerHandle));
+    if (!asked) return;
+    this.asks.push({
+      agentId: agent.id,
+      handle: agent.handle,
+      messageId: message.id,
+      text:
+        message.body.length > ASK_CHARS ? `${message.body.slice(0, ASK_CHARS - 1)}…` : message.body,
+      at: message.createdAt || new Date().toISOString(),
+    });
+    this.asks.splice(0, Math.max(0, this.asks.length - ASKS_KEPT));
+    this.log(`@${agent.handle} asked the operator`);
+    this.changed("health");
+  }
+
+  private clearAsks(): void {
+    if (this.asks.length === 0) return;
+    this.asks.length = 0;
+    this.log("the operator answered");
+    this.changed("health");
   }
 
   async read(agentId: string, opts: { threadId?: string; limit: number }): Promise<ChatMessage[]> {
@@ -989,7 +1037,7 @@ export class Swarm {
       : `Its prompt: ${gate.prompt}`;
     const how = this.opts.dispatch?.dispatcher.respond
       ? "Have another agent review it, then answer with chat_workflow_respond, citing that review."
-      : "Only the operator can answer it: tell them in the channel what it is waiting for.";
+      : "Only the operator can answer it: tell @operator in the channel what it is waiting for.";
     this.notifyLead(`${change} ${where} ${how}`, { post: false });
   }
 
@@ -1007,7 +1055,7 @@ export class Swarm {
     const respond = dispatch.dispatcher.respond;
     if (!respond) {
       throw new Error(
-        "this keelson host cannot answer a gate for the operator: tell the operator in the channel what the run is waiting for",
+        "this keelson host cannot answer a gate for the operator: tell @operator in the channel what the run is waiting for",
       );
     }
     const run = this.runs.get(input.runId);
@@ -1036,7 +1084,7 @@ export class Swarm {
         this.changed("gate");
       }
       const refused = /ribApprovalGrants/.test(result.error)
-        ? " The operator has not let this swarm answer this workflow's gates: tell them in the channel what the run is waiting for, then wait."
+        ? " The operator has not let this swarm answer this workflow's gates: tell @operator in the channel what the run is waiting for, then wait."
         : "";
       throw new Error(
         `could not answer ${gate.nodeId} on run ${run.runId}: ${result.error}.${refused}`,
@@ -1095,7 +1143,7 @@ export class Swarm {
       throw new Error(`message ${messageId} is not from this swarm's agents or the operator`);
     if (author.lead) {
       throw new Error(
-        "the lead cannot review its own run's gate: have another agent review it, or ask the operator",
+        "the lead cannot review its own run's gate: have another agent review it, or ask @operator",
       );
     }
     return `@${author.handle}`;
@@ -1194,6 +1242,7 @@ export class Swarm {
       ...(this.nudges > 0 ? { nudges: this.nudges } : {}),
       ...(this.refusedConclusions > 0 ? { refusedConclusions: this.refusedConclusions } : {}),
       ...(this.quietSince ? { quietSince: this.quietSince } : {}),
+      ...(this.asks.length > 0 ? { asks: [...this.asks] } : {}),
     };
     return Object.keys(health).length > 0 ? health : undefined;
   }

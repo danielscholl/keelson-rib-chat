@@ -225,7 +225,9 @@ gates for a rib, the operator answers with \`workflow_respond\` and the swarm
 waits.
 
 A swarm with a live run is not idle, so it is never nudged or stalled while a run
-is in flight. Its wall clock still applies, so give long runs a larger
+is in flight. Neither is a swarm with an open question for the operator: an agent
+asks one by writing \`@operator\` (or the owner's ClickClack handle), and the
+operator's next message in the channel, or a steer, answers it. Its wall clock still applies, so give long runs a larger
 \`max_minutes\`. The lead cannot conclude while a run is live. A swarm that ends
 any other way cancels its live runs.
 
