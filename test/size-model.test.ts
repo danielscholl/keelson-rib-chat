@@ -60,6 +60,14 @@ describe("model label", () => {
     );
     expect(modelLabel({ power: "fast", model: "gpt-6-astra", agents })).toBe("gpt-6-astra");
   });
+  test("names the model the host said served the power", () => {
+    const served = [
+      { providerId: "copilot", servedModel: "gpt-6-pro" },
+      { providerId: "copilot", servedModel: "gpt-6-pro" },
+    ] as unknown as SwarmSummary["agents"];
+    expect(modelLabel({ power: "deep", agents: served })).toBe("gpt-6-pro · deep power");
+    expect(modelLabel({ agents: served })).toBe("gpt-6-pro");
+  });
 });
 
 describe("chat_swarm_start inputs", () => {

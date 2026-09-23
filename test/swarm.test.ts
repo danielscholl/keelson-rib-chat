@@ -974,6 +974,10 @@ describe("size and model", () => {
       ["gpt-5.6-sol", undefined],
     ]);
     expect(summary.power).toBe("deep");
+    expect(summary.agents.map((a) => [a.handle, a.servedModel])).toEqual([
+      ["s1-lead", "deep-1"],
+      ["s1-w", "gpt-5.6-sol"],
+    ]);
   });
 
   test("with no model, agents record no model and the provider that served them", async () => {

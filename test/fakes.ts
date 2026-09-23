@@ -247,6 +247,11 @@ export type Script = (t: ScriptTurn) => Promise<void>;
 // What each scripted turn reports spending, errors included.
 export const TURN_USAGE = { inputTokens: 1_200, outputTokens: 300, cacheReadInputTokens: 800 };
 
+// A class serves as `<class>-1`, like a provider's map would pick one of its models.
+function servedBy(req: RibAgentTurnRequest): string | undefined {
+  return req.model ?? (req.modelClass ? `${req.modelClass}-1` : undefined);
+}
+
 export function scriptedProvider(tools: readonly ToolDefinition[], script: Script) {
   const turns = new Map<string, number>();
   const requests: RibAgentTurnRequest[] = [];
@@ -291,6 +296,7 @@ export function scriptedProvider(tools: readonly ToolDefinition[], script: Scrip
           text: "",
           sessionId: `sess_${agentId}`,
           providerId: req.provider ?? "fake",
+          ...(servedBy(req) ? { model: servedBy(req) } : {}),
           usage: TURN_USAGE,
         }),
         (e) => ({ status: "error" as const, text: "", error: String(e), usage: TURN_USAGE }),

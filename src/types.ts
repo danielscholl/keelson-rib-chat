@@ -104,8 +104,9 @@ export interface SwarmAgent {
   sessionId?: string;
   // The model the swarm asked for on this agent's turns; absent means the provider's default.
   model?: string;
-  // The provider that served this agent's last turn.
+  // The provider that served this agent's last turn, and the model it reported.
   providerId?: string;
+  servedModel?: string;
   usage?: TokenTally;
   turns: number;
   status: AgentStatus;

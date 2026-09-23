@@ -676,6 +676,22 @@ describe("launching from the tab", () => {
   });
 });
 
+describe("power and the served model", () => {
+  test("the drawer names the power, its provider, and the model that served it", () => {
+    const done = fixtures.done!;
+    const s = {
+      ...done,
+      model: undefined,
+      workerModel: undefined,
+      power: "deep" as const,
+      agents: done.agents.map((a) => ({ ...a, model: undefined, servedModel: "gpt-6-pro" })),
+    };
+    const drawer = JSON.stringify(buildSwarmBoard(s));
+    expect(drawer).toContain("deep power on copilot · every agent on gpt-6-pro");
+    board(swarmKey(s.id), buildSwarmBoard(s));
+  });
+});
+
 describe("start and run again", () => {
   const act = (type: string, payload: Record<string, unknown>) =>
     handleSwarmsAction({ type, payload }, actionDeps);
