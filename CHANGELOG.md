@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.8.0...v0.9.0) (2026-09-23)
+
+
+### Added
+
+* **surface:** open a run from the drawer and badge the Swarms tab ([#47](https://github.com/danielscholl/keelson-rib-chat/issues/47)) ([9cc0419](https://github.com/danielscholl/keelson-rib-chat/commit/9cc0419ef62938cfc1263fedeee373d737a0b731))
+* **swarm:** name the model that served each agent ([#46](https://github.com/danielscholl/keelson-rib-chat/issues/46)) ([21da7a1](https://github.com/danielscholl/keelson-rib-chat/commit/21da7a15cf0ee32de75e5f3d44302f2bc3099bfe))
+* **swarm:** pick a swarm's power, fast, balanced or deep ([#45](https://github.com/danielscholl/keelson-rib-chat/issues/45)) ([b1f9e04](https://github.com/danielscholl/keelson-rib-chat/commit/b1f9e04bfb487c233ada1e5af0afcc2619a26ff6))
+
 ## [0.8.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.7.0...v0.8.0) (2026-09-23)
 
 
