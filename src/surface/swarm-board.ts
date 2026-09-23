@@ -406,11 +406,10 @@ function outcome(s: SwarmSummary): Leaf[] {
             s.conclusion.length > PREVIEW_CHARS
               ? `${s.conclusion.slice(0, PREVIEW_CHARS).trimEnd()}…`
               : s.conclusion,
-          label: "Conclusion",
           copyAction: { type: "copy-conclusion", payload: { id: s.id } },
         },
       ],
-      footnote: `by @${byLead?.handle ?? `${s.id}-lead`}${s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : ""} · ${s.conclusion.length.toLocaleString("en-US")} characters`,
+      footnote: `by @${shortHandle(byLead?.handle ?? `${s.id}-lead`, s.id)}${s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : ""} · ${s.conclusion.length.toLocaleString("en-US")} characters`,
       actions: [{ type: "read-doc", label: "Read in full", glyph: "▤", payload: { id: s.id } }],
     });
   } else {
