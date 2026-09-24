@@ -3,6 +3,7 @@ import { ClickClackClient } from "../src/clickclack.ts";
 import rib from "../src/index.ts";
 import { Swarm, type SwarmOptions, WRITER_TOOLS } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
+import type { RunAgentTurn } from "../src/turn-runner.ts";
 import type { SwarmSummary } from "../src/types.ts";
 import { createWorktree } from "../src/worktree.ts";
 import {
@@ -197,6 +198,105 @@ describe("write mode", () => {
         reason: "2 uncommitted change(s), 2 commit(s) not pushed",
       },
     ]);
+  });
+
+  test("a worktree whose branch could not be deleted is listed with why", async () => {
+    const git = fakeGit({ failBranchDelete: true });
+    const h = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "coder", role: "r", brief: "b", writes: true });
+        } else if (agentId === "s1-lead") await call("chat_done", { summary: "ok" });
+      },
+      {},
+      git,
+    );
+    const summary = await (await h.start()).finished;
+    expect(summary.worktrees).toEqual([
+      {
+        agent: "s1-coder",
+        path: WT,
+        branch: "keelson/swarm/s1/coder",
+        reason: "the worktree was removed, but its local branch was not: cannot lock ref",
+      },
+    ]);
+  });
+
+  test("a writer whose turn has not settled keeps its worktree", async () => {
+    const git = fakeGit();
+    let writing: () => void = () => {};
+    const writerStarted = new Promise<void>((resolve) => {
+      writing = resolve;
+    });
+    let run: RunAgentTurn = () => {
+      throw new Error("not wired");
+    };
+    const h = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "coder", role: "r", brief: "b", writes: true });
+        }
+      },
+      {
+        settleMs: 20,
+        runAgentTurn: (req) => {
+          if (req.turnContext?.agentId !== "s1-coder") return run(req);
+          // A provider still writing: its result outlives the swarm's abort.
+          writing();
+          return { stream: (async function* () {})(), result: new Promise(() => {}) };
+        },
+      },
+      git,
+    );
+    run = h.provider.run;
+    const swarm = await h.start();
+    await writerStarted;
+    const summary = await swarm.stop();
+    expect(git.ran(`git worktree remove ${WT}`)).toHaveLength(0);
+    expect(git.ran("git status")).toHaveLength(0);
+    expect(summary.worktrees).toEqual([
+      {
+        agent: "s1-coder",
+        path: WT,
+        branch: "keelson/swarm/s1/coder",
+        reason: "its last turn had not finished when the swarm ended",
+      },
+    ]);
+  });
+
+  test("a writer still being spawned when the swarm stops is revoked and cleaned up", async () => {
+    let release: () => void = () => {};
+    const git = fakeGit({
+      holdAdd: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    let spawning: () => void = () => {};
+    const spawnStarted = new Promise<void>((resolve) => {
+      spawning = resolve;
+    });
+    let spawned: Promise<{ content: string; isError: boolean }> | undefined;
+    const h = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          spawned = call("chat_spawn", { handle: "coder", role: "r", brief: "b", writes: true });
+          spawning();
+          await spawned;
+        }
+      },
+      {},
+      git,
+    );
+    const swarm = await h.start();
+    await spawnStarted;
+    const stopped = swarm.stop();
+    release();
+    const summary = await stopped;
+    const result = await spawned;
+    expect(result?.isError).toBe(true);
+    expect(summary.agents.map((a) => a.handle)).toContain("s1-coder");
+    expect(h.server.tokens.get("ccb_s1-coder")?.revoked).toBe(true);
+    expect(git.ran(`git worktree remove ${WT}`)).toHaveLength(1);
   });
 
   test("a start with write and no project is refused before a swarm exists", async () => {

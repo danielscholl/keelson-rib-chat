@@ -32,7 +32,7 @@ import {
 import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
 import { checkReport, reportMeta, type SwarmReport, unwrapReport } from "./report.ts";
 import { addressedHandles, mentionedHandles, route } from "./router.ts";
-import { type RunAgentTurn, runTurn } from "./turn-runner.ts";
+import { type RunAgentTurn, runTurn, SETTLE_GRACE_MS } from "./turn-runner.ts";
 import {
   type ActivityEntry,
   type ActivityKind,
@@ -179,6 +179,8 @@ export interface SwarmOptions {
   log?: (message: string, data?: unknown) => void;
   // Called after each change a view of the swarm would show.
   onChange?: (kind: SwarmChange) => void;
+  // How long the end waits for a writer's turn to settle before keeping its worktree.
+  settleMs?: number;
   // How long the swarm must sit idle before that counts as quiescent.
   quiesceMs?: number;
   reconnectMs?: number;
@@ -342,6 +344,10 @@ export class Swarm {
   // Handles a spawn has claimed while its worktree is being made.
   private readonly reserved = new Set<string>();
   private readonly keptWorktrees: KeptWorktree[] = [];
+  // Spawns between their start and a seated agent, which finish() waits out.
+  private readonly seating = new Set<Promise<SwarmAgent>>();
+  // Each agent's turn in progress, so a writer's worktree is checked only once it settles.
+  private readonly inFlight = new Map<string, Promise<unknown>>();
   private error: string | undefined;
   private endedAt: string | undefined;
   private quiesceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -786,7 +792,7 @@ export class Swarm {
       ]),
     ].map((name) => ({ name }));
     const model = agent.model;
-    const outcome = await runTurn(
+    const running = runTurn(
       this.opts.runAgentTurn,
       {
         system: systemPrompt({
@@ -818,6 +824,9 @@ export class Swarm {
       this.limits.turnTimeoutMs,
       this.controller.signal,
     );
+    this.inFlight.set(agent.id, running);
+    const outcome = await running;
+    if (this.inFlight.get(agent.id) === running) this.inFlight.delete(agent.id);
 
     if (outcome.sessionId) agent.sessionId = outcome.sessionId;
     if (outcome.providerId) agent.providerId = outcome.providerId;
@@ -961,6 +970,20 @@ export class Swarm {
     return agent;
   }
 
+  private async settled(agentId: string): Promise<boolean> {
+    const turn = this.inFlight.get(agentId);
+    if (!turn) return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = await Promise.race([
+      turn.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), this.opts.settleMs ?? SETTLE_GRACE_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+    return done;
+  }
+
   // A clean worktree with everything pushed goes; any other stays, listed in the summary.
   private async releaseWorktrees(): Promise<void> {
     const write = this.opts.write;
@@ -968,7 +991,10 @@ export class Swarm {
     for (const agent of this.agents.values()) {
       const wt = agent.worktree;
       if (!wt) continue;
-      const reason = await releaseWorktree(write.git, write.root, wt);
+      const settled = await this.settled(agent.id);
+      const reason = settled
+        ? await releaseWorktree(write.git, write.root, wt)
+        : "its last turn had not finished when the swarm ended";
       if (!reason) continue;
       this.keptWorktrees.push({ agent: agent.handle, path: wt.path, branch: wt.branch, reason });
       this.log(`kept @${agent.handle}'s worktree ${wt.path}: ${reason}`, {
@@ -1097,6 +1123,37 @@ export class Swarm {
     return thread.slice(-opts.limit);
   }
 
+  private async seat(
+    handle: string,
+    input: { handle: string; role: string },
+    spawnedBy: string,
+    write: SwarmOptions["write"],
+  ): Promise<SwarmAgent> {
+    const worktree = write
+      ? await createWorktree(
+          write.git,
+          write.root,
+          this.id,
+          handle.slice(this.id.length + 1),
+        ).catch((e) => {
+          throw new Error(`could not make a worktree for @${handle}: ${errText(e)}`);
+        })
+      : undefined;
+    try {
+      return await this.addAgent({
+        handle,
+        name: sanitizeHandle(input.handle),
+        role: input.role,
+        lead: false,
+        spawnedBy,
+        ...(worktree ? { worktree } : {}),
+      });
+    } catch (e) {
+      if (write && worktree) void releaseWorktree(write.git, write.root, worktree);
+      throw e;
+    }
+  }
+
   async spawn(
     agentId: string,
     input: { handle: string; role: string; brief: string; writes?: boolean },
@@ -1115,35 +1172,18 @@ export class Swarm {
       );
     }
     const handle = this.uniqueHandle(input.handle);
-    let agent: SwarmAgent;
     this.reserved.add(handle);
+    const seating = this.seat(handle, input, spawner.id, write);
+    this.seating.add(seating);
+    let agent: SwarmAgent;
     try {
-      const worktree = write
-        ? await createWorktree(
-            write.git,
-            write.root,
-            this.id,
-            handle.slice(this.id.length + 1),
-          ).catch((e) => {
-            throw new Error(`could not make a worktree for @${handle}: ${errText(e)}`);
-          })
-        : undefined;
-      try {
-        agent = await this.addAgent({
-          handle,
-          name: sanitizeHandle(input.handle),
-          role: input.role,
-          lead: false,
-          spawnedBy: spawner.id,
-          ...(worktree ? { worktree } : {}),
-        });
-      } catch (e) {
-        if (write && worktree) void releaseWorktree(write.git, write.root, worktree);
-        throw e;
-      }
+      agent = await seating;
     } finally {
+      this.seating.delete(seating);
       this.reserved.delete(handle);
     }
+    // finish() waited for this seat, so it already revoked the agent and checked its worktree.
+    if (this.status !== "running") throw new Error(`swarm ${this.id} is ${this.status}`);
     this.log(`@${spawner.handle} spawned @${agent.handle}: ${input.role}`, {
       kind: "spawn",
       actor: spawner.id,
@@ -1853,6 +1893,8 @@ export class Swarm {
       const line = `Swarm ${this.id} ${status}${reason ? `: ${reason}` : ""}. ${this.turnsUsed} turns, ${this.agents.size} agents.`;
       await this.owner.postMessage(this.channel.id, line).catch(() => {});
     }
+    // A spawn in flight seats its agent first, so its token and worktree are cleaned up too.
+    await Promise.allSettled([...this.seating]);
     // The bots stay so the transcript keeps its authors; only their credentials go.
     for (const agent of this.agents.values()) {
       await this.owner.revokeBotToken(agent.tokenId).catch((e) => {

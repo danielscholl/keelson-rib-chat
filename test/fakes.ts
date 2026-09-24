@@ -376,7 +376,12 @@ export function fakeDispatcher(
 
 // The host's runText for git and gh, answering from per-path state a test sets.
 export function fakeGit(
-  opts: { defaultBranch?: string | null; ignored?: boolean; failAdd?: boolean } = {},
+  opts: {
+    defaultBranch?: string | null;
+    ignored?: boolean;
+    holdAdd?: Promise<void>;
+    failBranchDelete?: boolean;
+  } = {},
 ) {
   const calls: { cmd: string; args: string[]; cwd: string }[] = [];
   const dirty = new Map<string, string>();
@@ -397,7 +402,8 @@ export function fakeGit(
     if (sub.startsWith("rev-parse --verify")) return fail("");
     if (sub.startsWith("check-ignore")) return opts.ignored ? ok() : fail("exit 1");
     if (sub === "rev-parse --git-common-dir") return ok(".git\n");
-    if (sub.startsWith("worktree add") && opts.failAdd) return fail("fatal: already exists");
+    if (sub.startsWith("worktree add")) await opts.holdAdd;
+    if (sub.startsWith("branch -D") && opts.failBranchDelete) return fail("cannot lock ref");
     if (sub === "status --porcelain") return ok(dirty.get(cwd) ?? "");
     if (sub.startsWith("rev-list --count")) return ok(`${ahead.get(cwd) ?? 0}\n`);
     return ok();

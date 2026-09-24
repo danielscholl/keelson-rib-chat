@@ -154,10 +154,15 @@ export function releaseWorktree(
       const unsaved = await unsavedWork(deps, wt);
       if (unsaved) return unsaved;
       await git(deps, root, ["worktree", "remove", wt.path]);
-      await gitOk(deps, root, ["branch", "-D", wt.branch]);
-      return undefined;
     } catch (e) {
       return `could not check or remove it: ${e instanceof Error ? e.message : String(e)}`;
     }
+    const deleted = await deps.run("git", ["branch", "-D", wt.branch], {
+      cwd: root,
+      timeoutMs: GIT_TIMEOUT_MS,
+    });
+    return deleted.ok
+      ? undefined
+      : `the worktree was removed, but its local branch was not: ${deleted.error}`;
   });
 }
