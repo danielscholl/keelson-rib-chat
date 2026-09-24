@@ -184,6 +184,7 @@ function fields(state: LaunchState): Field[] {
             options: [
               { value: "none", label: "chat only" },
               { value: "read", label: "read the project" },
+              { value: "write", label: "write the project" },
             ],
           },
         ]

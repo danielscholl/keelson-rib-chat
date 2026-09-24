@@ -100,6 +100,18 @@ harness gains no GitHub-specific behavior. Titles are held to one line and
 source URLs to `http` and `https`, because both are interpolated into every
 agent's prompt and both arrive from forge text.
 
+## A writer gets a worktree, not a sandbox
+
+Write mode exists to compare agents that change code themselves with the
+workflow path. The lead chooses its writers, and each gets a worktree and a
+branch of its own, so no two agents edit one checkout and the others keep the
+read-only boundary. The worktree is cut from the fetched remote default branch,
+because a branch cut from a stale local one conflicts with origin by the time it
+is a pull request. `Bash` is what makes a writer able to build and test, and the
+host confines no shell command to a directory, so the docs say that plainly
+instead of implying one. The rib opens only draft pull requests, checks their
+commits for AI attribution before it pushes, and never merges.
+
 ## The operating contract ships inside the package
 
 The `keelson_docs` source is an inline corpus in a source module, not a URL.

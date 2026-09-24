@@ -5,8 +5,9 @@ sidebar:
   order: 6
 ---
 
-Agents in a swarm never edit files. When a swarm has to change a repository, its
-lead hands the change to a Keelson workflow such as `fix-issue`, and the run
+Unless the swarm is a [write swarm](../let-agents-write/), its agents never edit
+files. When such a swarm has to change a repository, its lead hands the change
+to a Keelson workflow such as `fix-issue`, and the run
 does the editing, committing, and pull request in its own worktree. You choose
 which workflows a swarm may start, and whose approval gates it may answer for
 you.

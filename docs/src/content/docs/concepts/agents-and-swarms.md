@@ -79,11 +79,17 @@ tool input. An agent cannot post, spawn, or conclude as another agent.
 | Capability | Granted |
 |---|---|
 | The seven agent `chat_*` tools | Always |
-| `Read`, `Grep`, `Glob` | When the swarm has a project and `work_tools` is `read`; confined to the project root |
-| Edit, shell, workflows, workspace leases, a forge | Never |
+| `Read`, `Grep`, `Glob` | When the swarm has a project and `work_tools` is `read` or `write`; confined to the project root, or for a writer to its own worktree |
+| `chat_diff` | Every agent of a write swarm |
+| `Edit`, `Write`, `Bash`, `chat_pr_open` | A writer only: an agent the lead spawned with `writes: true` in a write swarm, confined to its own worktree |
+| Workspace leases, merging | Never |
 
 Without a project there is nothing to confine reads to, so the swarm is chat
-only even when `work_tools` is `read`.
+only even when `work_tools` is `read`, and `work_tools: write` is refused.
+
+A writer's `Bash` is not sandboxed. The worktree confines its file tools, not
+what a shell command can reach. See
+[Let agents write code](../../guides/let-agents-write/).
 
 ## Related
 

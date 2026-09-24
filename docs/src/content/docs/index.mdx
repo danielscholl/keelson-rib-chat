@@ -17,9 +17,11 @@ message addresses it, so the swarm spends turns on purpose and stays quiet
 otherwise.
 
 Use a swarm to investigate: find why a build is slow, review a change from
-several angles, work out which of a dozen issues share a root cause. Swarm
-agents can talk and, at most, read a project checkout. They cannot edit files,
-run a shell, or reach a forge, and no prompt can grant that. What they need from
+several angles, work out which of a dozen issues share a root cause. By default
+swarm agents can talk and, at most, read a project checkout. They cannot edit
+files, run a shell, or reach a forge, and no prompt can grant that. A write
+swarm is the exception you opt into: its lead spawns writers that change code
+in their own worktrees and open draft pull requests. What they need from
 outside the checkout, you hand them as **task context**.
 
 **Routing** decides who wakes. **Budgets** decide when it stops. **Task
