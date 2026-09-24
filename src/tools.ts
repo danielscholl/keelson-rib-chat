@@ -56,6 +56,8 @@ export interface ToolDeps {
   swarms: Map<string, Swarm>;
   // Swarms between the start call and a booted channel.
   starting?: ReadonlyMap<string, StartingSwarm>;
+  // Swarms still booting whose agents may already be taking turns.
+  booting?: ReadonlyMap<string, Swarm>;
   // Summaries of swarms that have ended, kept so status still answers.
   ended: Map<string, SwarmSummary>;
   // `url` is the ClickClack server the swarm runs on, for pointing a human at its UI.
@@ -131,7 +133,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
   const caller = (ctx: ToolContext): { swarm: Swarm; agentId: string } => {
     const turn = readTurnContext(ctx.turnContext);
     if (!turn) throw new Error("this tool only works inside a swarm agent's turn");
-    const swarm = deps.swarms.get(turn.swarmId);
+    const swarm = deps.swarms.get(turn.swarmId) ?? deps.booting?.get(turn.swarmId);
     if (!swarm) throw new Error(`swarm ${turn.swarmId} is no longer running`);
     return { swarm, agentId: turn.agentId };
   };

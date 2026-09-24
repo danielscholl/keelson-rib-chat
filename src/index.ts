@@ -66,6 +66,7 @@ const starting = new Map<string, StartingSwarm>();
 let disposed = false;
 
 const swarms = new Map<string, Swarm>();
+const booting = new Map<string, Swarm>();
 // One start queue per project, shared by every swarm dispatching onto it.
 const serialByProject = new Map<string, WorkflowDispatcher["start"]>();
 const ended = new Map<string, SwarmSummary>();
@@ -579,6 +580,7 @@ async function launchSwarm(
       ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),
       ...(input.leadTools?.length ? { leadTools: input.leadTools } : {}),
       prOwnedElsewhere,
+      onCreated: (s) => booting.set(s.id, s),
       ...(dispatcher && input.workflows
         ? { dispatch: { grants: input.workflows, dispatcher } }
         : {}),
@@ -592,6 +594,8 @@ async function launchSwarm(
   } catch (e) {
     op?.error(`swarm failed to start: ${errText(e)}`);
     throw e;
+  } finally {
+    booting.delete(record.id);
   }
 
   const live = swarm;
@@ -702,7 +706,7 @@ const rib: Rib = {
       void refreshServer();
     }
     return [
-      ...makeChatTools({ swarms, starting, ended, startSwarm, readChannel, forget }),
+      ...makeChatTools({ swarms, starting, booting, ended, startSwarm, readChannel, forget }),
       ...makeServerTools({
         target,
         liveCount: () => swarms.size + starting.size,

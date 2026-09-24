@@ -52,9 +52,9 @@ function harness(script: Script, limits = {}, extra: Partial<SwarmOptions> = {})
       quiesceMs: 20,
       reconnectMs: 5,
       log: (m) => logs.push(m),
+      onCreated: (s) => swarms.set(s.id, s),
       ...extra,
     });
-    swarms.set(swarm.id, swarm);
     return swarm;
   };
   return { server, provider, logs, start, tools };
@@ -887,6 +887,37 @@ describe("Workflow dispatch", () => {
     expect(summary.leadTools).toEqual(["beads_ready", "beads_close", "canvas_design_guide"]);
   });
 
+  test("the rib's run posts wake no one even when their echo arrives before the write returns", async () => {
+    const fake = fakeDispatcher();
+    let swarmRef: Swarm | undefined;
+    const { start, server } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_spawn", { handle: "w", role: "watcher", brief: "Stand by." });
+          await call("chat_workflow_start", {
+            workflow: "fix-issue",
+            purpose: "fix issue 1, then @s1-w checks it",
+            inputs: {},
+          });
+          fake.set("run_1", { status: "succeeded", completedAt: new Date().toISOString() });
+          swarmRef?.onRunEvent("run_1");
+          await new Promise((r) => setTimeout(r, 80));
+          await call("chat_done", { summary: "ok" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: false }], dispatcher: fake.dispatcher },
+      },
+    );
+    server.writeDelayMs = 20;
+    swarmRef = await start();
+    const summary = await swarmRef.finished;
+    expect(server.messages.some((m) => m.body.startsWith("**Run started**"))).toBe(true);
+    expect(summary.agents.find((a) => a.id === "s1-w")?.turns).toBe(1);
+  });
+
   test("a worker reviews the gate's plan and the lead answers it for the operator", async () => {
     const fake = fakeDispatcher({ answers: true });
     let swarmRef: Swarm | undefined;
@@ -985,6 +1016,8 @@ describe("Workflow dispatch", () => {
     expect(lead?.tools?.map((t) => t.name)).toContain("chat_workflow_respond");
     expect(lead?.system).toContain("your own review checks nothing");
     expect(summary.runs?.[0]?.gates?.map((g) => g.by)).toEqual(["swarm"]);
+    // The rib's answer and run updates name the reviewer but do not spend its turns.
+    expect(summary.agents.find((a) => a.id === "s1-reviewer")?.turns).toBe(1);
     expect(summary.activity?.find((e) => e.kind === "gate-answer")).toMatchObject({
       actor: "s1-lead",
       subject: "run_1",

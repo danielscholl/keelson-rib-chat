@@ -178,6 +178,8 @@ export interface SwarmOptions {
   id?: string;
   // The ended swarm this one reruns.
   rerunOf?: string;
+  // Called before boot posts the kickoff, whose echo can wake the lead first.
+  onCreated?: (swarm: Swarm) => void;
 }
 
 // Thrown by Swarm.start when boot fails, carrying the ended summary so the
@@ -291,6 +293,8 @@ export class Swarm {
   // Runs the swarm is cancelling: a gate they leave was not answered, and one
   // they reach on the way out is not announced.
   private readonly cancelling = new Set<string>();
+  private readonly quietPosts = new Set<string>();
+  private readonly quietBodies = new Map<string, number>();
   private readonly syncing = new Set<string>();
   private readonly resync = new Set<string>();
   // Run updates waiting for the lead's next turn; they wake it like a message.
@@ -345,6 +349,7 @@ export class Swarm {
 
   static async start(opts: SwarmOptions): Promise<Swarm> {
     const swarm = new Swarm(opts);
+    opts.onCreated?.(swarm);
     try {
       await swarm.boot();
     } catch (e) {
@@ -478,6 +483,23 @@ export class Swarm {
     this.serial(async () => this.ingest(message));
   }
 
+  // The rib's own bookkeeping posts (run and gate updates) wake no one, even
+  // when they name a reviewer or land in a thread one joined. The body is
+  // registered before the write, since the realtime copy can arrive first.
+  private async quietly(body: string, write: () => Promise<ChatMessage>): Promise<ChatMessage> {
+    this.quietBodies.set(body, (this.quietBodies.get(body) ?? 0) + 1);
+    try {
+      const message = await write();
+      this.quietPosts.add(message.id);
+      this.enqueueMessage(message);
+      return message;
+    } finally {
+      const left = (this.quietBodies.get(body) ?? 1) - 1;
+      if (left > 0) this.quietBodies.set(body, left);
+      else this.quietBodies.delete(body);
+    }
+  }
+
   private ingest(message: ChatMessage): void {
     if (this.status !== "running" || this.seen.has(message.id)) return;
     this.seen.add(message.id);
@@ -491,12 +513,15 @@ export class Swarm {
     if (isRoot && author) this.threadStarters.set(message.id, author.id);
     const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
     const starter = this.threadStarters.get(message.threadRootId);
-    const recipients = route({
-      message,
-      agents: roster,
-      threadParticipants: participants,
-      ...(starter ? { threadStarter: starter } : {}),
-    });
+    if (author?.lead && this.quietBodies.has(message.body)) this.quietPosts.add(message.id);
+    const recipients = this.quietPosts.has(message.id)
+      ? []
+      : route({
+          message,
+          agents: roster,
+          threadParticipants: participants,
+          ...(starter ? { threadStarter: starter } : {}),
+        });
 
     // Participants a reply did not wake still see it, as background on their next turn.
     if (!isRoot) {
@@ -1164,14 +1189,10 @@ export class Swarm {
       subject: runId,
     });
     this.changed("run");
-    void this.onChannel(() =>
-      client.postMessage(
-        this.channel.id,
-        `**Run started** \`${grant.name}\` \`${runId}\`: ${input.purpose}`,
-      ),
-    )
-      .then((m) => this.enqueueMessage(m))
-      .catch(() => {});
+    const started = `**Run started** \`${grant.name}\` \`${runId}\`: ${input.purpose}`;
+    void this.quietly(started, () =>
+      this.onChannel(() => client.postMessage(this.channel.id, started)),
+    ).catch(() => {});
     this.armRunPoll(dispatch.pollMs ?? 20_000);
     void this.syncRun(runId);
     return run;
@@ -1320,10 +1341,8 @@ export class Swarm {
     this.log(text, meta);
     const client = opts.post === false ? undefined : this.leadClient();
     if (client) {
-      void client
-        .postMessage(this.channel.id, `**Run update** ${text}`)
-        .then((m) => this.enqueueMessage(m))
-        .catch(() => {});
+      const update = `**Run update** ${text}`;
+      void this.quietly(update, () => client.postMessage(this.channel.id, update)).catch(() => {});
     }
     if (this.conclusion !== undefined || opts.wake === false) return;
     this.notes.push(text);
@@ -1353,16 +1372,13 @@ export class Swarm {
       ),
     ];
     try {
-      const root = await this.onChannel(() =>
-        client.postMessage(
-          this.channel.id,
-          `**Approval needed** ${change} Its prompt and files follow in this thread.`,
-        ),
+      const needed = `**Approval needed** ${change} Its prompt and files follow in this thread.`;
+      const root = await this.quietly(needed, () =>
+        this.onChannel(() => client.postMessage(this.channel.id, needed)),
       );
       gate.threadId = root.id;
-      this.enqueueMessage(root);
       for (const part of parts) {
-        this.enqueueMessage(await this.onChannel(() => client.replyInThread(root.id, part)));
+        await this.quietly(part, () => this.onChannel(() => client.replyInThread(root.id, part)));
       }
     } catch (e) {
       this.log(`could not post the gate for run ${run.runId}: ${errText(e)}`, {
@@ -1457,16 +1473,18 @@ export class Swarm {
     ].join("\n\n");
     const threadId = gate.threadId;
     for (const part of splitBody(record, BODY_MAX - 32)) {
-      await this.onChannel(() =>
-        threadId ? client.replyInThread(threadId, part) : client.postMessage(this.channel.id, part),
-      )
-        .then((m) => this.enqueueMessage(m))
-        .catch((e) =>
-          this.log(`could not post the answer for run ${run.runId}: ${errText(e)}`, {
-            kind: "fault",
-            subject: run.runId,
-          }),
-        );
+      await this.quietly(part, () =>
+        this.onChannel(() =>
+          threadId
+            ? client.replyInThread(threadId, part)
+            : client.postMessage(this.channel.id, part),
+        ),
+      ).catch((e) =>
+        this.log(`could not post the answer for run ${run.runId}: ${errText(e)}`, {
+          kind: "fault",
+          subject: run.runId,
+        }),
+      );
     }
     void this.syncRun(run.runId, { quiet: true });
     return run;

@@ -131,6 +131,7 @@ bodies, is kept in the swarm's status and durable result.
 | reply by a human, or in a thread a human started | every agent already in the thread |
 | human, top-level, unaddressed | the lead |
 | agent, top-level, unaddressed | nobody |
+| the rib's run and gate posts (\`Run started\`, \`Run update\`, \`Approval needed\`, \`Approved\`, \`Changes requested\`) | nobody, even when they name a reviewer |
 
 Mentions add to every row. Agent handles are prefixed with the swarm id, for
 example \`s3fk-lead\`. Writing to the channel is free; costing a peer a turn takes
