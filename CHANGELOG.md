@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.13.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.12.0...v0.13.0) (2026-09-24)
+
+
+### Added
+
+* **surface:** flag providers that serve one model at every power ([#65](https://github.com/danielscholl/keelson-rib-chat/issues/65)) ([e38d532](https://github.com/danielscholl/keelson-rib-chat/commit/e38d532bb6845ee9248d126b68afbf19445f753d))
+* **surface:** offer write the project on the launch form ([#77](https://github.com/danielscholl/keelson-rib-chat/issues/77)) ([c8a8381](https://github.com/danielscholl/keelson-rib-chat/commit/c8a8381893f391b621c70297800952c08341809b))
+* **swarm:** add chat_pr_open and chat_diff for writers ([#76](https://github.com/danielscholl/keelson-rib-chat/issues/76)) ([d9f36ea](https://github.com/danielscholl/keelson-rib-chat/commit/d9f36eaec7182c7ee13d0e829a8af988f6ad3f2f))
+* **swarm:** add write mode with per-writer git worktrees ([#75](https://github.com/danielscholl/keelson-rib-chat/issues/75)) ([2b0a3d0](https://github.com/danielscholl/keelson-rib-chat/commit/2b0a3d0c4b68ee49c1eb35ff0f2053f8e29c627d))
+* **swarm:** forget ended swarms, and lend the lead other ribs' tools ([#66](https://github.com/danielscholl/keelson-rib-chat/issues/66)) ([f269aeb](https://github.com/danielscholl/keelson-rib-chat/commit/f269aebc1a2bd39044f5cd8ab029c79aa7538db9))
+* **tools:** read the newest messages of a swarm transcript ([#70](https://github.com/danielscholl/keelson-rib-chat/issues/70)) ([f8b80ad](https://github.com/danielscholl/keelson-rib-chat/commit/f8b80ad222bb0da9ee4f991312b95c1138a271c4))
+
+
+### Fixed
+
+* **dispatch:** never credit a run with another run's pull request ([#67](https://github.com/danielscholl/keelson-rib-chat/issues/67)) ([2da689a](https://github.com/danielscholl/keelson-rib-chat/commit/2da689a631373e5a1f79af7a538f549555c636c0))
+* **dispatch:** serialize run starts per project and keep the lead waiting ([#68](https://github.com/danielscholl/keelson-rib-chat/issues/68)) ([05fca94](https://github.com/danielscholl/keelson-rib-chat/commit/05fca948386fe9b2fff4b940aa16174e8db584f6))
+* **swarm:** leave a gate unanswered when the swarm cancels its run ([#69](https://github.com/danielscholl/keelson-rib-chat/issues/69)) ([a8b8e12](https://github.com/danielscholl/keelson-rib-chat/commit/a8b8e12afd674f09674734cf5f6082dba0b4d67c))
+* **swarm:** stop the rib's run and gate posts from waking agents ([#72](https://github.com/danielscholl/keelson-rib-chat/issues/72)) ([42a5063](https://github.com/danielscholl/keelson-rib-chat/commit/42a50639c67c4457c804c25a1ae9d934325156ee))
+
 ## [0.12.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.11.0...v0.12.0) (2026-09-23)
 
 
