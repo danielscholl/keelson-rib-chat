@@ -85,6 +85,8 @@ export const START_BOUNDS = {
 export const WAIT_BOUNDS = { defaultS: 120, maxS: 600 } as const;
 export const READ_BOUNDS = { defaultLimit: 20, maxLimit: 50 } as const;
 export const TRANSCRIPT_PAGE = 40_000;
+export const DIFF_PAGE = 40_000;
+export const PR_BOUNDS = { title: 200, body: 20_000 } as const;
 // Refuses runaway input outright; the engine enforces CONCLUSION_MAX with a
 // message the lead can act on, and keeps the refused draft.
 const CONCLUSION_HARD_MAX = 200_000;
@@ -183,6 +185,31 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .describe(
           "Lead only, in a swarm started with work_tools 'write'. The agent gets its own git worktree and branch of the project, and may edit, run commands, and commit there.",
         ),
+    })
+    .strict();
+  const prOpenSchema = z
+    .object({
+      title: z
+        .string()
+        .min(1)
+        .max(PR_BOUNDS.title, tooLong(PR_BOUNDS.title))
+        .describe("The pull request title: a conventional commit subject."),
+      body: z
+        .string()
+        .min(1)
+        .max(PR_BOUNDS.body, tooLong(PR_BOUNDS.body))
+        .describe("Markdown: what changed and why, and the checks you ran."),
+    })
+    .strict();
+  const diffSchema = z
+    .object({
+      writer: z.string().min(1).describe("The writer's handle, with or without the swarm prefix."),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("Character offset to continue a long diff from."),
     })
     .strict();
   const doneSchema = z
@@ -477,6 +504,45 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           ctx,
           `spawned @${agent.handle}; it has been briefed and is starting.${agent.worktree ? ` It writes in ${agent.worktree.path} on branch ${agent.worktree.branch}.` : ""}`,
         );
+      }),
+    },
+    {
+      name: "chat_pr_open",
+      description:
+        "Writers only. Push your branch and open a DRAFT pull request against the project's default branch. Refuses uncommitted changes, and commits or text that carry AI attribution such as a Co-Authored-By: Claude trailer. A second call pushes your new commits and returns the pull request already open. It never merges.",
+      inputSchema: prOpenSchema,
+      state_changing: true,
+      execute: guarded(async (input, ctx) => {
+        const args = prOpenSchema.parse(input);
+        const { swarm, agentId } = caller(ctx);
+        const pr = await swarm.openPr(agentId, args);
+        emitText(
+          ctx,
+          pr.again
+            ? `pushed your branch; your pull request is already open: ${pr.url}`
+            : `opened draft pull request ${pr.url}. Report it to the lead; the operator merges.`,
+        );
+      }),
+    },
+    {
+      name: "chat_diff",
+      description: `Swarm agents only, in a write swarm. Read a writer's change: its commits, what it has not committed, and git diff against the remote default branch. Pages by ${DIFF_PAGE} characters. For reviewing a writer's work.`,
+      inputSchema: diffSchema,
+      execute: guarded(async (input, ctx) => {
+        const args = diffSchema.parse(input);
+        const { swarm, agentId } = caller(ctx);
+        const text = await swarm.diff(agentId, args.writer);
+        const offset = args.offset ?? 0;
+        if (offset > 0 && offset >= text.length) {
+          return emitText(
+            ctx,
+            `offset ${offset} is past the end (${text.length} characters)`,
+            true,
+          );
+        }
+        const end = Math.min(text.length, offset + DIFF_PAGE);
+        const more = end < text.length ? `\n\nMore: call again with offset ${end}.` : "";
+        emitText(ctx, `${text.slice(offset, end)}${more}`);
       }),
     },
     {

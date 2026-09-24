@@ -82,8 +82,9 @@ export function systemPrompt(opts: {
         `- You are a WRITER. Your own git worktree is ${wt.path}, on branch ${wt.branch}, cut from origin/${wt.base}. It is your working directory. Edit, build, and commit only there. No other agent writes in it.`,
         "- Never touch the project root or another agent's worktree. Bash runs as the operator's user and nothing but this rule confines it to your worktree.",
         "- Commit your work on your branch with conventional commit messages. Never add AI attribution to a commit: no Co-Authored-By trailer naming an AI, no 'Generated with' line, no session link.",
-        "- Before you report your piece done, run the project's tests, typecheck, and lint in your worktree, and fix what fails. Report what you ran and its result.",
-        `- Never push to ${wt.base}, merge a branch into it, or merge a pull request. Merging is the operator's.`,
+        "- Before chat_pr_open, run the project's tests, typecheck, and lint in your worktree, and fix what fails. Report what you ran and its result.",
+        `- When the work is committed and checked, call chat_pr_open with a title and body. It pushes your branch and opens a draft pull request against ${wt.base}; it refuses commits that carry AI attribution. Calling it again pushes new commits to the same pull request. Report the link to the lead.`,
+        `- Do not push or open pull requests any other way. Never push to ${wt.base}, merge a branch into it, or merge a pull request. Merging is the operator's.`,
       ]
     : [];
   const writeLead =
@@ -93,7 +94,8 @@ export function systemPrompt(opts: {
           "Writers:",
           "- This swarm may change the project. You and every agent without writes only read it. To have code changed, chat_spawn a worker with writes: true. Each writer gets its own git worktree and branch, cut from the remote default branch, and is the only agent that edits it.",
           "- Give each writer one piece that does not touch another writer's files, with the acceptance criteria it must meet.",
-          `- Before you conclude, have an agent without writes review each writer's change: it can read the writer's files under ${opts.writeSwarm.root}/.worktrees/swarm-${opts.writeSwarm.swarmId}-<name>. Send the writer the reviewer's findings, and let it fix them.`,
+          `- Before you conclude, have an agent without writes review each writer's change: chat_diff shows a writer's commits and its diff against the remote default branch, and the reviewer can read the writer's files under ${opts.writeSwarm.root}/.worktrees/swarm-${opts.writeSwarm.swarmId}-<name>. Send the writer the reviewer's findings, and let it fix them.`,
+          "- Each writer opens a draft pull request with chat_pr_open. Nobody in the swarm merges one: list them in the report and the conclusion for the operator.",
         ]
       : [];
   const granted =
@@ -190,6 +192,8 @@ export interface TurnInput {
   events?: readonly string[];
   // The lead's workflow runs, one line each.
   runs?: readonly string[];
+  // Draft pull requests the writers opened, one line each.
+  prs?: readonly string[];
 }
 
 export function renderTurn(input: TurnInput): string {
@@ -202,6 +206,7 @@ export function renderTurn(input: TurnInput): string {
     team,
     events = [],
     runs = [],
+    prs = [],
   } = input;
   const sections: string[] = [];
   if (note) sections.push(note);
@@ -233,6 +238,9 @@ export function renderTurn(input: TurnInput): string {
     sections.push(`Workers: ${members.join(", ")}.`);
   }
   if (runs.length > 0) sections.push(["Runs:", ...runs.map((r) => `- ${r}`)].join("\n"));
+  if (prs.length > 0) {
+    sections.push(["Writers' pull requests:", ...prs.map((p) => `- ${p}`)].join("\n"));
+  }
   sections.push(
     `Budget: swarm ${budget.turnsUsed}/${budget.maxTurns} turns${budget.maxTurnsPerAgent ? `, you ${budget.agentTurns}/${budget.maxTurnsPerAgent}` : ""}.`,
   );

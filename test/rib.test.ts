@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ribIdSchema } from "@keelson/shared";
 import rib from "../src/index.ts";
-import { AGENT_TOOLS, DISPATCH_TOOLS } from "../src/swarm.ts";
+import { AGENT_TOOLS, DIFF_TOOL, DISPATCH_TOOLS, PR_TOOL } from "../src/swarm.ts";
 
 describe("rib contract", () => {
   test("id matches the package suffix the harness infers", () => {
@@ -23,7 +23,8 @@ describe("rib contract", () => {
     const names = new Set(
       (rib.registerTools?.({ getExec: () => ({}) as never }) ?? []).map((t) => t.name),
     );
-    for (const tool of [...AGENT_TOOLS, ...DISPATCH_TOOLS]) expect(names.has(tool)).toBe(true);
+    for (const tool of [...AGENT_TOOLS, ...DISPATCH_TOOLS, PR_TOOL, DIFF_TOOL])
+      expect(names.has(tool)).toBe(true);
   });
 
   test("a start on a provider that cannot run agent turns fails before any channel", async () => {

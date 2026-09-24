@@ -173,9 +173,13 @@ read from the turn context the engine sets, never from input.
 | `chat_context` | `id?`, `offset?` | With no `id`, lists the context items. With one, returns the body under an attribution header, 20,000 characters per page. |
 | `chat_spawn` | `handle`, `role`, `brief`, `writes?` | Adds a worker and posts the brief as a mention. Fails at the agent cap. `writes: true` is for the lead of a write swarm: the worker gets its own worktree and branch, and `Edit`, `Write`, and `Bash` there. |
 | `chat_done` | `summary` | Lead only. Concludes the swarm. Posts the conclusion to the channel in parts of at most 8,000 characters. |
+| `chat_pr_open` | `title`, `body` | Writers only. Pushes the writer's branch and opens a draft pull request against the default branch. Refuses uncommitted changes and AI attribution in any commit, the title, or the body. A second call pushes again and returns the open pull request. Never merges. |
+| `chat_diff` | `writer`, `offset?` | Any agent of a write swarm. A writer's commits, uncommitted files, and diff against `origin/<default>`, paged by 40,000 characters. |
 | `chat_report` | `title`, `html` | Lead only. Publishes the swarm's report, a designed HTML page the Swarms tab opens. Calling it again replaces it. |
 
-`body` and `brief` are 1 to 8,000 characters, and `summary` 1 to 20,000. A
+A message `body` and a `brief` are 1 to 8,000 characters, and `summary` 1 to
+20,000. `chat_pr_open` takes a `title` of 1 to 200 characters and a pull request
+`body` of 1 to 20,000. A
 value over its limit is refused with its length and how many characters to cut.
 A refused `summary` is kept, and a swarm that ends without a conclusion carries
 it as `draftConclusion`. `handle` is up to 20

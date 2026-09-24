@@ -34,6 +34,7 @@ import {
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
 import {
   type ChatMessage,
+  ownsPr,
   publicSummary,
   SIZE_PRESETS,
   type StartingSwarm,
@@ -342,7 +343,7 @@ function launchState(): LaunchState {
 }
 
 function prOwnedElsewhere(url: string, swarmId: string): boolean {
-  const owns = (s: SwarmSummary) => (s.runs ?? []).some((r) => r.prUrls.includes(url));
+  const owns = (s: SwarmSummary) => ownsPr(s, url);
   return (
     [...ended.values()].some((s) => s.id !== swarmId && owns(s)) ||
     [...swarms.values()].some((s) => s.id !== swarmId && owns(s.summary()))
