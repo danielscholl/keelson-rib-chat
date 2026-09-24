@@ -120,6 +120,23 @@ export interface SwarmAgent {
   queued?: number;
   // When its seat was taken.
   joinedAt?: string;
+  // A writer's own checkout; absent on agents that only read.
+  worktree?: AgentWorktree;
+}
+
+export interface AgentWorktree {
+  path: string;
+  branch: string;
+  // The remote default branch it was cut from, without `origin/`.
+  base: string;
+}
+
+// A writer's worktree the swarm left in place at its end, and why.
+export interface KeptWorktree {
+  agent: string;
+  path: string;
+  branch: string;
+  reason: string;
 }
 
 export interface GateFileText {
@@ -315,6 +332,8 @@ export interface SwarmSummary {
   leadTools?: readonly string[];
   // Workflow runs the lead started, with their evidence.
   runs?: readonly ChildRun[];
+  // Writers' worktrees still on disk after the swarm ended.
+  worktrees?: readonly KeptWorktree[];
   // Turns started per minute over the last 30 minutes, oldest first, once two
   // minutes have passed; for an ended swarm, over its whole run.
   pace?: readonly number[];

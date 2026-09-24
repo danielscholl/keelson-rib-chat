@@ -41,7 +41,7 @@ export interface StartSwarmInput {
   maxTurnsPerAgent?: number;
   turnTimeoutMs?: number;
   wallClockMs?: number;
-  workTools: "none" | "read";
+  workTools: WorkTools;
   context?: ContextItem[];
   provider?: string;
   model?: string;
@@ -51,6 +51,9 @@ export interface StartSwarmInput {
   // Other ribs' tools the lead holds, each cleared by the operator's crossRibGrants.
   leadTools?: string[];
 }
+
+export const WORK_TOOLS = ["none", "read", "write"] as const;
+export type WorkTools = (typeof WORK_TOOLS)[number];
 
 export interface ToolDeps {
   swarms: Map<string, Swarm>;
@@ -174,6 +177,12 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .min(1)
         .max(BODY_MAX, tooLong(BODY_MAX))
         .describe("The narrow task, with what to report."),
+      writes: z
+        .boolean()
+        .optional()
+        .describe(
+          "Lead only, in a swarm started with work_tools 'write'. The agent gets its own git worktree and branch of the project, and may edit, run commands, and commit there.",
+        ),
     })
     .strict();
   const doneSchema = z
@@ -226,9 +235,11 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .optional()
         .describe("Wall clock for the whole swarm."),
       work_tools: z
-        .enum(["none", "read"])
+        .enum(WORK_TOOLS)
         .optional()
-        .describe("'read' (default) grants Read/Grep/Glob; 'none' is chat only."),
+        .describe(
+          "'read' (default) grants Read/Grep/Glob; 'none' is chat only; 'write' also lets the lead spawn writers, each with its own worktree and Bash. 'write' needs project.",
+        ),
       provider: z.string().optional(),
       model: z
         .string()
@@ -455,14 +466,17 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     {
       name: "chat_spawn",
       description:
-        "Swarm agents only. Add a worker agent with its own context for a line of inquiry worth separating out. Posts the brief as an @mention so the new agent starts at once. Fails once the swarm's agent cap is reached. NOT for reaching an agent that already exists (@mention it).",
+        "Swarm agents only. Add a worker agent with its own context for a line of inquiry worth separating out. Posts the brief as an @mention so the new agent starts at once. Fails once the swarm's agent cap is reached. In a write swarm the lead passes writes: true for an agent that changes code in its own worktree. NOT for reaching an agent that already exists (@mention it).",
       inputSchema: spawnSchema,
       state_changing: true,
       execute: guarded(async (input, ctx) => {
         const args = spawnSchema.parse(input);
         const { swarm, agentId } = caller(ctx);
         const agent = await swarm.spawn(agentId, args);
-        emitText(ctx, `spawned @${agent.handle}; it has been briefed and is starting.`);
+        emitText(
+          ctx,
+          `spawned @${agent.handle}; it has been briefed and is starting.${agent.worktree ? ` It writes in ${agent.worktree.path} on branch ${agent.worktree.branch}.` : ""}`,
+        );
       }),
     },
     {

@@ -8,6 +8,7 @@
 
 import {
   type AgentStatus,
+  type AgentWorktree,
   BODY_MAX,
   type ChatMessage,
   CONCLUSION_MAX,
@@ -39,6 +40,10 @@ export function systemPrompt(opts: {
   grants?: readonly DispatchGrant[];
   // The host lets the lead answer a run's approval gate for the operator.
   answersGates?: boolean;
+  // This agent's own checkout, when it is a writer.
+  worktree?: AgentWorktree;
+  // Set when the lead may spawn writers.
+  writeSwarm?: { swarmId: string; root: string };
 }): string {
   const { agent, task, channelName, limits, contextIndex } = opts;
   const workTools = [...(opts.workTools ?? []), ...(opts.leadTools ?? [])];
@@ -64,10 +69,33 @@ export function systemPrompt(opts: {
         "You are a WORKER. Own the piece you were given. Report once, to whoever asked, in their thread, with evidence. Then stop.",
         "If your piece splits into parts worth running in parallel, you may chat_spawn a helper with a narrow brief. If you find work nobody owns, tell the lead rather than taking over the task.",
       ].join("\n");
-  const toolLine =
-    workTools.length > 0
+  const wt = opts.worktree;
+  const toolLine = wt
+    ? `- Your tools are the chat_* tools plus ${workTools.join(", ")}. Do not try other tools.`
+    : workTools.length > 0
       ? `- Your tools are the chat_* tools plus ${workTools.join(", ")}. You have nothing else: no shell, no edits, no network. Do not try other tools.`
       : "- Your tools are the chat_* tools. You have nothing else: no files, no shell, no network. Do not try other tools.";
+  const writing = wt
+    ? [
+        "",
+        "Writing:",
+        `- You are a WRITER. Your own git worktree is ${wt.path}, on branch ${wt.branch}, cut from origin/${wt.base}. It is your working directory. Edit, build, and commit only there. No other agent writes in it.`,
+        "- Never touch the project root or another agent's worktree. Bash runs as the operator's user and nothing but this rule confines it to your worktree.",
+        "- Commit your work on your branch with conventional commit messages. Never add AI attribution to a commit: no Co-Authored-By trailer naming an AI, no 'Generated with' line, no session link.",
+        "- Before you report your piece done, run the project's tests, typecheck, and lint in your worktree, and fix what fails. Report what you ran and its result.",
+        `- Never push to ${wt.base}, merge a branch into it, or merge a pull request. Merging is the operator's.`,
+      ]
+    : [];
+  const writeLead =
+    agent.lead && opts.writeSwarm
+      ? [
+          "",
+          "Writers:",
+          "- This swarm may change the project. You and every agent without writes only read it. To have code changed, chat_spawn a worker with writes: true. Each writer gets its own git worktree and branch, cut from the remote default branch, and is the only agent that edits it.",
+          "- Give each writer one piece that does not touch another writer's files, with the acceptance criteria it must meet.",
+          `- Before you conclude, have an agent without writes review each writer's change: it can read the writer's files under ${opts.writeSwarm.root}/.worktrees/swarm-${opts.writeSwarm.swarmId}-<name>. Send the writer the reviewer's findings, and let it fix them.`,
+        ]
+      : [];
   const granted =
     opts.leadTools && opts.leadTools.length > 0
       ? [
@@ -112,6 +140,8 @@ export function systemPrompt(opts: {
     "- A human may post in the channel at any time. Treat it as direction from the operator.",
     '- To ask the operator something only they can decide, start the message with @operator. The swarm waits for their answer, so ask only when you cannot go on without it, and ask everything in one message. When you only mention them, write "the operator" without the @.',
     ...dispatch,
+    ...writeLead,
+    ...writing,
     "",
     "Working norms:",
     turnLine,
