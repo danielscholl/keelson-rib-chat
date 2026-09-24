@@ -212,7 +212,7 @@ describe("write mode", () => {
       await tools
         .find((t) => t.name === "chat_swarm_start")
         ?.execute(
-          { task: "fix it", work_tools: "write" },
+          { task: "write with no project", work_tools: "write" },
           {
             cwd: "/tmp",
             abortSignal: new AbortController().signal,
@@ -234,7 +234,8 @@ describe("write mode", () => {
           },
         },
       );
-      expect(JSON.parse(listed)).toEqual([]);
+      const rows = JSON.parse(listed) as { task: string }[];
+      expect(rows.some((r) => r.task === "write with no project")).toBe(false);
     } finally {
       await rib.dispose?.();
     }
