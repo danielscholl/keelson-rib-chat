@@ -44,6 +44,7 @@ import {
   type DispatchGrant,
   type GateAnswer,
   type GateFileText,
+  type KeptWorktree,
   type OperatorAsk,
   SIZE_PRESETS,
   type SwarmAgent,
@@ -58,6 +59,7 @@ import {
   type TurnSpan,
   WORKER_TONES,
 } from "./types.ts";
+import { createWorktree, releaseWorktree, type WorktreeDeps } from "./worktree.ts";
 
 // The swarm engine. ClickClack is the bus and the durable record; this is the
 // dispatcher that turns "a message addressed an agent" into "that agent runs a
@@ -73,6 +75,9 @@ export const AGENT_TOOLS = [
   "chat_spawn",
   "chat_done",
 ] as const;
+
+// A writer's built-in tools, confined to its own worktree.
+export const WRITER_TOOLS = ["Read", "Grep", "Glob", "Edit", "Write", "Bash"] as const;
 
 // Granted to the lead only: its designed report, and Keelson's design guide for it.
 export const REPORT_TOOLS = ["chat_report", "canvas_design_guide"] as const;
@@ -157,6 +162,8 @@ export interface SwarmOptions {
   context?: readonly ContextItem[];
   cwd?: string;
   project?: SwarmProject;
+  // Lets the lead spawn writers, each in its own worktree of the project at `root`.
+  write?: { root: string; git: WorktreeDeps };
   opId?: string;
   provider?: string;
   model?: string;
@@ -332,6 +339,9 @@ export class Swarm {
   // Every turn, for the pace the Turns tile draws and the record's timeline.
   private readonly spans: TurnSpan[] = [];
   private readonly unrevoked: string[] = [];
+  // Handles a spawn has claimed while its worktree is being made.
+  private readonly reserved = new Set<string>();
+  private readonly keptWorktrees: KeptWorktree[] = [];
   private error: string | undefined;
   private endedAt: string | undefined;
   private quiesceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -409,7 +419,12 @@ export class Swarm {
       .me()
       .then((me) => me.handle.toLowerCase())
       .catch(() => "");
-    await this.addAgent({ handle: "lead", role: "Lead: owns the outcome", lead: true });
+    await this.addAgent({
+      handle: this.uniqueHandle("lead"),
+      name: "lead",
+      role: "Lead: owns the outcome",
+      lead: true,
+    });
     this.connect();
     this.wallClockTimer = setTimeout(
       () => void this.finish("exhausted", "wall clock limit reached"),
@@ -753,7 +768,8 @@ export class Swarm {
     this.quietSince = undefined;
     this.changed("turn");
 
-    const workTools = this.opts.workTools ?? [];
+    const worktree = agent.worktree;
+    const workTools = worktree ? WRITER_TOOLS : (this.opts.workTools ?? []);
     const leadTools = agent.lead ? (this.opts.leadTools ?? []) : [];
     const dispatch = agent.lead ? this.opts.dispatch : undefined;
     const answersGates = Boolean(dispatch?.dispatcher.respond);
@@ -782,11 +798,19 @@ export class Swarm {
           leadTools,
           ...(dispatch ? { grants: dispatch.grants, answersGates } : {}),
           contextIndex: renderContextIndex(this.opts.context ?? []),
+          ...(worktree ? { worktree } : {}),
+          ...(this.opts.write
+            ? { writeSwarm: { swarmId: this.id, root: this.opts.write.root } }
+            : {}),
         }),
         prompt,
         tools,
         turnContext: { swarmId: this.id, agentId: agent.id },
-        ...(this.opts.cwd ? { cwd: this.opts.cwd, allowedDirectories: [this.opts.cwd] } : {}),
+        ...(worktree
+          ? { cwd: worktree.path, allowedDirectories: [worktree.path] }
+          : this.opts.cwd
+            ? { cwd: this.opts.cwd, allowedDirectories: [this.opts.cwd] }
+            : {}),
         ...(this.opts.provider ? { provider: this.opts.provider } : {}),
         ...(model ? { model } : this.opts.power ? { modelClass: this.opts.power } : {}),
         ...(agent.sessionId ? { resumeSessionId: agent.sessionId } : {}),
@@ -888,20 +912,27 @@ export class Swarm {
     if (messages.length > 0) this.redelivery.set(agent.id, reason);
   }
 
+  private uniqueHandle(raw: string): string {
+    const base = `${this.id}-${sanitizeHandle(raw)}`;
+    const taken = (h: string) =>
+      this.reserved.has(h) || [...this.agents.values()].some((a) => a.handle === h);
+    let handle = base;
+    for (let attempt = 1; taken(handle); attempt++) handle = `${base}-${attempt + 1}`;
+    return handle;
+  }
+
   private async addAgent(input: {
     handle: string;
+    // The agent's display name, before the swarm id.
+    name: string;
     role: string;
     lead: boolean;
     spawnedBy?: string;
+    worktree?: SwarmAgent["worktree"];
   }): Promise<SwarmAgent> {
-    const base = `${this.id}-${sanitizeHandle(input.handle)}`;
-    let handle = base;
-    for (let attempt = 1; [...this.agents.values()].some((a) => a.handle === handle); attempt++) {
-      handle = `${base}-${attempt + 1}`;
-    }
     const bot = await this.owner.createBot(this.opts.workspaceId, {
-      handle,
-      displayName: `${sanitizeHandle(input.handle)} (${this.id})`,
+      handle: input.handle,
+      displayName: `${input.name} (${this.id})`,
     });
     const model = input.lead ? this.opts.model : (this.opts.workerModel ?? this.opts.model);
     const workers = [...this.agents.values()].filter((a) => !a.lead).length;
@@ -917,6 +948,7 @@ export class Swarm {
       tokenId: bot.tokenId,
       ...(input.spawnedBy ? { spawnedBy: input.spawnedBy } : {}),
       ...(model ? { model } : {}),
+      ...(input.worktree ? { worktree: input.worktree } : {}),
       turns: 0,
       status: "idle",
       joinedAt: new Date().toISOString(),
@@ -927,6 +959,23 @@ export class Swarm {
     this.background.set(agent.id, []);
     this.changed("agent");
     return agent;
+  }
+
+  // A clean worktree with everything pushed goes; any other stays, listed in the summary.
+  private async releaseWorktrees(): Promise<void> {
+    const write = this.opts.write;
+    if (!write) return;
+    for (const agent of this.agents.values()) {
+      const wt = agent.worktree;
+      if (!wt) continue;
+      const reason = await releaseWorktree(write.git, write.root, wt);
+      if (!reason) continue;
+      this.keptWorktrees.push({ agent: agent.handle, path: wt.path, branch: wt.branch, reason });
+      this.log(`kept @${agent.handle}'s worktree ${wt.path}: ${reason}`, {
+        kind: "end",
+        subject: agent.id,
+      });
+    }
   }
 
   // ---- The surface the chat_* tools call, always on behalf of one agent. ----
@@ -1050,20 +1099,51 @@ export class Swarm {
 
   async spawn(
     agentId: string,
-    input: { handle: string; role: string; brief: string },
+    input: { handle: string; role: string; brief: string; writes?: boolean },
   ): Promise<SwarmAgent> {
     const { agent: spawner, client } = this.as(agentId);
-    if (this.agents.size >= this.limits.maxAgents) {
+    const write = input.writes ? this.opts.write : undefined;
+    if (input.writes && !write) {
+      throw new Error(
+        "writes: true needs a swarm started with work_tools 'write' on a project; this one only reads. Spawn the agent without writes.",
+      );
+    }
+    if (input.writes && !spawner.lead) throw new Error("only the lead may spawn a writer");
+    if (this.agents.size + this.reserved.size >= this.limits.maxAgents) {
       throw new Error(
         `spawn cap reached: the swarm already has ${this.agents.size} of ${this.limits.maxAgents} agents. Reuse an existing agent via @mention.`,
       );
     }
-    const agent = await this.addAgent({
-      handle: input.handle,
-      role: input.role,
-      lead: false,
-      spawnedBy: spawner.id,
-    });
+    const handle = this.uniqueHandle(input.handle);
+    let agent: SwarmAgent;
+    this.reserved.add(handle);
+    try {
+      const worktree = write
+        ? await createWorktree(
+            write.git,
+            write.root,
+            this.id,
+            handle.slice(this.id.length + 1),
+          ).catch((e) => {
+            throw new Error(`could not make a worktree for @${handle}: ${errText(e)}`);
+          })
+        : undefined;
+      try {
+        agent = await this.addAgent({
+          handle,
+          name: sanitizeHandle(input.handle),
+          role: input.role,
+          lead: false,
+          spawnedBy: spawner.id,
+          ...(worktree ? { worktree } : {}),
+        });
+      } catch (e) {
+        if (write && worktree) void releaseWorktree(write.git, write.root, worktree);
+        throw e;
+      }
+    } finally {
+      this.reserved.delete(handle);
+    }
     this.log(`@${spawner.handle} spawned @${agent.handle}: ${input.role}`, {
       kind: "spawn",
       actor: spawner.id,
@@ -1071,10 +1151,13 @@ export class Swarm {
     });
     // The brief is an ordinary mention from the spawner, so the new agent wakes
     // through the router and its thread reply finds its way back.
+    const where = agent.worktree
+      ? `\n\nYou write in \`${agent.worktree.path}\` on branch \`${agent.worktree.branch}\`.`
+      : "";
     const message = await this.onChannel(() =>
       client.postMessage(
         this.channel.id,
-        `@${agent.handle} joining as **${input.role}**.\n\n${input.brief}`,
+        `@${agent.handle} joining as **${input.role}**.\n\n${input.brief}${where}`,
       ),
     );
     this.enqueueMessage(message);
@@ -1722,6 +1805,9 @@ export class Swarm {
       ...(this.opts.dispatch ? { workflows: this.opts.dispatch.grants.map((g) => g.name) } : {}),
       ...(this.opts.leadTools?.length ? { leadTools: [...this.opts.leadTools] } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
+      ...(this.keptWorktrees.length > 0
+        ? { worktrees: this.keptWorktrees.map((w) => ({ ...w })) }
+        : {}),
       ...(pace ? { pace } : {}),
       ...(this.spans.length > 0
         ? { spans: this.spans.map((t) => ({ ...t, wokeBy: [...t.wokeBy] })) }
@@ -1780,6 +1866,7 @@ export class Swarm {
       });
     }
     this.tokens.clear();
+    await this.releaseWorktrees();
     // Turns aborted by the end may report after the summary is frozen.
     const now = new Date().toISOString();
     for (const t of this.spans) {

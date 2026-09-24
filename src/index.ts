@@ -28,6 +28,7 @@ import {
   newSwarmId,
   Swarm,
   type SwarmChange,
+  type SwarmOptions,
   SwarmStartError,
 } from "./swarm.ts";
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
@@ -59,6 +60,7 @@ let startWorkflow: RibContext["startWorkflow"];
 let getRunStatus: RibContext["getRunStatus"];
 let cancelRun: RibContext["cancelRun"];
 let respondToRun: RibContext["respondToRun"];
+let getExec: RibContext["getExec"] | undefined;
 
 let server: ManagedServer | undefined;
 // Swarms between the start call and the registry, so stop and reset see them too.
@@ -430,6 +432,7 @@ interface Launch {
   cwd?: string;
   project?: SwarmProject;
   dispatcher?: WorkflowDispatcher;
+  write?: SwarmOptions["write"];
 }
 
 // Everything that can refuse a start before it has an id: a refusal here is an
@@ -439,11 +442,24 @@ function prepare(input: StartSwarmInput): Launch {
   checkProvider(input.provider);
   let cwd: string | undefined;
   let project: SwarmProject | undefined;
+  if (input.workTools === "write" && !input.project) {
+    throw new Error(
+      "work_tools 'write' needs a project: writers work in worktrees of its checkout",
+    );
+  }
   if (input.project) {
     const found = getProjects?.().find((p) => p.id === input.project || p.name === input.project);
     if (!found) throw new Error(`no registered project '${input.project}'`);
     cwd = found.rootPath;
     project = { id: found.id, name: found.name };
+  }
+  let write: Launch["write"];
+  if (input.workTools === "write" && cwd) {
+    const exec = getExec?.();
+    if (typeof exec?.runText !== "function") {
+      throw new Error("this keelson host cannot run git for a rib");
+    }
+    write = { root: cwd, git: { run: exec.runText.bind(exec) } };
   }
   let dispatcher: WorkflowDispatcher | undefined;
   if (input.workflows?.length) {
@@ -480,6 +496,7 @@ function prepare(input: StartSwarmInput): Launch {
     ...(cwd ? { cwd } : {}),
     ...(project ? { project } : {}),
     ...(dispatcher ? { dispatcher } : {}),
+    ...(write ? { write } : {}),
   };
 }
 
@@ -539,6 +556,7 @@ async function launchSwarm(
   const agentTurn = runAgentTurn;
   if (!agentTurn) throw new Error("this keelson host cannot run agent turns for a rib");
   const { cwd, project, dispatcher } = launch;
+  const { write } = launch;
   const owner = await ownerClient();
   retryRevocations(owner);
   const workspaceId = await resolveWorkspace(owner);
@@ -567,7 +585,8 @@ async function launchSwarm(
       size: record.sizeBase,
       limits: overrides(input),
       // Reading a checkout needs a project to confine it to.
-      workTools: input.workTools === "read" && cwd ? READ_TOOLS : [],
+      workTools: input.workTools !== "none" && cwd ? READ_TOOLS : [],
+      ...(write ? { write } : {}),
       ...(cwd ? { cwd } : {}),
       ...(project ? { project } : {}),
       ...(op ? { opId: op.id } : {}),
@@ -680,6 +699,7 @@ const rib: Rib = {
     getRunStatus = ctx.getRunStatus;
     cancelRun = ctx.cancelRun;
     respondToRun = ctx.respondToRun;
+    getExec = ctx.getExec;
     serialByProject.clear();
     disposed = false;
     const dir = getDataDir?.();
@@ -781,6 +801,7 @@ const rib: Rib = {
     getCredential = undefined;
     getDataDir = undefined;
     getProviders = undefined;
+    getExec = undefined;
   },
 };
 

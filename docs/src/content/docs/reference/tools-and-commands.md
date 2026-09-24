@@ -25,7 +25,7 @@ durable ops, a run id.
 |---|---|---|---|
 | `task` | string | required | 1 to 8,000 characters. |
 | `project` | string | none | A registered project's id or name. Unknown fails the start. |
-| `work_tools` | `none` \| `read` | `read` | `read` grants `Read`, `Grep`, `Glob`, only when `project` is set. |
+| `work_tools` | `none` \| `read` \| `write` | `read` | `read` grants `Read`, `Grep`, `Glob`, only when `project` is set. `write` reads too, and lets the lead spawn writers with their own worktree; it needs `project`, or the start is refused. |
 | `size` | `small` \| `medium` \| `large` | `medium` | The preset the limits start from. The `max_*` inputs override single limits on top of it. See [Limits and statuses](../limits-and-statuses/). |
 | `max_agents` | integer | 5 | 1 to 12, lead included. |
 | `max_turns` | integer | 40 | 1 to 200, across the swarm. |
@@ -171,7 +171,7 @@ read from the turn context the engine sets, never from input.
 | `chat_read` | `thread_id?`, `limit?` | Reads the channel's latest messages, or one thread. `limit` defaults to 20, at most 50. |
 | `chat_roster` | none | Lists agents with handle, role, turns, and status. |
 | `chat_context` | `id?`, `offset?` | With no `id`, lists the context items. With one, returns the body under an attribution header, 20,000 characters per page. |
-| `chat_spawn` | `handle`, `role`, `brief` | Adds a worker and posts the brief as a mention. Fails at the agent cap. |
+| `chat_spawn` | `handle`, `role`, `brief`, `writes?` | Adds a worker and posts the brief as a mention. Fails at the agent cap. `writes: true` is for the lead of a write swarm: the worker gets its own worktree and branch, and `Edit`, `Write`, and `Bash` there. |
 | `chat_done` | `summary` | Lead only. Concludes the swarm. Posts the conclusion to the channel in parts of at most 8,000 characters. |
 | `chat_report` | `title`, `html` | Lead only. Publishes the swarm's report, a designed HTML page the Swarms tab opens. Calling it again replaces it. |
 

@@ -79,7 +79,8 @@ describe("contributed docs", () => {
     expect(accepts({ task: "x".repeat(taskMax + 1) })).toBe(false);
 
     expect(accepts({ work_tools: "read" })).toBe(true);
-    expect(accepts({ work_tools: "write" })).toBe(false);
+    expect(accepts({ work_tools: "write" })).toBe(true);
+    expect(accepts({ work_tools: "all" })).toBe(false);
 
     const meaning = row("size").split("|")[3] ?? "";
     const sizes = [...meaning.matchAll(/`(\w+)`/g)].map((m) => m[1]);

@@ -373,3 +373,41 @@ export function fakeDispatcher(
     },
   };
 }
+
+// The host's runText for git and gh, answering from per-path state a test sets.
+export function fakeGit(
+  opts: { defaultBranch?: string | null; ignored?: boolean; failAdd?: boolean } = {},
+) {
+  const calls: { cmd: string; args: string[]; cwd: string }[] = [];
+  const dirty = new Map<string, string>();
+  const ahead = new Map<string, number>();
+  const appended: { file: string; line: string }[] = [];
+  const ok = (data = "") => ({ ok: true as const, data, exitCode: 0 });
+  const fail = (error: string) => ({ ok: false as const, error, code: 1 });
+  const run = async (cmd: string, args: string[], o: { cwd?: string } = {}) => {
+    const cwd = o.cwd ?? "";
+    calls.push({ cmd, args, cwd });
+    const sub = args.join(" ");
+    if (cmd !== "git") return ok();
+    if (sub.startsWith("symbolic-ref")) {
+      return opts.defaultBranch === null
+        ? fail("not a symbolic ref")
+        : ok(`refs/remotes/origin/${opts.defaultBranch ?? "main"}\n`);
+    }
+    if (sub.startsWith("rev-parse --verify")) return fail("");
+    if (sub.startsWith("check-ignore")) return opts.ignored ? ok() : fail("exit 1");
+    if (sub === "rev-parse --git-common-dir") return ok(".git\n");
+    if (sub.startsWith("worktree add") && opts.failAdd) return fail("fatal: already exists");
+    if (sub === "status --porcelain") return ok(dirty.get(cwd) ?? "");
+    if (sub.startsWith("rev-list --count")) return ok(`${ahead.get(cwd) ?? 0}\n`);
+    return ok();
+  };
+  return {
+    calls,
+    dirty,
+    ahead,
+    appended,
+    deps: { run, append: (file: string, line: string) => appended.push({ file, line }) },
+    ran: (prefix: string) => calls.filter((c) => `${c.cmd} ${c.args.join(" ")}`.startsWith(prefix)),
+  };
+}

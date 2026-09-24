@@ -34,14 +34,15 @@ Use a swarm when a problem is worth several agents investigating in parallel and
 talking it through. Do not use one for a single-agent question, or for a fixed
 roster taking turns over one transcript (that is a Chamber room).
 
-Agents themselves can talk, and at most read a project checkout. They cannot
+By default agents can talk, and at most read a project checkout. They cannot
 edit files, run shell commands, lease workspaces, or reach a forge, and no
-prompt can grant those. Changes go through Keelson workflows instead: a swarm
-started with \`workflows\` lets its lead start those workflows on the project,
-and each run does its editing, committing, and pull requests in its own
-worktree. See Workflow dispatch. Without \`workflows\` a swarm is read-only
-investigation, and the caller carries its conclusion into an implementation
-workflow itself. Anything an agent needs to know that is not in the checkout (an
+prompt can grant those. A swarm changes code one of two ways. Started with
+\`workflows\`, its lead starts those Keelson workflows on the project, and each
+run does its editing, committing, and pull requests in its own worktree. See
+Workflow dispatch. Started with \`work_tools: write\`, its lead spawns writers:
+agents that edit, run commands, and commit in their own git worktree. See Write
+mode. Without either a swarm is read-only investigation, and the caller carries
+its conclusion into an implementation workflow itself. Anything an agent needs to know that is not in the checkout (an
 issue body, a PR diff, review comments, CI results) must be supplied by the
 caller as task context.
 
@@ -56,7 +57,7 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | --- | --- | --- |
 | \`task\` | required | What the swarm should work out. At most ${BODY_MAX} characters. Every agent sees it in its system prompt, and the lead receives it as the kickoff message. |
 | \`project\` | none | A registered Keelson project, by id or name. An unknown project fails the start. |
-| \`work_tools\` | \`read\` | \`read\` grants Read, Grep, and Glob. \`none\` is chat only. |
+| \`work_tools\` | \`read\` | \`read\` grants Read, Grep, and Glob. \`none\` is chat only. \`write\` reads too, and lets the lead spawn writers; it needs \`project\`. See Write mode. |
 | \`size\` | \`medium\` | \`small\`, \`medium\` or \`large\`: the preset the limits start from. See Limits and completion. |
 | \`max_agents\` | ${l.maxAgents} | Agent cap, lead included. 1 to ${START_BOUNDS.maxAgents}. |
 | \`max_turns\` | ${l.maxTurns} | Total turns across the swarm. 1 to ${START_BOUNDS.maxTurns}. |
@@ -72,9 +73,10 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`lead_tools\` | none | Other ribs' tools the lead holds, such as \`beads_ready\` or \`beads_close\`, at most ${START_BOUNDS.maxLeadTools}. See Agent tools. |
 
 Project confinement: with a \`project\`, every turn runs with the project root as
-its working directory and as its only allowed directory. Without a \`project\`
-there is nothing to confine reads to, so \`work_tools: read\` grants nothing and
-the swarm is chat only.
+its working directory and as its only allowed directory. A writer's turns use
+its own worktree instead. Without a \`project\` there is nothing to confine reads
+to, so \`work_tools: read\` grants nothing and the swarm is chat only, and
+\`work_tools: write\` is refused.
 
 One provider serves the whole swarm. Without \`provider\`, the host uses
 \`KEELSON_WORKFLOW_PROVIDER\` when it is set, and otherwise its first registered
@@ -155,7 +157,7 @@ costs one turn, not one per participant, and the others still see it.
 | \`chat_read\` | Re-read the channel's latest messages, or one thread. ${READ_BOUNDS.defaultLimit} messages by default, at most ${READ_BOUNDS.maxLimit}. |
 | \`chat_roster\` | The agents, their roles, and their turn counts. |
 | \`chat_context\` | List the task context items, or read one verbatim with its attribution. |
-| \`chat_spawn\` | Add a worker with a handle, a role, and a narrow brief. Fails at the agent cap. |
+| \`chat_spawn\` | Add a worker with a handle, a role, and a narrow brief. Fails at the agent cap. In a write swarm the lead passes \`writes: true\` for a writer. |
 | \`chat_done\` | Lead only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. |
 | \`chat_report\` | Lead only. Publish the swarm's report: a designed, self-contained HTML page the operator opens from the Swarms tab. Calling it again replaces the page. |
 
@@ -170,7 +172,8 @@ swarm ends without one, the summary carries the last draft as \`draftConclusion\
 The conclusion is recorded before it is posted, so a failed post does not lose it.
 
 Beside these, an agent holds Read, Grep, and Glob when the swarm was started with
-a project and \`work_tools: read\`. The lead also holds Keelson's
+a project and \`work_tools\` \`read\` or \`write\`. A writer holds Read, Grep,
+Glob, Edit, Write, and Bash in its own worktree. See Write mode. The lead also holds Keelson's
 \`canvas_design_guide\`, to read the design rules before it writes the report,
 and the lead of a swarm started with \`workflows\` holds the workflow tools. See
 Workflow dispatch. An agent holds nothing else.
@@ -271,6 +274,42 @@ gave. An isolated run is verified only when it succeeded in an established
 worktree, produced a pull request, and its CI verdict is \`pass\`. A run that
 need not be isolated is verified when it succeeded and its CI did not fail. A
 run whose workflow could not read the checks is not verified.
+
+# Write mode
+
+> How a lead has agents change code themselves, each in its own worktree, and what confines them.
+
+Start a swarm with a \`project\` and \`work_tools: write\`. Without a project the
+start is refused. The lead and every other agent read the project root as in
+\`read\`. To have code changed, the lead calls \`chat_spawn\` with
+\`writes: true\`; a worker's spawn with \`writes\`, or any spawn with \`writes\`
+in a swarm that is not a write swarm, is refused.
+
+Each writer gets its own git worktree at
+\`<project>/.worktrees/swarm-<swarm id>-<name>\` on a new branch
+\`keelson/swarm/<swarm id>/<name>\`. The rib runs \`git fetch origin\` first and
+cuts the branch from the remote default branch (\`origin/HEAD\`, else
+\`origin/main\` or \`origin/master\`), never from a local branch that may be
+stale. When the project does not already ignore \`.worktrees/\`, the rib adds it
+to \`.git/info/exclude\`, which is local and never committed. Worktrees on one
+repository are made one at a time.
+
+A writer's turns run with its worktree as the working directory and the only
+allowed directory, and hold Read, Grep, Glob, Edit, Write, and Bash. It is the
+only agent that edits its worktree, so writers cannot collide. It is told to
+commit on its branch without AI attribution, to run the project's tests,
+typecheck, and lint before it reports, and never to merge.
+
+Bash is not sandboxed. The allowed directory confines the file tools, and
+Keelson's policy checks the paths it can see in a command, but a shell command
+can still reach anything the operator's user can: other directories, the
+network, and credentials such as the \`gh\` login. Only grant write mode on a
+project and a machine where that is acceptable.
+
+When the swarm ends, each writer's worktree is checked. One with no
+uncommitted changes and no commit missing from the remote is removed, with its
+local branch. Any other is kept, and the summary's \`worktrees\` lists its
+agent, path, branch, and why it was kept.
 
 # Operator tools
 
