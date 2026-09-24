@@ -82,7 +82,13 @@ export function powerField(
     half: true,
     defaultValue,
     options: SWARM_POWERS.map((k) => {
-      const hint = classes.map((c) => `${c.provider}: ${c.classes[k]}`).join(" · ");
+      const hint = classes
+        .map((c) => {
+          const same =
+            c.classes.fast === c.classes.balanced && c.classes.balanced === c.classes.deep;
+          return `${c.provider}: ${c.classes[k]}${same ? " (every power)" : ""}`;
+        })
+        .join(" · ");
       return { value: k, label: k, ...(hint ? { hint: hint.slice(0, 200) } : {}) };
     }),
   };
