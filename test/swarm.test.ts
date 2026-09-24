@@ -663,6 +663,48 @@ describe("Workflow dispatch", () => {
     expect(startResult).toContain("cancelled");
   });
 
+  test("a cancel the host rejects leaves the run's later gates attributed normally", async () => {
+    const fake = fakeDispatcher();
+    fake.dispatcher.cancel = async () => {
+      throw new Error("host unavailable");
+    };
+    let swarmRef: Swarm | undefined;
+    let refused = "";
+    const { start } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId !== "s1-lead") return;
+        if (turn === 1) {
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "p", inputs: {} });
+          refused = (await call("chat_workflow_cancel", { run_id: "run_1" })).content;
+          fake.set("run_1", {
+            status: "paused",
+            pendingApproval: { nodeId: "approve-plan", prompt: "Approve?", pauseId: "p1" },
+          });
+          swarmRef?.onRunEvent("run_1");
+        } else if (turn === 2) {
+          later(10, () => {
+            fake.set("run_1", { status: "running", pendingApproval: undefined });
+            swarmRef?.onRunEvent("run_1");
+          });
+          later(30, () => {
+            fake.set("run_1", { status: "succeeded", completedAt: new Date().toISOString() });
+            swarmRef?.onRunEvent("run_1");
+          });
+        } else {
+          await call("chat_done", { summary: "ok" });
+        }
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: false }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await start();
+    const summary = await swarmRef.finished;
+    expect(refused).toContain("host unavailable");
+    expect(summary.runs?.[0]?.gates?.[0]?.by).toBe("operator");
+  });
+
   test("a run the lead cancels at its gate records no answer and announces no new gate", async () => {
     const fake = fakeDispatcher();
     // The host passes through a fresh pause while it cancels a gated run.

@@ -1183,7 +1183,9 @@ export class Swarm {
     if (!run) throw new Error(`no run '${runId}' was started by this swarm`);
     if (!isLive(run)) return run;
     this.cancelling.add(runId);
-    const result = await dispatch.dispatcher.cancel(runId);
+    const result = await dispatch.dispatcher
+      .cancel(runId)
+      .catch((e): { ok: false; error: string } => ({ ok: false, error: errText(e) }));
     if (!result.ok) {
       this.cancelling.delete(runId);
       throw new Error(`could not cancel run ${runId}: ${result.error}`);
