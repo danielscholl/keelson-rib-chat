@@ -507,7 +507,7 @@ The Start a swarm header is one form, open on an empty tab and folded once
 the tab has a swarm; its folded head names the default launch. Setup starts on
 defaults (medium, balanced power, the power's model), and adjust shows size,
 power and model override; a launch on defaults sends none of them, so Run again
-repeats a choice and not a default. Agents may offers chat only, read the
+repeats a choice and not a default. The Agents may field offers chat only, read the
 project, and write the project (a write swarm; see Write mode), and appears
 once a project is picked. Workflows named means the lead may
 dispatch them; none named means the swarm investigates. A task that names a
