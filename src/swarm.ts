@@ -291,6 +291,7 @@ export class Swarm {
   // Runs the swarm is cancelling: a gate they leave was not answered, and one
   // they reach on the way out is not announced.
   private readonly cancelling = new Set<string>();
+  private readonly quietPosts = new Set<string>();
   private readonly syncing = new Set<string>();
   private readonly resync = new Set<string>();
   // Run updates waiting for the lead's next turn; they wake it like a message.
@@ -478,6 +479,13 @@ export class Swarm {
     this.serial(async () => this.ingest(message));
   }
 
+  // The rib's own bookkeeping posts (run and gate updates) wake no one, even
+  // when they name a reviewer or land in a thread one joined.
+  private enqueueQuiet(message: ChatMessage): void {
+    this.quietPosts.add(message.id);
+    this.enqueueMessage(message);
+  }
+
   private ingest(message: ChatMessage): void {
     if (this.status !== "running" || this.seen.has(message.id)) return;
     this.seen.add(message.id);
@@ -491,12 +499,14 @@ export class Swarm {
     if (isRoot && author) this.threadStarters.set(message.id, author.id);
     const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
     const starter = this.threadStarters.get(message.threadRootId);
-    const recipients = route({
-      message,
-      agents: roster,
-      threadParticipants: participants,
-      ...(starter ? { threadStarter: starter } : {}),
-    });
+    const recipients = this.quietPosts.has(message.id)
+      ? []
+      : route({
+          message,
+          agents: roster,
+          threadParticipants: participants,
+          ...(starter ? { threadStarter: starter } : {}),
+        });
 
     // Participants a reply did not wake still see it, as background on their next turn.
     if (!isRoot) {
@@ -1170,7 +1180,7 @@ export class Swarm {
         `**Run started** \`${grant.name}\` \`${runId}\`: ${input.purpose}`,
       ),
     )
-      .then((m) => this.enqueueMessage(m))
+      .then((m) => this.enqueueQuiet(m))
       .catch(() => {});
     this.armRunPoll(dispatch.pollMs ?? 20_000);
     void this.syncRun(runId);
@@ -1322,7 +1332,7 @@ export class Swarm {
     if (client) {
       void client
         .postMessage(this.channel.id, `**Run update** ${text}`)
-        .then((m) => this.enqueueMessage(m))
+        .then((m) => this.enqueueQuiet(m))
         .catch(() => {});
     }
     if (this.conclusion !== undefined || opts.wake === false) return;
@@ -1360,9 +1370,9 @@ export class Swarm {
         ),
       );
       gate.threadId = root.id;
-      this.enqueueMessage(root);
+      this.enqueueQuiet(root);
       for (const part of parts) {
-        this.enqueueMessage(await this.onChannel(() => client.replyInThread(root.id, part)));
+        this.enqueueQuiet(await this.onChannel(() => client.replyInThread(root.id, part)));
       }
     } catch (e) {
       this.log(`could not post the gate for run ${run.runId}: ${errText(e)}`, {
@@ -1460,7 +1470,7 @@ export class Swarm {
       await this.onChannel(() =>
         threadId ? client.replyInThread(threadId, part) : client.postMessage(this.channel.id, part),
       )
-        .then((m) => this.enqueueMessage(m))
+        .then((m) => this.enqueueQuiet(m))
         .catch((e) =>
           this.log(`could not post the answer for run ${run.runId}: ${errText(e)}`, {
             kind: "fault",

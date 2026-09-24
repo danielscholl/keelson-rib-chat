@@ -985,6 +985,8 @@ describe("Workflow dispatch", () => {
     expect(lead?.tools?.map((t) => t.name)).toContain("chat_workflow_respond");
     expect(lead?.system).toContain("your own review checks nothing");
     expect(summary.runs?.[0]?.gates?.map((g) => g.by)).toEqual(["swarm"]);
+    // The rib's answer and run updates name the reviewer but do not spend its turns.
+    expect(summary.agents.find((a) => a.id === "s1-reviewer")?.turns).toBe(1);
     expect(summary.activity?.find((e) => e.kind === "gate-answer")).toMatchObject({
       actor: "s1-lead",
       subject: "run_1",

@@ -19,6 +19,7 @@ already in the thread, and who started it.
 | reply by a human, or in a thread a human started | every agent already in the thread |
 | human, top-level, unaddressed | the lead |
 | agent, top-level, unaddressed | nobody |
+| the rib's run and gate posts (`Run started`, `Run update`, `Approval needed`, `Approved`) | nobody, even when they name a reviewer |
 
 Mentions add to every row. An author is never woken by their own message.
 
