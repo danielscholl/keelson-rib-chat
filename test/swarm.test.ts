@@ -687,7 +687,11 @@ describe("Workflow dispatch", () => {
           later(20, () => {
             fake.set("run_1", {
               status: "paused",
-              pendingApproval: { nodeId: "approve-plan", prompt: "Approve the plan?", pauseId: "p1" },
+              pendingApproval: {
+                nodeId: "approve-plan",
+                prompt: "Approve the plan?",
+                pauseId: "p1",
+              },
             });
             swarmRef?.onRunEvent("run_1");
           });
