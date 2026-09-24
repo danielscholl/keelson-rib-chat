@@ -256,7 +256,7 @@ not enforce that order.
 The summary's \`runs\` records each run: workflow, purpose, inputs, status,
 checkout, the gate it waits on, every gate it paused at with who answered it,
 the gates the swarm answered, the pull request links found in its node output
-(less any another run already owns, such as a dependency's PR quoted in a bead),
+(except one another run already owns, such as a dependency's PR quoted in a bead),
 its CI verdict, any error, and \`verified\`. The CI verdict is the run's own: the last
 \`CI_GATE:\` line in its node output, or failing that the last \`CI_STATUS:\`
 line, read as \`pass\`, \`fail\`, or \`unknown\` with the reason the workflow
