@@ -42,6 +42,8 @@ export class FakeClickClack {
   readonly sockets = new Set<FakeSocket>();
   // When false the socket never echoes, proving local ingestion alone suffices.
   echo = true;
+  // Holds a message write's response so its realtime echo arrives first.
+  writeDelayMs = 0;
   // A refused connection, and a server that is up with its store unavailable.
   down = false;
   ready = true;
@@ -161,7 +163,9 @@ export class FakeClickClack {
     m = path.match(/^\/channels\/([^/]+)\/messages$/);
     if (m?.[1]) {
       if (method === "POST") {
-        return this.json(201, { message: this.addMessage(actor, m[1], input.body ?? "") });
+        const message = this.addMessage(actor, m[1], input.body ?? "");
+        if (this.writeDelayMs) await new Promise((r) => setTimeout(r, this.writeDelayMs));
+        return this.json(201, { message });
       }
       const channelId = m[1];
       return this.json(200, {
@@ -174,9 +178,9 @@ export class FakeClickClack {
     if (method === "POST" && m?.[1]) {
       const root = this.messages.find((x) => x.id === m?.[1]);
       if (!root) return this.json(404, { error: "message not found" });
-      return this.json(201, {
-        message: this.addMessage(actor, root.channel_id, input.body ?? "", root.id),
-      });
+      const message = this.addMessage(actor, root.channel_id, input.body ?? "", root.id);
+      if (this.writeDelayMs) await new Promise((r) => setTimeout(r, this.writeDelayMs));
+      return this.json(201, { message });
     }
     m = path.match(/^\/messages\/([^/]+)\/thread$/);
     if (m?.[1]) {
