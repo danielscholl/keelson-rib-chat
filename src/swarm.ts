@@ -151,6 +151,8 @@ export interface SwarmOptions {
   workTools?: readonly string[];
   // Other ribs' tools the lead holds; the host drops any the operator has not granted.
   leadTools?: readonly string[];
+  // Whether another swarm's run already owns a pull request, so this one never claims it.
+  prOwnedElsewhere?: (url: string, swarmId: string) => boolean;
   // Evidence snapshotted by the caller; immutable for the life of the swarm.
   context?: readonly ContextItem[];
   cwd?: string;
@@ -1195,7 +1197,13 @@ export class Swarm {
       const status = await dispatch.dispatcher.status(runId);
       if (!status || this.status !== "running") return;
       const gateBefore = gateKey(run.pendingApproval);
-      const change = applyStatus(run, status);
+      const change = applyStatus(
+        run,
+        status,
+        (url) =>
+          [...this.runs.values()].some((r) => r !== run && r.prUrls.includes(url)) ||
+          (this.opts.prOwnedElsewhere?.(url, this.id) ?? false),
+      );
       if (gateKey(run.pendingApproval) !== gateBefore) this.trackGate(run);
       const breach = isolationBreach(run);
       if (breach) {

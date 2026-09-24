@@ -113,7 +113,13 @@ export function isolationBreach(run: ChildRun): string | undefined {
 
 // Folds a status read into the ledger entry. Returns what changed that the lead
 // should hear about, or undefined when nothing did.
-export function applyStatus(run: ChildRun, status: RibRunStatus): string | undefined {
+// `owned` says a pull request belongs to another run, as when a bead's
+// dependency notes quote the PR that landed it; this run never claims those.
+export function applyStatus(
+  run: ChildRun,
+  status: RibRunStatus,
+  owned: (url: string) => boolean = () => false,
+): string | undefined {
   const before = run.status;
   const gateBefore = gateKey(run.pendingApproval);
   run.status = status.status;
@@ -133,7 +139,9 @@ export function applyStatus(run: ChildRun, status: RibRunStatus): string | undef
       ...(pauseId ? { pauseId } : {}),
     };
   } else delete run.pendingApproval;
-  for (const url of prUrlsIn(status)) if (!run.prUrls.includes(url)) run.prUrls.push(url);
+  for (const url of prUrlsIn(status)) {
+    if (!run.prUrls.includes(url) && !owned(url)) run.prUrls.push(url);
+  }
   const ci = ciIn(status);
   if (ci) run.ci = ci;
   run.verified = verified(run);
