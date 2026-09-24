@@ -38,9 +38,15 @@ export function serialStarts(
   const settled = async (runId: string): Promise<void> => {
     const until = Date.now() + timeoutMs;
     while (Date.now() < until) {
-      const s = await status(runId).catch(() => undefined);
-      const live = s?.status === "running" || s?.status === "paused";
-      if (!s || !live || s.checkout.worktreeEstablished || s.nodes.length > 0) return;
+      const read = await status(runId).then(
+        (s) => ({ ok: true as const, s }),
+        () => ({ ok: false as const }),
+      );
+      if (read.ok) {
+        const s = read.s;
+        const live = s?.status === "running" || s?.status === "paused";
+        if (!s || !live || s.checkout.worktreeEstablished || s.nodes.length > 0) return;
+      }
       await new Promise((r) => setTimeout(r, pollMs));
     }
   };

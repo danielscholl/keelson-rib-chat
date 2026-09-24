@@ -91,6 +91,24 @@ describe("an agent asking the operator", () => {
     expect(summary.conclusion).toBe("Kept the cap as a guess.");
   });
 
+  test("an old open question still holds the conclusion after the tab's cap", async () => {
+    let refused = "";
+    const { start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId !== "s1-lead" || turn > 1) return;
+      for (let i = 1; i <= 6; i++) {
+        const posted = await call("chat_post", { body: `Topic ${i}.` });
+        const root = posted.content.replace("posted ", "");
+        await call("chat_reply", { message_id: root, body: `@operator question ${i}?` });
+      }
+      refused = (await call("chat_done", { summary: "done" })).content;
+    });
+    const swarm = await start();
+    await settle();
+    expect(refused).toContain("6 questions");
+    expect(swarm.summary().health?.asks).toHaveLength(5);
+    await swarm.stop();
+  });
+
   test("steer answers it too, and a reply in a thread counts as an ask", async () => {
     const { start } = harness(async ({ agentId, turn, call }) => {
       if (agentId !== "s1-lead") return;

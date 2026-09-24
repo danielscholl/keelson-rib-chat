@@ -963,7 +963,6 @@ export class Swarm {
         message.body.length > ASK_CHARS ? `${message.body.slice(0, ASK_CHARS - 1)}…` : message.body,
       at: message.createdAt || new Date().toISOString(),
     });
-    this.asks.splice(0, Math.max(0, this.asks.length - ASKS_KEPT));
     this.log(`@${agent.handle} asked the operator`, {
       kind: "ask",
       actor: agent.id,
@@ -1125,6 +1124,10 @@ export class Swarm {
       );
     }
     const { runId } = await dispatch.dispatcher.start(grant.name, input.inputs);
+    if (this.status !== "running" || this.conclusion !== undefined) {
+      await dispatch.dispatcher.cancel(runId).catch(() => undefined);
+      throw new Error("the swarm ended while the run was waiting to start; it was cancelled");
+    }
     const run: ChildRun = {
       runId,
       workflow: grant.name,
@@ -1615,7 +1618,7 @@ export class Swarm {
       ...(this.nudges > 0 ? { nudges: this.nudges } : {}),
       ...(this.refusedConclusions > 0 ? { refusedConclusions: this.refusedConclusions } : {}),
       ...(this.quietSince ? { quietSince: this.quietSince } : {}),
-      ...(this.asks.length > 0 ? { asks: [...this.asks] } : {}),
+      ...(this.asks.length > 0 ? { asks: this.asks.slice(-ASKS_KEPT) } : {}),
       ...(this.cancelFault ? { cancelFault: this.cancelFault } : {}),
     };
     return Object.keys(health).length > 0 ? health : undefined;

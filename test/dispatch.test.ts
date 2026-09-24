@@ -196,6 +196,26 @@ describe("dispatch evidence", () => {
     expect(events).toEqual(["start a", "start b"]);
   });
 
+  test("a status read that fails keeps the next start waiting", async () => {
+    const events: string[] = [];
+    let reads = 0;
+    const start = serialStarts(
+      async (name) => {
+        events.push(`${name}@${reads}`);
+        return { runId: `r-${name}` };
+      },
+      async (runId) => {
+        reads++;
+        if (reads < 3) throw new Error("host busy");
+        return status({ runId, checkout: { path: "/wt", branch: "b", worktreeEstablished: true } });
+      },
+      { pollMs: 5 },
+    );
+    await start("a", {});
+    await start("b", {});
+    expect(events).toEqual(["a@0", "b@3"]);
+  });
+
   test("a failed start does not hold the next one", async () => {
     let calls = 0;
     const start = serialStarts(
