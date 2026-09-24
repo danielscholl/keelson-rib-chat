@@ -177,7 +177,9 @@ read from the turn context the engine sets, never from input.
 | `chat_diff` | `writer`, `offset?` | Any agent of a write swarm. A writer's commits, uncommitted files, and diff against `origin/<default>`, paged by 40,000 characters. |
 | `chat_report` | `title`, `html` | Lead only. Publishes the swarm's report, a designed HTML page the Swarms tab opens. Calling it again replaces it. |
 
-`body` and `brief` are 1 to 8,000 characters, and `summary` 1 to 20,000. A
+A message `body` and a `brief` are 1 to 8,000 characters, and `summary` 1 to
+20,000. `chat_pr_open` takes a `title` of 1 to 200 characters and a pull request
+`body` of 1 to 20,000. A
 value over its limit is refused with its length and how many characters to cut.
 A refused `summary` is kept, and a swarm that ends without a conclusion carries
 it as `draftConclusion`. `handle` is up to 20
