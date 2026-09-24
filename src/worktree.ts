@@ -173,6 +173,7 @@ export function releaseWorktree(
 // one is refused before anything is pushed.
 const ATTRIBUTION = [
   /^\s*co-authored-by:[^\n]*\b(claude|anthropic|openai|chatgpt|gpt|codex|copilot|gemini|cursor|devin)\b/im,
+  /^\W*generated with\b/im,
   /\bgenerated (with|by)\b[^\n]*\b(claude|anthropic|openai|chatgpt|codex|copilot|gemini|cursor|ai)\b/i,
   /^\s*claude-session:/im,
   /noreply@anthropic\.com/i,

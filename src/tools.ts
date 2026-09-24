@@ -192,7 +192,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
       title: z
         .string()
         .min(1)
-        .max(PR_BOUNDS.title)
+        .max(PR_BOUNDS.title, tooLong(PR_BOUNDS.title))
         .describe("The pull request title: a conventional commit subject."),
       body: z
         .string()
