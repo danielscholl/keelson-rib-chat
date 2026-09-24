@@ -620,6 +620,10 @@ describe("Swarm resilience", () => {
     const at = order.map((text) => out.content.indexOf(text));
     expect(at.every((i) => i >= 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
+    const tail = await callTool(tools, "chat_swarm_transcript", { swarm: summary.id, tail: 2 });
+    expect(tail.content).toContain("last 2 of 5 messages");
+    expect(tail.content).toContain("**Conclusion**");
+    expect(tail.content).not.toContain("threaded finding");
     const missing = await callTool(tools, "chat_swarm_transcript", { swarm: "nope" });
     expect(missing.isError).toBe(true);
   });

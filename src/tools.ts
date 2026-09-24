@@ -362,6 +362,15 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .min(0)
         .optional()
         .describe("Character offset to continue a long transcript from."),
+      tail: z
+        .number()
+        .int()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe(
+          "Only the last this many messages, still in order: the newest activity without paging.",
+        ),
     })
     .strict();
   const statusSchema = z.object({ swarm: z.string().optional() }).strict();
@@ -657,14 +666,15 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     },
     {
       name: "chat_swarm_transcript",
-      description: `Read a swarm's channel as the operator, running or ended: every message in order, thread replies included, or one thread. Pages by ${TRANSCRIPT_PAGE} characters. NOT for swarm agents (chat_read).`,
+      description: `Read a swarm's channel as the operator, running or ended: every message in order, thread replies included, or one thread. Pages by ${TRANSCRIPT_PAGE} characters; \`tail\` reads only the newest messages. NOT for swarm agents (chat_read).`,
       inputSchema: transcriptSchema,
       execute: guarded(async (input, ctx) => {
         const args = transcriptSchema.parse(input);
         const summary = summaryOf(args.swarm);
         if (!summary) return emitText(ctx, `no swarm '${args.swarm}'`, true);
         if (!deps.readChannel) return emitText(ctx, "transcripts are not available here", true);
-        const messages = await deps.readChannel(summary.channelId, args.thread);
+        const all = await deps.readChannel(summary.channelId, args.thread);
+        const messages = args.tail ? all.slice(-args.tail) : all;
         const text = renderMessages(messages);
         const offset = args.offset ?? 0;
         if (offset > 0 && offset >= text.length) {
@@ -675,7 +685,11 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           );
         }
         const end = Math.min(text.length, offset + TRANSCRIPT_PAGE);
-        const head = `#${summary.channelName}${args.thread ? ` thread ${args.thread}` : ""}: ${messages.length} messages, ${text.length} characters. Showing ${offset}-${end}.`;
+        const count =
+          messages.length < all.length
+            ? `last ${messages.length} of ${all.length} messages`
+            : `${all.length} messages`;
+        const head = `#${summary.channelName}${args.thread ? ` thread ${args.thread}` : ""}: ${count}, ${text.length} characters. Showing ${offset}-${end}.`;
         const more = end < text.length ? `\n\nMore: call again with offset ${end}.` : "";
         emitText(ctx, `${head}\n\n${text.slice(offset, end)}${more}`);
       }),
