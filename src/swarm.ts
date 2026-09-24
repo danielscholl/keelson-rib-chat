@@ -288,6 +288,9 @@ export class Swarm {
   private readonly redelivery = new Map<string, string>();
   private readonly seen = new Set<string>();
   private readonly runs = new Map<string, ChildRun>();
+  // Runs the swarm is cancelling: a gate they leave was not answered, and one
+  // they reach on the way out is not announced.
+  private readonly cancelling = new Set<string>();
   private readonly syncing = new Set<string>();
   private readonly resync = new Set<string>();
   // Run updates waiting for the lead's next turn; they wake it like a message.
@@ -1179,8 +1182,12 @@ export class Swarm {
     const run = this.runs.get(runId);
     if (!run) throw new Error(`no run '${runId}' was started by this swarm`);
     if (!isLive(run)) return run;
+    this.cancelling.add(runId);
     const result = await dispatch.dispatcher.cancel(runId);
-    if (!result.ok) throw new Error(`could not cancel run ${runId}: ${result.error}`);
+    if (!result.ok) {
+      this.cancelling.delete(runId);
+      throw new Error(`could not cancel run ${runId}: ${result.error}`);
+    }
     await this.syncRun(runId, { quiet: true });
     if (isLive(run)) run.status = "cancelled";
     this.changed("run");
@@ -1222,6 +1229,7 @@ export class Swarm {
           (this.opts.prOwnedElsewhere?.(url, this.id) ?? false),
       );
       if (gateKey(run.pendingApproval) !== gateBefore) this.trackGate(run);
+      if (!isLive(run)) this.cancelling.delete(runId);
       const breach = isolationBreach(run);
       if (breach) {
         await dispatch.dispatcher.cancel(runId).catch(() => undefined);
@@ -1232,7 +1240,12 @@ export class Swarm {
           `Run ${runId} (${run.workflow}) was cancelled: ${breach}. Its grant requires an isolated worktree.`,
           { kind: "run", subject: runId },
         );
-      } else if (change && run.pendingApproval && gateKey(run.pendingApproval) !== gateBefore) {
+      } else if (
+        change &&
+        run.pendingApproval &&
+        gateKey(run.pendingApproval) !== gateBefore &&
+        !this.cancelling.has(runId)
+      ) {
         await this.openGate(run, gateFiles(status), change);
       } else if (change && !opts.quiet) {
         // A run resuming after its approval needs nothing from the lead.
@@ -1261,7 +1274,13 @@ export class Swarm {
       open.closedAt = now;
       const bySwarm = run.approvals?.some((a) => a.nodeId === open.nodeId && a.at >= open.openedAt);
       if (bySwarm) open.by = "swarm";
-      else if (run.status === "running" || run.status === "paused" || run.status === "succeeded") {
+      else if (this.cancelling.has(run.runId)) {
+        // The swarm cancelled the run at this gate; nobody answered it.
+      } else if (
+        run.status === "running" ||
+        run.status === "paused" ||
+        run.status === "succeeded"
+      ) {
         open.by = "operator";
       }
     }
