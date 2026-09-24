@@ -731,11 +731,13 @@ export class Swarm {
       ? [...DISPATCH_TOOLS, ...(answersGates ? [RESPOND_TOOL] : [])]
       : [];
     const tools = [
-      ...AGENT_TOOLS,
-      ...(agent.lead ? REPORT_TOOLS : []),
-      ...dispatchTools,
-      ...workTools,
-      ...leadTools,
+      ...new Set([
+        ...AGENT_TOOLS,
+        ...(agent.lead ? REPORT_TOOLS : []),
+        ...dispatchTools,
+        ...workTools,
+        ...leadTools,
+      ]),
     ].map((name) => ({ name }));
     const model = agent.model;
     const outcome = await runTurn(

@@ -734,18 +734,21 @@ describe("Workflow dispatch", () => {
         await call("chat_done", { summary: "ok" });
       },
       {},
-      { leadTools: ["beads_ready", "beads_close"] },
+      { leadTools: ["beads_ready", "beads_close", "canvas_design_guide"] },
     );
     const summary = await (await start()).finished;
     const toolsOf = (id: string) =>
       provider.requests.find((r) => r.turnContext?.agentId === id)?.tools?.map((t) => t.name) ?? [];
     expect(toolsOf("s1-lead")).toEqual(expect.arrayContaining(["beads_ready", "beads_close"]));
+    expect(toolsOf("s1-lead").filter((n) => n === "canvas_design_guide")).toHaveLength(1);
     expect(toolsOf("s1-helper")).toContain("chat_reply");
     expect(toolsOf("s1-helper")).not.toContain("beads_ready");
     const charter =
       provider.requests.find((r) => r.turnContext?.agentId === "s1-lead")?.system ?? "";
-    expect(charter).toContain("beads_ready, beads_close come from other Keelson ribs");
-    expect(summary.leadTools).toEqual(["beads_ready", "beads_close"]);
+    expect(charter).toContain(
+      "beads_ready, beads_close, canvas_design_guide come from other Keelson ribs",
+    );
+    expect(summary.leadTools).toEqual(["beads_ready", "beads_close", "canvas_design_guide"]);
   });
 
   test("a worker reviews the gate's plan and the lead answers it for the operator", async () => {

@@ -700,7 +700,8 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           .filter((s) =>
             args.swarm !== undefined
               ? s.id === args.swarm
-              : cutoff !== undefined && Date.parse(s.endedAt ?? s.startedAt) <= cutoff,
+              : cutoff !== undefined &&
+                (args.older_than_days === 0 || Date.parse(s.endedAt ?? s.startedAt) < cutoff),
           )
           .map((s) => s.id);
         if (ids.length === 0) {
