@@ -5,7 +5,7 @@ import { Swarm, type SwarmOptions, WRITER_TOOLS } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
 import type { RunAgentTurn } from "../src/turn-runner.ts";
 import type { SwarmSummary } from "../src/types.ts";
-import { createWorktree } from "../src/worktree.ts";
+import { createWorktree, releaseWorktree } from "../src/worktree.ts";
 import {
   FakeClickClack,
   fakeGit,
@@ -220,6 +220,24 @@ describe("write mode", () => {
         reason: "the worktree was removed, but its local branch was not: cannot lock ref",
       },
     ]);
+  });
+
+  test("a branch delete that throws is a kept reason, not a stuck swarm", async () => {
+    const git = fakeGit();
+    const run = git.deps.run;
+    const deps = {
+      ...git.deps,
+      run: async (cmd: string, args: string[], o?: { cwd?: string }) => {
+        if (args[0] === "branch") throw new Error("spawn failed");
+        return run(cmd, args, o);
+      },
+    };
+    const reason = await releaseWorktree(deps, ROOT, {
+      path: WT,
+      branch: "keelson/swarm/s1/coder",
+      base: "main",
+    });
+    expect(reason).toBe("the worktree was removed, but its local branch was not: spawn failed");
   });
 
   test("a writer whose turn has not settled keeps its worktree", async () => {

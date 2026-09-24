@@ -346,8 +346,9 @@ export class Swarm {
   private readonly keptWorktrees: KeptWorktree[] = [];
   // Spawns between their start and a seated agent, which finish() waits out.
   private readonly seating = new Set<Promise<SwarmAgent>>();
-  // Each agent's turn in progress, so a writer's worktree is checked only once it settles.
-  private readonly inFlight = new Map<string, Promise<unknown>>();
+  // Each agent's host turns not yet settled, which can outlive a timed-out turn,
+  // so a writer's worktree is checked only once they have.
+  private readonly inFlight = new Map<string, Set<Promise<unknown>>>();
   private error: string | undefined;
   private endedAt: string | undefined;
   private quiesceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -792,8 +793,8 @@ export class Swarm {
       ]),
     ].map((name) => ({ name }));
     const model = agent.model;
-    const running = runTurn(
-      this.opts.runAgentTurn,
+    const outcome = await runTurn(
+      (req) => this.trackTurn(agent.id, req),
       {
         system: systemPrompt({
           agent,
@@ -824,9 +825,6 @@ export class Swarm {
       this.limits.turnTimeoutMs,
       this.controller.signal,
     );
-    this.inFlight.set(agent.id, running);
-    const outcome = await running;
-    if (this.inFlight.get(agent.id) === running) this.inFlight.delete(agent.id);
 
     if (outcome.sessionId) agent.sessionId = outcome.sessionId;
     if (outcome.providerId) agent.providerId = outcome.providerId;
@@ -970,12 +968,25 @@ export class Swarm {
     return agent;
   }
 
+  private trackTurn(agentId: string, req: Parameters<RunAgentTurn>[0]): ReturnType<RunAgentTurn> {
+    const turn = this.opts.runAgentTurn(req);
+    const pending = this.inFlight.get(agentId) ?? new Set<Promise<unknown>>();
+    this.inFlight.set(agentId, pending);
+    const settled = turn.result.then(
+      () => undefined,
+      () => undefined,
+    );
+    pending.add(settled);
+    void settled.then(() => pending.delete(settled));
+    return turn;
+  }
+
   private async settled(agentId: string): Promise<boolean> {
-    const turn = this.inFlight.get(agentId);
-    if (!turn) return true;
+    const pending = [...(this.inFlight.get(agentId) ?? [])];
+    if (pending.length === 0) return true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const done = await Promise.race([
-      turn.then(() => true),
+      Promise.all(pending).then(() => true),
       new Promise<boolean>((resolve) => {
         timer = setTimeout(() => resolve(false), this.opts.settleMs ?? SETTLE_GRACE_MS);
       }),
@@ -995,13 +1006,17 @@ export class Swarm {
       const reason = settled
         ? await releaseWorktree(write.git, write.root, wt)
         : "its last turn had not finished when the swarm ended";
-      if (!reason) continue;
-      this.keptWorktrees.push({ agent: agent.handle, path: wt.path, branch: wt.branch, reason });
-      this.log(`kept @${agent.handle}'s worktree ${wt.path}: ${reason}`, {
-        kind: "end",
-        subject: agent.id,
-      });
+      if (reason) this.keepWorktree(agent.handle, wt, reason);
     }
+  }
+
+  private keepWorktree(
+    handle: string,
+    wt: NonNullable<SwarmAgent["worktree"]>,
+    reason: string,
+  ): void {
+    this.keptWorktrees.push({ agent: handle, path: wt.path, branch: wt.branch, reason });
+    this.log(`kept @${handle}'s worktree ${wt.path}: ${reason}`, { kind: "end", subject: handle });
   }
 
   // ---- The surface the chat_* tools call, always on behalf of one agent. ----
@@ -1149,7 +1164,10 @@ export class Swarm {
         ...(worktree ? { worktree } : {}),
       });
     } catch (e) {
-      if (write && worktree) void releaseWorktree(write.git, write.root, worktree);
+      if (write && worktree) {
+        const reason = await releaseWorktree(write.git, write.root, worktree);
+        if (reason) this.keepWorktree(handle, worktree, reason);
+      }
       throw e;
     }
   }

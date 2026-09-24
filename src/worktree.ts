@@ -157,10 +157,12 @@ export function releaseWorktree(
     } catch (e) {
       return `could not check or remove it: ${e instanceof Error ? e.message : String(e)}`;
     }
-    const deleted = await deps.run("git", ["branch", "-D", wt.branch], {
-      cwd: root,
-      timeoutMs: GIT_TIMEOUT_MS,
-    });
+    const deleted = await deps
+      .run("git", ["branch", "-D", wt.branch], { cwd: root, timeoutMs: GIT_TIMEOUT_MS })
+      .catch((e): { ok: false; error: string } => ({
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      }));
     return deleted.ok
       ? undefined
       : `the worktree was removed, but its local branch was not: ${deleted.error}`;
