@@ -171,10 +171,12 @@ export function releaseWorktree(
 
 // Trailers and footers that credit an AI with a change. A pull request carrying
 // one is refused before anything is pushed.
+const ASSISTANTS =
+  "claude|anthropic|openai|chatgpt|gpt|codex|copilot|gemini|cursor|devin|aider|windsurf";
 const ATTRIBUTION = [
-  /^\s*co-authored-by:[^\n]*\b(claude|anthropic|openai|chatgpt|gpt|codex|copilot|gemini|cursor|devin)\b/im,
+  new RegExp(`^\\s*co-authored-by:[^\\n]*\\b(${ASSISTANTS})\\b`, "im"),
   /^\W*generated with\b/im,
-  /\bgenerated (with|by)\b[^\n]*\b(claude|anthropic|openai|chatgpt|codex|copilot|gemini|cursor|ai)\b/i,
+  new RegExp(`\\bgenerated (with|by)\\b[^\\n]*\\b(${ASSISTANTS}|ai)\\b`, "i"),
   /^\s*claude-session:/im,
   /noreply@anthropic\.com/i,
 ];
