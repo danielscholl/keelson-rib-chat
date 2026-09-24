@@ -507,7 +507,9 @@ The Start a swarm header is one form, open on an empty tab and folded once
 the tab has a swarm; its folded head names the default launch. Setup starts on
 defaults (medium, balanced power, the power's model), and adjust shows size,
 power and model override; a launch on defaults sends none of them, so Run again
-repeats a choice and not a default. Workflows named means the lead may
+repeats a choice and not a default. Agents may offers chat only, read the
+project, and write the project (a write swarm; see Write mode), and appears
+once a project is picked. Workflows named means the lead may
 dispatch them; none named means the swarm investigates. A task that names a
 URL or #N with no context is refused, since agents cannot open links; Prepare
 in chat opens a chat that gathers the evidence and calls \`chat_swarm_start\`.
@@ -607,7 +609,7 @@ export function chatDocsSource(): RibDocsSource {
   return {
     title: "Chat",
     summary:
-      "The Chat rib for Keelson: read-only agent swarms that coordinate over a ClickClack channel. Covers starting a swarm, routing, the agent tool boundary, project confinement, limits, completion and stall semantics, steering, and what survives a restart.",
+      "The Chat rib for Keelson: agent swarms that coordinate over a ClickClack channel. Covers starting a swarm, routing, the agent tool boundary, write mode, limits, completion and stall semantics, steering, and what survives a restart.",
     content: corpus(),
   };
 }

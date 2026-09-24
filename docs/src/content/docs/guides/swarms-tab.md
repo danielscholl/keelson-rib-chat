@@ -2,7 +2,7 @@
 title: Watch swarms in the Swarms tab
 description: Find the swarm that needs you, act on its request, and read its budget, agents, runs and outcome from Keelson.
 sidebar:
-  order: 7
+  order: 8
 ---
 
 The rib adds a **Swarms** tab to Keelson. It shows every swarm at once. The
@@ -205,7 +205,7 @@ launch: **Start runs medium · 5 agents · 40 turns · 30 min · balanced power*
 |---|---|
 | **Task** | What the swarm works out. Agents can't open links, so describe the issue or PR, or use **Prepare in chat** to attach it. A task that names a URL or `#123` with nothing attached is refused before a channel exists. |
 | **Project** | The registered project agents work on. **Agents may** and **Workflows** appear once one is picked. |
-| **Agents may** | Whether agents read the project (**read the project**) or only talk (**chat only**). |
+| **Agents may** | Whether agents only talk (**chat only**), read the project (**read the project**), or read it while the lead spawns writers that change it in their own worktrees (**write the project**). See [Let agents write code](../let-agents-write/). |
 | **Workflows the lead may start** | Leave it empty and the swarm investigates. Name workflows and the lead may start them in isolated worktrees; each still needs the chat rib's `ribWorkflowGrants` entry. The placeholder names the workflows whose approvals the host keeps for you. With no registered project the field stays visible and says it needs one. |
 | **Setup** | **defaults · medium · balanced** launches on the defaults; **adjust** shows size, power and model override. A launch on defaults sends none of the three, so **Run again** later repeats what you chose, not what was filled in. Switching back to defaults keeps what you typed in the task. |
 | **Size** | Each segment carries its agents and turns; the hover has every limit. |

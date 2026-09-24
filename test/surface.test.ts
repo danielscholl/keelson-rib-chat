@@ -1512,6 +1512,11 @@ describe("launching from the tab", () => {
       field: "project",
     });
     expect(field({ projects, live: 0, ended: 0 }, "tools")?.showWhen).toEqual({ field: "project" });
+    expect(field({ projects, live: 0, ended: 0 }, "tools")?.options).toEqual([
+      { value: "none", label: "chat only" },
+      { value: "read", label: "read the project" },
+      { value: "write", label: "write the project" },
+    ]);
     expect(field({ projects: [], live: 0, ended: 0 }, "workflows")?.showWhen).toBeUndefined();
     expect(
       field({ projects, live: 0, ended: 0, dispatchBlocked: "no workflows" }, "workflows")
@@ -1668,6 +1673,20 @@ describe("start and run again", () => {
       { task: "Why is the build slow?", workTools: "read" },
       { task: "Why is the build slow?", workTools: "read", size: "small" },
     ]);
+  });
+
+  test("write the project starts a write swarm, and needs a project", async () => {
+    begun.length = 0;
+    const ok = await act("start-swarm", {
+      task: "Fix the flaky test",
+      project: "p1",
+      tools: "write",
+    });
+    expect(ok.ok).toBe(true);
+    expect(begun[0]).toEqual({ task: "Fix the flaky test", workTools: "write", project: "p1" });
+    const refused = await act("start-swarm", { task: "Fix the flaky test", tools: "write" });
+    expect(refused.ok).toBe(false);
+    expect(begun).toHaveLength(1);
   });
 
   test("workflows named grant them to the lead, and refusals come back to the form", async () => {
