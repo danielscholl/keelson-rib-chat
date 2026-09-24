@@ -58,8 +58,19 @@ import {
   sizeOf,
   type TurnSpan,
   WORKER_TONES,
+  type WriterPr,
 } from "./types.ts";
-import { createWorktree, releaseWorktree, type WorktreeDeps } from "./worktree.ts";
+import {
+  attributionIn,
+  branchCommits,
+  branchDiff,
+  createWorktree,
+  openDraftPr,
+  pushBranch,
+  releaseWorktree,
+  uncommitted,
+  type WorktreeDeps,
+} from "./worktree.ts";
 
 // The swarm engine. ClickClack is the bus and the durable record; this is the
 // dispatcher that turns "a message addressed an agent" into "that agent runs a
@@ -78,6 +89,10 @@ export const AGENT_TOOLS = [
 
 // A writer's built-in tools, confined to its own worktree.
 export const WRITER_TOOLS = ["Read", "Grep", "Glob", "Edit", "Write", "Bash"] as const;
+// Held by writers only.
+export const PR_TOOL = "chat_pr_open";
+// Held by every agent of a write swarm.
+export const DIFF_TOOL = "chat_diff";
 
 // Granted to the lead only: its designed report, and Keelson's design guide for it.
 export const REPORT_TOOLS = ["chat_report", "canvas_design_guide"] as const;
@@ -349,6 +364,7 @@ export class Swarm {
   // Each agent's host turns not yet settled, which can outlive a timed-out turn,
   // so a writer's worktree is checked only once they have.
   private readonly inFlight = new Map<string, Set<Promise<unknown>>>();
+  private readonly prs: WriterPr[] = [];
   private error: string | undefined;
   private endedAt: string | undefined;
   private quiesceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -760,6 +776,9 @@ export class Swarm {
       ...(agent.lead && this.runs.size > 0
         ? { runs: [...this.runs.values()].map(describeRun) }
         : {}),
+      ...(agent.lead && this.prs.length > 0
+        ? { prs: this.prs.map((p) => `@${p.agent} draft ${p.url} (${p.branch})`) }
+        : {}),
     });
     // A turn's start goes to the op's progress only; its one activity entry lands
     // when it ends, with what came of it.
@@ -789,6 +808,8 @@ export class Swarm {
         ...(agent.lead ? REPORT_TOOLS : []),
         ...dispatchTools,
         ...workTools,
+        ...(worktree ? [PR_TOOL] : []),
+        ...(this.opts.write ? [DIFF_TOOL] : []),
         ...leadTools,
       ]),
     ].map((name) => ({ name }));
@@ -1240,6 +1261,83 @@ export class Swarm {
     return renderContextItem(item, opts.offset);
   }
 
+  // ---- A writer's pull request, and its diff for reviewers. ----
+
+  private writerOf(agentId: string): {
+    agent: SwarmAgent;
+    wt: NonNullable<SwarmAgent["worktree"]>;
+    git: WorktreeDeps;
+  } {
+    const { agent } = this.as(agentId);
+    const wt = agent.worktree;
+    const git = this.opts.write?.git;
+    if (!wt || !git)
+      throw new Error("only a writer, spawned with writes: true, opens a pull request");
+    return { agent, wt, git };
+  }
+
+  // One pull request per writer: a second call pushes the branch again and
+  // returns the one already open. It never merges.
+  async openPr(
+    agentId: string,
+    input: { title: string; body: string },
+  ): Promise<{ url: string; again: boolean }> {
+    const { agent, wt, git } = this.writerOf(agentId);
+    const pending = await uncommitted(git, wt);
+    if (pending) {
+      throw new Error(
+        `your worktree has changes that are not committed; commit or discard them first:\n${pending}`,
+      );
+    }
+    const commits = await branchCommits(git, wt);
+    if (commits.length === 0) {
+      throw new Error(`${wt.branch} has no commits ahead of origin/${wt.base}; nothing to open`);
+    }
+    const offending = commits.flatMap((c) => {
+      const line = attributionIn(c.message);
+      return line ? [`${c.sha.slice(0, 7)} ${c.subject}: "${line}"`] : [];
+    });
+    if (offending.length > 0) {
+      throw new Error(
+        `refused: ${offending.length} commit(s) carry AI attribution. Rewrite them without it (git commit --amend for the last one, or git reset --soft origin/${wt.base} and commit again), then call chat_pr_open again. Nothing was pushed:\n${offending.join("\n")}`,
+      );
+    }
+    const inText = attributionIn(`${input.title}\n${input.body}`);
+    if (inText) {
+      throw new Error(`refused: the title or body carries AI attribution ("${inText}"); drop it`);
+    }
+    await pushBranch(git, wt);
+    if (agent.prUrl) return { url: agent.prUrl, again: true };
+    const url = await openDraftPr(git, wt, input.title, input.body);
+    agent.prUrl = url;
+    this.prs.push({ agent: agent.handle, url, branch: wt.branch, at: new Date().toISOString() });
+    this.log(`@${agent.handle} opened draft ${url}`, {
+      kind: "pr",
+      actor: agent.id,
+      subject: url,
+    });
+    this.changed("agent");
+    return { url, again: false };
+  }
+
+  async diff(agentId: string, writerHandle: string): Promise<string> {
+    this.as(agentId);
+    const git = this.opts.write?.git;
+    if (!git)
+      throw new Error("this swarm has no writers: it was not started with work_tools 'write'");
+    const want = writerHandle.replace(/^@/, "").toLowerCase();
+    const writer = [...this.agents.values()].find(
+      (a) => a.handle === want || a.handle === `${this.id}-${want}`,
+    );
+    if (!writer?.worktree) {
+      const writers = [...this.agents.values()].filter((a) => a.worktree).map((a) => a.handle);
+      throw new Error(
+        `'${writerHandle}' is not a writer in this swarm. Writers: ${writers.join(", ") || "none"}`,
+      );
+    }
+    return branchDiff(git, writer.worktree);
+  }
+
   // ---- Workflow dispatch, on behalf of the lead. ----
 
   private liveRuns(): ChildRun[] {
@@ -1402,6 +1500,7 @@ export class Swarm {
         status,
         (url) =>
           [...this.runs.values()].some((r) => r !== run && r.prUrls.includes(url)) ||
+          this.prs.some((p) => p.url === url) ||
           (this.opts.prOwnedElsewhere?.(url, this.id) ?? false),
       );
       if (gateKey(run.pendingApproval) !== gateBefore) this.trackGate(run);
@@ -1863,6 +1962,7 @@ export class Swarm {
       ...(this.opts.dispatch ? { workflows: this.opts.dispatch.grants.map((g) => g.name) } : {}),
       ...(this.opts.leadTools?.length ? { leadTools: [...this.opts.leadTools] } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
+      ...(this.prs.length > 0 ? { prs: this.prs.map((p) => ({ ...p })) } : {}),
       ...(this.keptWorktrees.length > 0
         ? { worktrees: this.keptWorktrees.map((w) => ({ ...w })) }
         : {}),

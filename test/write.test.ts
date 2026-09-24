@@ -4,7 +4,7 @@ import rib from "../src/index.ts";
 import { Swarm, type SwarmOptions, WRITER_TOOLS } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
 import type { RunAgentTurn } from "../src/turn-runner.ts";
-import type { SwarmSummary } from "../src/types.ts";
+import { ownsPr, type SwarmSummary } from "../src/types.ts";
 import { createWorktree, releaseWorktree } from "../src/worktree.ts";
 import {
   FakeClickClack,
@@ -315,6 +315,138 @@ describe("write mode", () => {
     expect(summary.agents.map((a) => a.handle)).toContain("s1-coder");
     expect(h.server.tokens.get("ccb_s1-coder")?.revoked).toBe(true);
     expect(git.ran(`git worktree remove ${WT}`)).toHaveLength(1);
+  });
+
+  test("chat_pr_open refuses commits that credit an AI, and pushes nothing", async () => {
+    const git = fakeGit();
+    git.commits.set(WT, [
+      { sha: "a".repeat(40), subject: "fix: clean", message: "fix: clean\n" },
+      {
+        sha: "b".repeat(40),
+        subject: "fix: the flake",
+        message: "fix: the flake\n\nBody.\n\nCo-Authored-By: Claude Opus <noreply@anthropic.com>\n",
+      },
+      {
+        sha: "c".repeat(40),
+        subject: "test: cover it",
+        message:
+          "test: cover it\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n",
+      },
+    ]);
+    let refusal = { content: "", isError: false };
+    const h = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "coder", role: "r", brief: "b", writes: true });
+        } else if (agentId === "s1-coder") {
+          refusal = await call("chat_pr_open", { title: "fix: the flake", body: "Fixes it." });
+        } else if (agentId === "s1-lead") await call("chat_done", { summary: "ok" });
+      },
+      {},
+      git,
+    );
+    const summary = await (await h.start()).finished;
+    expect(refusal.isError).toBe(true);
+    expect(refusal.content).toContain("2 commit(s) carry AI attribution");
+    expect(refusal.content).toContain(
+      'bbbbbbb fix: the flake: "Co-Authored-By: Claude Opus <noreply@anthropic.com>"',
+    );
+    expect(refusal.content).toContain("ccccccc test: cover it");
+    expect(refusal.content).not.toContain("aaaaaaa");
+    expect(git.ran("git push")).toHaveLength(0);
+    expect(git.ran("gh")).toHaveLength(0);
+    expect(summary.prs).toBeUndefined();
+  });
+
+  test("chat_pr_open refuses attribution in the body, and a reader cannot call it", async () => {
+    const git = fakeGit();
+    git.commits.set(WT, [{ sha: "a".repeat(40), subject: "fix: x", message: "fix: x\n" }]);
+    let body = "";
+    let reader = "";
+    const h = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "coder", role: "r", brief: "b", writes: true });
+          reader = (await call("chat_pr_open", { title: "t", body: "b" })).content;
+        } else if (agentId === "s1-coder") {
+          body = (
+            await call("chat_pr_open", {
+              title: "fix: x",
+              body: "Fixes it.\n\nGenerated with Claude Code",
+            })
+          ).content;
+        } else if (agentId === "s1-lead") await call("chat_done", { summary: "ok" });
+      },
+      {},
+      git,
+    );
+    await (await h.start()).finished;
+    expect(body).toContain("the title or body carries AI attribution");
+    expect(reader).toBe("tool chat_pr_open not granted");
+    expect(git.ran("gh")).toHaveLength(0);
+  });
+
+  test("chat_pr_open opens one draft, records it, and a second call only pushes", async () => {
+    const git = fakeGit();
+    git.commits.set(WT, [{ sha: "a".repeat(40), subject: "fix: x", message: "fix: x\n" }]);
+    const opened: string[] = [];
+    let leadPrompt = "";
+    let diff = "";
+    const h = harness(
+      async ({ agentId, turn, call, prompt }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "coder", role: "r", brief: "b", writes: true });
+          await call("chat_spawn", { handle: "reviewer", role: "r", brief: "b" });
+        } else if (agentId === "s1-coder" && turn === 1) {
+          opened.push((await call("chat_pr_open", { title: "fix: x", body: "Fixes it." })).content);
+          opened.push((await call("chat_pr_open", { title: "fix: x", body: "Again." })).content);
+          await call("chat_post", { body: "@s1-lead opened it" });
+        } else if (agentId === "s1-reviewer") {
+          diff = (await call("chat_diff", { writer: "coder" })).content;
+        } else if (agentId === "s1-lead") {
+          leadPrompt = prompt;
+          await call("chat_done", { summary: "ok" });
+        }
+      },
+      {},
+      git,
+    );
+    const summary = await (await h.start()).finished;
+    const url = "https://github.com/o/r/pull/101";
+
+    expect(opened[0]).toBe(
+      `opened draft pull request ${url}. Report it to the lead; the operator merges.`,
+    );
+    expect(opened[1]).toBe(`pushed your branch; your pull request is already open: ${url}`);
+    expect(git.ran("git push -u origin keelson/swarm/s1/coder")).toHaveLength(2);
+    const created = git.ran("gh pr create");
+    expect(created).toHaveLength(1);
+    expect(created[0]?.args).toEqual([
+      "pr",
+      "create",
+      "--draft",
+      "--base",
+      "main",
+      "--head",
+      "keelson/swarm/s1/coder",
+      "--title",
+      "fix: x",
+      "--body",
+      "Fixes it.",
+    ]);
+    expect(created[0]?.cwd).toBe(WT);
+    expect(git.ran("gh pr merge")).toHaveLength(0);
+
+    expect(summary.prs).toEqual([
+      expect.objectContaining({ agent: "s1-coder", url, branch: "keelson/swarm/s1/coder" }),
+    ]);
+    expect(summary.agents.find((a) => a.handle === "s1-coder")?.prUrl).toBe(url);
+    expect(summary.activity?.some((e) => e.kind === "pr" && e.subject === url)).toBe(true);
+    expect(leadPrompt).toContain(`@s1-coder draft ${url}`);
+    expect(ownsPr(summary, url)).toBe(true);
+    expect(ownsPr(summary, "https://github.com/o/r/pull/7")).toBe(false);
+    expect(diff).toContain("Branch keelson/swarm/s1/coder against origin/main");
+    expect(git.ran("git diff origin/main...HEAD")[0]?.cwd).toBe(WT);
   });
 
   test("a start with write and no project is refused before a swarm exists", async () => {

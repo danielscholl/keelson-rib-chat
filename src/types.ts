@@ -122,6 +122,16 @@ export interface SwarmAgent {
   joinedAt?: string;
   // A writer's own checkout; absent on agents that only read.
   worktree?: AgentWorktree;
+  // The draft pull request the writer opened with chat_pr_open.
+  prUrl?: string;
+}
+
+// A draft pull request a writer opened.
+export interface WriterPr {
+  agent: string;
+  url: string;
+  branch: string;
+  at: string;
 }
 
 export interface AgentWorktree {
@@ -157,6 +167,7 @@ export const ACTIVITY_KINDS = [
   "gate",
   "gate-answer",
   "report",
+  "pr",
   "conclusion",
   "nudge",
   "cap",
@@ -332,6 +343,8 @@ export interface SwarmSummary {
   leadTools?: readonly string[];
   // Workflow runs the lead started, with their evidence.
   runs?: readonly ChildRun[];
+  // Draft pull requests writers opened, oldest first.
+  prs?: readonly WriterPr[];
   // Writers' worktrees still on disk after the swarm ended.
   worktrees?: readonly KeptWorktree[];
   // Turns started per minute over the last 30 minutes, oldest first, once two
@@ -355,6 +368,13 @@ export interface SwarmSummary {
 
 // A summary as the status tools and the op record carry it: the turn spans are
 // for drawing, and would triple a long swarm's output.
+// Whether a swarm already credits a pull request, to a run or to a writer.
+export function ownsPr(s: Pick<SwarmSummary, "runs" | "prs">, url: string): boolean {
+  return (
+    (s.runs ?? []).some((r) => r.prUrls.includes(url)) || (s.prs ?? []).some((p) => p.url === url)
+  );
+}
+
 export function publicSummary(s: SwarmSummary): Omit<SwarmSummary, "spans"> {
   const { spans: _spans, ...rest } = s;
   return rest;

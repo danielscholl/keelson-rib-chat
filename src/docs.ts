@@ -10,7 +10,15 @@ import type { RibDocsSource } from "@keelson/shared";
 import { CONTEXT_BOUNDS } from "./context.ts";
 import { DEFAULT_PORT } from "./server.ts";
 import { MAX_TURN_FAILURES } from "./swarm.ts";
-import { ENDED_KEPT, READ_BOUNDS, START_BOUNDS, TRANSCRIPT_PAGE, WAIT_BOUNDS } from "./tools.ts";
+import {
+  DIFF_PAGE,
+  ENDED_KEPT,
+  PR_BOUNDS,
+  READ_BOUNDS,
+  START_BOUNDS,
+  TRANSCRIPT_PAGE,
+  WAIT_BOUNDS,
+} from "./tools.ts";
 import { SETTLE_GRACE_MS } from "./turn-runner.ts";
 import { BODY_MAX, CONCLUSION_MAX, DEFAULT_LIMITS, SIZE_PRESETS, SWARM_SIZES } from "./types.ts";
 
@@ -159,6 +167,8 @@ costs one turn, not one per participant, and the others still see it.
 | \`chat_context\` | List the task context items, or read one verbatim with its attribution. |
 | \`chat_spawn\` | Add a worker with a handle, a role, and a narrow brief. Fails at the agent cap. In a write swarm the lead passes \`writes: true\` for a writer. |
 | \`chat_done\` | Lead only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. |
+| \`chat_pr_open\` | Writers only, in a write swarm. Push the writer's branch and open a draft pull request. See Write mode. |
+| \`chat_diff\` | Any agent of a write swarm. Read a writer's commits and diff against the remote default branch. See Write mode. |
 | \`chat_report\` | Lead only. Publish the swarm's report: a designed, self-contained HTML page the operator opens from the Swarms tab. Calling it again replaces the page. |
 
 These refuse any caller that is not inside a swarm turn. The calling agent is
@@ -305,6 +315,29 @@ Keelson's policy checks the paths it can see in a command, but a shell command
 can still reach anything the operator's user can: other directories, the
 network, and credentials such as the \`gh\` login. Only grant write mode on a
 project and a machine where that is acceptable.
+
+| Tool | For |
+| --- | --- |
+| \`chat_pr_open\` | Writers only. Push the branch and open a draft pull request against the default branch, with a \`title\` (at most ${PR_BOUNDS.title} characters) and a \`body\` (at most ${PR_BOUNDS.body}). |
+| \`chat_diff\` | Every agent of a write swarm. A writer's commits, what it has not committed, and \`git diff origin/<default>...HEAD\` in its worktree, paged by ${DIFF_PAGE} characters. |
+
+\`chat_pr_open\` refuses a worktree with uncommitted changes, a branch with no
+commits ahead of the default branch, and any commit, title, or body that credits
+an AI: a \`Co-Authored-By\` trailer naming Claude or another assistant, a
+"Generated with" line, a \`Claude-Session\` link, or Anthropic's noreply
+address. It lists the offending commits so the writer can rewrite them, and
+pushes nothing until they are clean. It then runs \`git push -u origin <branch>\`
+and \`gh pr create --draft\` with the project's \`gh\` login. Each writer opens
+one pull request: a second call pushes the branch again and returns the one
+already open. Nothing in the swarm merges; merging stays with the operator.
+
+The summary's \`prs\` records each one with its writer and branch, and the
+lead's turns list them for its report. Another swarm's run that quotes one of
+these pull requests does not claim it.
+
+A reviewer reads a writer's change with \`chat_diff\`, and its files directly:
+the worktree sits under the project root, inside every agent's allowed
+directory. Reviewers have no Bash, so \`chat_diff\` is how they see the diff.
 
 When the swarm ends, each writer's worktree is checked. One with no
 uncommitted changes and no commit missing from the remote is removed, with its

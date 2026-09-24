@@ -168,3 +168,104 @@ export function releaseWorktree(
       : `the worktree was removed, but its local branch was not: ${deleted.error}`;
   });
 }
+
+// Trailers and footers that credit an AI with a change. A pull request carrying
+// one is refused before anything is pushed.
+const ATTRIBUTION = [
+  /^\s*co-authored-by:[^\n]*\b(claude|anthropic|openai|chatgpt|gpt|codex|copilot|gemini|cursor|devin)\b/im,
+  /\bgenerated (with|by)\b[^\n]*\b(claude|anthropic|openai|chatgpt|codex|copilot|gemini|cursor|ai)\b/i,
+  /^\s*claude-session:/im,
+  /noreply@anthropic\.com/i,
+];
+
+export function attributionIn(text: string): string | undefined {
+  for (const pattern of ATTRIBUTION) {
+    const hit = pattern.exec(text);
+    if (!hit) continue;
+    const start = text.lastIndexOf("\n", hit.index) + 1;
+    const end = text.indexOf("\n", hit.index + hit[0].length);
+    return text.slice(start, end < 0 ? undefined : end).trim();
+  }
+  return undefined;
+}
+
+export interface BranchCommit {
+  sha: string;
+  subject: string;
+  message: string;
+}
+
+// The commits on a writer's branch that the remote default branch lacks, newest first.
+export async function branchCommits(
+  deps: WorktreeDeps,
+  wt: AgentWorktree,
+): Promise<BranchCommit[]> {
+  const out = await git(deps, wt.path, [
+    "log",
+    "--format=%H%x1f%s%x1f%B%x1e",
+    `origin/${wt.base}..HEAD`,
+  ]);
+  return out
+    .split("\x1e")
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map((r) => {
+      const [sha = "", subject = "", message = ""] = r.split("\x1f");
+      return { sha, subject, message };
+    });
+}
+
+export async function uncommitted(deps: WorktreeDeps, wt: AgentWorktree): Promise<string> {
+  return (await git(deps, wt.path, ["status", "--porcelain"])).trim();
+}
+
+export async function pushBranch(deps: WorktreeDeps, wt: AgentWorktree): Promise<void> {
+  await git(deps, wt.path, ["push", "-u", "origin", wt.branch]);
+}
+
+// Opens a draft pull request for the branch against its base; returns its URL.
+export async function openDraftPr(
+  deps: WorktreeDeps,
+  wt: AgentWorktree,
+  title: string,
+  body: string,
+): Promise<string> {
+  const out = await deps.run(
+    "gh",
+    [
+      "pr",
+      "create",
+      "--draft",
+      "--base",
+      wt.base,
+      "--head",
+      wt.branch,
+      "--title",
+      title,
+      "--body",
+      body,
+    ],
+    { cwd: wt.path, timeoutMs: GIT_TIMEOUT_MS },
+  );
+  if (!out.ok) throw new Error(`gh pr create failed: ${out.error}`);
+  const url = out.data.match(/https?:\/\/\S+\/pull\/\d+/)?.[0];
+  if (!url) throw new Error(`gh pr create printed no pull request URL: ${out.data.trim()}`);
+  return url;
+}
+
+// A writer's change as a reviewer reads it: its commits, what is not committed,
+// and the diff against the remote default branch.
+export async function branchDiff(deps: WorktreeDeps, wt: AgentWorktree): Promise<string> {
+  const base = `origin/${wt.base}`;
+  const [log, status, diff] = await Promise.all([
+    git(deps, wt.path, ["log", "--oneline", `${base}..HEAD`]),
+    git(deps, wt.path, ["status", "--short"]),
+    git(deps, wt.path, ["diff", `${base}...HEAD`]),
+  ]);
+  return [
+    `Branch ${wt.branch} against ${base}, in ${wt.path}.`,
+    `Commits:\n${log.trim() || "(none)"}`,
+    `Not committed:\n${status.trim() || "(nothing)"}`,
+    `Diff (git diff ${base}...HEAD):\n${diff.trim() || "(empty)"}`,
+  ].join("\n\n");
+}

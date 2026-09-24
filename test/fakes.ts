@@ -386,6 +386,8 @@ export function fakeGit(
   const calls: { cmd: string; args: string[]; cwd: string }[] = [];
   const dirty = new Map<string, string>();
   const ahead = new Map<string, number>();
+  const commits = new Map<string, { sha: string; subject: string; message: string }[]>();
+  let prs = 0;
   const appended: { file: string; line: string }[] = [];
   const ok = (data = "") => ({ ok: true as const, data, exitCode: 0 });
   const fail = (error: string) => ({ ok: false as const, error, code: 1 });
@@ -393,7 +395,18 @@ export function fakeGit(
     const cwd = o.cwd ?? "";
     calls.push({ cmd, args, cwd });
     const sub = args.join(" ");
+    if (cmd === "gh") {
+      prs++;
+      return ok(`Creating draft pull request\nhttps://github.com/o/r/pull/${100 + prs}\n`);
+    }
     if (cmd !== "git") return ok();
+    if (sub.startsWith("log --format=")) {
+      return ok(
+        (commits.get(cwd) ?? [])
+          .map((c) => `${c.sha}\x1f${c.subject}\x1f${c.message}\x1e\n`)
+          .join(""),
+      );
+    }
     if (sub.startsWith("symbolic-ref")) {
       return opts.defaultBranch === null
         ? fail("not a symbolic ref")
@@ -412,6 +425,7 @@ export function fakeGit(
     calls,
     dirty,
     ahead,
+    commits,
     appended,
     deps: { run, append: (file: string, line: string) => appended.push({ file, line }) },
     ran: (prefix: string) => calls.filter((c) => `${c.cmd} ${c.args.join(" ")}`.startsWith(prefix)),
