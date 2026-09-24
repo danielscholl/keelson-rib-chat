@@ -24,6 +24,36 @@ export interface WorkflowDispatcher {
   ): Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
+// Starts on one checkout run one at a time: each waits until the run before it
+// has set up (a worktree, a finished node, or an end), since concurrent
+// `git worktree add` calls race on the repository's config lock.
+export function serialStarts(
+  start: WorkflowDispatcher["start"],
+  status: WorkflowDispatcher["status"],
+  opts: { pollMs?: number; timeoutMs?: number } = {},
+): WorkflowDispatcher["start"] {
+  const pollMs = opts.pollMs ?? 500;
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  let gate: Promise<void> = Promise.resolve();
+  const settled = async (runId: string): Promise<void> => {
+    const until = Date.now() + timeoutMs;
+    while (Date.now() < until) {
+      const s = await status(runId).catch(() => undefined);
+      const live = s?.status === "running" || s?.status === "paused";
+      if (!s || !live || s.checkout.worktreeEstablished || s.nodes.length > 0) return;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+  };
+  return (name, inputs) => {
+    const started = gate.then(() => start(name, inputs));
+    gate = started.then(
+      ({ runId }) => settled(runId),
+      () => undefined,
+    );
+    return started;
+  };
+}
+
 // A file a paused gate names, such as the plan it asks about.
 export type GateFile = RibApprovalArtifact;
 

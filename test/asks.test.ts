@@ -69,6 +69,28 @@ describe("an agent asking the operator", () => {
     expect(summary.health?.asks).toBeUndefined();
   });
 
+  test("the lead cannot conclude over its own open question", async () => {
+    let refused = "";
+    const { server, start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId !== "s1-lead") return;
+      if (turn === 1) {
+        await call("chat_post", { body: QUESTION });
+        refused = (await call("chat_done", { summary: "Went with a guess." })).content;
+      } else {
+        await call("chat_done", { summary: "Kept the cap as a guess." });
+      }
+    });
+    const swarm = await start();
+    await settle();
+    expect(refused).toContain("still open");
+    expect(swarm.summary().status).toBe("running");
+    expect(swarm.summary().draftConclusion).toBe("Went with a guess.");
+    server.postAsOwner(server.channels[0]?.id ?? "", "A guess.");
+    const summary = await swarm.finished;
+    expect(summary.status).toBe("done");
+    expect(summary.conclusion).toBe("Kept the cap as a guess.");
+  });
+
   test("steer answers it too, and a reply in a thread counts as an ask", async () => {
     const { start } = harness(async ({ agentId, turn, call }) => {
       if (agentId !== "s1-lead") return;

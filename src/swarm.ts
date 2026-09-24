@@ -1492,6 +1492,14 @@ export class Swarm {
         `${live.length} workflow run(s) are still live: ${live.map((r) => `${r.runId} (${r.workflow}, ${r.status})`).join(", ")}. Wait for them to finish, or cancel them with chat_workflow_cancel, then conclude.`,
       );
     }
+    const asked = this.asks.filter((a) => a.agentId === agent.id);
+    if (asked.length > 0) {
+      this.draftConclusion = summary;
+      this.changed("conclusion");
+      throw new Error(
+        `you asked @operator ${asked.length === 1 ? "a question" : `${asked.length} questions`} that ${asked.length === 1 ? "is" : "are"} still open (${asked.map((a) => a.messageId).join(", ")}). Their reply wakes you: wait for it, then conclude.`,
+      );
+    }
     if (summary.length > CONCLUSION_MAX) {
       this.draftConclusion = summary;
       this.refusedConclusions++;

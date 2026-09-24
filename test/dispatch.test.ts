@@ -8,6 +8,7 @@ import {
   isolationBreach,
   missingEvidence,
   prUrlsIn,
+  serialStarts,
   verified,
   withoutFileHints,
 } from "../src/dispatch.ts";
@@ -166,6 +167,48 @@ describe("dispatch evidence", () => {
         }),
       ),
     ).toBeUndefined();
+  });
+
+  test("starts on one checkout wait for the previous run to set up", async () => {
+    const events: string[] = [];
+    const ready = new Set<string>();
+    let n = 0;
+    const start = serialStarts(
+      async (name) => {
+        const runId = `r${++n}`;
+        events.push(`start ${name}`);
+        return { runId };
+      },
+      async (runId) =>
+        status({
+          runId,
+          checkout: { path: "/wt", branch: "b", worktreeEstablished: ready.has(runId) },
+        }),
+      { pollMs: 5 },
+    );
+    const first = start("a", {});
+    const second = start("b", {});
+    await first;
+    await new Promise((r) => setTimeout(r, 30));
+    expect(events).toEqual(["start a"]);
+    ready.add("r1");
+    await second;
+    expect(events).toEqual(["start a", "start b"]);
+  });
+
+  test("a failed start does not hold the next one", async () => {
+    let calls = 0;
+    const start = serialStarts(
+      async () => {
+        calls++;
+        if (calls === 1) throw new Error("boom");
+        return { runId: "r2" };
+      },
+      async () => undefined,
+      { pollMs: 5 },
+    );
+    await expect(start("a", {})).rejects.toThrow("boom");
+    expect(await start("b", {})).toEqual({ runId: "r2" });
   });
 
   test("a run never claims a pull request another run owns", () => {

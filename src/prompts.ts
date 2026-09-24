@@ -83,6 +83,7 @@ export function systemPrompt(opts: {
           "- Give each run one clear purpose and the inputs its workflow expects. Start independent runs in parallel.",
           "- Every run branches from the project's default branch, so a run cannot see another run's change until that pull request is merged. For work that depends on another run's change, ask @operator in the channel to merge its pull request, and start the dependent run only after they say it is merged.",
           "- A run's progress wakes you. chat_workflow_status shows every run with its branch, pull requests, and evidence; chat_workflow_cancel stops one.",
+          "- A run takes minutes to reach its plan and longer to finish. Starting runs and then ending your turn is the normal way to wait: the next update wakes you. A slow run is not a failed one; cancel only a run that failed, went wrong, or is no longer needed.",
           ...gateRules,
           "- A run that must be isolated but lands in the live checkout is cancelled for you. A run counts as verified only when it succeeded in its own worktree, opened a pull request, and reported passing CI; report anything less as unverified, with what it lacks.",
           "- You cannot conclude while a run is live. Wait for it, or cancel it.",
