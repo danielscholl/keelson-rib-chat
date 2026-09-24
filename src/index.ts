@@ -8,7 +8,7 @@
 
 import type { Rib, RibAuthStatus, RibContext, RibViewDescriptor } from "@keelson/shared";
 import { ClickClackClient, ClickClackError } from "./clickclack.ts";
-import type { WorkflowDispatcher } from "./dispatch.ts";
+import { serialStarts, type WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
 import { historyPath, loadHistory, saveHistory } from "./history.ts";
 import { isReport, REPORT_DIR, type SwarmReport } from "./report.ts";
@@ -66,6 +66,8 @@ const starting = new Map<string, StartingSwarm>();
 let disposed = false;
 
 const swarms = new Map<string, Swarm>();
+// One start queue per project, shared by every swarm dispatching onto it.
+const serialByProject = new Map<string, WorkflowDispatcher["start"]>();
 const ended = new Map<string, SwarmSummary>();
 const refusedApprovals = new Set<string>();
 const approvalRefusals: ApprovalRefusals = {
@@ -453,8 +455,16 @@ function prepare(input: StartSwarmInput): Launch {
     const cancel = cancelRun;
     const respond = respondToRun;
     const onProject = project.id;
+    let serial = serialByProject.get(onProject);
+    if (!serial) {
+      serial = serialStarts(
+        (name, inputs) => start(name, inputs, { projectId: onProject }),
+        status,
+      );
+      serialByProject.set(onProject, serial);
+    }
     dispatcher = {
-      start: (name, inputs) => start(name, inputs, { projectId: onProject }),
+      start: serial,
       status: (runId) => status(runId),
       cancel: (runId) => cancel(runId),
       ...(respond
@@ -666,6 +676,7 @@ const rib: Rib = {
     getRunStatus = ctx.getRunStatus;
     cancelRun = ctx.cancelRun;
     respondToRun = ctx.respondToRun;
+    serialByProject.clear();
     disposed = false;
     const dir = getDataDir?.();
     if (dir && ended.size === 0) {

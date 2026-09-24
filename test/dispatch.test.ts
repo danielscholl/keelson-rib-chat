@@ -8,6 +8,7 @@ import {
   isolationBreach,
   missingEvidence,
   prUrlsIn,
+  serialStarts,
   verified,
   withoutFileHints,
 } from "../src/dispatch.ts";
@@ -166,6 +167,85 @@ describe("dispatch evidence", () => {
         }),
       ),
     ).toBeUndefined();
+  });
+
+  test("starts on one checkout wait for the previous run to set up", async () => {
+    const events: string[] = [];
+    const ready = new Set<string>();
+    let n = 0;
+    const start = serialStarts(
+      async (name) => {
+        const runId = `r${++n}`;
+        events.push(`start ${name}`);
+        return { runId };
+      },
+      async (runId) =>
+        status({
+          runId,
+          checkout: { path: "/wt", branch: "b", worktreeEstablished: ready.has(runId) },
+        }),
+      { pollMs: 5 },
+    );
+    const first = start("a", {});
+    const second = start("b", {});
+    await first;
+    await new Promise((r) => setTimeout(r, 30));
+    expect(events).toEqual(["start a"]);
+    ready.add("r1");
+    await second;
+    expect(events).toEqual(["start a", "start b"]);
+  });
+
+  test("a status read that fails keeps the next start waiting", async () => {
+    const events: string[] = [];
+    let reads = 0;
+    const start = serialStarts(
+      async (name) => {
+        events.push(`${name}@${reads}`);
+        return { runId: `r-${name}` };
+      },
+      async (runId) => {
+        reads++;
+        if (reads < 3) throw new Error("host busy");
+        return status({ runId, checkout: { path: "/wt", branch: "b", worktreeEstablished: true } });
+      },
+      { pollMs: 5 },
+    );
+    await start("a", {});
+    await start("b", {});
+    expect(events).toEqual(["a@0", "b@3"]);
+  });
+
+  test("a status read that never settles holds the next start only until the deadline", async () => {
+    const events: string[] = [];
+    const start = serialStarts(
+      async (name) => {
+        events.push(name);
+        return { runId: `r-${name}` };
+      },
+      () => new Promise(() => {}),
+      { pollMs: 5, timeoutMs: 30 },
+    );
+    const began = Date.now();
+    await start("a", {});
+    await start("b", {});
+    expect(events).toEqual(["a", "b"]);
+    expect(Date.now() - began).toBeLessThan(1000);
+  });
+
+  test("a failed start does not hold the next one", async () => {
+    let calls = 0;
+    const start = serialStarts(
+      async () => {
+        calls++;
+        if (calls === 1) throw new Error("boom");
+        return { runId: "r2" };
+      },
+      async () => undefined,
+      { pollMs: 5 },
+    );
+    await expect(start("a", {})).rejects.toThrow("boom");
+    expect(await start("b", {})).toEqual({ runId: "r2" });
   });
 
   test("a run never claims a pull request another run owns", () => {

@@ -628,6 +628,41 @@ describe("Swarm resilience", () => {
 const later = (ms: number, fn: () => void) => setTimeout(fn, ms);
 
 describe("Workflow dispatch", () => {
+  test("a run that starts after its swarm stopped is cancelled, not orphaned", async () => {
+    const fake = fakeDispatcher();
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    const start = fake.dispatcher.start;
+    fake.dispatcher.start = async (name: string, inputs: Record<string, string>) => {
+      await held;
+      return start(name, inputs);
+    };
+    let startResult = "";
+    let swarmRef: Swarm | undefined;
+    const { start: boot } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId !== "s1-lead" || turn > 1) return;
+        later(10, () => void swarmRef?.stop());
+        later(40, () => release());
+        startResult = (
+          await call("chat_workflow_start", { workflow: "fix-issue", purpose: "p", inputs: {} })
+        ).content;
+      },
+      {},
+      {
+        dispatch: { grants: [{ name: "fix-issue", isolated: true }], dispatcher: fake.dispatcher },
+      },
+    );
+    swarmRef = await boot();
+    await swarmRef.finished;
+    await new Promise((r) => setTimeout(r, 80));
+    expect(fake.started).toHaveLength(1);
+    expect(fake.cancelled).toEqual(["run_1"]);
+    expect(startResult).toContain("cancelled");
+  });
+
   test("the lead starts a run, waits it out through an approval, and concludes verified", async () => {
     const fake = fakeDispatcher();
     let swarmRef: Swarm | undefined;

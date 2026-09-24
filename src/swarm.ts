@@ -963,7 +963,6 @@ export class Swarm {
         message.body.length > ASK_CHARS ? `${message.body.slice(0, ASK_CHARS - 1)}…` : message.body,
       at: message.createdAt || new Date().toISOString(),
     });
-    this.asks.splice(0, Math.max(0, this.asks.length - ASKS_KEPT));
     this.log(`@${agent.handle} asked the operator`, {
       kind: "ask",
       actor: agent.id,
@@ -1125,6 +1124,24 @@ export class Swarm {
       );
     }
     const { runId } = await dispatch.dispatcher.start(grant.name, input.inputs);
+    if (this.status !== "running" || this.conclusion !== undefined) {
+      const cancelled = await dispatch.dispatcher
+        .cancel(runId)
+        .catch((e): { ok: false; error: string } => ({ ok: false, error: errText(e) }));
+      if (!cancelled.ok) {
+        this.log(
+          `could not cancel run ${runId}, started after the swarm ended: ${cancelled.error}`,
+          {
+            kind: "fault",
+            subject: runId,
+          },
+        );
+        throw new Error(
+          `the swarm ended while run ${runId} was waiting to start, and cancelling it failed (${cancelled.error}); cancel it with run_cancel`,
+        );
+      }
+      throw new Error("the swarm ended while the run was waiting to start; it was cancelled");
+    }
     const run: ChildRun = {
       runId,
       workflow: grant.name,
@@ -1492,6 +1509,14 @@ export class Swarm {
         `${live.length} workflow run(s) are still live: ${live.map((r) => `${r.runId} (${r.workflow}, ${r.status})`).join(", ")}. Wait for them to finish, or cancel them with chat_workflow_cancel, then conclude.`,
       );
     }
+    const asked = this.asks.filter((a) => a.agentId === agent.id);
+    if (asked.length > 0) {
+      this.draftConclusion = summary;
+      this.changed("conclusion");
+      throw new Error(
+        `you asked @operator ${asked.length === 1 ? "a question" : `${asked.length} questions`} that ${asked.length === 1 ? "is" : "are"} still open (${asked.map((a) => a.messageId).join(", ")}). Their reply wakes you: wait for it, then conclude.`,
+      );
+    }
     if (summary.length > CONCLUSION_MAX) {
       this.draftConclusion = summary;
       this.refusedConclusions++;
@@ -1607,7 +1632,7 @@ export class Swarm {
       ...(this.nudges > 0 ? { nudges: this.nudges } : {}),
       ...(this.refusedConclusions > 0 ? { refusedConclusions: this.refusedConclusions } : {}),
       ...(this.quietSince ? { quietSince: this.quietSince } : {}),
-      ...(this.asks.length > 0 ? { asks: [...this.asks] } : {}),
+      ...(this.asks.length > 0 ? { asks: this.asks.slice(-ASKS_KEPT) } : {}),
       ...(this.cancelFault ? { cancelFault: this.cancelFault } : {}),
     };
     return Object.keys(health).length > 0 ? health : undefined;

@@ -244,8 +244,14 @@ both to @operator") is not a question. A reply in
 the question's thread, a channel post that mentions the asker, or Dismiss on the
 Swarms tab answers it; a note to the lead answers the lead's own questions and
 no one else's. Its wall clock still applies, so give long runs a larger
-\`max_minutes\`. The lead cannot conclude while a run is live. A swarm that ends
+\`max_minutes\`. The lead cannot conclude while a run is live, nor while a question it asked
+the operator is still open. A swarm that ends
 any other way cancels its live runs.
+
+Starts on one project run one at a time: each waits, up to a minute, until the
+run before it has its worktree or has finished a node, because concurrent
+\`git worktree add\` calls race on the repository's config lock. The wait is
+shared by every swarm dispatching onto that project.
 
 Every run branches from the project's default branch, so a run cannot see
 another run's change until that run's pull request is merged. Only the operator
