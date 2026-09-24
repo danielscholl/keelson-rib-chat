@@ -38,10 +38,14 @@ export function serialStarts(
   const settled = async (runId: string): Promise<void> => {
     const until = Date.now() + timeoutMs;
     while (Date.now() < until) {
-      const read = await status(runId).then(
-        (s) => ({ ok: true as const, s }),
-        () => ({ ok: false as const }),
-      );
+      const left = Math.max(0, until - Date.now());
+      const read = await Promise.race([
+        status(runId).then(
+          (s) => ({ ok: true as const, s }),
+          () => ({ ok: false as const }),
+        ),
+        new Promise<{ ok: false }>((r) => setTimeout(() => r({ ok: false }), left)),
+      ]);
       if (read.ok) {
         const s = read.s;
         const live = s?.status === "running" || s?.status === "paused";

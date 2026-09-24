@@ -216,6 +216,23 @@ describe("dispatch evidence", () => {
     expect(events).toEqual(["a@0", "b@3"]);
   });
 
+  test("a status read that never settles holds the next start only until the deadline", async () => {
+    const events: string[] = [];
+    const start = serialStarts(
+      async (name) => {
+        events.push(name);
+        return { runId: `r-${name}` };
+      },
+      () => new Promise(() => {}),
+      { pollMs: 5, timeoutMs: 30 },
+    );
+    const began = Date.now();
+    await start("a", {});
+    await start("b", {});
+    expect(events).toEqual(["a", "b"]);
+    expect(Date.now() - began).toBeLessThan(1000);
+  });
+
   test("a failed start does not hold the next one", async () => {
     let calls = 0;
     const start = serialStarts(

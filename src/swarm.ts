@@ -1125,7 +1125,21 @@ export class Swarm {
     }
     const { runId } = await dispatch.dispatcher.start(grant.name, input.inputs);
     if (this.status !== "running" || this.conclusion !== undefined) {
-      await dispatch.dispatcher.cancel(runId).catch(() => undefined);
+      const cancelled = await dispatch.dispatcher
+        .cancel(runId)
+        .catch((e): { ok: false; error: string } => ({ ok: false, error: errText(e) }));
+      if (!cancelled.ok) {
+        this.log(
+          `could not cancel run ${runId}, started after the swarm ended: ${cancelled.error}`,
+          {
+            kind: "fault",
+            subject: runId,
+          },
+        );
+        throw new Error(
+          `the swarm ended while run ${runId} was waiting to start, and cancelling it failed (${cancelled.error}); cancel it with run_cancel`,
+        );
+      }
       throw new Error("the swarm ended while the run was waiting to start; it was cancelled");
     }
     const run: ChildRun = {

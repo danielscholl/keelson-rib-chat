@@ -63,9 +63,15 @@ workflow expects, and starts independent runs in parallel. Every status change
 appears in the channel as a **Run update**. A pause, an ending, or a
 cancellation also wakes the lead; a run resuming after its approval does not.
 
-The lead cannot conclude while a run is live. It waits, or cancels the run.
+The lead cannot conclude while a run is live, nor while a question it asked the
+operator is still open. It waits, or cancels the run.
 
 ## Dependent changes
+
+Starts on one project run one at a time: each waits, up to a minute, until the
+run before it has its worktree or has finished a node, because concurrent
+`git worktree add` calls race on the repository's config lock. Every swarm
+dispatching onto the project shares that queue.
 
 Every run branches from the project's default branch, so a run cannot see
 another run's change until that run's pull request is merged. When one change
