@@ -1189,9 +1189,20 @@ export class Swarm {
       throw new Error(`could not cancel run ${runId}: ${result.error}`);
     }
     await this.syncRun(runId, { quiet: true });
-    if (isLive(run)) run.status = "cancelled";
+    if (isLive(run)) {
+      run.status = "cancelled";
+      this.settleEnded(run);
+    }
     this.changed("run");
     return run;
+  }
+
+  // An ended run waits at no gate, however it ended.
+  private settleEnded(run: ChildRun): void {
+    delete run.pendingApproval;
+    const now = new Date().toISOString();
+    for (const gate of run.gates ?? []) gate.closedAt ??= now;
+    this.cancelling.delete(run.runId);
   }
 
   onRunEvent(runId: string): void {
@@ -1219,7 +1230,8 @@ export class Swarm {
     this.syncing.add(runId);
     try {
       const status = await dispatch.dispatcher.status(runId);
-      if (!status || this.status !== "running") return;
+      // A read that raced a local cancel must not bring the run back.
+      if (!status || this.status !== "running" || !isLive(run)) return;
       const gateBefore = gateKey(run.pendingApproval);
       const change = applyStatus(
         run,
@@ -1229,7 +1241,7 @@ export class Swarm {
           (this.opts.prOwnedElsewhere?.(url, this.id) ?? false),
       );
       if (gateKey(run.pendingApproval) !== gateBefore) this.trackGate(run);
-      if (!isLive(run)) this.cancelling.delete(runId);
+      if (!isLive(run)) this.settleEnded(run);
       const breach = isolationBreach(run);
       if (breach) {
         await dispatch.dispatcher.cancel(runId).catch(() => undefined);

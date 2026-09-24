@@ -712,6 +712,8 @@ describe("Workflow dispatch", () => {
     const run = summary.runs?.[0];
     expect(run?.status).toBe("cancelled");
     expect(run?.gates?.[0]?.by).toBeUndefined();
+    expect(run?.gates?.every((g) => g.closedAt)).toBe(true);
+    expect(run?.pendingApproval).toBeUndefined();
     const announced = server.messages.filter((m) => m.body.startsWith("**Approval needed**"));
     expect(announced).toHaveLength(1);
   });
