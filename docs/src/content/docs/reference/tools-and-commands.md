@@ -124,6 +124,7 @@ reports. A live swarm is refused. Each channel's transcript stays in ClickClack;
 |---|---|---|---|
 | `swarm` | string | required | A swarm id, running or ended. |
 | `thread` | string | none | A thread's root message id. Omit to read the whole channel. |
+| `tail` | number | none | Only the last this many messages (1 to 200), in order. |
 | `offset` | integer | 0 | Character offset to continue a long transcript from. |
 
 Reads a swarm's channel as the operator: every message in order, thread replies
