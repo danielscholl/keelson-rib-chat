@@ -282,7 +282,7 @@ run whose workflow could not read the checks is not verified.
 | \`chat_swarm_wait\` | Block until the swarm ends or \`timeout_s\` passes (default ${WAIT_BOUNDS.defaultS}, at most ${WAIT_BOUNDS.maxS}). The result begins with \`RUNNING\` or \`ENDED\`. |
 | \`chat_swarm_stop\` | Stop a running swarm and revoke its agents' credentials. |
 | \`chat_swarm_forget\` | Drop ended swarms from the tab, status, and history: one \`swarm\`, or every one that ended more than \`older_than_days\` ago (0 for all). Needs \`confirm: true\`; transcripts stay in ClickClack. |
-| \`chat_swarm_transcript\` | Read a swarm's channel, running or ended: every message in order with thread replies, or one \`thread\`. Pages by ${TRANSCRIPT_PAGE} characters with \`offset\`. Never starts a stopped managed server. |
+| \`chat_swarm_transcript\` | Read a swarm's channel, running or ended: every message in order with thread replies, or one \`thread\`. Pages by ${TRANSCRIPT_PAGE} characters with \`offset\`; \`tail\` reads only the newest messages. Never starts a stopped managed server. |
 
 The generic \`run_status\`, \`run_events\`, \`run_cancel\`, and \`run_steer\` tools
 work on the run id. The \`chat-swarm\` workflow wraps start, wait, and report.
