@@ -311,6 +311,8 @@ export interface SwarmSummary {
   context?: readonly ContextIndexEntry[];
   // The workflows the launch let the lead start; absent on a Discuss swarm.
   workflows?: readonly string[];
+  // Other ribs' tools the lead was given; the host drops any not granted.
+  leadTools?: readonly string[];
   // Workflow runs the lead started, with their evidence.
   runs?: readonly ChildRun[];
   // Turns started per minute over the last 30 minutes, oldest first, once two

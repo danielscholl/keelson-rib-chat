@@ -69,6 +69,7 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`model\` | the power's model | Model for every agent, or for the lead alone when \`worker_model\` is set. |
 | \`worker_model\` | \`model\` | Model for workers. |
 | \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |
+| \`lead_tools\` | none | Other ribs' tools the lead holds, such as \`beads_ready\` or \`beads_close\`, at most ${START_BOUNDS.maxLeadTools}. See Agent tools. |
 
 Project confinement: with a \`project\`, every turn runs with the project root as
 its working directory and as its only allowed directory. Without a \`project\`
@@ -173,6 +174,15 @@ a project and \`work_tools: read\`. The lead also holds Keelson's
 and the lead of a swarm started with \`workflows\` holds the workflow tools. See
 Workflow dispatch. An agent holds nothing else.
 
+A swarm started with \`lead_tools\` also hands its lead those tools from other
+ribs, for example the beads rib's \`beads_ready\`, \`beads_show\`, and
+\`beads_close\`, so it can read the live queue and close a bead once its pull
+request merges. Keelson projects each one onto the lead's turns only when
+\`config.json\` grants it to the chat rib under \`crossRibGrants\`, as in
+\`"crossRibGrants": { "chat": { "beads": ["beads_ready", "beads_close"] } }\`.
+A tool the operator has not granted is dropped from the turn, and the lead is
+told to say so rather than work around it. Workers never hold them.
+
 The report follows the same contract as Keelson's \`canvas_publish\`: inline CSS
 and script only, the system font stack, colors as CSS custom properties with a
 light override, and any categorical palette declared on \`<body>\` and checked
@@ -264,6 +274,7 @@ run whose workflow could not read the checks is not verified.
 | \`chat_swarm_status\` | One swarm's agents, turns, status, and conclusion, or a list of all known swarms with each one's size, model, and tokens. |
 | \`chat_swarm_wait\` | Block until the swarm ends or \`timeout_s\` passes (default ${WAIT_BOUNDS.defaultS}, at most ${WAIT_BOUNDS.maxS}). The result begins with \`RUNNING\` or \`ENDED\`. |
 | \`chat_swarm_stop\` | Stop a running swarm and revoke its agents' credentials. |
+| \`chat_swarm_forget\` | Drop ended swarms from the tab, status, and history: one \`swarm\`, or every one that ended more than \`older_than_days\` ago (0 for all). Needs \`confirm: true\`; transcripts stay in ClickClack. |
 | \`chat_swarm_transcript\` | Read a swarm's channel, running or ended: every message in order with thread replies, or one \`thread\`. Pages by ${TRANSCRIPT_PAGE} characters with \`offset\`. Never starts a stopped managed server. |
 
 The generic \`run_status\`, \`run_events\`, \`run_cancel\`, and \`run_steer\` tools

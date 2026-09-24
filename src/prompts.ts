@@ -31,6 +31,8 @@ export function systemPrompt(opts: {
   limits: SwarmLimits;
   // Tools granted beside the chat_* set, e.g. Read, Grep, Glob.
   workTools?: readonly string[];
+  // Other ribs' tools the lead holds, e.g. beads_ready.
+  leadTools?: readonly string[];
   // The rendered index of the task context, one line per item.
   contextIndex: string;
   // Workflows the lead may start on the project.
@@ -39,7 +41,7 @@ export function systemPrompt(opts: {
   answersGates?: boolean;
 }): string {
   const { agent, task, channelName, limits, contextIndex } = opts;
-  const workTools = opts.workTools ?? [];
+  const workTools = [...(opts.workTools ?? []), ...(opts.leadTools ?? [])];
   const grants = opts.grants ?? [];
   const gateRules = opts.answersGates
     ? [
@@ -66,6 +68,12 @@ export function systemPrompt(opts: {
     workTools.length > 0
       ? `- Your tools are the chat_* tools plus ${workTools.join(", ")}. You have nothing else: no shell, no edits, no network. Do not try other tools.`
       : "- Your tools are the chat_* tools. You have nothing else: no files, no shell, no network. Do not try other tools.";
+  const granted =
+    opts.leadTools && opts.leadTools.length > 0
+      ? [
+          `- ${opts.leadTools.join(", ")} come from other Keelson ribs, granted by the operator. Use them for what they are for, such as reading or updating the project's tracker, and record what you changed in the channel. A tool you were promised but cannot call was not granted: tell @operator instead of working around it.`,
+        ]
+      : [];
   const dispatch =
     grants.length > 0
       ? [
@@ -94,6 +102,7 @@ export function systemPrompt(opts: {
     "- You work in turns. A turn starts when a message reaches you and ends when you stop calling tools. Between turns you sleep, and you wake only when someone addresses you.",
     "- You act only through tools. Your plain reply text is discarded and nobody sees it.",
     toolLine,
+    ...granted,
     "- chat_post writes a top-level note. It wakes no one unless it @mentions a handle.",
     "- chat_reply answers in a thread. It wakes whoever started the thread. @mention anyone else you need there.",
     "- Thread replies that did not wake you are listed as background the next time you wake.",

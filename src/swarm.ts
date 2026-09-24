@@ -149,6 +149,8 @@ export interface SwarmOptions {
   limits?: Partial<SwarmLimits>;
   // Built-in tools granted beside the chat_* set (e.g. Read, Grep, Glob).
   workTools?: readonly string[];
+  // Other ribs' tools the lead holds; the host drops any the operator has not granted.
+  leadTools?: readonly string[];
   // Evidence snapshotted by the caller; immutable for the life of the swarm.
   context?: readonly ContextItem[];
   cwd?: string;
@@ -722,16 +724,20 @@ export class Swarm {
     this.changed("turn");
 
     const workTools = this.opts.workTools ?? [];
+    const leadTools = agent.lead ? (this.opts.leadTools ?? []) : [];
     const dispatch = agent.lead ? this.opts.dispatch : undefined;
     const answersGates = Boolean(dispatch?.dispatcher.respond);
     const dispatchTools = dispatch
       ? [...DISPATCH_TOOLS, ...(answersGates ? [RESPOND_TOOL] : [])]
       : [];
     const tools = [
-      ...AGENT_TOOLS,
-      ...(agent.lead ? REPORT_TOOLS : []),
-      ...dispatchTools,
-      ...workTools,
+      ...new Set([
+        ...AGENT_TOOLS,
+        ...(agent.lead ? REPORT_TOOLS : []),
+        ...dispatchTools,
+        ...workTools,
+        ...leadTools,
+      ]),
     ].map((name) => ({ name }));
     const model = agent.model;
     const outcome = await runTurn(
@@ -743,6 +749,7 @@ export class Swarm {
           channelName: this.channel.name,
           limits: this.limits,
           workTools,
+          leadTools,
           ...(dispatch ? { grants: dispatch.grants, answersGates } : {}),
           contextIndex: renderContextIndex(this.opts.context ?? []),
         }),
@@ -1629,6 +1636,7 @@ export class Swarm {
         ? { context: contextIndex(this.opts.context, { excerpts: true }) }
         : {}),
       ...(this.opts.dispatch ? { workflows: this.opts.dispatch.grants.map((g) => g.name) } : {}),
+      ...(this.opts.leadTools?.length ? { leadTools: [...this.opts.leadTools] } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
       ...(pace ? { pace } : {}),
       ...(this.spans.length > 0
