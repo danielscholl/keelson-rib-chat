@@ -5,10 +5,10 @@
     "": {
       "name": "@keelson/rib-chat-docs",
       "dependencies": {
-        "@astrojs/starlight": "^0.42.0",
+        "@astrojs/starlight": "^0.42.2",
         "astro": "^7.0.0",
         "sharp": "^0.35.1",
-        "starlight-llms-txt": "^0.11.0",
+        "starlight-llms-txt": "^0.12.0",
       },
       "devDependencies": {
         "@astrojs/check": "^0.9.9",
@@ -57,7 +57,7 @@
 
     "@astrojs/sitemap": ["@astrojs/sitemap@3.7.4", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@astrojs/sitemap/-/sitemap-3.7.4.tgz", { "dependencies": { "sitemap": "^9.0.0", "zod": "^4.3.6" } }, "sha1-kquYa54QfagvcfRw2bQCCRX2o0s="],
 
-    "@astrojs/starlight": ["@astrojs/starlight@0.42.0", "", { "dependencies": { "@astrojs/markdown-satteri": "^0.4.0", "@astrojs/mdx": "^8.0.0", "@astrojs/sitemap": "^3.7.3", "@pagefind/default-ui": "^1.3.0", "@types/hast": "^3.0.5", "@types/js-yaml": "^4.0.9", "@types/mdast": "^4.0.4", "astro-expressive-code": "^0.44.0", "bcp-47": "^2.1.0", "hast-util-format": "^1.1.0", "hast-util-select": "^6.0.4", "hast-util-to-html": "^9.0.5", "hast-util-to-string": "^3.0.1", "hastscript": "^9.0.1", "i18next": "^26.0.7", "js-yaml": "^4.1.1", "klona": "^2.0.6", "magic-string": "^1.2.3", "mdast-util-directive": "^3.1.0", "mdast-util-to-markdown": "^2.1.2", "mdast-util-to-string": "^4.0.0", "pagefind": "^1.5.2", "remark-directive": "^4.0.0", "satteri": "^0.10.3", "ultrahtml": "^1.6.0", "unified": "^11.0.5", "unist-util-visit": "^5.1.0", "vfile": "^6.0.3" }, "peerDependencies": { "@astrojs/markdown-remark": "^7.3.0", "astro": "^7.2.10" }, "optionalPeers": ["@astrojs/markdown-remark"] }, "sha512-EVsGnyGJ6rRNwGRZFYmGABo0qTQ55F7OSmfSL0VK+5lsqD+u6GWcB8tFqXETcUvP8kyn90W+QBLSL2aer9jNJQ=="],
+    "@astrojs/starlight": ["@astrojs/starlight@0.42.2", "", { "dependencies": { "@astrojs/markdown-satteri": "^0.4.0", "@astrojs/mdx": "^8.0.0", "@astrojs/sitemap": "^3.7.3", "@pagefind/default-ui": "^1.3.0", "@types/hast": "^3.0.5", "@types/js-yaml": "^4.0.9", "@types/mdast": "^4.0.4", "astro-expressive-code": "^0.44.0", "bcp-47": "^2.1.0", "hast-util-format": "^1.1.0", "hast-util-select": "^6.0.4", "hast-util-to-html": "^9.0.5", "hast-util-to-string": "^3.0.1", "hastscript": "^9.0.1", "i18next": "^26.0.7", "js-yaml": "^4.1.1", "klona": "^2.0.6", "magic-string": "^1.2.3", "mdast-util-directive": "^3.1.0", "mdast-util-to-markdown": "^2.1.2", "mdast-util-to-string": "^4.0.0", "pagefind": "^1.5.2", "remark-directive": "^4.0.0", "satteri": "^0.10.3", "ultrahtml": "^1.6.0", "unified": "^11.0.5", "unist-util-visit": "^5.1.0", "vfile": "^6.0.3" }, "peerDependencies": { "@astrojs/markdown-remark": "^7.3.0", "astro": "^7.2.10" }, "optionalPeers": ["@astrojs/markdown-remark"] }, "sha512-rDAgv3QCJOo0F4EoWeuFG31OdhQOrcipATl9+gCkOqpQiO7u7FR8uVam+HHNJO8Sl21TOAQKUSUEvCXv8jEgJA=="],
 
     "@astrojs/telemetry": ["@astrojs/telemetry@3.3.3", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@astrojs/telemetry/-/telemetry-3.3.3.tgz", { "dependencies": { "ci-info": "^4.4.0", "dset": "^3.1.4", "is-docker": "^4.0.0", "package-manager-detector": "^1.6.0" } }, "sha1-JOW88gPRrAd0fALj8HEBNycggrg="],
 
@@ -233,8 +233,6 @@
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.6.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.6.0.tgz", {}, "sha1-9MZj6GLwbcmMpNRThixGkCeJoY0="],
 
-    "@mdx-js/mdx": ["@mdx-js/mdx@3.1.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@mdx-js/mdx/-/mdx-3.1.1.tgz", { "dependencies": { "@types/estree": "^1.0.0", "@types/estree-jsx": "^1.0.0", "@types/hast": "^3.0.0", "@types/mdx": "^2.0.0", "acorn": "^8.0.0", "collapse-white-space": "^2.0.0", "devlop": "^1.0.0", "estree-util-is-identifier-name": "^3.0.0", "estree-util-scope": "^1.0.0", "estree-walker": "^3.0.0", "hast-util-to-jsx-runtime": "^2.0.0", "markdown-extensions": "^2.0.0", "recma-build-jsx": "^1.0.0", "recma-jsx": "^1.0.0", "recma-stringify": "^1.0.0", "rehype-recma": "^1.0.0", "remark-mdx": "^3.0.0", "remark-parse": "^11.0.0", "remark-rehype": "^11.0.0", "source-map": "^0.7.0", "unified": "^11.0.0", "unist-util-position-from-estree": "^2.0.0", "unist-util-stringify-position": "^4.0.0", "unist-util-visit": "^5.0.0", "vfile": "^6.0.0" } }, "sha1-xf/ZkadTaxSeFxde7lehoqURxtE="],
-
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.4", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@napi-rs/wasm-runtime/-/wasm-runtime-1.2.4.tgz", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || ^2.0.0-alpha.4", "@emnapi/runtime": "^1.7.1 || ^2.0.0-alpha.4" } }, "sha512-AJxoUD2/15ESHbvpcyjU274nsAPLuOtPHCk0vKJM5pj//Fg/B1FXNWjPnXTT9PymCYYiHo4zPj0ZomXBKhoy7g=="],
 
     "@oslojs/encoding": ["@oslojs/encoding@1.1.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@oslojs/encoding/-/encoding-1.1.0.tgz", {}, "sha1-VfPZpZdDCgHype9jxrQvdp+c404="],
@@ -321,8 +319,6 @@
 
     "@types/mdast": ["@types/mdast@4.0.4", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@types/mdast/-/mdast-4.0.4.tgz", { "dependencies": { "@types/unist": "*" } }, "sha1-fM9y7dLxqn3TQ34YDGQ3NYWATdY="],
 
-    "@types/mdx": ["@types/mdx@2.0.14", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@types/mdx/-/mdx-2.0.14.tgz", {}, "sha1-weVBEyZbFSAhqwr+BDTjyt2Qv+M="],
-
     "@types/micromatch": ["@types/micromatch@4.0.10", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@types/micromatch/-/micromatch-4.0.10.tgz", { "dependencies": { "@types/braces": "*" } }, "sha1-+DuLBc6h+s4qfPO36Gb/l9IEtjI="],
 
     "@types/ms": ["@types/ms@2.1.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@types/ms/-/ms-2.1.0.tgz", {}, "sha1-BSqmekjszEMJ1/AZG35BQ0uQu3g="],
@@ -353,10 +349,6 @@
 
     "@vscode/l10n": ["@vscode/l10n@0.0.18", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@vscode/l10n/-/l10n-0.0.18.tgz", {}, "sha1-kW06XpYNurR8HFb1iny1CHsTXJU="],
 
-    "acorn": ["acorn@8.18.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/acorn/-/acorn-8.18.0.tgz", { "bin": { "acorn": "bin/acorn" } }, "sha1-T68BstbTJr/u2XrqH1IiC19MGUA="],
-
-    "acorn-jsx": ["acorn-jsx@5.3.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/acorn-jsx/-/acorn-jsx-5.3.2.tgz", { "peerDependencies": { "acorn": "^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha1-ftW7VZCLOy8bxVxq8WU7rafweTc="],
-
     "ajv": ["ajv@8.20.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/ajv/-/ajv-8.20.0.tgz", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha1-MEs2Nq3Yi6fZNnYN1Q7OAG3qlfk="],
 
     "ajv-draft-04": ["ajv-draft-04@1.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/ajv-draft-04/-/ajv-draft-04-1.0.0.tgz", { "peerDependencies": { "ajv": "^8.5.0" }, "optionalPeers": ["ajv"] }, "sha1-O2R2GyaLoLnmaPC0G6U/zgrXf8g="],
@@ -378,8 +370,6 @@
     "aria-query": ["aria-query@5.3.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/aria-query/-/aria-query-5.3.2.tgz", {}, "sha1-k/gaQ0gOM6M48ZFjo9EKUMAdzVk="],
 
     "array-iterate": ["array-iterate@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/array-iterate/-/array-iterate-2.0.1.tgz", {}, "sha1-bv1D+ClbP+4GJR09YurUvZgF3SQ="],
-
-    "astring": ["astring@1.9.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/astring/-/astring-1.9.0.tgz", { "bin": { "astring": "bin/astring" } }, "sha1-zHPmBip+sD59GcItiws0Uf2b/u8="],
 
     "astro": ["astro@7.3.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/astro/-/astro-7.3.2.tgz", { "dependencies": { "@astrojs/compiler-rs": "^0.4.0", "@astrojs/internal-helpers": "0.11.0", "@astrojs/markdown-satteri": "0.4.1", "@astrojs/telemetry": "3.3.3", "@capsizecss/unpack": "^4.0.0", "@clack/prompts": "^1.1.0", "@oslojs/encoding": "^1.1.0", "am-i-vibing": "^0.4.0", "aria-query": "^5.3.2", "axobject-query": "^4.1.0", "ci-info": "^4.4.0", "clsx": "^2.1.1", "common-ancestor-path": "^2.0.0", "cookie": "^2.0.1", "devalue": "^5.8.1", "diff": "^9.0.0", "dset": "^3.1.4", "es-module-lexer": "^2.0.0", "esbuild": "^0.28.0", "find-proc": "0.1.0", "flattie": "^1.1.1", "fontace": "~0.4.1", "get-tsconfig": "5.0.0-beta.4", "github-slugger": "^2.0.0", "html-escaper": "3.0.3", "http-cache-semantics": "^4.2.0", "js-yaml": "^4.3.0", "jsonc-parser": "^3.3.1", "magic-string": "^1.0.0", "magicast": "^0.5.2", "mrmime": "^2.0.1", "neotraverse": "^1.0.1", "obug": "^2.1.1", "p-limit": "^7.3.0", "p-queue": "^9.1.0", "package-manager-detector": "^1.6.0", "piccolore": "^0.1.3", "picomatch": "^4.0.4", "semver": "^7.7.4", "shiki": "^4.0.2", "smol-toml": "^1.6.0", "svgo": "^4.0.1", "tinyclip": "^0.1.12", "tinyexec": "^1.0.4", "tinyglobby": "^0.2.15", "ultrahtml": "^1.6.0", "unifont": "~0.7.5", "unstorage": "^1.17.5", "vite": "^8.0.13", "vitefu": "^1.1.2", "xxhash-wasm": "^1.1.0", "yargs-parser": "^22.0.0", "zod": "^4.5.4" }, "optionalDependencies": { "sharp": "^0.35.4" }, "peerDependencies": { "@astrojs/markdown-remark": "^7.3.0" }, "optionalPeers": ["@astrojs/markdown-remark"], "bin": { "astro": "./bin/astro.mjs" } }, "sha1-InSpTKQ6yzcBTx/FBReuPM5VoaQ="],
 
@@ -414,8 +404,6 @@
     "cliui": ["cliui@9.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/cliui/-/cliui-9.0.1.tgz", { "dependencies": { "string-width": "^7.2.0", "strip-ansi": "^7.1.0", "wrap-ansi": "^9.0.0" } }, "sha1-b3iQ84b28feZU63B943sRvzC0pE="],
 
     "clsx": ["clsx@2.1.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/clsx/-/clsx-2.1.1.tgz", {}, "sha1-7tOXyf2L2IK/sY3qtxAgSaLzKZk="],
-
-    "collapse-white-space": ["collapse-white-space@2.1.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/collapse-white-space/-/collapse-white-space-2.1.0.tgz", {}, "sha1-ZAJXF0+fQsdAtA87Ve51KST+78o="],
 
     "comma-separated-tokens": ["comma-separated-tokens@2.0.3", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/comma-separated-tokens/-/comma-separated-tokens-2.0.3.tgz", {}, "sha1-TonJRYrLYbyP7xn0UplzsjkoOe4="],
 
@@ -479,29 +467,11 @@
 
     "es-module-lexer": ["es-module-lexer@2.3.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/es-module-lexer/-/es-module-lexer-2.3.2.tgz", {}, "sha1-MR+k9AFowZdcUFR3xRsjI01BrVU="],
 
-    "esast-util-from-estree": ["esast-util-from-estree@2.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/esast-util-from-estree/-/esast-util-from-estree-2.0.0.tgz", { "dependencies": { "@types/estree-jsx": "^1.0.0", "devlop": "^1.0.0", "estree-util-visit": "^2.0.0", "unist-util-position-from-estree": "^2.0.0" } }, "sha1-jRz7Ua1TTS8VncJQ5gTzR4p58a0="],
-
-    "esast-util-from-js": ["esast-util-from-js@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/esast-util-from-js/-/esast-util-from-js-2.0.1.tgz", { "dependencies": { "@types/estree-jsx": "^1.0.0", "acorn": "^8.0.0", "esast-util-from-estree": "^2.0.0", "vfile-message": "^4.0.0" } }, "sha1-UUe+w0zJ2kSsz1L4fyOaQKw+giU="],
-
     "esbuild": ["esbuild@0.28.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/esbuild/-/esbuild-0.28.2.tgz", { "optionalDependencies": { "@esbuild/aix-ppc64": "0.28.2", "@esbuild/android-arm": "0.28.2", "@esbuild/android-arm64": "0.28.2", "@esbuild/android-x64": "0.28.2", "@esbuild/darwin-arm64": "0.28.2", "@esbuild/darwin-x64": "0.28.2", "@esbuild/freebsd-arm64": "0.28.2", "@esbuild/freebsd-x64": "0.28.2", "@esbuild/linux-arm": "0.28.2", "@esbuild/linux-arm64": "0.28.2", "@esbuild/linux-ia32": "0.28.2", "@esbuild/linux-loong64": "0.28.2", "@esbuild/linux-mips64el": "0.28.2", "@esbuild/linux-ppc64": "0.28.2", "@esbuild/linux-riscv64": "0.28.2", "@esbuild/linux-s390x": "0.28.2", "@esbuild/linux-x64": "0.28.2", "@esbuild/netbsd-arm64": "0.28.2", "@esbuild/netbsd-x64": "0.28.2", "@esbuild/openbsd-arm64": "0.28.2", "@esbuild/openbsd-x64": "0.28.2", "@esbuild/openharmony-arm64": "0.28.2", "@esbuild/sunos-x64": "0.28.2", "@esbuild/win32-arm64": "0.28.2", "@esbuild/win32-ia32": "0.28.2", "@esbuild/win32-x64": "0.28.2" }, "bin": { "esbuild": "bin/esbuild" } }, "sha1-D0O9G62VW3LSTiJh46vllXzPCBY="],
 
     "escalade": ["escalade@3.2.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/escalade/-/escalade-3.2.0.tgz", {}, "sha1-ARo/aYVroYnf+n3I/M6Z0qh5A+U="],
 
     "escape-string-regexp": ["escape-string-regexp@5.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/escape-string-regexp/-/escape-string-regexp-5.0.0.tgz", {}, "sha1-RoMSa1ALYXYvLb66zhgG6L4xscg="],
-
-    "estree-util-attach-comments": ["estree-util-attach-comments@3.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/estree-util-attach-comments/-/estree-util-attach-comments-3.0.0.tgz", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha1-NEveamTIox0VIx5e6eKXVmppHC0="],
-
-    "estree-util-build-jsx": ["estree-util-build-jsx@3.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/estree-util-build-jsx/-/estree-util-build-jsx-3.0.1.tgz", { "dependencies": { "@types/estree-jsx": "^1.0.0", "devlop": "^1.0.0", "estree-util-is-identifier-name": "^3.0.0", "estree-walker": "^3.0.0" } }, "sha1-ttC87R3MTwbyXPDO2istyvmBaPE="],
-
-    "estree-util-is-identifier-name": ["estree-util-is-identifier-name@3.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/estree-util-is-identifier-name/-/estree-util-is-identifier-name-3.0.0.tgz", {}, "sha1-C170xP8TUIs03NAez6lF9h/OXb0="],
-
-    "estree-util-scope": ["estree-util-scope@1.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/estree-util-scope/-/estree-util-scope-1.0.1.tgz", { "dependencies": { "@types/estree": "^1.0.0", "devlop": "^1.0.0" } }, "sha1-KOHhJLXXkvRj9D7z0WkCNkNLBeo="],
-
-    "estree-util-to-js": ["estree-util-to-js@2.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/estree-util-to-js/-/estree-util-to-js-2.0.0.tgz", { "dependencies": { "@types/estree-jsx": "^1.0.0", "astring": "^1.8.0", "source-map": "^0.7.0" } }, "sha1-EKb7kkgU5qu2K+zw0rxN6lHQTxc="],
-
-    "estree-util-visit": ["estree-util-visit@2.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/estree-util-visit/-/estree-util-visit-2.0.0.tgz", { "dependencies": { "@types/estree-jsx": "^1.0.0", "@types/unist": "^3.0.0" } }, "sha1-E6mp9A/1DtDAIvgx3fS1jQVEb+s="],
-
-    "estree-walker": ["estree-walker@3.0.3", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/estree-walker/-/estree-walker-3.0.3.tgz", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha1-Z8PlSexAKkh7T8GT0ZU6UkdSNA0="],
 
     "eventemitter3": ["eventemitter3@5.0.4", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/eventemitter3/-/eventemitter3-5.0.4.tgz", {}, "sha1-qG1mFwQzcS3egUcHrFK1JxzrH+s="],
 
@@ -567,11 +537,7 @@
 
     "hast-util-select": ["hast-util-select@6.0.4", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/hast-util-select/-/hast-util-select-6.0.4.tgz", { "dependencies": { "@types/hast": "^3.0.0", "@types/unist": "^3.0.0", "bcp-47-match": "^2.0.0", "comma-separated-tokens": "^2.0.0", "css-selector-parser": "^3.0.0", "devlop": "^1.0.0", "direction": "^2.0.0", "hast-util-has-property": "^3.0.0", "hast-util-to-string": "^3.0.0", "hast-util-whitespace": "^3.0.0", "nth-check": "^2.0.0", "property-information": "^7.0.0", "space-separated-tokens": "^2.0.0", "unist-util-visit": "^5.0.0", "zwitch": "^2.0.0" } }, "sha1-HY9pZXpXRB0M4K3jWIeHTT5lowM="],
 
-    "hast-util-to-estree": ["hast-util-to-estree@3.1.3", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/hast-util-to-estree/-/hast-util-to-estree-3.1.3.tgz", { "dependencies": { "@types/estree": "^1.0.0", "@types/estree-jsx": "^1.0.0", "@types/hast": "^3.0.0", "comma-separated-tokens": "^2.0.0", "devlop": "^1.0.0", "estree-util-attach-comments": "^3.0.0", "estree-util-is-identifier-name": "^3.0.0", "hast-util-whitespace": "^3.0.0", "mdast-util-mdx-expression": "^2.0.0", "mdast-util-mdx-jsx": "^3.0.0", "mdast-util-mdxjs-esm": "^2.0.0", "property-information": "^7.0.0", "space-separated-tokens": "^2.0.0", "style-to-js": "^1.0.0", "unist-util-position": "^5.0.0", "zwitch": "^2.0.0" } }, "sha1-5lTByTdGRRNWlcwKufcLj8r3M9c="],
-
     "hast-util-to-html": ["hast-util-to-html@9.0.5", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/hast-util-to-html/-/hast-util-to-html-9.0.5.tgz", { "dependencies": { "@types/hast": "^3.0.0", "@types/unist": "^3.0.0", "ccount": "^2.0.0", "comma-separated-tokens": "^2.0.0", "hast-util-whitespace": "^3.0.0", "html-void-elements": "^3.0.0", "mdast-util-to-hast": "^13.0.0", "property-information": "^7.0.0", "space-separated-tokens": "^2.0.0", "stringify-entities": "^4.0.0", "zwitch": "^2.0.4" } }, "sha1-zMZzpVu46Fd1sIrCg4D3LUcWcAU="],
-
-    "hast-util-to-jsx-runtime": ["hast-util-to-jsx-runtime@2.3.6", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/hast-util-to-jsx-runtime/-/hast-util-to-jsx-runtime-2.3.6.tgz", { "dependencies": { "@types/estree": "^1.0.0", "@types/hast": "^3.0.0", "@types/unist": "^3.0.0", "comma-separated-tokens": "^2.0.0", "devlop": "^1.0.0", "estree-util-is-identifier-name": "^3.0.0", "hast-util-whitespace": "^3.0.0", "mdast-util-mdx-expression": "^2.0.0", "mdast-util-mdx-jsx": "^3.0.0", "mdast-util-mdxjs-esm": "^2.0.0", "property-information": "^7.0.0", "space-separated-tokens": "^2.0.0", "style-to-js": "^1.0.0", "unist-util-position": "^5.0.0", "vfile-message": "^4.0.0" } }, "sha1-/zGJeq5Z9iIy4hWU6sfva2MzPpg="],
 
     "hast-util-to-mdast": ["hast-util-to-mdast@10.1.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/hast-util-to-mdast/-/hast-util-to-mdast-10.1.2.tgz", { "dependencies": { "@types/hast": "^3.0.0", "@types/mdast": "^4.0.0", "@ungap/structured-clone": "^1.0.0", "hast-util-phrasing": "^3.0.0", "hast-util-to-html": "^9.0.0", "hast-util-to-text": "^4.0.0", "hast-util-whitespace": "^3.0.0", "mdast-util-phrasing": "^4.0.0", "mdast-util-to-hast": "^13.0.0", "mdast-util-to-string": "^4.0.0", "rehype-minify-whitespace": "^6.0.0", "trim-trailing-lines": "^2.0.0", "unist-util-position": "^5.0.0", "unist-util-visit": "^5.0.0" } }, "sha1-vHb39fcvLN5NamatTNCrqCu3mQk="],
 
@@ -594,8 +560,6 @@
     "http-cache-semantics": ["http-cache-semantics@4.2.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/http-cache-semantics/-/http-cache-semantics-4.2.0.tgz", {}, "sha1-IF9Ntk+FYrdqT/kjWqUnmDmgndU="],
 
     "i18next": ["i18next@26.4.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/i18next/-/i18next-26.4.2.tgz", { "peerDependencies": { "typescript": "^5 || ^6 || ^7" }, "optionalPeers": ["typescript"] }, "sha1-gkIzYw8Uc1kpa8rd8UBJRdKyEb8="],
-
-    "inline-style-parser": ["inline-style-parser@0.2.7", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/inline-style-parser/-/inline-style-parser-0.2.7.tgz", {}, "sha1-sfxov8AxO4aFdF5EZON/k3a5yQk="],
 
     "iron-webcrypto": ["iron-webcrypto@1.2.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/iron-webcrypto/-/iron-webcrypto-1.2.1.tgz", {}, "sha1-qmD/KqEFUGMPTAsR/SRCvs2zWm8="],
 
@@ -655,8 +619,6 @@
 
     "magicast": ["magicast@0.5.5", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/magicast/-/magicast-0.5.5.tgz", { "dependencies": { "@babel/parser": "^7.29.7", "@babel/types": "^7.29.7", "source-map-js": "^1.2.1" } }, "sha512-UicdXN8zQ3JHlxVq+28afMXPr1z7WNY6+7EJnzTdQWkTAlMLF5fNCCKxJHBQwGaNGR11581EiQmQzx73+MvszA=="],
 
-    "markdown-extensions": ["markdown-extensions@2.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/markdown-extensions/-/markdown-extensions-2.0.0.tgz", {}, "sha1-NL68g+mTjK4W4OAX5KmBSoMw08Q="],
-
     "markdown-table": ["markdown-table@3.0.4", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/markdown-table/-/markdown-table-3.0.4.tgz", {}, "sha1-/kTW1BD/nW8uoXl6P2CqTStjHCo="],
 
     "mdast-util-definitions": ["mdast-util-definitions@6.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdast-util-definitions/-/mdast-util-definitions-6.0.0.tgz", { "dependencies": { "@types/mdast": "^4.0.0", "@types/unist": "^3.0.0", "unist-util-visit": "^5.0.0" } }, "sha1-wbtwbl52u5P5oJ3XrxdAAq5prCQ="],
@@ -678,14 +640,6 @@
     "mdast-util-gfm-table": ["mdast-util-gfm-table@2.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdast-util-gfm-table/-/mdast-util-gfm-table-2.0.0.tgz", { "dependencies": { "@types/mdast": "^4.0.0", "devlop": "^1.0.0", "markdown-table": "^3.0.0", "mdast-util-from-markdown": "^2.0.0", "mdast-util-to-markdown": "^2.0.0" } }, "sha1-ekNftiI6crCGKzOvvXErba6HjTg="],
 
     "mdast-util-gfm-task-list-item": ["mdast-util-gfm-task-list-item@2.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdast-util-gfm-task-list-item/-/mdast-util-gfm-task-list-item-2.0.0.tgz", { "dependencies": { "@types/mdast": "^4.0.0", "devlop": "^1.0.0", "mdast-util-from-markdown": "^2.0.0", "mdast-util-to-markdown": "^2.0.0" } }, "sha1-5oCV0vikMD7yQJSrZC4QR7mRqTY="],
-
-    "mdast-util-mdx": ["mdast-util-mdx@3.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdast-util-mdx/-/mdast-util-mdx-3.0.0.tgz", { "dependencies": { "mdast-util-from-markdown": "^2.0.0", "mdast-util-mdx-expression": "^2.0.0", "mdast-util-mdx-jsx": "^3.0.0", "mdast-util-mdxjs-esm": "^2.0.0", "mdast-util-to-markdown": "^2.0.0" } }, "sha1-eS+c8DYbRr7h/fHvNr6sQkoJnEE="],
-
-    "mdast-util-mdx-expression": ["mdast-util-mdx-expression@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdast-util-mdx-expression/-/mdast-util-mdx-expression-2.0.1.tgz", { "dependencies": { "@types/estree-jsx": "^1.0.0", "@types/hast": "^3.0.0", "@types/mdast": "^4.0.0", "devlop": "^1.0.0", "mdast-util-from-markdown": "^2.0.0", "mdast-util-to-markdown": "^2.0.0" } }, "sha1-Q/CrrJrcdW4ghvY4IqOMjTw6UJY="],
-
-    "mdast-util-mdx-jsx": ["mdast-util-mdx-jsx@3.2.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdast-util-mdx-jsx/-/mdast-util-mdx-jsx-3.2.0.tgz", { "dependencies": { "@types/estree-jsx": "^1.0.0", "@types/hast": "^3.0.0", "@types/mdast": "^4.0.0", "@types/unist": "^3.0.0", "ccount": "^2.0.0", "devlop": "^1.1.0", "mdast-util-from-markdown": "^2.0.0", "mdast-util-to-markdown": "^2.0.0", "parse-entities": "^4.0.0", "stringify-entities": "^4.0.0", "unist-util-stringify-position": "^4.0.0", "vfile-message": "^4.0.0" } }, "sha1-/QTGeip0me+5BailxXjd3J/a2g0="],
-
-    "mdast-util-mdxjs-esm": ["mdast-util-mdxjs-esm@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdast-util-mdxjs-esm/-/mdast-util-mdxjs-esm-2.0.1.tgz", { "dependencies": { "@types/estree-jsx": "^1.0.0", "@types/hast": "^3.0.0", "@types/mdast": "^4.0.0", "devlop": "^1.0.0", "mdast-util-from-markdown": "^2.0.0", "mdast-util-to-markdown": "^2.0.0" } }, "sha1-AZz751etYt1VfbNaaV5zFLzJ+pc="],
 
     "mdast-util-phrasing": ["mdast-util-phrasing@4.1.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdast-util-phrasing/-/mdast-util-phrasing-4.1.0.tgz", { "dependencies": { "@types/mdast": "^4.0.0", "unist-util-is": "^6.0.0" } }, "sha1-fMCo3sMOrwS3salmGpKtszgqpuM="],
 
@@ -717,21 +671,9 @@
 
     "micromark-extension-gfm-task-list-item": ["micromark-extension-gfm-task-list-item@2.1.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-extension-gfm-task-list-item/-/micromark-extension-gfm-task-list-item-2.1.0.tgz", { "dependencies": { "devlop": "^1.0.0", "micromark-factory-space": "^2.0.0", "micromark-util-character": "^2.0.0", "micromark-util-symbol": "^2.0.0", "micromark-util-types": "^2.0.0" } }, "sha1-vMNNgFY5gpmQ7BdcPuoSu1t4Hyw="],
 
-    "micromark-extension-mdx-expression": ["micromark-extension-mdx-expression@3.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-extension-mdx-expression/-/micromark-extension-mdx-expression-3.0.1.tgz", { "dependencies": { "@types/estree": "^1.0.0", "devlop": "^1.0.0", "micromark-factory-mdx-expression": "^2.0.0", "micromark-factory-space": "^2.0.0", "micromark-util-character": "^2.0.0", "micromark-util-events-to-acorn": "^2.0.0", "micromark-util-symbol": "^2.0.0", "micromark-util-types": "^2.0.0" } }, "sha1-Q9BY2ZlTL7MEEZWjw8BcRvqEVDs="],
-
-    "micromark-extension-mdx-jsx": ["micromark-extension-mdx-jsx@3.0.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-extension-mdx-jsx/-/micromark-extension-mdx-jsx-3.0.2.tgz", { "dependencies": { "@types/estree": "^1.0.0", "devlop": "^1.0.0", "estree-util-is-identifier-name": "^3.0.0", "micromark-factory-mdx-expression": "^2.0.0", "micromark-factory-space": "^2.0.0", "micromark-util-character": "^2.0.0", "micromark-util-events-to-acorn": "^2.0.0", "micromark-util-symbol": "^2.0.0", "micromark-util-types": "^2.0.0", "vfile-message": "^4.0.0" } }, "sha1-/8mL22SXmJAvqfxWifZ/nByQIEQ="],
-
-    "micromark-extension-mdx-md": ["micromark-extension-mdx-md@2.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-extension-mdx-md/-/micromark-extension-mdx-md-2.0.0.tgz", { "dependencies": { "micromark-util-types": "^2.0.0" } }, "sha1-HSUogeo110aYQjq0SRfh9bGXuS0="],
-
-    "micromark-extension-mdxjs": ["micromark-extension-mdxjs@3.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-extension-mdxjs/-/micromark-extension-mdxjs-3.0.0.tgz", { "dependencies": { "acorn": "^8.0.0", "acorn-jsx": "^5.0.0", "micromark-extension-mdx-expression": "^3.0.0", "micromark-extension-mdx-jsx": "^3.0.0", "micromark-extension-mdx-md": "^2.0.0", "micromark-extension-mdxjs-esm": "^3.0.0", "micromark-util-combine-extensions": "^2.0.0", "micromark-util-types": "^2.0.0" } }, "sha1-taLg7USSiPP29sVENYFZVXVJ3hg="],
-
-    "micromark-extension-mdxjs-esm": ["micromark-extension-mdxjs-esm@3.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-extension-mdxjs-esm/-/micromark-extension-mdxjs-esm-3.0.0.tgz", { "dependencies": { "@types/estree": "^1.0.0", "devlop": "^1.0.0", "micromark-core-commonmark": "^2.0.0", "micromark-util-character": "^2.0.0", "micromark-util-events-to-acorn": "^2.0.0", "micromark-util-symbol": "^2.0.0", "micromark-util-types": "^2.0.0", "unist-util-position-from-estree": "^2.0.0", "vfile-message": "^4.0.0" } }, "sha1-3iGysEX9IFm9ANNnRggd44OQ1Uo="],
-
     "micromark-factory-destination": ["micromark-factory-destination@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-factory-destination/-/micromark-factory-destination-2.0.1.tgz", { "dependencies": { "micromark-util-character": "^2.0.0", "micromark-util-symbol": "^2.0.0", "micromark-util-types": "^2.0.0" } }, "sha1-j++OD3CB8EdPvdkt61DJkKAmRjk="],
 
     "micromark-factory-label": ["micromark-factory-label@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-factory-label/-/micromark-factory-label-2.0.1.tgz", { "dependencies": { "devlop": "^1.0.0", "micromark-util-character": "^2.0.0", "micromark-util-symbol": "^2.0.0", "micromark-util-types": "^2.0.0" } }, "sha1-UmfvqX8eUlTvx/ILRZo4yyEFi6E="],
-
-    "micromark-factory-mdx-expression": ["micromark-factory-mdx-expression@2.0.3", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-factory-mdx-expression/-/micromark-factory-mdx-expression-2.0.3.tgz", { "dependencies": { "@types/estree": "^1.0.0", "devlop": "^1.0.0", "micromark-factory-space": "^2.0.0", "micromark-util-character": "^2.0.0", "micromark-util-events-to-acorn": "^2.0.0", "micromark-util-symbol": "^2.0.0", "micromark-util-types": "^2.0.0", "unist-util-position-from-estree": "^2.0.0", "vfile-message": "^4.0.0" } }, "sha1-uwmYhhBYnAfRweRCUoWJUEGz36k="],
 
     "micromark-factory-space": ["micromark-factory-space@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-factory-space/-/micromark-factory-space-2.0.1.tgz", { "dependencies": { "micromark-util-character": "^2.0.0", "micromark-util-types": "^2.0.0" } }, "sha1-NtAhLpYrKzEh+FJfx6PHwCnzNPw="],
 
@@ -752,8 +694,6 @@
     "micromark-util-decode-string": ["micromark-util-decode-string@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-util-decode-string/-/micromark-util-decode-string-2.0.1.tgz", { "dependencies": { "decode-named-character-reference": "^1.0.0", "micromark-util-character": "^2.0.0", "micromark-util-decode-numeric-character-reference": "^2.0.0", "micromark-util-symbol": "^2.0.0" } }, "sha1-bLmVguXScehO/KjmGoB5lNcWHrI="],
 
     "micromark-util-encode": ["micromark-util-encode@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-util-encode/-/micromark-util-encode-2.0.1.tgz", {}, "sha1-DVHRwJVVHPqsNoMmljz1XxX1QLg="],
-
-    "micromark-util-events-to-acorn": ["micromark-util-events-to-acorn@2.0.3", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-util-events-to-acorn/-/micromark-util-events-to-acorn-2.0.3.tgz", { "dependencies": { "@types/estree": "^1.0.0", "@types/unist": "^3.0.0", "devlop": "^1.0.0", "estree-util-visit": "^2.0.0", "micromark-util-symbol": "^2.0.0", "micromark-util-types": "^2.0.0", "vfile-message": "^4.0.0" } }, "sha1-56imtVpH5aBscg1aHEq66MN8mPM="],
 
     "micromark-util-html-tag-name": ["micromark-util-html-tag-name@2.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/micromark-util-html-tag-name/-/micromark-util-html-tag-name-2.0.1.tgz", {}, "sha1-5AQDCWSBmGtBwQZif5j3LU0QuCU="],
 
@@ -843,14 +783,6 @@
 
     "readdirp": ["readdirp@4.1.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/readdirp/-/readdirp-4.1.2.tgz", {}, "sha1-64WAFDX78qfuWPGeCSGwaPxplI0="],
 
-    "recma-build-jsx": ["recma-build-jsx@1.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/recma-build-jsx/-/recma-build-jsx-1.0.0.tgz", { "dependencies": { "@types/estree": "^1.0.0", "estree-util-build-jsx": "^3.0.0", "vfile": "^6.0.0" } }, "sha1-wC8p4EfhA9L6sgVJVOF2G46iU8Q="],
-
-    "recma-jsx": ["recma-jsx@1.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/recma-jsx/-/recma-jsx-1.0.1.tgz", { "dependencies": { "acorn-jsx": "^5.0.0", "estree-util-to-js": "^2.0.0", "recma-parse": "^1.0.0", "recma-stringify": "^1.0.0", "unified": "^11.0.0" }, "peerDependencies": { "acorn": "^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha1-WOcY9F4hAu0L8vqZTwW3DXaAGho="],
-
-    "recma-parse": ["recma-parse@1.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/recma-parse/-/recma-parse-1.0.0.tgz", { "dependencies": { "@types/estree": "^1.0.0", "esast-util-from-js": "^2.0.0", "unified": "^11.0.0", "vfile": "^6.0.0" } }, "sha1-w1HhYbsKtH2GuSqYqdiR+baBS1I="],
-
-    "recma-stringify": ["recma-stringify@1.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/recma-stringify/-/recma-stringify-1.0.0.tgz", { "dependencies": { "@types/estree": "^1.0.0", "estree-util-to-js": "^2.0.0", "unified": "^11.0.0", "vfile": "^6.0.0" } }, "sha1-VGMgMGMeDHVGE2/574/ejntE8TA="],
-
     "regex": ["regex@6.1.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/regex/-/regex-6.1.0.tgz", { "dependencies": { "regex-utilities": "^2.3.0" } }, "sha1-186Y+O4y2nSXwT9mAfyivEpqeAM="],
 
     "regex-recursion": ["regex-recursion@6.0.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/regex-recursion/-/regex-recursion-6.0.2.tgz", { "dependencies": { "regex-utilities": "^2.3.0" } }, "sha1-oLGXenTIfwczd7k42+36supYKzM="],
@@ -865,8 +797,6 @@
 
     "rehype-raw": ["rehype-raw@7.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/rehype-raw/-/rehype-raw-7.0.0.tgz", { "dependencies": { "@types/hast": "^3.0.0", "hast-util-raw": "^9.0.0", "vfile": "^6.0.0" } }, "sha1-Wdc0j9Xb7zgHu6odRD79LdhezuQ="],
 
-    "rehype-recma": ["rehype-recma@1.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/rehype-recma/-/rehype-recma-1.0.0.tgz", { "dependencies": { "@types/estree": "^1.0.0", "@types/hast": "^3.0.0", "hast-util-to-estree": "^3.0.0" } }, "sha1-1o72NE0FkWvZbiVADGJhd1QRqnY="],
-
     "rehype-remark": ["rehype-remark@10.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/rehype-remark/-/rehype-remark-10.0.1.tgz", { "dependencies": { "@types/hast": "^3.0.0", "@types/mdast": "^4.0.0", "hast-util-to-mdast": "^10.0.0", "unified": "^11.0.0", "vfile": "^6.0.0" } }, "sha1-9mn6aM+4tbqvT6lUdqkjUWERpDs="],
 
     "rehype-stringify": ["rehype-stringify@10.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/rehype-stringify/-/rehype-stringify-10.0.1.tgz", { "dependencies": { "@types/hast": "^3.0.0", "hast-util-to-html": "^9.0.0", "unified": "^11.0.0" } }, "sha1-LsHrxWxqugeQXTtEcL3w9oTzC3U="],
@@ -874,8 +804,6 @@
     "remark-directive": ["remark-directive@4.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/remark-directive/-/remark-directive-4.0.0.tgz", { "dependencies": { "@types/mdast": "^4.0.0", "mdast-util-directive": "^3.0.0", "micromark-extension-directive": "^4.0.0", "unified": "^11.0.0" } }, "sha1-TpCYJuBcref4Z4Uy9IFc2THUfo0="],
 
     "remark-gfm": ["remark-gfm@4.0.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/remark-gfm/-/remark-gfm-4.0.1.tgz", { "dependencies": { "@types/mdast": "^4.0.0", "mdast-util-gfm": "^3.0.0", "micromark-extension-gfm": "^3.0.0", "remark-parse": "^11.0.0", "remark-stringify": "^11.0.0", "unified": "^11.0.0" } }, "sha1-MyJ7KnQ5dnDTV78FwJjq+FE/DWs="],
-
-    "remark-mdx": ["remark-mdx@3.1.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/remark-mdx/-/remark-mdx-3.1.1.tgz", { "dependencies": { "mdast-util-mdx": "^3.0.0", "micromark-extension-mdxjs": "^3.0.0" } }, "sha1-BH+XA4vH7Dh667SwpP4jd5mZ2EU="],
 
     "remark-parse": ["remark-parse@11.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/remark-parse/-/remark-parse-11.0.0.tgz", { "dependencies": { "@types/mdast": "^4.0.0", "mdast-util-from-markdown": "^2.0.0", "micromark-util-types": "^2.0.0", "unified": "^11.0.0" } }, "sha1-qmB0P8s36/awaSBOtNowTkDbRaE="],
 
@@ -917,23 +845,17 @@
 
     "smol-toml": ["smol-toml@1.8.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/smol-toml/-/smol-toml-1.8.0.tgz", {}, "sha1-3F4JNoJfH+83vfLFaQgfcJ2KAJ8="],
 
-    "source-map": ["source-map@0.7.6", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/source-map/-/source-map-0.7.6.tgz", {}, "sha1-o2WKuH5bZCnIofO6AIPUxhyj7wI="],
-
     "source-map-js": ["source-map-js@1.2.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/source-map-js/-/source-map-js-1.2.1.tgz", {}, "sha1-HOVlD93YerwJnto33P8CTCZnrkY="],
 
     "space-separated-tokens": ["space-separated-tokens@2.0.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/space-separated-tokens/-/space-separated-tokens-2.0.2.tgz", {}, "sha1-Hs2dI1CjhEVyw/SjErzrAYNIhZ8="],
 
-    "starlight-llms-txt": ["starlight-llms-txt@0.11.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/starlight-llms-txt/-/starlight-llms-txt-0.11.0.tgz", { "dependencies": { "@astrojs/mdx": "^7.0.0", "@types/hast": "^3.0.4", "@types/micromatch": "^4.0.10", "github-slugger": "^2.0.0", "hast-util-select": "^6.0.4", "micromatch": "^4.0.8", "rehype-parse": "^9.0.1", "rehype-remark": "^10.0.1", "remark-gfm": "^4.0.1", "remark-stringify": "^11.0.0", "unified": "^11.0.5", "unist-util-remove": "^4.0.0" }, "peerDependencies": { "@astrojs/starlight": ">=0.41.0", "astro": "^7.0.0" } }, "sha1-rn60EiO0I8icxTLp6FDrHflzCGE="],
+    "starlight-llms-txt": ["starlight-llms-txt@0.12.0", "", { "dependencies": { "@astrojs/mdx": "^8.0.1", "@types/hast": "^3.0.5", "@types/micromatch": "^4.0.10", "github-slugger": "^2.0.0", "hast-util-select": "^6.0.4", "micromatch": "^4.0.8", "rehype-parse": "^9.0.1", "rehype-remark": "^10.0.1", "remark-gfm": "^4.0.1", "remark-stringify": "^11.0.0", "unified": "^11.0.5", "unist-util-remove": "^4.0.0" }, "peerDependencies": { "@astrojs/starlight": ">=0.41.0", "astro": "^7.0.0" } }, "sha512-ya4c0ZoiPUXuHDzd3AYCKh78Y3II3EToSE9Yp6uVN0c2UUKoNpqTjijhW86W/4toZzSUhWSnxeYs7QBcXNIPGg=="],
 
     "string-width": ["string-width@8.2.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/string-width/-/string-width-8.2.2.tgz", { "dependencies": { "get-east-asian-width": "^1.5.0", "strip-ansi": "^7.1.2" } }, "sha1-cxBRZJPfV1dC/pivb66H2F1e0Kw="],
 
     "stringify-entities": ["stringify-entities@4.0.4", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/stringify-entities/-/stringify-entities-4.0.4.tgz", { "dependencies": { "character-entities-html4": "^2.0.0", "character-entities-legacy": "^3.0.0" } }, "sha1-s7ee9fJ3zErHPK6wI2xbqTmzpPM="],
 
     "strip-ansi": ["strip-ansi@7.2.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/strip-ansi/-/strip-ansi-7.2.0.tgz", { "dependencies": { "ansi-regex": "^6.2.2" } }, "sha1-0iomlSKDamJ6+NBLXD/Sx/o+MuM="],
-
-    "style-to-js": ["style-to-js@1.1.21", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/style-to-js/-/style-to-js-1.1.21.tgz", { "dependencies": { "style-to-object": "1.0.14" } }, "sha1-KQiUEYf4V+eeKOnNeACLmgs+Do0="],
-
-    "style-to-object": ["style-to-object@1.0.14", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/style-to-object/-/style-to-object-1.0.14.tgz", { "dependencies": { "inline-style-parser": "0.2.7" } }, "sha1-HSLw5yZruMbYyuXK9OxPAF4I9hE="],
 
     "svgo": ["svgo@4.1.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/svgo/-/svgo-4.1.0.tgz", { "dependencies": { "commander": "^11.1.0", "css-select": "^6.0.0", "css-tree": "^3.0.1", "css-what": "^7.0.0", "csso": "^5.0.5", "picocolors": "^1.1.1", "sax": "1.6.1" }, "bin": { "svgo": "./bin/svgo.js" } }, "sha1-yXfraWQO8jKl6CNqWjJ+2MnVKFM="],
 
@@ -982,8 +904,6 @@
     "unist-util-modify-children": ["unist-util-modify-children@4.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/unist-util-modify-children/-/unist-util-modify-children-4.0.0.tgz", { "dependencies": { "@types/unist": "^3.0.0", "array-iterate": "^2.0.0" } }, "sha1-mB1jCOiHsAXR9JGBHTy8wlSzFek="],
 
     "unist-util-position": ["unist-util-position@5.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/unist-util-position/-/unist-util-position-5.0.0.tgz", { "dependencies": { "@types/unist": "^3.0.0" } }, "sha1-Z48gq1yhIHqX1+qKOINzyc+Ja+Q="],
-
-    "unist-util-position-from-estree": ["unist-util-position-from-estree@2.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/unist-util-position-from-estree/-/unist-util-position-from-estree-2.0.0.tgz", { "dependencies": { "@types/unist": "^3.0.0" } }, "sha1-2U2k31llKdH6o95QYgLwyaI/IgA="],
 
     "unist-util-remove": ["unist-util-remove@4.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/unist-util-remove/-/unist-util-remove-4.0.0.tgz", { "dependencies": { "@types/unist": "^3.0.0", "unist-util-is": "^6.0.0", "unist-util-visit-parents": "^6.0.0" } }, "sha1-lLfWu9JOQtL4QelH7Qh75cgrIi4="],
 
@@ -1087,8 +1007,6 @@
 
     "parse-entities/@types/unist": ["@types/unist@2.0.11", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@types/unist/-/unist-2.0.11.tgz", {}, "sha1-Ea9XsSfjJId3SEH3pOVOqxZtA8Q="],
 
-    "starlight-llms-txt/@astrojs/mdx": ["@astrojs/mdx@7.0.8", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@astrojs/mdx/-/mdx-7.0.8.tgz", { "dependencies": { "@astrojs/internal-helpers": "0.10.4", "@astrojs/markdown-remark": "7.2.4", "@mdx-js/mdx": "^3.1.1", "acorn": "^8.16.0", "es-module-lexer": "^2.0.0", "estree-util-visit": "^2.0.0", "hast-util-to-html": "^9.0.5", "piccolore": "^0.1.3", "rehype-raw": "^7.0.0", "remark-gfm": "^4.0.1", "remark-smartypants": "^3.0.2", "source-map": "^0.7.6", "unist-util-visit": "^5.1.0", "vfile": "^6.0.3" }, "peerDependencies": { "@astrojs/markdown-satteri": "^0.3.1", "astro": "^7.0.0" }, "optionalPeers": ["@astrojs/markdown-satteri"] }, "sha1-wJE6X8GjCp6zruK4TOke9i2BrEE="],
-
     "unstorage/chokidar": ["chokidar@5.0.0", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/chokidar/-/chokidar-5.0.0.tgz", { "dependencies": { "readdirp": "^5.0.0" } }, "sha1-lJwSapI4qAeSvpoCZZNPCYrzaaU="],
 
     "vscode-css-languageservice/vscode-languageserver-types": ["vscode-languageserver-types@3.17.5", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/vscode-languageserver-types/-/vscode-languageserver-types-3.17.5.tgz", {}, "sha1-MnNnbwzy6rQLP0TQhay7fwijnYo="],
@@ -1102,10 +1020,6 @@
     "yaml-language-server/yaml": ["yaml@2.8.3", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/yaml/-/yaml-2.8.3.tgz", { "bin": { "yaml": "./bin.mjs" } }, "sha1-oNa9Lvs90DxZNwIjcBg05gQJvX0="],
 
     "csso/css-tree/mdn-data": ["mdn-data@2.0.28", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/mdn-data/-/mdn-data-2.0.28.tgz", {}, "sha1-XsSOe+8SBlRTkGnhrk3cgcpJDro="],
-
-    "starlight-llms-txt/@astrojs/mdx/@astrojs/internal-helpers": ["@astrojs/internal-helpers@0.10.4", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@astrojs/internal-helpers/-/internal-helpers-0.10.4.tgz", { "dependencies": { "@types/hast": "^3.0.4", "@types/mdast": "^4.0.4", "js-yaml": "^4.3.0", "picomatch": "^4.0.4", "retext-smartypants": "^6.2.0", "shiki": "^4.0.2", "smol-toml": "^1.6.0", "unified": "^11.0.5" } }, "sha1-KXTmc3DzRqkirxEsfGvchRNblqw="],
-
-    "starlight-llms-txt/@astrojs/mdx/@astrojs/markdown-satteri": ["@astrojs/markdown-satteri@0.3.8", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@astrojs/markdown-satteri/-/markdown-satteri-0.3.8.tgz", { "dependencies": { "@astrojs/internal-helpers": "0.10.4", "@astrojs/prism": "4.0.2", "github-slugger": "^2.0.0", "satteri": "^0.10.3" } }, "sha1-VJNi0Nsve1/F5VusTXa/wrnEyms="],
 
     "unstorage/chokidar/readdirp": ["readdirp@5.1.1", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/readdirp/-/readdirp-5.1.1.tgz", {}, "sha1-UgvKBvnRrhuWzAgA2+hLmD0ZQiw="],
 
