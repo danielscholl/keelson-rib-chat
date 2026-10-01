@@ -35,6 +35,7 @@ import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
 import {
   type ChatMessage,
   ownsPr,
+  POWER_EFFORT,
   publicSummary,
   SIZE_PRESETS,
   type StartingSwarm,
@@ -421,6 +422,7 @@ function failedStart(record: StartingSwarm, error: string): SwarmSummary {
     ...(record.model ? { model: record.model } : {}),
     ...(record.workerModel ? { workerModel: record.workerModel } : {}),
     ...(record.power ? { power: record.power } : {}),
+    ...(record.effort ? { effort: record.effort } : {}),
     ...(record.project ? { project: record.project } : {}),
     ...(record.opId ? { opId: record.opId } : {}),
     agents: [],
@@ -521,6 +523,7 @@ function beginSwarm(
     ...(input.model ? { model: input.model } : {}),
     ...(input.workerModel ? { workerModel: input.workerModel } : {}),
     power: input.power ?? "balanced",
+    effort: input.effort ?? POWER_EFFORT[input.power ?? "balanced"],
     ...(launch.project ? { project: launch.project } : {}),
     ...(origin.rerunOf ? { rerunOf: origin.rerunOf } : {}),
   };
@@ -597,6 +600,7 @@ async function launchSwarm(
       ...(input.model ? { model: input.model } : {}),
       ...(input.workerModel ? { workerModel: input.workerModel } : {}),
       ...(record.power ? { power: record.power } : {}),
+      ...(record.effort ? { effort: record.effort } : {}),
       ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),
       ...(input.leadTools?.length ? { leadTools: input.leadTools } : {}),
       prOwnedElsewhere,

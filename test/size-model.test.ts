@@ -124,4 +124,10 @@ describe("chat_swarm_start inputs", () => {
     expect((await start({ task: "t" }))?.power).toBeUndefined();
     expect(await start({ task: "t", power: "max" })).toBeUndefined();
   });
+
+  test("effort reaches the launcher, and an unknown one is refused", async () => {
+    expect((await start({ task: "t", effort: "xhigh" }))?.effort).toBe("xhigh");
+    expect((await start({ task: "t" }))?.effort).toBeUndefined();
+    expect(await start({ task: "t", effort: "max" })).toBeUndefined();
+  });
 });

@@ -14,7 +14,14 @@ import {
   splitBody,
 } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
-import { BODY_MAX, CONCLUSION_MAX, SIZE_PRESETS, type SwarmSummary } from "../src/types.ts";
+import {
+  BODY_MAX,
+  CONCLUSION_MAX,
+  POWER_EFFORT,
+  SIZE_PRESETS,
+  SWARM_POWERS,
+  type SwarmSummary,
+} from "../src/types.ts";
 import {
   FakeClickClack,
   fakeDispatcher,
@@ -1312,11 +1319,37 @@ describe("size and model", () => {
     expect(turnsOf("s1-w").map((r) => [r.model, r.modelClass])).toEqual([
       ["gpt-5.6-sol", undefined],
     ]);
+    // The power's effort rides every turn, a named model included.
+    expect(h.provider.requests.every((r) => r.reasoningEffort === "high")).toBe(true);
     expect(summary.power).toBe("deep");
+    expect(summary.effort).toBe("high");
     expect(summary.agents.map((a) => [a.handle, a.servedModel])).toEqual([
       ["s1-lead", "deep-1"],
       ["s1-w", "gpt-5.6-sol"],
     ]);
+  });
+
+  test("each power asks for its own effort, and an explicit effort wins over it", async () => {
+    for (const power of SWARM_POWERS) {
+      const h = harness(script, {}, { power });
+      const summary = await (await h.start()).finished;
+      const efforts = new Set(h.provider.requests.map((r) => r.reasoningEffort));
+      expect(efforts).toEqual(new Set([POWER_EFFORT[power]]));
+      expect(summary.effort).toBe(POWER_EFFORT[power]);
+    }
+    const h = harness(script, {}, { power: "deep", effort: "low" });
+    const summary = await (await h.start()).finished;
+    expect(h.provider.requests.every((r) => r.reasoningEffort === "low")).toBe(true);
+    expect(summary).toMatchObject({ power: "deep", effort: "low" });
+    const status = await callTool(h.tools, "chat_swarm_status", { swarm: "s1" });
+    expect(JSON.parse(status.content)).toMatchObject({ power: "deep", effort: "low" });
+  });
+
+  test("with no power, turns ask for no effort and the summary records none", async () => {
+    const h = harness(script);
+    const summary = await (await h.start()).finished;
+    expect(h.provider.requests.every((r) => r.reasoningEffort === undefined)).toBe(true);
+    expect(summary.effort).toBeUndefined();
   });
 
   test("with no model, agents record no model and the provider that served them", async () => {

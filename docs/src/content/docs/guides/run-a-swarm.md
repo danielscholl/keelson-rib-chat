@@ -58,7 +58,13 @@ default) or `deep`. Each provider maps a power to one of its models, and the
 host's `modelClasses` setting can change that map. To name a model instead, pass
 `provider` and `model`. `model` runs every agent, or the lead alone when
 `worker_model` is also set, and workers then run `worker_model`. An agent with a
-named model ignores `power`.
+named model ignores `power` for its model.
+
+`power` also sets the reasoning effort every turn asks for: `fast` asks for
+`low`, `balanced` for `medium`, `deep` for `high`. To set it apart from the
+power, pass `effort` (`none`, `low`, `medium`, `high` or `xhigh`); it applies to
+every agent, named model or not. A provider without effort support ignores it.
+`chat_swarm_status` reports the effort in use as `effort`.
 
 ## Or run the workflow
 
@@ -110,6 +116,31 @@ what a workflow wants; from chat, poll `chat_swarm_status`.
 The run completes only when the swarm concluded or was stopped. Any other
 ending fails it with the status and reason, and the summary is its last
 progress frame.
+
+## Measuring swarms
+
+A swarm's answer varies from run to run, so the first thing to measure is
+agreement: run the same tasks several times and see how often they pass the
+same checks. Until that pass rate is steady, a prompt change cannot be told
+from noise. Measure before you tune.
+
+The rib ships a case set at `evals/chat-swarm.eval.yaml`: three tasks, each
+run three times, graded by a judge against claims a reader could check in the
+workflow's report. It runs through the `chat-swarm` workflow, so it needs a
+running Keelson with this rib and a ClickClack it can reach, and every case
+starts a real swarm that spends model turns.
+
+```sh
+keelson eval run evals/chat-swarm.eval.yaml
+```
+
+Read the test split's pass rate and its interval first. A `NOISE` warning means
+the interval is too wide to judge a change: add reps or cases before touching a
+prompt. Once it is narrow, change one thing, run the set again, and let
+`keelson eval compare before.json after.json` say whether the change stayed
+within noise. Keelson's
+[Evaluating workflows](https://danielscholl.github.io/keelson/docs/guides/evaluating-workflows/)
+guide covers the case file and the verdict.
 
 ## Related
 

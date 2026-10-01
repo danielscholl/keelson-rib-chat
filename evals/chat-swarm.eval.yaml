@@ -1,0 +1,84 @@
+# Eval case set for the bundled chat-swarm workflow. Every case starts a real
+# swarm, so it needs a running Keelson with this rib and a ClickClack it can
+# reach, and spends model turns. Run it before a prompt change and again after:
+#   keelson eval run evals/chat-swarm.eval.yaml
+#   keelson eval compare <before.json> <after.json>
+name: chat-swarm
+workflow: chat-swarm
+reps: 3
+
+split:
+  test: [readme-install-steps, design-note-open-questions, startup-log-cause]
+
+grader:
+  type: judge
+
+cases:
+  # The workflow's final output is its report node: the swarm's status, the
+  # lead's conclusion, who took part, and the turn cost. Every claim is about
+  # that text, so a reader could check it by quoting the output.
+  - id: readme-install-steps
+    arguments: |
+      Summarize the install steps this README excerpt gives, in the order it
+      gives them, and say which step is optional.
+
+      --- README excerpt ---
+      ## Install
+
+      1. Install Go 1.22 or newer.
+      2. Clone the repository and run `go build -o ~/bin/tidewatch ./cmd/tidewatch`.
+      3. Run `tidewatch init` to write the default config to `~/.tidewatch/config.toml`.
+      4. (Optional) Add shell completion with `tidewatch completion zsh >> ~/.zshrc`.
+    expect:
+      claims:
+        - The output reports the swarm's status as done.
+        - The conclusion lists four install steps in this order; install Go, build the binary with go build, run tidewatch init, add shell completion.
+        - The conclusion names the shell completion step as the optional one.
+        - The conclusion names no install step the excerpt does not contain, such as a package manager, a download link, or a container image.
+
+  - id: design-note-open-questions
+    arguments: |
+      List the open questions in this design note. Leave out anything the note
+      marks as decided.
+
+      --- Design note: retry budget for workflow nodes ---
+      A node that fails may be retried up to `retry.max` times, with exponential
+      backoff starting at `retry.base_ms`. Retries share the node's timeout.
+
+      Decided: a retry never re-runs a node that already handed partial output
+      to a dependent node.
+
+      Open: does a retry count against the run's total turn budget, or only
+      against the node's own?
+
+      Open: should `bash` nodes retry at all, since a script can have side
+      effects the second attempt repeats?
+
+      We still need to decide where the retry count is recorded so that
+      `run_events` can show it.
+    expect:
+      claims:
+        - The output reports the swarm's status as done.
+        - The conclusion lists whether a retry counts against the run's total turn budget or only the node's as an open question.
+        - The conclusion lists whether bash nodes should retry, given side effects, as an open question.
+        - The conclusion lists where the retry count is recorded for run_events as an open question.
+        - The conclusion does not list the partial-output rule as open, because the note marks it decided.
+
+  - id: startup-log-cause
+    arguments: |
+      These are the last lines a server logged before swarms stopped working.
+      Say what failed, which setting is responsible, and what the operator
+      should change.
+
+      --- log ---
+      2026-09-30T14:02:11Z info  keelson listening on http://127.0.0.1:7878
+      2026-09-30T14:02:11Z info  rib chat: CLICKCLACK_URL=http://localhost:8080 (external server)
+      2026-09-30T14:02:12Z warn  rib chat: owner session rejected: 401 token expired (issued 2026-08-01)
+      2026-09-30T14:02:12Z error rib chat: cannot mint bots without an owner session; swarms disabled
+      2026-09-30T14:02:12Z info  rib chat: set CLICKCLACK_TOKEN to a fresh owner session, or unset CLICKCLACK_URL to let the rib manage its own server
+    expect:
+      claims:
+        - The output reports the swarm's status as done.
+        - The conclusion says the chat rib's owner session was rejected because the token had expired.
+        - The conclusion names CLICKCLACK_TOKEN as the setting to change, and may offer unsetting CLICKCLACK_URL as the alternative.
+        - The conclusion does not blame the Keelson listening address or port.

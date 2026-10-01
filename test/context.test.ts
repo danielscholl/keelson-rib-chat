@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { DIRECTIVES } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { CONTEXT_BOUNDS, contextSchema, toContextItems } from "../src/context.ts";
 import { Swarm } from "../src/swarm.ts";
@@ -172,8 +173,33 @@ describe("task context in a swarm", () => {
     expect(system).toContain("issue-874 [issue] Record who authored an artifact");
     expect(system).toContain("MISSING EVIDENCE");
     expect(system).toContain("STALE EVIDENCE");
+    // The harness's own wording, not a paraphrase of it.
+    expect(system).toContain(`- ${DIRECTIVES.confirm}`);
     // Bodies stay out of the prompt; they are read on demand.
     expect(system).not.toContain("never a GitHub login");
+  });
+
+  test("the lead is told to check a worker's evidence before accepting its report", async () => {
+    const { provider, start } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "reader", role: "reads #874", brief: "Read it." });
+        } else if (agentId === "s1-reader") {
+          await call("chat_post", { body: "@s1-lead done" });
+        } else if (agentId === "s1-lead") {
+          await call("chat_done", { summary: "ok" });
+        }
+      },
+      [ISSUE, PR],
+    );
+    await (await start()).finished;
+    const prompts = (id: string) =>
+      provider.requests.filter((r) => r.turnContext?.agentId === id).map((r) => r.system ?? "");
+    const rule = "Before you accept a worker's report, check its evidence";
+    expect(prompts("s1-lead").length).toBeGreaterThan(1);
+    expect(prompts("s1-lead").every((s) => s.includes(rule))).toBe(true);
+    expect(prompts("s1-reader")).toHaveLength(1);
+    expect(prompts("s1-reader")[0]).not.toContain(rule);
   });
 
   test("a missing item is reported as missing evidence, never invented", async () => {

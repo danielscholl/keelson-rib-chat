@@ -6,6 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
+import type { ReasoningEffortLevel } from "@keelson/shared";
 import {
   type ClickClackClient,
   ClickClackError,
@@ -46,6 +47,7 @@ import {
   type GateFileText,
   type KeptWorktree,
   type OperatorAsk,
+  POWER_EFFORT,
   SIZE_PRESETS,
   type SwarmAgent,
   type SwarmHealth,
@@ -186,6 +188,8 @@ export interface SwarmOptions {
   workerModel?: string;
   // The model class an agent with no model of its own runs at.
   power?: SwarmPower;
+  // Overrides the effort the power maps to, for every agent.
+  effort?: ReasoningEffortLevel;
   // Workflows whose gates the host refused to let a swarm answer, shared across
   // swarms so the next gate on one is flagged for the operator at once.
   approvalRefusals?: ApprovalRefusals;
@@ -814,6 +818,7 @@ export class Swarm {
       ]),
     ].map((name) => ({ name }));
     const model = agent.model;
+    const effort = this.effort();
     const outcome = await runTurn(
       (req) => this.trackTurn(agent.id, req),
       {
@@ -841,6 +846,7 @@ export class Swarm {
             : {}),
         ...(this.opts.provider ? { provider: this.opts.provider } : {}),
         ...(model ? { model } : this.opts.power ? { modelClass: this.opts.power } : {}),
+        ...(effort ? { reasoningEffort: effort } : {}),
         ...(agent.sessionId ? { resumeSessionId: agent.sessionId } : {}),
       },
       this.limits.turnTimeoutMs,
@@ -1929,9 +1935,14 @@ export class Swarm {
     return Object.keys(health).length > 0 ? health : undefined;
   }
 
+  private effort(): ReasoningEffortLevel | undefined {
+    return this.opts.effort ?? (this.opts.power ? POWER_EFFORT[this.opts.power] : undefined);
+  }
+
   summary(): SwarmSummary {
     const health = this.health();
     const pace = this.pace();
+    const effort = this.effort();
     return {
       id: this.id,
       task: this.task,
@@ -1949,6 +1960,7 @@ export class Swarm {
       ...(this.opts.workerModel ? { workerModel: this.opts.workerModel } : {}),
       // A named model overrides the power, so the power no longer applies.
       ...(this.opts.power && !this.opts.model ? { power: this.opts.power } : {}),
+      ...(effort ? { effort } : {}),
       ...(this.opts.project ? { project: this.opts.project } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },

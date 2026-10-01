@@ -34,7 +34,8 @@ durable ops, a run id.
 | `max_minutes` | integer | 30 | 1 to 240. Wall clock for the whole swarm. |
 | `context` | array | none | Task context items, below. |
 | `provider` | string | host default | Serves every agent. An unregistered provider fails the start. |
-| `power` | string | `balanced` | `fast`, `balanced` or `deep`. The provider's model for that class, for every agent without a named model. |
+| `power` | string | `balanced` | `fast`, `balanced` or `deep`. The provider's model for that class, for every agent without a named model. It also sets the reasoning effort every turn asks for: `low`, `medium` or `high`. |
+| `effort` | string | the power's | `none`, `low`, `medium`, `high` or `xhigh`. The reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it. |
 | `model` | string | the power's model | Every agent, or the lead alone when `worker_model` is set. |
 | `worker_model` | string | `model` | Workers only. |
 | `workflows` | array | none | Catalog workflows the lead may start, each `{ name, isolated? }`, at most 10. `isolated` defaults to `true`. Needs `project`. See [Dispatch workflows](../../guides/dispatch-workflows/). |
@@ -68,7 +69,7 @@ refused.
 
 With an id, returns the summary: `id`, `task`, `status`, `channelId`,
 `channelName`, `startedAt`, `endedAt`, `turnsUsed`, `limits`, `agents`,
-`size`, `sizeBase`, `provider`, `model`, `workerModel`, `power`, `project`, `opId`,
+`size`, `sizeBase`, `provider`, `model`, `workerModel`, `power`, `effort`, `project`, `opId`,
 `clickclack` (its URL and workspace), `health` (present only while something is
 wrong: socket drops, a ClickClack fault, lead failures, nudges, refused
 conclusions, or `quietSince` when the swarm went idle at an open gate),

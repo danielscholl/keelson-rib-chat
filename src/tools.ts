@@ -6,7 +6,12 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import { type ToolContext, type ToolDefinition, z } from "@keelson/shared";
+import {
+  type ReasoningEffortLevel,
+  type ToolContext,
+  type ToolDefinition,
+  z,
+} from "@keelson/shared";
 import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
 import { describeRun } from "./dispatch.ts";
 import { modelLabel, sizeText, tokensText } from "./labels.ts";
@@ -22,6 +27,7 @@ import {
   readTurnContext,
   SIZE_PRESETS,
   type StartingSwarm,
+  SWARM_EFFORTS,
   SWARM_POWERS,
   SWARM_SIZES,
   type SwarmPower,
@@ -47,6 +53,7 @@ export interface StartSwarmInput {
   model?: string;
   workerModel?: string;
   power?: SwarmPower;
+  effort?: ReasoningEffortLevel;
   workflows?: DispatchGrant[];
   // Other ribs' tools the lead holds, each cleared by the operator's crossRibGrants.
   leadTools?: string[];
@@ -277,7 +284,13 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .enum(SWARM_POWERS)
         .optional()
         .describe(
-          "How much model the agents get: fast, balanced (default) or deep. Each provider maps the class to one of its models; a named model wins.",
+          "How much model the agents get: fast, balanced (default) or deep. Each provider maps the class to one of its models; a named model wins. The power also sets the reasoning effort: low, medium or high.",
+        ),
+      effort: z
+        .enum(SWARM_EFFORTS)
+        .optional()
+        .describe(
+          "Reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it.",
         ),
       workflows: z
         .array(
@@ -662,6 +675,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           ...(args.model ? { model: args.model } : {}),
           ...(args.worker_model ? { workerModel: args.worker_model } : {}),
           ...(args.power ? { power: args.power } : {}),
+          ...(args.effort ? { effort: args.effort } : {}),
           ...(args.workflows?.length
             ? {
                 workflows: args.workflows.map((w) => ({
