@@ -74,7 +74,8 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`max_minutes\` | ${minutes(l.wallClockMs)} | Wall clock for the whole swarm. 1 to ${START_BOUNDS.maxMinutes}. |
 | \`context\` | none | Evidence the agents cannot fetch themselves. See Task context. |
 | \`provider\` | host default | Provider id used for every agent's turns. |
-| \`power\` | balanced | fast, balanced or deep: the provider's model for that class, for every agent without a named model. |
+| \`power\` | balanced | fast, balanced or deep: the provider's model for that class, for every agent without a named model. It also sets the reasoning effort every turn asks for: low, medium or high. |
+| \`effort\` | the power's | none, low, medium, high or xhigh: the reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it. |
 | \`model\` | the power's model | Model for every agent, or for the lead alone when \`worker_model\` is set. |
 | \`worker_model\` | \`model\` | Model for workers. |
 | \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |

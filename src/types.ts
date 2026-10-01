@@ -6,6 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
+import type { ReasoningEffortLevel } from "@keelson/shared";
 import type { ContextIndexEntry } from "./context.ts";
 
 export interface ChatMessage {
@@ -75,6 +76,20 @@ export const SIZE_PRESETS: Readonly<Record<SwarmSize, SwarmLimits>> = {
 // How much model the agents get: the provider's model for that class, unless a model is named.
 export const SWARM_POWERS = ["fast", "balanced", "deep"] as const;
 export type SwarmPower = (typeof SWARM_POWERS)[number];
+
+// The reasoning effort each power asks of a provider that supports it.
+export const POWER_EFFORT: Record<SwarmPower, ReasoningEffortLevel> = {
+  fast: "low",
+  balanced: "medium",
+  deep: "high",
+};
+export const SWARM_EFFORTS = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const satisfies readonly ReasoningEffortLevel[];
 
 // The size a swarm's limits match, or "custom" once an override moved one off its base.
 export function sizeOf(limits: SwarmLimits, base: SwarmSize): SwarmSize | "custom" {
@@ -328,6 +343,8 @@ export interface SwarmSummary {
   model?: string;
   workerModel?: string;
   power?: SwarmPower;
+  // What every turn asks for: the power's effort, unless the start named one.
+  effort?: ReasoningEffortLevel;
   project?: SwarmProject;
   // The durable op the swarm reports to.
   opId?: string;
@@ -423,6 +440,7 @@ export interface StartingSwarm {
   model?: string;
   workerModel?: string;
   power?: SwarmPower;
+  effort?: ReasoningEffortLevel;
   project?: SwarmProject;
   opId?: string;
   rerunOf?: string;

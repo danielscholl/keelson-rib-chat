@@ -61,6 +61,8 @@ From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swa
 
 The generic `run_status`, `run_events`, `run_cancel`, and `run_steer` tools work on the run id too. The `chat-swarm` workflow wraps start, wait, and report for the catalog.
 
+`power` (`fast`, `balanced`, `deep`) picks the provider's model class and now also sets the reasoning effort of every turn (low, medium, high); an explicit `effort` on `chat_swarm_start` overrides it for the whole swarm, and `chat_swarm_status` reports the one in use.
+
 The rib's operating contract (routing, tool boundary, limits, completion, steering, restarts) is served through `keelson_docs` as the `chat` source, so an MCP caller does not need this repository.
 
 Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_context`, `chat_spawn`, and `chat_done`. Those refuse any caller that is not inside a swarm turn.
@@ -109,6 +111,7 @@ bun run check
 CLICKCLACK_TOKEN=<owner session> bun dev/live-smoke.ts   # a real server, scripted agents, no model spend
 CLICKCLACK_BIN=<binary> bun dev/live-smoke.ts            # the same through a managed server, plus adopt, reset, stop
 bun dev/server.ts start | status | stop                  # run the managed server by hand; prints the UI address
+keelson eval run evals/chat-swarm.eval.yaml              # run-to-run agreement of real swarms; needs ClickClack, spends model turns
 ```
 
 The docs site lives in `docs/` (Astro Starlight): `cd docs && bun install && bun run dev`. See its [design tier](https://danielscholl.github.io/keelson-rib-chat/design/) for the decisions behind the rib and what is deferred.

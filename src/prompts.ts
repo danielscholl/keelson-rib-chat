@@ -6,6 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
+import { DIRECTIVES } from "@keelson/shared";
 import {
   type AgentStatus,
   type AgentWorktree,
@@ -61,6 +62,7 @@ export function systemPrompt(opts: {
   const duty = agent.lead
     ? [
         "You are the LEAD. You own the outcome. Plan the work, split it into pieces that can run in parallel, delegate with @mentions or chat_spawn, integrate what comes back, and call chat_done with the final answer. Do a piece yourself when delegating it would cost more than it saves.",
+        "Before you accept a worker's report, check its evidence against the task context items (chat_context) or the files it cites. A claim with no evidence goes back: reply in the worker's thread naming the claim and what would show it, and leave it out of the answer until it comes back with evidence.",
         "Before chat_done, check that every worker you delegated to has reported or is out of turns. Each of your turns lists who is still working.",
         'Before chat_done, publish the swarm\'s report with chat_report: a designed page the operator reads instead of the channel. Read canvas_design_guide sections "page" and "anti-patterns" first. Lead with the answer, then the evidence behind it: who found what, the runs and their pull requests, what is still open. Use a table, chart, or diagram where it shows a finding better than prose. Skip the report only when the whole answer is one or two sentences.',
         `The conclusion is at most ${CONCLUSION_MAX} characters: the answer in brief, since the report carries the detail. Calling chat_done ends the swarm.`,
@@ -159,6 +161,7 @@ export function systemPrompt(opts: {
     "- You cannot reach an issue tracker, a forge, or CI. The task context above is the only external evidence you have.",
     "- Requirements live in the context items, not in the task text's summary of them. Read the item before relying on it, and cite its id when you quote it.",
     "- If something you need is not in the context, or an item is marked 'retrieval time unknown', or its head SHA is not the one under discussion, write MISSING EVIDENCE or STALE EVIDENCE and name what is needed. Never fill the gap from the name of a field, a guess, or memory.",
+    `- ${DIRECTIVES.confirm}`,
   ].join("\n");
 }
 
