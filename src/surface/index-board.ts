@@ -40,6 +40,7 @@ export interface SurfaceState {
   server?: ServerLine;
   op?: ServerOp;
   selected?: string;
+  selectedAgents?: ReadonlyMap<string, string>;
 }
 
 type Section = CanvasBoardView["sections"][number];
@@ -298,6 +299,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
             server: state.server,
             titled: live.length < 2,
             now,
+            selectedAgentId: state.selectedAgents?.get(expanded.s.id),
           })
         : []),
       ...(cards.length > 0 ? [{ kind: "cards" as const, title: "Also live", items: cards }] : []),

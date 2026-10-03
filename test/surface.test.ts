@@ -38,6 +38,7 @@ import {
   type SurfaceState,
 } from "../src/surface/index-board.ts";
 import {
+  agentKey,
   docKey,
   HISTORY_KEY,
   INDEX_KEY,
@@ -2550,6 +2551,170 @@ class FakeSnapshots implements SnapshotManager {
 }
 
 describe("publishing", () => {
+  const inspectorHarness = (summary = swarm("s1")) => {
+    const sm = new FakeSnapshots();
+    const views: RibViewDescriptor[] = [];
+    const summaries = new Map([[summary.id, summary]]);
+    const surface = createSwarmsSurface({
+      sm,
+      views,
+      state: () =>
+        state({
+          live: [...summaries.values()].filter(
+            (s) => s.status === "running" || s.status === "stopping",
+          ),
+          ended: [...summaries.values()].filter(
+            (s) => s.status !== "running" && s.status !== "stopping",
+          ),
+        }),
+      find: (id) => {
+        const s = summaries.get(id);
+        return !s
+          ? {}
+          : s.status === "running" || s.status === "stopping"
+            ? { live: s }
+            : { ended: s };
+      },
+      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ live: 1 }),
+      readLog: async () => "log",
+      report: () => undefined,
+      windowMs: 1,
+    });
+    return { sm, views, summaries, surface };
+  };
+
+  test("agent selection awaits a fresh frame and highlights both boards without changing swarm selection", async () => {
+    const { sm, summaries, surface } = inspectorHarness();
+    summaries.set("s2", swarm("s2"));
+    try {
+      surface.track(["s1", "s2"]);
+      surface.select("s2");
+      await surface.selectAgent("s1", "s1-w1");
+      const view = expectView(agentKey("s1"), "board")(sm.frames.get(agentKey("s1"))?.at(-1));
+      if (view.view !== "board") throw new Error("expected inspector board");
+      expect(view.title).toBe("Agent @w1 · s1");
+      await Bun.sleep(10);
+      const index = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (index.view !== "board") throw new Error("expected board");
+      const strip = index.sections.find((s) => s.kind === "actions" && s.title === "Live · 2");
+      expect(
+        strip?.kind === "actions" ? strip.items.find((i) => i.selected)?.payload : undefined,
+      ).toEqual({ id: "s2" });
+      const drawer = expectView(swarmKey("s1"), "board")(sm.frames.get(swarmKey("s1"))?.at(-1));
+      if (drawer.view !== "board") throw new Error("expected board");
+      expect(leaves(drawer.sections).find((s) => s.kind === "graph")).toMatchObject({
+        nodes: [{}, {}, { id: "s1-w1", selected: true }],
+      });
+      surface.select("s1");
+      await Bun.sleep(10);
+      const selectedIndex = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (selectedIndex.view !== "board") throw new Error("expected board");
+      expect(leaves(selectedIndex.sections).find((s) => s.kind === "graph")).toMatchObject({
+        nodes: [{}, {}, { id: "s1-w1", selected: true }],
+      });
+      await surface.selectAgent("s1", "s1-lead");
+      expect(sm.keys().filter((key) => key.startsWith("rib:chat:agent:"))).toEqual([
+        agentKey("s1"),
+      ]);
+    } finally {
+      surface.dispose();
+    }
+  });
+
+  test("rapid selection during the first compose leaves the latest inspector and highlight", async () => {
+    const { sm, surface } = inspectorHarness();
+    let unblock!: () => void;
+    sm.gate = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const a = surface.selectAgent("s1", "s1-lead");
+    const b = surface.selectAgent("s1", "s1-w1");
+    unblock();
+    sm.gate = undefined;
+    try {
+      await Promise.all([a, b]);
+      expect(sm.frames.get(agentKey("s1"))?.at(-1)).toMatchObject({ title: "Agent @w1 · s1" });
+      await Bun.sleep(10);
+      const index = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (index.view !== "board") throw new Error("expected board");
+      const map = leaves(index.sections).find((s) => s.kind === "graph");
+      expect(
+        map?.kind === "graph" ? map.nodes.filter((n) => n.selected).map((n) => n.id) : [],
+      ).toEqual(["s1-w1"]);
+    } finally {
+      surface.dispose();
+    }
+  });
+
+  test("existing inspectors refresh messages, turns, run CI, activity and end, then release on forget", async () => {
+    const { sm, views, summaries, surface } = inspectorHarness();
+    try {
+      await surface.selectAgent("s1", "s1-w1");
+      for (const kind of ["message", "turn", "agent", "run", "activity", "end"] as const) {
+        const count = sm.frames.get(agentKey("s1"))!.length;
+        summaries.set("s1", {
+          ...summaries.get("s1")!,
+          recent: [{ id: "m", at: T0, author: "s1-w1", text: kind }],
+          ...(kind === "end" ? { status: "done", endedAt: T0 } : {}),
+        });
+        surface.changed("s1", kind);
+        await Bun.sleep(10);
+        expect(sm.frames.get(agentKey("s1"))!.length).toBeGreaterThan(count);
+        expect(JSON.stringify(sm.frames.get(agentKey("s1"))?.at(-1))).toContain(`"text":"${kind}"`);
+      }
+      expect(JSON.stringify(sm.frames.get(agentKey("s1"))?.at(-1))).not.toContain("message-agent");
+      surface.forget(["s1"]);
+      expect(sm.keys()).not.toContain(agentKey("s1"));
+      expect(views.some((v) => v.key === agentKey("s1"))).toBe(false);
+      surface.track(["s1"]);
+      await Bun.sleep(10);
+      const drawer = expectView(swarmKey("s1"), "board")(sm.frames.get(swarmKey("s1"))?.at(-1));
+      expect(JSON.stringify(drawer)).not.toContain('"selected":true');
+      await surface.selectAgent("s1", "s1-lead");
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+    expect(views).toEqual([]);
+    await expect(surface.selectAgent("s1", "s1-w1")).rejects.toThrow("disposed");
+  });
+
+  test("invalid selections allocate nothing; trimming and release reject pending selection", async () => {
+    const { sm, summaries, surface } = inspectorHarness(
+      swarm("s1", { status: "done", endedAt: T0 }),
+    );
+    try {
+      for (const [id, agentId] of [
+        ["s1", "s2-w1"],
+        ["s0", "s1-lead"],
+        ["s1", "you"],
+      ]) {
+        await expect(surface.selectAgent(id!, agentId!)).rejects.toThrow("does not belong");
+      }
+      expect(sm.keys().some((key) => key.startsWith("rib:chat:agent:"))).toBe(false);
+      await surface.selectAgent("s1", "s1-w1");
+      for (let i = 0; i < MAX_SWARM_KEYS; i++) {
+        const id = `s${i + 2}`;
+        summaries.set(id, swarm(id, { status: "done", endedAt: T0 }));
+      }
+      surface.track([...summaries.keys()]);
+      expect(sm.keys()).not.toContain(agentKey("s1"));
+      let unblock!: () => void;
+      sm.gate = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      const pending = surface.selectAgent("s101", "s101-w1");
+      surface.forget(["s101"]);
+      await expect(pending).rejects.toThrow("released");
+      unblock();
+      sm.gate = undefined;
+    } finally {
+      surface.dispose();
+    }
+  });
+
   test("flush waits past the initial seed, publishes the new state and cancels the throttle", async () => {
     const sm = new FakeSnapshots();
     let release!: () => void;
@@ -3188,6 +3353,7 @@ describe("actions", () => {
   test("select-swarm selects a live swarm without opening a drawer or showing a toast", async () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
+      selectAgent: async () => {},
       select: (id) => {
         selected.push(id);
       },

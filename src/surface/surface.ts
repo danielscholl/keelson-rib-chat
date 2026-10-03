@@ -17,9 +17,11 @@ import type { SwarmReport } from "../report.ts";
 import type { SwarmChange } from "../swarm.ts";
 import type { StartSwarmInput } from "../tools.ts";
 import type { StartingSwarm, SwarmSummary } from "../types.ts";
+import { buildAgentInspector } from "./agent-inspector.ts";
 import { buildDoc } from "./doc.ts";
 import { buildBadge, buildHistory, buildIndex, type SurfaceState } from "./index-board.ts";
 import {
+  agentKey,
   BADGE_KEY,
   docKey,
   HISTORY_KEY,
@@ -66,6 +68,7 @@ export interface SurfaceDeps {
 export interface SwarmsSurface {
   track(ids: readonly string[]): void;
   select(id: string): void;
+  selectAgent(id: string, agentId: string): Promise<void>;
   changed(id: string, kind: SwarmChange): void;
   // Recompose the index and history, for a change no swarm reports: the server
   // row, or history cleared by a reset.
@@ -119,6 +122,9 @@ function badgeOf(data: unknown): RibSurfaceBadge {
 export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   const { sm, windowMs } = deps;
   let selected: string | undefined;
+  let disposed = false;
+  const selectedAgents = new Map<string, string>();
+  const inspectors = new Map<string, KeyPublisher>();
   const index = createKeyPublisher<CanvasView>(
     sm,
     INDEX_KEY,
@@ -128,6 +134,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
         ...deps.state(),
         ...(op ? { op } : {}),
         ...(selected ? { selected } : {}),
+        selectedAgents,
       });
     },
     expectView(INDEX_KEY, "board"),
@@ -180,6 +187,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       return buildSwarmBoard(summary, {
         ...(launch ? { launch } : {}),
         ...(server ? { server } : {}),
+        selectedAgentId: selectedAgents.get(id),
       });
     }
     if (found.starting) return buildStartingBoard(found.starting);
@@ -274,6 +282,9 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   }
 
   function release(id: string): void {
+    inspectors.get(id)?.release();
+    inspectors.delete(id);
+    selectedAgents.delete(id);
     const record = records.get(id);
     if (record) {
       record.release();
@@ -323,8 +334,41 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       selected = id;
       index.schedule();
     },
+    async selectAgent(id, agentId) {
+      if (disposed) throw new Error("The Swarms surface has been disposed.");
+      const found = deps.find(id);
+      const summary = found.live ?? found.ended;
+      if (!summary?.agents.some((a) => a.id === agentId)) {
+        throw new Error(`Agent ${agentId} does not belong to swarm ${id}.`);
+      }
+      track([id]);
+      selectedAgents.set(id, agentId);
+      let publisher = inspectors.get(id);
+      if (!publisher) {
+        const key = agentKey(id);
+        publisher = createKeyPublisher<CanvasView>(
+          sm,
+          key,
+          () => {
+            const found = deps.find(id);
+            const summary = found.live ?? found.ended;
+            const agent = summary?.agents.find((a) => a.id === selectedAgents.get(id));
+            if (!summary || !agent)
+              throw new Error(`The selected agent in swarm ${id} is no longer available.`);
+            return buildAgentInspector(summary, agent);
+          },
+          expectView(key, "board"),
+          windowMs,
+        );
+        inspectors.set(id, publisher);
+      }
+      await publisher.flush();
+      index.schedule();
+      swarms.get(id)?.board.schedule();
+    },
     changed(id, kind) {
       track([id]);
+      inspectors.get(id)?.schedule();
       if (kind === "message") {
         index.schedule();
         swarms.get(id)?.board.schedule();
@@ -364,6 +408,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       log.schedule();
     },
     dispose() {
+      disposed = true;
       for (const id of [...swarms.keys(), ...records.keys()]) release(id);
       index.release();
       badge.release();

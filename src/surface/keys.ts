@@ -19,6 +19,10 @@ export function swarmKey(id: string): string {
   return `rib:chat:swarm:${id}`;
 }
 
+export function agentKey(id: string): string {
+  return `rib:chat:agent:${id}`;
+}
+
 export function docKey(id: string): string {
   return `rib:chat:doc:${id}`;
 }
