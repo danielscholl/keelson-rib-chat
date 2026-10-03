@@ -1918,6 +1918,43 @@ const actionDeps = {
 describe("actions", () => {
   const deps = actionDeps;
 
+  test("server-manage opens the side inspector immediately and probes once", async () => {
+    let probes = 0;
+    let release = () => {};
+    const probing = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const manageDeps = {
+      ...deps,
+      probe: () => {
+        probes++;
+        return probing;
+      },
+    };
+    try {
+      const result = await handleSwarmsAction({ type: "server-manage" }, manageDeps);
+      const effect = {
+        effect: "open-canvas",
+        key: SERVER_KEY,
+        title: "ClickClack server",
+        placement: "side",
+      } as const;
+      expect(result).toEqual({ ok: true, data: effect });
+      expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual(effect);
+      expect(probes).toBe(1);
+      expect(
+        await handleSwarmsAction({ type: "server-manage", origin: "canvas-html" }, manageDeps),
+      ).toEqual({ ok: false, error: "the Swarms tab takes actions from its boards only" });
+      expect(probes).toBe(1);
+      expect(await handleSwarmsAction({ type: "server-manage" }, deps)).toEqual({
+        ok: true,
+        data: effect,
+      });
+    } finally {
+      release();
+    }
+  });
+
   test("select-swarm selects a live swarm without opening a drawer or showing a toast", async () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {

@@ -17,6 +17,7 @@ import {
   INDEX_KEY,
   recordKey,
   reportKey,
+  SERVER_KEY,
   SERVER_LOG_KEY,
   SURFACE_TAB,
   swarmKey,
@@ -35,7 +36,7 @@ export interface ActionDeps {
   launchOf: (id: string) => StartSwarmInput | undefined;
   server?: ServerOps;
   hasReport?: (id: string) => boolean;
-  // Probes the ClickClack server again and refreshes the footer.
+  // Probes the ClickClack server again and refreshes the server line and inspector.
   probe?: () => Promise<void>;
 }
 
@@ -333,6 +334,17 @@ export async function handleSwarmsAction(
         },
       };
     }
+    case "server-manage":
+      void deps.probe?.();
+      return {
+        ok: true,
+        data: {
+          effect: "open-canvas",
+          key: SERVER_KEY,
+          title: "ClickClack server",
+          placement: "side",
+        },
+      };
     case "server-start":
     case "server-stop":
     case "server-reset": {
