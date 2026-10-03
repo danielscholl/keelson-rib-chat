@@ -842,6 +842,23 @@ describe("Swarms boards", () => {
     expect(view.header).toBeUndefined();
   });
 
+  test("the server row reflects the current op instead of stale server state", () => {
+    const server = { mode: "managed" as const, url: "http://127.0.0.1:18080", running: true };
+    const failed = { verb: "reset" as const, phase: "failed" as const, at: T0, error: "boom" };
+    const view = buildIndex(state({ server, op: failed, live: [] }));
+    expect(view.sections.at(-1)).toMatchObject({
+      kind: "rows",
+      items: [
+        {
+          chip: { label: "reset failed", tone: "error" },
+          text: "Server · ClickClack reset failed on 127.0.0.1:18080 · managed",
+          trailing: "Manage ›",
+          action: { type: "server-manage" },
+        },
+      ],
+    });
+  });
+
   test("ended rows lead with the outcome, group by day, and keep eight", () => {
     const now = new Date(T0);
     const ago = (days: number) => new Date(Date.parse(T0) - days * 86_400_000).toISOString();

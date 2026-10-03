@@ -191,11 +191,12 @@ export function buildBadge(state: SurfaceState): RibSurfaceBadge {
 function serverRow(server: ServerLine | undefined, op: ServerOp | undefined, live: number): Row {
   const address = server ? serverAddress(server) : undefined;
   const operation = op && op.phase !== "done" ? serverPill({ server, op, live }) : undefined;
+  const status = operation?.label ?? (server ? serverState(server) : "checking");
   return {
     ...(operation ? { chip: operation } : {}),
     text: [
       server
-        ? `Server · ClickClack ${serverState(server)}${address ? ` on ${address}` : ""}`
+        ? `Server · ClickClack ${status}${address ? ` on ${address}` : ""}`
         : "Server · ClickClack checking…",
       ...(server ? [server.mode] : []),
       ...(live > 0 ? [plural(live, "swarm")] : []),
