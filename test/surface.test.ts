@@ -1297,6 +1297,54 @@ class FakeSnapshots implements SnapshotManager {
 }
 
 describe("publishing", () => {
+  test("selection republishes the shared index, preserves drawer keys, and clears on forget", async () => {
+    const sm = new FakeSnapshots();
+    const a = fixtures.running!;
+    const b = fixtures.waiting!;
+    let live = [a, b];
+    const surface = createSwarmsSurface({
+      sm,
+      state: () => state({ live }),
+      find: (id) => ({ live: live.find((s) => s.id === id) }),
+      launch: () => ({ projects: [], live: live.length, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ live: live.length }),
+      readLog: async () => "log",
+      report: () => undefined,
+      views: [],
+      windowMs: 1,
+    });
+    const selectedId = () => {
+      const view = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (view.view !== "board") throw new Error("expected index board");
+      const strip = view.sections.find((x) => x.kind === "actions" && x.title === "Live · 2");
+      return strip?.kind === "actions" ? strip.items.find((x) => x.selected)?.payload : undefined;
+    };
+    try {
+      surface.track([a.id, b.id]);
+      await Bun.sleep(10);
+      expect(selectedId()).toEqual({ id: a.id });
+      surface.select(b.id);
+      await Bun.sleep(10);
+      expect(selectedId()).toEqual({ id: b.id });
+      await sm.recompose(swarmKey(a.id));
+      expect(sm.frames.get(swarmKey(a.id))?.at(-1)).toEqual(buildSwarmBoard(a));
+      surface.refresh();
+      await Bun.sleep(10);
+      expect(selectedId()).toEqual({ id: b.id });
+      live = [a];
+      surface.forget([b.id]);
+      await Bun.sleep(10);
+      expect(sm.keys()).not.toContain(swarmKey(b.id));
+      live = [a, b];
+      surface.refresh();
+      await Bun.sleep(10);
+      expect(selectedId()).toEqual({ id: a.id });
+    } finally {
+      surface.dispose();
+    }
+  });
+
   test("a change during an in-flight compose lands on the next loop", async () => {
     const sm = new FakeSnapshots();
     let value = 0;
