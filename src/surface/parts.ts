@@ -10,6 +10,7 @@ import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
 import { modelLabel, servedModels, sizeText, tokensText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
 import {
+  type ChildRun,
   isLive,
   SIZE_PRESETS,
   SWARM_SIZES,
@@ -307,6 +308,16 @@ export function gateVerb(nodeId: string): string {
   return "Answer";
 }
 
+export function gateIdentity(run: Pick<ChildRun, "runId" | "pendingApproval">): string | undefined {
+  const gate = run.pendingApproval;
+  if (!gate) return undefined;
+  return JSON.stringify(
+    gate.pauseId
+      ? [run.runId, "pause", gate.pauseId]
+      : [run.runId, "legacy", gate.nodeId, gate.openedAt ?? null, gate.threadId ?? null],
+  );
+}
+
 export const NEED_PILL: Record<NeedKind, Pill> = {
   decide: { label: "decide", tone: "caution" },
   question: { label: "question", tone: "caution" },
@@ -461,7 +472,7 @@ export function messageLead(s: SwarmSummary, tone?: CanvasActionItem["tone"]): C
 // approves anything, and the field says so.
 export function replyAction(
   s: SwarmSummary,
-  where: { runId: string } | { threadRootId: string; messageId: string },
+  where: { runId: string; gateIdentity?: string } | { threadRootId: string; messageId: string },
   what: string,
 ): CanvasActionItem {
   const type = "runId" in where ? "reply" : "reply-ask";

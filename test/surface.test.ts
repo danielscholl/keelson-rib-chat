@@ -37,7 +37,7 @@ import {
   endedRow,
   type SurfaceState,
 } from "../src/surface/index-board.ts";
-import { buildQuestionInspector } from "../src/surface/inspectors.ts";
+import { buildGateInspector, buildQuestionInspector } from "../src/surface/inspectors.ts";
 import {
   agentKey,
   askKey,
@@ -56,6 +56,7 @@ import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
 import {
   askText,
   dismissAskAction,
+  gateIdentity,
   healthRows,
   modelRow,
   replyAction,
@@ -893,6 +894,209 @@ describe("the question inspector", () => {
       if (question?.kind !== "cards") throw new Error("missing question");
       expect(question.items[0]!.fields![0]!.value).toBe(askText(ask.text));
     }
+  });
+});
+
+describe("the gate inspector", () => {
+  const inspect = (s: SwarmSummary, selected: ChildRun = s.runs![0]!) => {
+    const view = buildGateInspector(s, selected);
+    board(gateKey(s.id), view);
+    return view;
+  };
+  const peer = () => {
+    const approval = { ...gate("swarm"), pauseId: "pause-1", reviewer: "sgate-w1" };
+    return swarm("sgate", {
+      runs: [run("r1", { status: "paused", pendingApproval: approval })],
+    });
+  };
+  const actions = (view: CanvasBoardView) => {
+    const section = view.sections.find((section) => section.kind === "actions");
+    return section?.kind === "actions" ? section.items : [];
+  };
+
+  test("peer reviews keep complete prose, reviewer and thread, with Reply but no approval", () => {
+    const s = peer();
+    const selected = s.runs![0]!;
+    selected.pendingApproval!.prompt = `**Plan**\n\n${"p".repeat(8000)}\nLast prompt line.`;
+    selected.pendingApproval!.files = [
+      { path: "plan.md", text: `# Plan\n\n${"f".repeat(12000)}\nFinal file line.\n` },
+      { path: "config.ts", text: "const retry = 30;\n\nexport { retry };\n" },
+      { path: "empty.txt", text: "" },
+    ];
+    const view = inspect(s);
+    expect(view.sections.map((section) => section.title)).toEqual([
+      "Gate",
+      "Files",
+      "Review",
+      "Actions",
+    ]);
+    const prompt = view.sections[0];
+    if (prompt?.kind !== "cards") throw new Error("missing prompt");
+    expect(prompt.items[0]).toMatchObject({
+      prose: true,
+      fields: [
+        { value: selected.pendingApproval!.prompt },
+        { label: "opened", clock: { at: selected.pendingApproval!.openedAt, mode: "since" } },
+      ],
+    });
+    const files = view.sections[1];
+    if (files?.kind !== "cards") throw new Error("missing files");
+    expect(files.items).toHaveLength(3);
+    for (const [i, file] of selected.pendingApproval!.files.entries()) {
+      expect(files.items[i]).toMatchObject({
+        title: file.path,
+        prose: true,
+        fields: [{ value: file.text }],
+      });
+    }
+    expect(files.items[2]!.footnote).toBe("Empty file.");
+    expect(view.sections[2]).toMatchObject({
+      kind: "rows",
+      items: [
+        { text: "Reviewer: @w1" },
+        { text: `Opened ${selected.pendingApproval!.openedAt}` },
+        { text: "thread ↗", href: threadHref(s, selected.pendingApproval!.threadId) },
+      ],
+    });
+    expect(actions(view).map((item) => item.type)).toEqual(["reply"]);
+    expect(actions(view)[0]!.binding).toEqual({
+      id: s.id,
+      runId: selected.runId,
+      gateIdentity: gateIdentity(selected),
+    });
+    expect(actions(view)[0]!.fields![0]!.placeholder).toContain("as you");
+    expect(actions(view)[0]!.fields![0]!.placeholder).toContain("does not approve");
+  });
+
+  test("operator-only gates offer Open run without an approval composer", () => {
+    const s = fixtures.onlyYou!;
+    expect(actions(inspect(s)).map((item) => item.type)).toEqual(["reply", "open-run"]);
+    expect(actions(inspect(s))[1]!.binding).toEqual({
+      id: s.id,
+      runId: s.runs![0]!.runId,
+      gateIdentity: gateIdentity(s.runs![0]!),
+    });
+    const noThread = swarm(s.id, {
+      runs: [
+        run("r2", {
+          status: "paused",
+          pendingApproval: { ...gate("operator"), threadId: undefined },
+        }),
+      ],
+    });
+    expect(actions(inspect(noThread)).map((item) => item.type)).toEqual(["open-run"]);
+  });
+
+  test("missing reviewer, thread, files and opening time are stated honestly", () => {
+    const s = swarm("slegacy", {
+      clickclack: undefined,
+      runs: [
+        run("r1", {
+          status: "paused",
+          pendingApproval: { ...gate("swarm"), threadId: undefined, openedAt: undefined },
+        }),
+      ],
+    });
+    const view = inspect(s);
+    expect(view.sections[1]).toEqual({
+      kind: "rows",
+      title: "Files",
+      items: [{ text: "No gate files recorded." }],
+    });
+    expect(view.sections[2]).toEqual({
+      kind: "rows",
+      title: "Review",
+      items: [
+        { text: "Reviewer not recorded." },
+        { text: "Gate opening time not recorded." },
+        { text: "Thread link not recorded." },
+      ],
+    });
+    expect(actions(view)).toEqual([]);
+    const withThread = peer();
+    expect(
+      actions(inspect({ ...withThread, clickclack: undefined })).map((item) => item.type),
+    ).toEqual(["reply"]);
+  });
+
+  test("read errors and host or rib truncation do not hide retained or empty files", () => {
+    const s = peer();
+    s.runs![0]!.pendingApproval!.files = [
+      { path: "unreadable.md", error: "permission denied" },
+      { path: "host-cut.md", text: "first retained\nlast retained", truncated: true },
+      { path: "rib-cut.md", text: "", truncated: true },
+      { path: "missing.md" },
+      { path: "partial.md", text: "partial evidence", error: "read interrupted" },
+    ];
+    const files = inspect(s).sections[1];
+    if (files?.kind !== "cards") throw new Error("missing files");
+    expect(files.items).toHaveLength(5);
+    expect(files.items[0]!.footnote).toBe("Could not be read: permission denied");
+    expect(files.items[1]!.fields![0]!.value).toBe("first retained\nlast retained");
+    expect(files.items[1]!.footnote).toContain("Truncated by the host or rib");
+    expect(files.items[2]!.fields![0]!.value).toBe("");
+    expect(files.items[2]!.footnote).toContain("No text retained.");
+    expect(files.items[2]!.footnote).toContain("Truncated by the host or rib");
+    expect(files.items[3]!.footnote).toBe("File text not recorded.");
+    expect(files.items[4]!.fields![0]!.value).toBe("partial evidence");
+    expect(files.items[4]!.footnote).toBe("Could not be read: read interrupted");
+  });
+
+  test("gate identity binds repeated pauses and legacy node, time and thread evidence", () => {
+    const s = peer();
+    const selected = s.runs![0]!;
+    const identity = gateIdentity(selected);
+    expect(
+      gateIdentity({
+        ...selected,
+        pendingApproval: { ...selected.pendingApproval!, prompt: "updated prompt" },
+      }),
+    ).toBe(identity);
+    const later = {
+      ...selected,
+      pendingApproval: { ...selected.pendingApproval!, pauseId: "pause-2" },
+    };
+    expect(gateIdentity(later)).not.toBe(identity);
+    expect(actions(inspect({ ...s, runs: [later] }, selected))).toEqual([]);
+    const legacy = {
+      ...selected,
+      pendingApproval: { ...selected.pendingApproval!, pauseId: undefined },
+    };
+    for (const patch of [
+      { nodeId: "approve-code" },
+      { openedAt: "2026-09-22T14:32:00.000Z" },
+      { threadId: "new-thread" },
+    ]) {
+      expect(
+        gateIdentity({ ...legacy, pendingApproval: { ...legacy.pendingApproval!, ...patch } }),
+      ).not.toBe(gateIdentity(legacy));
+    }
+    expect(gateIdentity({ ...selected, runId: "another-run" })).not.toBe(identity);
+    expect(gateIdentity({ ...selected, pendingApproval: undefined })).toBeUndefined();
+  });
+
+  test("ended, stopping, concluded, resumed and missing gates are read-only", () => {
+    const s = peer();
+    const selected = s.runs![0]!;
+    const snapshots: SwarmSummary[] = [
+      ...(["done", "stopped", "stalled", "exhausted", "error", "stopping"] as const).map(
+        (status) => ({ ...s, status }),
+      ),
+      { ...s, endedAt: T0 },
+      { ...s, conclusion: "" },
+      { ...s, runs: [] },
+      { ...s, runs: [{ ...selected, status: "running" }] },
+      { ...s, runs: [{ ...selected, pendingApproval: undefined }] },
+    ];
+    for (const snapshot of snapshots) {
+      const view = inspect(snapshot, selected);
+      expect(actions(view)).toEqual([]);
+      expect(JSON.stringify(view)).not.toContain('"clock"');
+      expect(JSON.stringify(view)).toContain("Read-only:");
+    }
+    expect(JSON.stringify(inspect(s, { ...selected, pendingApproval: undefined }))).toContain(
+      "Gate prompt not recorded.",
+    );
   });
 });
 
