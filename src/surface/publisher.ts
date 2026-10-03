@@ -11,6 +11,7 @@ import type { SnapshotManager } from "@keelson/shared";
 export interface KeyPublisher {
   // Asks for a fresh frame. Calls inside one window coalesce into one compose.
   schedule(): void;
+  flush(): Promise<void>;
   release(): void;
 }
 
@@ -30,21 +31,33 @@ export function createKeyPublisher<T>(
   let composing = false;
   let dirty = false;
   let released = false;
+  let inFlight: Promise<void> | undefined;
+  let notifyRelease!: () => void;
+  const releaseSignal = new Promise<void>((resolve) => {
+    notifyRelease = resolve;
+  });
 
-  const pump = async () => {
+  const pump = (): Promise<void> => {
+    if (inFlight) return inFlight;
     composing = true;
-    try {
-      do {
-        dirty = false;
-        await sm.recompose(key).catch(() => undefined);
-      } while (dirty && !released);
-    } finally {
-      composing = false;
-    }
+    inFlight = (async () => {
+      try {
+        do {
+          dirty = false;
+          const frame = await sm.recompose(key);
+          if (released) throw new Error(`${key} was released before publication`);
+          if (!frame) throw new Error(`${key} did not publish a frame`);
+        } while (dirty);
+      } finally {
+        composing = false;
+        inFlight = undefined;
+      }
+    })();
+    return inFlight;
   };
 
   // Seeded at once, so a client that opens the key first reads a frame, not a 204.
-  void pump();
+  void pump().catch(() => undefined);
 
   return {
     schedule() {
@@ -56,13 +69,29 @@ export function createKeyPublisher<T>(
       if (timer) return;
       timer = setTimeout(() => {
         timer = undefined;
-        if (!released) void pump();
+        if (!released) void pump().catch(() => undefined);
       }, windowMs);
       (timer as { unref?: () => void }).unref?.();
+    },
+    async flush() {
+      if (released) throw new Error(`${key} was released before publication`);
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (composing) dirty = true;
+      await Promise.race([
+        pump(),
+        releaseSignal.then(() => {
+          throw new Error(`${key} was released before publication`);
+        }),
+      ]);
+      if (released) throw new Error(`${key} was released before publication`);
     },
     release() {
       released = true;
       if (timer) clearTimeout(timer);
+      notifyRelease();
       unregister();
     },
   };

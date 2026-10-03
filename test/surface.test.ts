@@ -9,6 +9,7 @@ import {
   ribClientEffectSchema,
   ribSurfaceBadgeSchema,
   ribSurfaceDescriptorSchema,
+  type SnapshotFrame,
   type SnapshotManager,
 } from "@keelson/shared";
 import { applyStatus } from "../src/dispatch.ts";
@@ -2519,7 +2520,7 @@ class FakeSnapshots implements SnapshotManager {
     this.composers.set(key, { compose, ...(opts?.validate ? { validate: opts.validate } : {}) });
     return () => void this.composers.delete(key);
   }
-  async recompose(key: string) {
+  async recompose<T = unknown>(key: string): Promise<SnapshotFrame<T> | undefined> {
     const c = this.composers.get(key);
     if (!c) return undefined;
     this.inFlight++;
@@ -2528,10 +2529,16 @@ class FakeSnapshots implements SnapshotManager {
       const data = await c.compose();
       c.validate?.(data);
       this.frames.set(key, [...(this.frames.get(key) ?? []), data]);
+      return {
+        type: "snapshot_update",
+        key,
+        version: this.frames.get(key)!.length,
+        composedAt: new Date().toISOString(),
+        data: data as T,
+      };
     } finally {
       this.inFlight--;
     }
-    return undefined;
   }
   latest() {
     return undefined;
@@ -2543,6 +2550,117 @@ class FakeSnapshots implements SnapshotManager {
 }
 
 describe("publishing", () => {
+  test("flush waits past the initial seed, publishes the new state and cancels the throttle", async () => {
+    const sm = new FakeSnapshots();
+    let release!: () => void;
+    sm.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let value = "A";
+    const pub = createKeyPublisher(
+      sm,
+      "rib:chat:t",
+      () => value,
+      (d) => String(d),
+      50,
+    );
+    let complete = false;
+    value = "B";
+    const flushed = pub.flush().then(() => {
+      complete = true;
+    });
+    await Bun.sleep(5);
+    expect(complete).toBe(false);
+    release();
+    sm.gate = undefined;
+    await flushed;
+    expect(sm.frames.get("rib:chat:t")).toEqual(["B", "B"]);
+    value = "C";
+    pub.schedule();
+    await pub.flush();
+    expect(sm.frames.get("rib:chat:t")?.at(-1)).toBe("C");
+    await Bun.sleep(60);
+    expect(sm.frames.get("rib:chat:t")).toHaveLength(3);
+    pub.release();
+  });
+
+  test("flush shares the dirty loop during overlapping async compositions", async () => {
+    const sm = new FakeSnapshots();
+    let unblock!: () => void;
+    const held = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    let value = "A";
+    let passes = 0;
+    const pub = createKeyPublisher(
+      sm,
+      "rib:chat:t",
+      async () => {
+        const captured = value;
+        if (++passes === 1) await held;
+        return captured;
+      },
+      (d) => String(d),
+      1,
+    );
+    await Bun.sleep(1);
+    value = "B";
+    const a = pub.flush();
+    value = "C";
+    const b = pub.flush();
+    unblock();
+    await Promise.all([a, b]);
+    expect(sm.frames.get("rib:chat:t")).toEqual(["A", "C"]);
+    expect(sm.inFlight).toBe(0);
+    pub.release();
+  });
+
+  test("flush surfaces composition failures and missing frames, then allows retry", async () => {
+    const sm = new FakeSnapshots();
+    let fail = false;
+    const pub = createKeyPublisher(
+      sm,
+      "rib:chat:t",
+      () => {
+        if (fail) throw new Error("compose failed");
+        return "ok";
+      },
+      (d) => String(d),
+      1,
+    );
+    await pub.flush();
+    fail = true;
+    await expect(pub.flush()).rejects.toThrow("compose failed");
+    fail = false;
+    await pub.flush();
+    sm.composers.delete("rib:chat:t");
+    await expect(pub.flush()).rejects.toThrow("did not publish a frame");
+    pub.release();
+  });
+
+  test("release refuses an awaited flush even while the host is still composing", async () => {
+    const sm = new FakeSnapshots();
+    let unblock!: () => void;
+    sm.gate = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const pub = createKeyPublisher(
+      sm,
+      "rib:chat:t",
+      () => "ok",
+      (d) => String(d),
+      1,
+    );
+    const flushed = pub.flush();
+    pub.release();
+    await expect(flushed).rejects.toThrow("released");
+    await expect(pub.flush()).rejects.toThrow("released");
+    unblock();
+    sm.gate = undefined;
+    await Bun.sleep(1);
+    expect(sm.keys()).toEqual([]);
+  });
+
   test("a burst of messages is one index and one board frame, with no other churn", async () => {
     const sm = new FakeSnapshots();
     const live = [fixtures.running!, fixtures.waiting!];
