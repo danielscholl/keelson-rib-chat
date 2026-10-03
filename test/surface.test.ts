@@ -11,6 +11,7 @@ import {
   type SnapshotManager,
 } from "@keelson/shared";
 import rib from "../src/index.ts";
+import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
@@ -33,6 +34,7 @@ import {
   swarmKey,
 } from "../src/surface/keys.ts";
 import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
+import { selectSwarm, stateLine } from "../src/surface/parts.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
 import { buildRecord } from "../src/surface/record.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
@@ -235,6 +237,129 @@ const state = (patch: Partial<SurfaceState> = {}): SurfaceState => ({
 
 const board = (key: string, view: unknown) =>
   expect(() => expectView(key, "board")(view)).not.toThrow();
+
+describe("the shared state line", () => {
+  test("requests use the request title, its time, and the remaining count", () => {
+    const s = fixtures.onlyYou!;
+    expect(stateLine(s, needsYou(s))).toEqual({
+      text: `waits on you: review the plan for Fix issue #27: README undercounts frontend-mix nodes since ${hhmm(gate("operator").openedAt)}`,
+      warn: false,
+    });
+    const asked = fixtures.asked!;
+    expect(stateLine(asked, needsYou(asked)).text).toContain(" (+1 more)");
+    expect(stateLine({ ...asked, runs: [] }, needsYou({ ...asked, runs: [] })).text).toStartWith(
+      "waits on you: @w1 asked:",
+    );
+    expect(stateLine(fixtures.quiet!, needsYou(fixtures.quiet!)).text).toBe(
+      `waits on you: no agent has worked since ${hhmm("2026-09-22T14:40:00.000Z")}`,
+    );
+  });
+
+  test("busy turns use the latest open span and waiting agents name their queues", () => {
+    const s = swarm("s2bsy", {
+      agents: [
+        agent("s2bsy", 0, { status: "busy" }),
+        agent("s2bsy", 1, { status: "busy" }),
+        agent("s2bsy", 2, { status: "waiting", queued: 1 }),
+      ],
+      spans: [
+        { agentId: "s2bsy-lead", n: 1, startedAt: T0, endedAt: T0, messages: 1, wokeBy: [] },
+        { agentId: "s2bsy-lead", n: 3, startedAt: T0, messages: 1, wokeBy: [] },
+        { agentId: "s2bsy-w1", n: 2, startedAt: T0, messages: 2, wokeBy: [] },
+      ],
+    });
+    expect(stateLine(s, []).text).toBe(
+      `@lead is on turn 3 since ${hhmm(T0)} · @w1 is on turn 2 since ${hhmm(T0)} · @w2 waits with 1 message`,
+    );
+    expect(stateLine({ ...s, spans: [] }, []).text).toStartWith("@lead is on a turn");
+  });
+
+  test("a swarm-answerable pause names its gate and reviewer without repeating a need", () => {
+    const s = swarm("s3rev", {
+      runs: [
+        run("r1", {
+          status: "paused",
+          pendingApproval: { ...gate("swarm"), reviewer: "s3rev-w1" },
+        }),
+      ],
+    });
+    expect(stateLine(s, []).text).toBe(
+      `fix-issue r10000-1 paused at approve-plan since ${hhmm(gate("swarm").openedAt)}, with @w1 reviewing`,
+    );
+    const quiet = { ...s, health: { quietSince: T0 } };
+    expect(stateLine(quiet, needsYou(quiet)).text).not.toContain("paused at");
+  });
+
+  test("conclusion precedes activity, with and without a recorded time", () => {
+    const s = swarm("s4end", {
+      conclusion: "Done",
+      activity: [
+        { at: T0, text: "concluded", kind: "conclusion" },
+        { at: T0, text: "later turn", kind: "turn" },
+      ],
+    });
+    expect(stateLine(s, []).text).toBe(`concluded at ${hhmm(T0)}; turns in flight finish`);
+    expect(stateLine({ ...s, activity: [] }, []).text).toBe(
+      "the lead concluded; turns in flight finish",
+    );
+  });
+
+  test("the fallback is the latest activity or the first-turn wait", () => {
+    expect(stateLine(fixtures.running!, []).text).toBe("waiting for the lead's first turn");
+    expect(stateLine(fixtures.waiting!, []).text).toBe(
+      "@lead is on a turn · @w1 waits with 2 messages",
+    );
+    const s = swarm("s5act", { activity: [{ at: T0, text: "@s5act-lead turn 3 ok" }] });
+    expect(stateLine(s, []).text).toBe(`${hhmm(T0)} @lead turn 3 ok`);
+  });
+
+  test("stopping short-circuits work, but health appends and warns", () => {
+    const s = swarm("s6stp", {
+      status: "stopping",
+      conclusion: "done",
+      agents: [agent("s6stp", 0, { status: "busy" })],
+      health: {
+        socketDrops: 1,
+        channelFault: "fetch failed",
+        lastLeadFailure: "timeout",
+        nudges: 1,
+      },
+    });
+    expect(stateLine(s, [])).toEqual({
+      text: `stopping: cancelling runs and revoking tokens · ClickClack socket closed 1 times · ClickClack fault: fetch failed · the lead's last turn failed · nudged the lead 1 of ${s.limits.maxNudges} times`,
+      warn: true,
+    });
+    const gone = fixtures.gone!;
+    expect(stateLine(gone, needsYou(gone)).text).not.toContain("socket closed");
+    expect(stateLine(gone, needsYou(gone)).warn).toBe(true);
+  });
+
+  test("busy and waiting clauses are bounded and the line stays within 240 characters", () => {
+    const s = swarm("s7cap", {
+      agents: Array.from({ length: 8 }, (_, i) =>
+        agent("s7cap", i, { status: i < 4 ? "busy" : "waiting", queued: 1 }),
+      ),
+    });
+    const line = stateLine(s, []).text;
+    expect(line).toContain("+1 more on turns");
+    expect(line).toContain("+1 more waiting");
+    expect(line.length).toBeLessThanOrEqual(240);
+    expect(stateLine({ ...s, health: { channelFault: "x".repeat(1000) } }, []).text.length).toBe(
+      240,
+    );
+  });
+
+  test("selectSwarm points down to the index selection and retains the setup hint", () => {
+    expect(selectSwarm(fixtures.running!, "brand")).toMatchObject({
+      type: "select-swarm",
+      label: "Open swarm",
+      glyph: "↓",
+      tone: "brand",
+      payload: { id: fixtures.running!.id },
+    });
+    expect(selectSwarm(fixtures.running!).hint).toContain("medium:");
+  });
+});
 
 describe("Swarms boards", () => {
   test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
