@@ -1,6 +1,6 @@
 ---
 title: Watch swarms in the Swarms tab
-description: Find the swarm that needs you, act on its request, and read its budget, agents, runs and outcome from Keelson.
+description: Answer cross-swarm requests and watch one live swarm's cockpit, with shared selection, agent states and budget.
 sidebar:
   order: 8
 ---
@@ -11,12 +11,14 @@ the tab links there.
 
 ## The index
 
-Live swarms are cards. Swarms that ask something of you sort first, oldest
-request first, then swarms that are starting, then swarms that are running. The
-tab's head counts the swarms that need you, or the live ones when none do, and
-a strip beside it splits them into needs you, running and starting.
+The tab's head counts the swarms that need you, or the live ones when none do.
+A strip beside it splits them into needs you, running and starting.
 
-A card that asks something leads with the request:
+### Needs you
+
+**Needs you** is one list across every live swarm, with one card per request,
+oldest first. When more than 12 requests are open, it shows the oldest 12 and
+names the total in its heading. Each card leads with the request:
 
 - the title is the request itself: **Review the plan for …**, **@planner
   asked: …**, **ClickClack stopped answering**, or **No agent has worked since
@@ -24,29 +26,71 @@ A card that asks something leads with the request:
 - the first line says what happened and why it is yours, then how long it has
   waited (**opened 4 min ago**, **asked 2 min ago**), kept current by a live
   clock
-- then the budget: turns used and remaining, and the time left (**53 min
-  left**)
-- the footnote is the setup: the task, the project, the size, the model, the
-  agents, when it started
+- the footnote names the task and swarm id
 - the first button is the request's verb: **Review plan**, **Read question**,
-  **Open swarm**, or **Message the lead**; **Open swarm** and **Report** follow,
-  and **Stop swarm** is in the overflow menu
+  **Open swarm**, or **Message the lead**; replies and dismissal appear when
+  they apply, and **Open swarm** expands the swarm on the page
 
-When a swarm asks more than one thing, the card shows the first and counts the
-rest. A card that asks something has a colored edge in the request's tone, so it
-stands out from the running cards.
+Each card has a colored edge in the request's tone. The swarm's budget,
+roster and stop control live in its cockpit, not in its request cards.
 
-A running card leads with the task and the id, then:
+### The live swarm
 
-- what the swarm is doing this minute: who is working and the latest event, or
-  the approval a peer is reviewing
-- a meter captioned **Turn budget used**, with **18 of 80 · 62 remaining**
-  beside it
-- the time left, on a live clock
-- the agents, in their identity colors
-- the setup in the footnote
+One live swarm expands on the page as a cockpit. It runs in this order:
 
-Hover **Open swarm** to see the size's numbers and the model.
+1. The task and id, a lifecycle or **needs you** pill, and people dots.
+2. The state line, described below.
+3. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
+   omitting zero counts. Open seats are hatched.
+4. Three **Budget** tiles: **Turns** used and remaining with a sparkline,
+   **Time** as a ticking time-left clock, and fresh **Tokens** with cached
+   tokens in the sub. Before a turn, Tokens says **none yet**; after turns
+   without usage, it says **the provider reported none**.
+5. The agent bench, Spend, Runs, Task and context, Activity, and About, the
+   same details as the per-swarm board below.
+6. **Message the lead**, expanded for a running swarm that has not concluded;
+   **Open the report** when one exists; **Open the record**; and
+   **Stop swarm…** last.
+
+### The state line
+
+The line joins these clauses in order. Stopping overrides the work clauses;
+health warnings still append. Clause times use **HH:MM**, not relative
+durations, so they do not go stale between frames.
+
+| Clause | Reads |
+|---|---|
+| Stopping | **stopping: cancelling runs and revoking tokens** |
+| A request | **waits on you: review the plan for … since 14:31**, with a count when more requests are open |
+| Busy agents | **@lead is on turn 3 since 14:05**, using each agent's latest open turn; without a recorded span, **@lead is on a turn** |
+| Waiting agents | **@w2 waits with 1 message** |
+| A swarm-answerable pause not already shown as a request | **fix-issue r1a2b3c paused at approve-plan since 14:31, with @w1 reviewing** |
+| A conclusion | **concluded at 14:32; turns in flight finish**, or **the lead concluded** when no time was recorded |
+| Otherwise | The newest activity and its time, or **waiting for the lead's first turn** |
+| Health, appended | Socket drops, a channel fault, the lead's last failed turn, or idle nudges; these mark the row as a warning |
+
+Busy and waiting agents each show at most three clauses, then a remaining
+count. The whole line is capped at 240 characters.
+
+### More than one live swarm
+
+With two or more live swarms, a selection strip above the cockpit picks the
+expanded swarm. Its task and id name each choice, and the chosen one is marked.
+This choice is **shared by every viewer**, not personal to your browser.
+The pinned canvas contract reserves tabs for locally opened forms, so the
+swarm picker uses a wrapping action strip instead.
+
+Without a live selection, the first swarm needing you expands, sorted by its
+oldest request. If none needs you, the earliest started running swarm expands.
+A stale selection falls back the same way.
+
+The others fold to one running card each under **Also live**: task and id,
+the same state line, the **Turn budget used** meter, time left on a live clock,
+people dots, and setup in the footnote. **Open swarm** expands that swarm;
+hover it to see the size's numbers and the model. Starting swarms stay cards
+under **Also live** and open their starting board.
+
+### Ended swarms
 
 Ended swarms are rows grouped under the day they ended: **Today**,
 **Yesterday**, then the weekday and date. A row leads with what came of the
@@ -76,21 +120,22 @@ its own way of clearing. The tab's badge counts swarms with any request.
 |---|---|---|---|
 | **decide** | A run waits at an approval this swarm may not answer: the host refused the workflow under `ribApprovalGrants`, or offers the rib no way to answer. | **Review plan** for a plan approval, **Answer** for any other, opening the run beside the tab. **Reply** posts in the approval thread as you; it approves nothing. | The run leaves the approval. |
 | **question** | An agent opened a sentence with `@operator` (or your ClickClack handle), or asked a question naming you. A passing mention, such as "I'll present both to @operator", isn't one. | **Read question** opens the reading pane. **Reply** posts in the question's thread. **Dismiss** clears it from the tab. | You reply in that thread, post in the channel mentioning the asker, or dismiss it. Other questions stay open. A note to the lead answers the lead's own questions only. |
-| **connection** | The swarm's ClickClack socket closed twice without reopening. | **Start ClickClack** when the managed server is down, otherwise **Open swarm**; the card links the channel. | The socket reopens. |
+| **connection** | The swarm's ClickClack socket closed twice without reopening. | **Start ClickClack** when the managed server is down, otherwise **Open swarm** expands the swarm on the page; the card links the channel. | The socket reopens. |
 | **quiet** | A run waits at an approval the swarm could answer, and no agent has worked since. | **Message the lead** | Any agent takes a turn. |
 
 A swarm with an open question waits for you. It isn't nudged or stalled, and
 only its wall clock ends it.
 
-An approval the swarm can answer itself is shown as **reviewing** on the board
-while a peer checks the plan in its thread. The card names the reviewer when the
-lead asked one by mention, and says nothing when no agent was asked. It is not a
-request and counts nowhere.
+An approval the swarm can answer itself appears in the cockpit's state line
+while a peer checks the plan in its thread. It names the reviewer when the
+lead asked one by mention. The per-swarm board shows it as **reviewing**.
+It is not a request and counts nowhere.
 
-## A swarm's board
+## The board for ended swarms and MCP clients
 
-**Open swarm** shows the board. Its header carries the lifecycle pill, the size,
-the turns and the model, and a dot per agent.
+An ended row opens its board in the drawer. The per-swarm board still composes
+for MCP clients, live or ended. Its header carries the lifecycle pill, the
+size, the turns and the model, and a dot per agent.
 
 Live, the board runs in this order:
 
@@ -116,7 +161,7 @@ is titled **Conclusion**. A swarm that did not conclude shows its cause
 instead, such as **Stopped by you at 21:50**, **Out of turns at 40** or
 **Failed: …**.
 
-The details follow in both and read the same:
+The details follow in both and read the same in the live cockpit:
 
 - **Agents**: a bench with one card per agent, its handle in its identity
   color, a status pill while live (**busy**, **waiting** when it has messages
@@ -154,9 +199,10 @@ publishes with `chat_report` before it concludes, with the answer first and the
 evidence behind it, and tables, charts, or diagrams where they help. The lead
 reads Keelson's canvas design guide first, and the page follows the same rules
 as Keelson's canvas artifacts, so it matches the app's theme in light and dark.
-A card shows **Report** once the page exists, even while the swarm is still
-running, and an ended row marks it with **◧ report**. The lead skips the report when the
-whole answer fits in a sentence or two.
+The cockpit offers **Open the report** once the page exists, even while the
+swarm is still running. A folded card offers **Report**, and an ended row marks
+it with **◧ report**. The lead skips the report when the whole answer fits in a
+sentence or two.
 
 **Read the conclusion** and **Read question** open the reading pane. It shows
 the conclusion, a refused draft, each open question with a link to its thread,
@@ -221,8 +267,8 @@ boots, and a start that fails after that becomes an ended row with the reason.
 A start the rib refuses outright, such as an unknown project or a provider that
 can't run agents, shows its reason on the form instead.
 
-A swarm started any other way, over MCP or from the `chat-swarm` workflow, gets
-a card too.
+A swarm started any other way, over MCP or from the `chat-swarm` workflow,
+appears in the same live area.
 
 ## Running a swarm again
 
