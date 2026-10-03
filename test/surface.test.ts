@@ -1394,6 +1394,28 @@ describe("the details", () => {
 });
 
 describe("the reading pane", () => {
+  test("metadata links the transcript while prose names the channel and keeps thread links", () => {
+    for (const s of [fixtures.done!, fixtures.stalled!, fixtures.asked!]) {
+      const doc = buildDoc(s, s.id);
+      expect(doc).toContain(`· [transcript ↗](http://127.0.0.1:18080/app/ws_1/${s.channelId})`);
+      expect(doc).not.toContain("in ClickClack");
+      expect(doc).not.toContain(`[#${s.channelName}]`);
+      const unlinked = buildDoc({ ...s, clickclack: undefined }, s.id);
+      expect(unlinked).not.toContain("transcript ↗");
+      expect(unlinked).not.toContain(" · *");
+    }
+    const asked = buildDoc(fixtures.asked!, fixtures.asked!.id);
+    expect(asked).toContain("[in its thread](http://127.0.0.1:18080/app/ws_1/msg_0100)");
+    expect(asked).toContain("[The approval thread](http://127.0.0.1:18080/app/ws_1/msg_0042)");
+    expect(asked).toContain("mention @w1 in #swarm-s6ask");
+    expect(buildDoc(fixtures.running!, fixtures.running!.id)).toContain(
+      "is working in #swarm-s9hjx.",
+    );
+    expect(buildDoc(undefined, "s0old")).toContain(
+      "Its channel `#swarm-s0old` keeps the transcript.",
+    );
+  });
+
   test("an open gate shows its files: markdown as is, other text fenced, failures named", () => {
     const withFiles = swarm("s9fil", {
       runs: [
