@@ -3320,6 +3320,7 @@ class FakeSnapshots implements SnapshotManager {
   frames = new Map<string, unknown[]>();
   inFlight = 0;
   gate: Promise<void> | undefined;
+  failures = new Map<string, Error>();
 
   register<T>(key: string, compose: () => T | Promise<T>, opts?: { validate?: (d: unknown) => T }) {
     if (this.composers.has(key)) throw new Error(`duplicate key ${key}`);
@@ -3332,6 +3333,8 @@ class FakeSnapshots implements SnapshotManager {
     this.inFlight++;
     try {
       if (this.gate) await this.gate;
+      const failure = this.failures.get(key);
+      if (failure) throw failure;
       const data = await c.compose();
       c.validate?.(data);
       this.frames.set(key, [...(this.frames.get(key) ?? []), data]);
@@ -3389,6 +3392,272 @@ describe("publishing", () => {
     });
     return { sm, views, summaries, surface };
   };
+
+  const inspectable = (id = "s1", patch: Partial<SwarmSummary> = {}) =>
+    swarm(id, {
+      health: {
+        asks: ["first", "second"].map((messageId) => ({
+          ...fixtures.asked!.health!.asks![0]!,
+          agentId: `${id}-w1`,
+          handle: `${id}-w1`,
+          messageId,
+          text: `${messageId} question?`,
+        })),
+      },
+      runs: ["first", "second"].map((id) =>
+        run(id, {
+          status: "paused",
+          pendingApproval: { ...gate("swarm"), pauseId: id, prompt: `${id} gate` },
+        }),
+      ),
+      ...patch,
+    });
+  const inspectorKinds = [
+    {
+      key: askKey,
+      open: (surface: SwarmsSurface, s: SwarmSummary, n = 0) =>
+        surface.selectAsk(s.id, s.health!.asks![n]!.messageId),
+    },
+    {
+      key: gateKey,
+      open: (surface: SwarmsSurface, s: SwarmSummary, n = 0) =>
+        surface.selectGate(s.id, s.runs![n]!.runId, gateIdentity(s.runs![n]!)!),
+    },
+    {
+      key: detailsKey,
+      open: (surface: SwarmsSurface, s: SwarmSummary) => surface.openDetails(s.id),
+    },
+  ];
+
+  test("question, gate and Details selections wait for blocked first publication and retry failures", async () => {
+    for (const { key, open } of inspectorKinds) {
+      const s = inspectable();
+      const { sm, surface } = inspectorHarness(s);
+      let unblock = () => {};
+      try {
+        sm.gate = new Promise<void>((resolve) => {
+          unblock = resolve;
+        });
+        let complete = false;
+        const pending = open(surface, s).then(() => {
+          complete = true;
+        });
+        await Bun.sleep(2);
+        expect(complete).toBe(false);
+        expect(sm.frames.has(key(s.id))).toBe(false);
+        unblock();
+        sm.gate = undefined;
+        await pending;
+        expectView(key(s.id), "board")(sm.frames.get(key(s.id))?.at(-1));
+        sm.failures.set(key(s.id), new Error("publication failed"));
+        await expect(open(surface, s)).rejects.toThrow("publication failed");
+        sm.failures.delete(key(s.id));
+        await open(surface, s);
+        expect(sm.keys().filter((k) => k === key(s.id))).toHaveLength(1);
+      } finally {
+        unblock();
+        surface.dispose();
+      }
+    }
+  });
+
+  test("rapid question and gate reselection shares per-kind keys independently of agent and swarm selection", async () => {
+    const s = inspectable();
+    const { sm, surface, summaries } = inspectorHarness(s);
+    let unblock = () => {};
+    try {
+      summaries.set("s2", swarm("s2"));
+      surface.track(["s1", "s2"]);
+      surface.select("s2");
+      await surface.selectAgent("s1", "s1-w1");
+      sm.gate = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      const pending = inspectorKinds.flatMap(({ open }) => [
+        open(surface, s, 0),
+        open(surface, s, 1),
+      ]);
+      unblock();
+      sm.gate = undefined;
+      await Promise.all(pending);
+      expect(JSON.stringify(sm.frames.get(askKey("s1"))?.at(-1))).toContain("second question?");
+      expect(JSON.stringify(sm.frames.get(gateKey("s1"))?.at(-1))).toContain("second gate");
+      expect(sm.frames.get(agentKey("s1"))?.at(-1)).toMatchObject({ title: "Agent @w1 · s1" });
+      await Bun.sleep(10);
+      const index = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (index.view !== "board") throw new Error("expected board");
+      const strip = index.sections.find((section) => section.kind === "actions");
+      expect(
+        strip?.kind === "actions" ? strip.items.find((i) => i.selected)?.payload : undefined,
+      ).toEqual({ id: "s2" });
+      const drawer = expectView(swarmKey("s1"), "board")(sm.frames.get(swarmKey("s1"))?.at(-1));
+      if (drawer.view !== "board") throw new Error("expected board");
+      const map = leaves(drawer.sections).find((section) => section.kind === "graph");
+      expect(
+        map?.kind === "graph"
+          ? map.nodes.filter((node) => node.selected).map((node) => node.id)
+          : [],
+      ).toEqual(["s1-w1"]);
+      for (const { key } of inspectorKinds)
+        expect(sm.keys().filter((k) => k === key("s1"))).toHaveLength(1);
+    } finally {
+      unblock();
+      surface.dispose();
+    }
+  });
+
+  test("invalid question, gate and Details selections allocate no keys", async () => {
+    const s = inspectable();
+    const { sm, surface } = inspectorHarness(s);
+    try {
+      const before = sm.keys();
+      for (const open of [
+        () => surface.selectAsk("s1", "unknown"),
+        () => surface.selectAsk("s2", "first"),
+        () => surface.selectGate("s1", s.runs![0]!.runId, "stale"),
+        () => surface.selectGate("s1", "foreign-run", gateIdentity(s.runs![0]!)!),
+        () => surface.openDetails("s2"),
+      ]) {
+        await expect(open()).rejects.toThrow();
+        expect(sm.keys()).toEqual(before);
+      }
+    } finally {
+      surface.dispose();
+    }
+  });
+
+  test("all opened inspectors refresh relevant changes and resolved targets stay read-only without retargeting", async () => {
+    const s = inspectable();
+    const { sm, surface, summaries } = inspectorHarness(s);
+    try {
+      for (const { open } of inspectorKinds) await open(surface, s);
+      summaries.set("s1", { ...s, task: "Task after global refresh" });
+      surface.refresh();
+      await Bun.sleep(10);
+      expect(JSON.stringify(sm.frames.get(detailsKey("s1"))?.at(-1))).toContain(
+        "Task after global refresh",
+      );
+      for (const kind of ["health", "gate", "run", "agent", "turn", "conclusion", "end"] as const) {
+        const counts = inspectorKinds.map(({ key }) => sm.frames.get(key("s1"))!.length);
+        summaries.set("s1", { ...summaries.get("s1")!, task: `task after ${kind}` });
+        surface.changed("s1", kind);
+        await Bun.sleep(10);
+        inspectorKinds.forEach(({ key }, i) => {
+          expect(sm.frames.get(key("s1"))!.length).toBeGreaterThan(counts[i]!);
+        });
+        expect(JSON.stringify(sm.frames.get(detailsKey("s1"))?.at(-1))).toContain(
+          `task after ${kind}`,
+        );
+      }
+      const current = summaries.get("s1")!;
+      current.health!.asks = [current.health!.asks![1]!];
+      current.runs![0]!.pendingApproval!.pauseId = "next-pause";
+      current.runs![0]!.pendingApproval!.prompt = "new pause must not replace selected gate";
+      surface.changed("s1", "gate");
+      await Bun.sleep(10);
+      for (const key of [askKey, gateKey]) {
+        const frame = sm.frames.get(key("s1"))?.at(-1);
+        expect(JSON.stringify(frame)).toContain("Read-only");
+        expect(JSON.stringify(frame)).not.toContain('"kind":"actions"');
+        expect(JSON.stringify(frame)).not.toContain('"clock"');
+      }
+      expect(JSON.stringify(sm.frames.get(askKey("s1"))?.at(-1))).toContain("first question?");
+      expect(JSON.stringify(sm.frames.get(gateKey("s1"))?.at(-1))).toContain("first gate");
+      expect(JSON.stringify(sm.frames.get(gateKey("s1"))?.at(-1))).not.toContain("new pause");
+      summaries.delete("s1");
+      surface.changed("s1", "health");
+      await Bun.sleep(10);
+      for (const { key } of inspectorKinds)
+        expect(JSON.stringify(sm.frames.get(key("s1"))?.at(-1))).toContain("no longer available");
+      surface.forget(["s1"]);
+      for (const { key } of inspectorKinds) expect(sm.keys()).not.toContain(key("s1"));
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+  });
+
+  test("ended, stopping and concluded inspectors have no composer and Details reads the latest summary", async () => {
+    for (const patch of [
+      { status: "done" as const, endedAt: T0 },
+      { status: "stopping" as const },
+      { conclusion: "Finished" },
+    ]) {
+      const s = inspectable("s1", patch);
+      const { sm, surface, summaries } = inspectorHarness(s);
+      try {
+        for (const { open } of inspectorKinds) await open(surface, s);
+        for (const key of [askKey, gateKey]) {
+          const frame = JSON.stringify(sm.frames.get(key("s1"))?.at(-1));
+          expect(frame).toContain("Read-only");
+          expect(frame).not.toContain('"kind":"actions"');
+        }
+        summaries.set("s1", { ...s, task: "Latest task" });
+        await surface.openDetails("s1");
+        expect(JSON.stringify(sm.frames.get(detailsKey("s1"))?.at(-1))).toContain("Latest task");
+      } finally {
+        surface.dispose();
+      }
+    }
+  });
+
+  test("forget and disposal reject pending publication of each inspector kind", async () => {
+    for (const { key, open } of inspectorKinds) {
+      for (const disposal of [false, true]) {
+        const s = inspectable();
+        const { sm, surface } = inspectorHarness(s);
+        let unblock = () => {};
+        try {
+          sm.gate = new Promise<void>((resolve) => {
+            unblock = resolve;
+          });
+          const pending = open(surface, s);
+          if (disposal) surface.dispose();
+          else surface.forget(["s1"]);
+          await expect(pending).rejects.toThrow("released");
+          expect(sm.keys()).not.toContain(key("s1"));
+          if (disposal) await expect(open(surface, s)).rejects.toThrow("disposed");
+        } finally {
+          unblock();
+          sm.gate = undefined;
+          surface.dispose();
+        }
+      }
+    }
+  });
+
+  test("retention trimming releases every kind including inspector-only selections at a full live budget", async () => {
+    const { sm, surface, summaries } = inspectorHarness();
+    try {
+      const ids = Array.from({ length: MAX_SWARM_KEYS }, (_, i) => `s${i + 1}`);
+      for (const id of ids) summaries.set(id, swarm(id));
+      surface.track(ids);
+      for (let i = 0; i < 3; i++) {
+        const s = inspectable(`ended${i}`, { status: "done", endedAt: T0 });
+        summaries.set(s.id, s);
+        await surface.selectAgent(s.id, `${s.id}-w1`);
+        for (const { open } of inspectorKinds) await open(surface, s);
+        expect(sm.keys()).not.toContain(swarmKey(s.id));
+        for (const key of [agentKey, askKey, gateKey, detailsKey])
+          expect(sm.keys()).toContain(key(s.id));
+        if (i % 2) summaries.delete(s.id);
+        surface.track([]);
+        for (const key of [agentKey, askKey, gateKey, detailsKey])
+          expect(sm.keys()).not.toContain(key(s.id));
+      }
+      summaries.clear();
+      const ended = Array.from({ length: MAX_SWARM_KEYS + 1 }, (_, i) =>
+        inspectable(`ended${i}`, { status: "done", endedAt: T0 }),
+      );
+      for (const s of ended) summaries.set(s.id, s);
+      for (const { open } of inspectorKinds) await open(surface, ended[0]!);
+      surface.track(ended.map((s) => s.id));
+      for (const { key } of inspectorKinds) expect(sm.keys()).not.toContain(key(ended[0]!.id));
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+  });
 
   test("agent selection awaits a fresh frame and highlights both boards without changing swarm selection", async () => {
     const { sm, summaries, surface } = inspectorHarness();
@@ -4405,6 +4674,9 @@ describe("actions", () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
       selectAgent: async () => {},
+      selectAsk: async () => {},
+      selectGate: async () => {},
+      openDetails: async () => {},
       select: (id) => {
         selected.push(id);
       },
