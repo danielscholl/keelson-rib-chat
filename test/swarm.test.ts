@@ -840,6 +840,11 @@ describe("Workflow dispatch", () => {
     expect(prompts[2]).toContain("is succeeded");
     expect(prompts[2]).toContain("verified");
     expect(summary.status).toBe("done");
+    const bookkeeping = summary.recent?.filter((m) =>
+      /^\*\*(?:Run started|Run update|Approval needed)\*\*/.test(m.text),
+    );
+    expect(bookkeeping?.length).toBeGreaterThan(0);
+    expect(bookkeeping?.every((m) => m.kind === "run")).toBe(true);
     expect(summary.runs?.[0]).toMatchObject({
       runId: "run_1",
       status: "succeeded",
@@ -1401,6 +1406,87 @@ describe("changes and records", () => {
     expect(kinds.filter((k) => k === "turn")).toHaveLength(6);
     expect(kinds).toContain("conclusion");
     expect(kinds.at(-1)).toBe("end");
+  });
+
+  test("recent messages keep authors, reply roots, asks, conclusions and operator steering", async () => {
+    const kinds: SwarmChange[] = [];
+    let swarmRef: Swarm | undefined;
+    const long = "The link step is slow. ".repeat(20);
+    const h = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "w", role: "worker", brief: "report back" });
+        } else if (agentId === "s1-w") {
+          await call("chat_reply", {
+            message_id: prompt.match(/top-level (msg_\d+)/)?.[1],
+            body: long,
+          });
+        } else if (turn === 2) {
+          await call("chat_post", { body: "@operator Shall I wrap up?" });
+          setTimeout(() => void swarmRef?.steer("Yes, wrap up."), 10);
+        } else {
+          await call("chat_done", { summary: "Linking is slow." });
+        }
+      },
+      {},
+      { onChange: (kind) => kinds.push(kind) },
+    );
+    swarmRef = await h.start();
+    const summary = await swarmRef.finished;
+    const recent = summary.recent ?? [];
+    const ingested = h.server.messages.filter((m) => !m.body.startsWith("Swarm s1 done."));
+    expect(recent.map((m) => m.id)).toEqual(ingested.map((m) => m.id));
+    expect(recent[0]?.author).toBe("operator");
+    expect(recent[0]?.text).toContain("Swarm");
+    const reply = recent.find((m) => m.author === "s1-w");
+    expect(reply).toMatchObject({
+      text: long.slice(0, MESSAGE_CHARS),
+      threadRootId: h.server.messages.find((m) => m.body.includes("report back"))?.id,
+    });
+    expect(recent.find((m) => m.text.startsWith("@operator"))?.kind).toBe("ask");
+    expect(recent.find((m) => m.text.includes("Yes, wrap up."))?.author).toBe("operator");
+    expect(recent.at(-1)).toMatchObject({ author: "s1-lead", kind: "conclusion" });
+    expect(recent.every((m) => m.text.length <= MESSAGE_CHARS)).toBe(true);
+    expect(summary.messageCount).toBe(ingested.length);
+    expect(kinds.filter((kind) => kind === "message")).toHaveLength(ingested.length);
+    const status = JSON.parse(
+      (await callTool(h.tools, "chat_swarm_status", { swarm: "s1" })).content,
+    );
+    expect(status).not.toHaveProperty("recent");
+    expect(status.messageCount).toBe(summary.messageCount);
+    expect(publicSummary(summary)).not.toHaveProperty("recent");
+  });
+
+  test("50 messages in one second keep the newest 20 in arrival order", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = harness(async ({ turn, call }) => {
+      if (turn === 1) await held;
+      await call("chat_done", { summary: "ok" });
+    });
+    const swarm = await h.start();
+    try {
+      const start = Date.now();
+      const posts = Array.from({ length: 50 }, (_, i) =>
+        h.server.postAsOwner(swarm.summary().channelId, `message ${i}`),
+      );
+      expect(Date.now() - start).toBeLessThan(1_000);
+      for (let i = 0; i < 200 && swarm.summary().messageCount !== 51; i++) await Bun.sleep(5);
+      const summary = swarm.summary();
+      expect(summary.messageCount).toBe(51);
+      expect(summary.recent).toHaveLength(MESSAGES_KEPT);
+      expect(summary.recent?.map((m) => m.id)).toEqual(
+        posts.slice(-MESSAGES_KEPT).map((m) => m.id),
+      );
+      expect(summary.recent?.every((m) => m.author === "operator" && m.kind === undefined)).toBe(
+        true,
+      );
+    } finally {
+      release();
+      await swarm.finished;
+    }
   });
 
   test("a throwing listener never breaks the swarm", async () => {

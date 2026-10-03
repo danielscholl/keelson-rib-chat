@@ -46,8 +46,12 @@ import {
   type GateAnswer,
   type GateFileText,
   type KeptWorktree,
+  MESSAGE_CHARS,
+  MESSAGES_KEPT,
+  type MessageKind,
   type OperatorAsk,
   POWER_EFFORT,
+  type RecentMessage,
   SIZE_PRESETS,
   type SwarmAgent,
   type SwarmHealth,
@@ -236,6 +240,7 @@ export type SwarmChange =
   | "report"
   | "health"
   | "activity"
+  | "message"
   | "end";
 
 interface Deferred<T> {
@@ -350,6 +355,9 @@ export class Swarm {
   private quietSince: string | undefined;
   private readonly asks: OperatorAsk[] = [];
   private readonly activity: ActivityEntry[] = [];
+  private readonly recent: RecentMessage[] = [];
+  private messageCount = 0;
+  private kickoffId = "";
   private ownerHandle = "";
   // Messages the rib posts as the owner, which are not the operator talking.
   private readonly ownPosts = new Set<string>();
@@ -462,6 +470,7 @@ export class Swarm {
       this.channel.id,
       `**Swarm ${this.id}**\n\n${this.task}`,
     );
+    this.kickoffId = kickoff.id;
     this.ownPosts.add(kickoff.id);
     this.log(`swarm ${this.id} started in #${this.channel.name}`, { kind: "start" });
     this.changed("start");
@@ -559,6 +568,7 @@ export class Swarm {
     const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
     const starter = this.threadStarters.get(message.threadRootId);
     if (author?.lead && this.quietBodies.has(message.body)) this.quietPosts.add(message.id);
+    this.remember(message, author, isRoot);
     const recipients = this.quietPosts.has(message.id)
       ? []
       : route({
@@ -587,6 +597,31 @@ export class Swarm {
       if (!agent || !this.canWork(id)) continue;
       this.inboxes.get(id)?.push(message);
       if (agent.lead) this.kickedOff = true;
+    }
+    this.changed("message");
+  }
+
+  private remember(message: ChatMessage, author: SwarmAgent | undefined, isRoot: boolean): void {
+    this.messageCount++;
+    if (!author && message.authorKind !== "human") return;
+    if (this.ownPosts.has(message.id) && message.id !== this.kickoffId) return;
+    const kind: MessageKind | undefined = this.quietPosts.has(message.id)
+      ? "run"
+      : author?.lead && /^\*\*Conclusion(?: \(\d+\/\d+\))?\*\*/.test(message.body)
+        ? "conclusion"
+        : author && this.asksOperator(message.body)
+          ? "ask"
+          : undefined;
+    this.recent.push({
+      id: message.id,
+      at: message.createdAt || new Date().toISOString(),
+      author: author?.id ?? "operator",
+      text: message.body.slice(0, MESSAGE_CHARS),
+      ...(isRoot ? {} : { threadRootId: message.threadRootId }),
+      ...(kind ? { kind } : {}),
+    });
+    if (this.recent.length > MESSAGES_KEPT) {
+      this.recent.splice(0, this.recent.length - MESSAGES_KEPT);
     }
   }
 
@@ -1096,12 +1131,16 @@ export class Swarm {
   // An agent's message addressed to @operator, or the owner's own handle, is a
   // question the swarm waits on until the operator next writes. A passing
   // mention ("I'll present both to @operator") is not.
-  private noteAsk(agent: SwarmAgent, message: ChatMessage): void {
-    const handles = addressedHandles(message.body);
-    const asked =
+  private asksOperator(body: string): boolean {
+    const handles = addressedHandles(body);
+    return (
       handles.includes("operator") ||
-      (this.ownerHandle !== "" && handles.includes(this.ownerHandle));
-    if (!asked) return;
+      (this.ownerHandle !== "" && handles.includes(this.ownerHandle))
+    );
+  }
+
+  private noteAsk(agent: SwarmAgent, message: ChatMessage): void {
+    if (!this.asksOperator(message.body)) return;
     this.asks.push({
       agentId: agent.id,
       handle: agent.handle,
@@ -1974,6 +2013,8 @@ export class Swarm {
       agents: this.roster(),
       ...this.usage(),
       ...(this.activity.length > 0 ? { activity: this.activity.map((e) => ({ ...e })) } : {}),
+      ...(this.recent.length > 0 ? { recent: this.recent.map((m) => ({ ...m })) } : {}),
+      ...(this.messageCount > 0 ? { messageCount: this.messageCount } : {}),
       ...(this.opts.context?.length
         ? { context: contextIndex(this.opts.context, { excerpts: true }) }
         : {}),
