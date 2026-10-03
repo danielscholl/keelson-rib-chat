@@ -2426,6 +2426,87 @@ describe("the server line and inspector", () => {
       .sections.filter((x) => x.kind === "actions")
       .flatMap((x) => (x.kind === "actions" ? x.items : []));
 
+  test("server refresh republishes matching index and inspector frames on the existing keys", async () => {
+    const sm = new FakeSnapshots();
+    let server: ServerLine | undefined;
+    const surface = createSwarmsSurface({
+      sm,
+      state: () => state({ server }),
+      find: () => ({}),
+      launch: () => ({ projects: [], live: 0, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ server, live: 0 }),
+      readLog: async () => "log",
+      report: () => undefined,
+      views: [],
+      windowMs: 1,
+    });
+    try {
+      expect(sm.keys()).toContain(SERVER_KEY);
+      for (const fixture of Object.values(serverFixtures)) {
+        server = fixture;
+        surface.refresh();
+        await Bun.sleep(10);
+        const index = sm.frames.get(INDEX_KEY)?.at(-1);
+        const inspector = sm.frames.get(SERVER_KEY)?.at(-1);
+        board(INDEX_KEY, index);
+        board(SERVER_KEY, inspector);
+        expect(index).toEqual(buildIndex(state({ server })));
+        expect(inspector).toEqual(buildServerPanel({ server, live: 0 }));
+      }
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+  });
+
+  test("request boards and the index no longer describe channels as being in ClickClack", () => {
+    for (const s of [fixtures.onlyYou!, fixtures.asked!, fixtures.gone!, fixtures.quiet!]) {
+      const index = buildIndex(state({ live: [s], server: serverFixtures.managedStopped }));
+      const swarmBoard = buildSwarmBoard(s, { server: serverFixtures.managedStopped });
+      board(INDEX_KEY, index);
+      board(swarmKey(s.id), swarmBoard);
+      expect(JSON.stringify(index)).not.toContain("in ClickClack");
+      expect(JSON.stringify(swarmBoard)).not.toContain("in ClickClack");
+    }
+  });
+
+  test("a reachable external server links its address, reports the probe and offers only Retry", () => {
+    const server = { ...serverFixtures.externalDown, running: true, unreachableSince: undefined };
+    const view = buildServerPanel({ server, live: 1 });
+    board(SERVER_KEY, view);
+    expect(view.header?.status).toEqual({ label: "reachable", tone: "ok" });
+    expect(view.sections[0]?.kind === "rows" ? view.sections[0].items[0] : undefined).toEqual({
+      text: "Address",
+      trailing: "cc.example",
+      href: "https://cc.example/app",
+    });
+    expect(view.sections[0]?.kind === "rows" ? view.sections[0].items[2] : undefined).toEqual({
+      text: "Last probe",
+      trailing: `answered at ${hhmm(server.checkedAt)}`,
+    });
+    expect(verbsOf({ server, live: 1 })).toEqual([
+      {
+        type: "server-probe",
+        label: "Retry",
+        glyph: "↻",
+        hint: "Probes the server again and updates the server line.",
+      },
+    ]);
+    const index = buildIndex(state({ server, live: [fixtures.running!] }));
+    board(INDEX_KEY, index);
+    expect(JSON.stringify(index.sections.at(-1))).toContain(
+      "Server · ClickClack reachable on cc.example · external · 1 swarm",
+    );
+    expect(
+      buildServerPanel({ server: serverFixtures.managedStopped, live: 0 }).header?.status,
+    ).toEqual({ label: "stopped", tone: "neutral" });
+    expect(buildServerPanel({ live: 0 }).header?.status).toEqual({
+      label: "unknown",
+      tone: "neutral",
+    });
+  });
+
   test("the index always ends with one plain server line and a Manage action", () => {
     const cases = [
       {
