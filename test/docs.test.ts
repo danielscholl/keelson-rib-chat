@@ -86,6 +86,9 @@ describe("contributed docs", () => {
       expect(swarms).toContain(`| ${reading} |`);
     }
     expect(swarms).toContain("pace over the last 5 min");
+    expect(swarms).toContain("turn start timestamps over the last five minutes");
+    expect(swarms).toContain("Older records without spans");
+    expect(swarms).toContain("accounting for the partial");
     expect(swarms).toContain("Fewer than one turn is reported as no pace");
     expect(swarms).toContain("turn budget (rounded up) would be unused");
     expect(swarms).toContain("computed when the board composes");

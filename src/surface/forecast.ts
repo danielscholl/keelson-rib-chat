@@ -33,8 +33,9 @@ export type Forecast = ForecastBase &
     | { reading: "clock-first" | "fits"; rate: number; runOutAt: string; unused: number }
   );
 
+// Count turn starts in the recent window; legacy pace buckets include a partial last minute.
 export function forecast(
-  s: Pick<SwarmSummary, "pace" | "turnsUsed" | "limits" | "startedAt">,
+  s: Pick<SwarmSummary, "spans" | "pace" | "turnsUsed" | "limits" | "startedAt">,
   now: Date,
 ): Forecast {
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
@@ -42,13 +43,22 @@ export function forecast(
   const base = { left, clockEndsAt };
   if (left === 0) return { ...base, reading: "out-of-turns" };
 
-  const window = Math.min(
-    PACE_WINDOW_MINUTES,
-    Math.max(1, (now.getTime() - Date.parse(s.startedAt)) / 60_000),
-  );
-  const turns = s.pace
-    ? s.pace.slice(-PACE_WINDOW_MINUTES).reduce((sum, n) => sum + n, 0)
-    : s.turnsUsed;
+  const nowMs = now.getTime();
+  const elapsed = (nowMs - Date.parse(s.startedAt)) / 60_000;
+  let window = Math.min(PACE_WINDOW_MINUTES, Math.max(1, elapsed));
+  let turns = s.turnsUsed;
+  if (s.spans !== undefined) {
+    const from = nowMs - window * 60_000;
+    turns = s.spans.filter((span) => {
+      const started = Date.parse(span.startedAt);
+      return started >= from && started <= nowMs;
+    }).length;
+  } else if (s.pace) {
+    const buckets = s.pace.slice(-PACE_WINDOW_MINUTES);
+    turns = buckets.reduce((sum, n) => sum + n, 0);
+    // At 30 minutes the live spark switches from start-aligned to a sliding window.
+    window = Math.max(1, buckets.length - 1 + (elapsed < 30 ? elapsed % 1 : 0));
+  }
   if (turns < 1) return { ...base, reading: "no-pace" };
 
   const rate = turns / window;

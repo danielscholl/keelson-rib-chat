@@ -83,6 +83,7 @@ import {
   type StartingSwarm,
   type SwarmAgent,
   type SwarmSummary,
+  type TurnSpan,
   WORKER_TONES,
 } from "../src/types.ts";
 
@@ -175,6 +176,16 @@ function swarm(id: string, patch: Partial<SwarmSummary> = {}): SwarmSummary {
     agents: [agent(id, 0), agent(id, 1)],
     ...patch,
   };
+}
+
+function turnSpans(id: string, minutes: readonly number[]): TurnSpan[] {
+  return minutes.map((minute, i) => ({
+    agentId: `${id}-lead`,
+    n: i + 1,
+    startedAt: new Date(Date.parse(T0) + minute * 60_000).toISOString(),
+    messages: 1,
+    wokeBy: ["rib"],
+  }));
 }
 
 const starting: StartingSwarm = {
@@ -672,9 +683,8 @@ describe("the live cockpit", () => {
           sub: "pace over the last 5 min",
           spark: [1, 2, 0],
           delta: {
-            text: `29 left · at this pace about 24 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+            text: "29 left · no turn in 5 min",
             direction: "flat",
-            tone: "caution",
           },
         },
         { label: "Time", clock: { mode: "until" } },
@@ -687,7 +697,11 @@ describe("the live cockpit", () => {
   });
 
   test("the index uses its compose clock for the cockpit's turn forecast", () => {
-    const s = swarm("s1for", { turnsUsed: 32, pace: [2, 1, 2, 1, 2] });
+    const s = swarm("s1for", {
+      turnsUsed: 32,
+      pace: [2, 1, 2, 1, 2],
+      spans: turnSpans("s1for", [17, 17, 18, 19, 19, 20, 21, 21]),
+    });
     const now = new Date("2026-09-22T14:21:00.000Z");
     const view = buildIndex(state({ live: [s] }), now);
     board(INDEX_KEY, view);
@@ -756,7 +770,14 @@ describe("Swarms boards", () => {
       delta: ReturnType<typeof forecastDelta>;
     })[];
     for (const { turnsUsed, pace, delta } of readings) {
-      const s = swarm("s5for", { turnsUsed, pace });
+      const s = swarm("s5for", {
+        turnsUsed,
+        pace,
+        spans: turnSpans(
+          "s5for",
+          pace.flatMap((n, i) => Array.from({ length: n }, () => 17 + i)),
+        ),
+      });
       const index = buildIndex(state({ live: [s] }), now);
       const drawer = buildSwarmBoard(s, { now });
       board(INDEX_KEY, index);
@@ -769,6 +790,31 @@ describe("Swarms boards", () => {
       }
     }
   });
+
+  test.each(["running", "stopping"] as const)(
+    "both boards count the full recent window across start-aligned buckets while %s",
+    (status) => {
+      const s = swarm("s6for", {
+        status,
+        turnsUsed: 5,
+        pace: [0, 1, 1, 1, 1, 1, 0],
+        spans: turnSpans("s6for", [1.75, 2.75, 3.75, 4.75, 5.75]),
+      });
+      const now = new Date("2026-09-22T14:06:30.000Z");
+      const index = buildIndex(state({ live: [s] }), now);
+      const drawer = buildSwarmBoard(s, { now });
+      for (const view of [index, drawer]) {
+        const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
+        const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
+        expect(tile?.delta).toEqual({
+          text: `35 left · at this pace about 12 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          direction: "flat",
+          tone: "caution",
+        });
+        expect(tile?.spark).toEqual([0, 1, 1, 1, 1, 1, 0]);
+      }
+    },
+  );
 
   test("an ended Turns tile keeps its spent count and spark but has no forecast", () => {
     const s = { ...fixtures.done!, pace: [1, 3, 2, 0, 1] };
@@ -1282,7 +1328,7 @@ describe("Swarms boards", () => {
       sub: "pace over the last 5 min",
       spark: [1, 3, 2, 0, 1],
       delta: {
-        text: `29 left · at this pace about 16 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+        text: `29 left · at this pace about 13 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
         direction: "flat",
         tone: "caution",
       },

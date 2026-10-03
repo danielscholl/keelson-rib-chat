@@ -464,9 +464,11 @@ record, and Stop swarm last. Message the lead is expanded directly under
 Conversation while running, unless the lead has concluded. Tokens says none yet
 before any turn, or that the provider reported none when turns ran without usage.
 
-The live Turns tile's sub reads "pace over the last 5 min". The forecast reads
-pace over the last five minutes, or since the start when younger, with at least
-one minute as the rate's denominator. Fewer than one turn is reported as no pace.
+The live Turns tile's sub reads "pace over the last 5 min". The forecast counts
+turn start timestamps over the last five minutes, or since the start when younger,
+with at least one minute as the rate's denominator. Older records without spans
+use the last five pace buckets over their covered time, accounting for the partial
+last minute; without buckets, they use turns so far. Fewer than one turn is reported as no pace.
 With positive pace, it projects when the remaining turns run out. If that is
 before the wall clock ends, it reads runs-out-first. Otherwise, it rounds the
 projected unused turns and reads clock-first when at least a tenth of the total

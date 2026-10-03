@@ -62,9 +62,11 @@ One live swarm expands on the page as a cockpit. It runs in this order:
 ### The budget forecast
 
 The Turns delta projects when the remaining turns run out against the wall
-clock. It reads turns per minute over the last five minutes, or since the
-start when the swarm is younger, with at least one minute as the rate's
-denominator. Before pace buckets are available, it uses turns so far.
+clock. It counts turn start timestamps over the last five minutes, or since
+the start when the swarm is younger, with at least one minute as the rate's
+denominator. Older records without spans use the last five pace buckets
+over their covered time, accounting for the partial last minute. Without
+buckets, those records use turns so far.
 Fewer than one turn in the window reads **no pace**, not infinite time.
 
 | Reading | Delta text | Direction | Tone |
