@@ -15,6 +15,7 @@ import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
+import type { forecastDelta } from "../src/surface/forecast.ts";
 import {
   channelHref,
   day,
@@ -715,6 +716,71 @@ describe("the live cockpit", () => {
 });
 
 describe("Swarms boards", () => {
+  test("all five live forecast deltas pass the host schema on both boards", () => {
+    const now = new Date("2026-09-22T14:21:00.000Z");
+    const readings = [
+      {
+        turnsUsed: 32,
+        pace: [2, 1, 2, 1, 2],
+        delta: {
+          text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+          direction: "down",
+          tone: "warn",
+        },
+      },
+      {
+        turnsUsed: 18,
+        pace: [1, 1, 1, 1, 2],
+        delta: {
+          text: `22 left · at this pace about 11 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          direction: "flat",
+          tone: "caution",
+        },
+      },
+      {
+        turnsUsed: 18,
+        pace: [2, 2, 2, 2, 3],
+        delta: { text: "22 left · pace fits the clock", direction: "flat" },
+      },
+      {
+        turnsUsed: 18,
+        pace: [0, 0, 0, 0, 0],
+        delta: { text: "22 left · no turn in 5 min", direction: "flat" },
+      },
+      {
+        turnsUsed: 40,
+        pace: [2, 2, 2, 2, 2],
+        delta: { text: "none left · agents finish their turns", direction: "down", tone: "warn" },
+      },
+    ] satisfies (Pick<SwarmSummary, "turnsUsed" | "pace"> & {
+      delta: ReturnType<typeof forecastDelta>;
+    })[];
+    for (const { turnsUsed, pace, delta } of readings) {
+      const s = swarm("s5for", { turnsUsed, pace });
+      const index = buildIndex(state({ live: [s] }), now);
+      const drawer = buildSwarmBoard(s, { now });
+      board(INDEX_KEY, index);
+      board(swarmKey(s.id), drawer);
+      for (const view of [index, drawer]) {
+        const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
+        const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
+        expect(tile?.delta).toEqual(delta);
+        expect(tile?.tone).toBe(turnsUsed === 40 ? "warn" : undefined);
+      }
+    }
+  });
+
+  test("an ended Turns tile keeps its spent count and spark but has no forecast", () => {
+    const s = { ...fixtures.done!, pace: [1, 3, 2, 0, 1] };
+    const view = buildSwarmBoard(s, { now: new Date("2026-09-22T14:21:00.000Z") });
+    board(swarmKey(s.id), view);
+    const result = view.sections.find((x) => x.kind === "stats" && x.title === "Result");
+    const tile = result?.kind === "stats" ? result.items[0] : undefined;
+    expect(tile).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: s.pace });
+    expect(tile?.delta).toBeUndefined();
+    expect(tile).not.toHaveProperty("delta");
+  });
+
   test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
     expect(tokensTile(swarm("s0tok", { turnsUsed: 0 }))).toEqual({
       label: "Tokens",
@@ -1364,20 +1430,21 @@ ${"detail ".repeat(1000)}`,
       }),
     );
     const live = Array.from({ length: 6 }, (_, i) => ({ ...big, id: `s9bi${i}` }));
+    const now = new Date("2026-09-22T14:21:00.000Z");
     for (const selected of [undefined, live[5]!.id]) {
-      const view = buildIndex(state({ live, ended: many, selected }));
+      const view = buildIndex(state({ live, ended: many, selected }), now);
       board(INDEX_KEY, view);
       expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
       console.info(
         `Conversation index (six live, selected ${selected ?? "default"}): ${Buffer.byteLength(JSON.stringify(view))} bytes`,
       );
     }
-    const single = buildIndex(state({ live: [big], ended: many }));
+    const single = buildIndex(state({ live: [big], ended: many }), now);
     board(INDEX_KEY, single);
     const bytes = Buffer.byteLength(JSON.stringify(single));
     expect(bytes).toBeLessThan(48_000);
     console.info(`Conversation index (one live, 20 recent messages): ${bytes} bytes`);
-    const drawer = buildSwarmBoard(big);
+    const drawer = buildSwarmBoard(big, { now });
     board(swarmKey(big.id), drawer);
     expect(Buffer.byteLength(JSON.stringify(drawer))).toBeLessThan(48_000);
     expect(buildDoc(big, big.id).length).toBeLessThan(128_000);
