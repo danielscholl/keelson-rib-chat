@@ -76,23 +76,24 @@ function details(s: SwarmSummary): string {
 // reading different swarms never race on one key.
 export function buildDoc(s: SwarmSummary | undefined, id: string): string {
   if (!s)
-    return `# Swarm ${id}\n\nThis swarm is no longer in the rib's history. Its channel \`#swarm-${id}\` in ClickClack keeps the transcript.\n`;
+    return `# Swarm ${id}\n\nThis swarm is no longer in the rib's history. Its channel \`#swarm-${id}\` keeps the transcript.\n`;
   const channel = channelHref(s);
-  const where = channel ? `[#${s.channelName}](${channel})` : `#${s.channelName}`;
+  const transcript = channel ? ` · [transcript ↗](${channel})` : "";
+  const where = `#${s.channelName}`;
   const title = `# ${s.task.trim().split("\n")[0]}`;
   const tail = details(s);
   const after = tail ? `\n\n${tail}` : "";
   if (s.conclusion !== undefined) {
     const by = s.agents.find((a) => a.lead)?.handle ?? `${s.id}-lead`;
     const when = s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : "";
-    return `${title}\n\n*Swarm ${s.id} · by @${by}${when} · ${where}*\n\n${s.conclusion}${after}\n`;
+    return `${title}\n\n*Swarm ${s.id} · by @${by}${when}${transcript}*\n\n${s.conclusion}${after}\n`;
   }
   if (s.status !== "running" && s.status !== "stopping") {
     const why = s.error ?? "the swarm ended without a conclusion";
     const draft = s.draftConclusion
       ? `\n\n> The lead's last conclusion was refused, and is kept below.\n\n${s.draftConclusion}`
       : "";
-    return `${title}\n\n*Swarm ${s.id} ended ${s.status}: ${why}. ${where}*${draft}${after}\n`;
+    return `${title}\n\n*Swarm ${s.id} ended ${s.status}: ${why}.${transcript}*${draft}${after}\n`;
   }
   const asks = (s.health?.asks ?? []).map((a) => {
     const thread = threadHref(s, a.threadRootId);
@@ -113,7 +114,7 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
       const files = (gate?.files ?? []).map(fileSection).join("\n\n");
       return `## ${gate?.nodeId} · ${r.workflow} ${r.runId}\n\n${quoted}${files ? `\n\n${files}` : ""}${thread ? `\n\n[The approval thread](${thread}) holds the review.` : ""}`;
     });
-    return `${title}\n\n*Swarm ${s.id} · ${where}*\n\n${[...asks, ...gateParts].join("\n\n")}${after}\n`;
+    return `${title}\n\n*Swarm ${s.id}${transcript}*\n\n${[...asks, ...gateParts].join("\n\n")}${after}\n`;
   }
   return `${title}\n\n*Swarm ${s.id} is working in ${where}.* Nothing waits on you: a conclusion, a question for you, or an open approval shows here first.${after}\n`;
 }

@@ -8,7 +8,7 @@
 
 import type { CanvasBoardView } from "@keelson/shared";
 import { day, hhmm } from "./format.ts";
-import type { ServerLine } from "./parts.ts";
+import { type ServerLine, serverAddress, serverState } from "./parts.ts";
 
 type Section = CanvasBoardView["sections"][number];
 type Row = Extract<Section, { kind: "rows" }>["items"][number];
@@ -47,53 +47,55 @@ function opRow(op: ServerOp): Row | undefined {
   return { icon: "✓", glyph: "ok", text: `${op.verb} finished ${hhmm(op.at)}` };
 }
 
-// The head is visible while the footer is folded, so an operation in progress
-// or a failed one reports there, not in the body the operator folded away.
+// An operation in progress or a failed one is the newest fact.
 export function pill(state: ServerPanelState): Pill {
   const { server, op } = state;
   if (op?.phase === "running") return { label: `${DOING[op.verb]}…`, tone: "info" };
   if (op?.phase === "failed") return { label: `${op.verb} failed`, tone: "error" };
   if (!server) return { label: "unknown", tone: "neutral" };
-  if (server.mode === "external") {
-    if (server.running) return { label: "reachable", tone: "ok" };
-    const since = server.unreachableSince ? ` since ${hhmm(server.unreachableSince)}` : "";
-    return { label: `unreachable${since}`, tone: "warn" };
-  }
-  return server.running ? { label: "running", tone: "ok" } : { label: "stopped", tone: "neutral" };
+  return {
+    label: serverState(server),
+    tone: server.running ? "ok" : server.mode === "external" ? "warn" : "neutral",
+  };
 }
 
 function detailRows(server: ServerLine): Row[] {
   const rows: Row[] = [];
   if (server.url) {
     rows.push({
-      icon: "↗",
-      text: server.url.replace(/^https?:\/\//, ""),
+      text: "Address",
+      trailing: serverAddress(server),
       ...(server.running ? { href: `${server.url}/app` } : {}),
-      trailing: server.mode,
     });
   }
+  rows.push({
+    text: "Mode",
+    trailing:
+      server.mode === "managed"
+        ? "managed · the rib starts, stops and resets it"
+        : "external · run by someone else; the rib doesn't start, stop or reset it",
+  });
   if (server.mode === "external") {
-    rows.push({ icon: "◌", text: "Run by someone else; the rib doesn't start, stop or reset it." });
     if (server.checkedAt) {
       rows.push({
-        icon: server.running ? "✓" : "!",
-        glyph: server.running ? "ok" : "warn",
-        text: server.running
-          ? `answered the last probe at ${hhmm(server.checkedAt)}`
-          : `did not answer at ${hhmm(server.checkedAt)}${server.unreachableSince ? `; unreachable since ${hhmm(server.unreachableSince)}` : ""}`,
+        text: "Last probe",
+        trailing: server.running
+          ? `answered at ${hhmm(server.checkedAt)}`
+          : `no answer at ${hhmm(server.checkedAt)}${server.unreachableSince ? `; unreachable since ${hhmm(server.unreachableSince)}` : ""}`,
       });
     }
     return rows;
   }
-  if (server.pid) {
-    const since = server.startedAt
-      ? ` · up since ${day(server.startedAt)} ${hhmm(server.startedAt)}`
-      : "";
-    const who = server.operator ? " · started by hand" : server.adopted ? " · adopted" : "";
-    rows.push({ icon: "◷", text: `process ${server.pid}${since}${who}` });
+  const who = server.operator ? " · started by hand" : server.adopted ? " · adopted" : "";
+  rows.push({
+    text: "Process",
+    trailing: server.pid ? `${server.pid}${who}` : "not running",
+  });
+  if (server.startedAt) {
+    rows.push({ text: "Started", trailing: `${day(server.startedAt)} ${hhmm(server.startedAt)}` });
   }
-  if (server.binary) rows.push({ icon: "▣", text: server.binary });
-  if (server.dataDir) rows.push({ icon: "▤", text: server.dataDir });
+  if (server.binary) rows.push({ text: "Binary", trailing: server.binary });
+  if (server.dataDir) rows.push({ text: "Data directory", trailing: server.dataDir });
   return rows;
 }
 
@@ -105,7 +107,7 @@ function verbs(state: ServerPanelState): Item[] {
         type: "server-probe",
         label: "Retry",
         glyph: "↻",
-        hint: "Probes the server again and updates the footer.",
+        hint: "Probes the server again and updates the server line.",
       },
     ];
   }
@@ -161,17 +163,16 @@ function verbs(state: ServerPanelState): Item[] {
 
 export function buildServerPanel(state: ServerPanelState): CanvasBoardView {
   const op = state.op ? opRow(state.op) : undefined;
-  const rows = [
-    ...(state.server ? detailRows(state.server) : [{ icon: "◌", text: "Checking the server…" }]),
-    ...(op ? [op] : []),
-  ];
   const items = verbs(state);
   return {
     view: "board",
-    title: "ClickClack",
+    title: "ClickClack server",
     header: { status: pill(state) },
     sections: [
-      { kind: "rows", items: rows },
+      state.server
+        ? { kind: "rows", boxed: true, items: detailRows(state.server) }
+        : { kind: "rows", items: [{ text: "Checking the server…" }] },
+      ...(op ? [{ kind: "rows" as const, items: [op] }] : []),
       ...(items.length > 0 ? [{ kind: "actions" as const, wrap: true, items }] : []),
     ],
   };

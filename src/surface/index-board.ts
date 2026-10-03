@@ -19,6 +19,8 @@ import {
   requestOf,
   type ServerLine,
   selectSwarm,
+  serverAddress,
+  serverState,
   sinceClock,
   sizeWord,
   stateLine,
@@ -27,6 +29,7 @@ import {
   turnMeter,
   verifiedText,
 } from "./parts.ts";
+import { type ServerOp, pill as serverPill } from "./server-panel.ts";
 import { buildCockpit } from "./swarm-board.ts";
 
 export interface SurfaceState {
@@ -35,6 +38,7 @@ export interface SurfaceState {
   // Oldest first, as the rib keeps them.
   ended: readonly SwarmSummary[];
   server?: ServerLine;
+  op?: ServerOp;
   selected?: string;
 }
 
@@ -184,6 +188,24 @@ export function buildBadge(state: SurfaceState): RibSurfaceBadge {
     : { count };
 }
 
+function serverRow(server: ServerLine | undefined, op: ServerOp | undefined, live: number): Row {
+  const address = server ? serverAddress(server) : undefined;
+  const operation = op && op.phase !== "done" ? serverPill({ server, op, live }) : undefined;
+  const status = operation?.label ?? (server ? serverState(server) : "checking");
+  return {
+    ...(operation ? { chip: operation } : {}),
+    text: [
+      server
+        ? `Server · ClickClack ${status}${address ? ` on ${address}` : ""}`
+        : "Server · ClickClack checking…",
+      ...(server ? [server.mode] : []),
+      ...(live > 0 ? [plural(live, "swarm")] : []),
+    ].join(" · "),
+    trailing: "Manage ›",
+    action: { type: "server-manage" },
+  };
+}
+
 export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardView {
   const live = state.live.map((s) => ({ s, needs: needsYou(s) }));
   const needing = live
@@ -286,8 +308,8 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
               items: [
                 { title: "Start a swarm", text: "Name the task above and pick a size." },
                 {
-                  title: "Agents talk in #swarm-<id>",
-                  text: "The lead spawns workers and they work it out in ClickClack.",
+                  title: "Agents work it out",
+                  text: "The lead spawns workers, and they talk it through in #swarm-<id>.",
                 },
                 {
                   title: "The lead concludes here",
@@ -297,6 +319,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
             },
           ]
         : []),
+      { kind: "rows", items: [serverRow(state.server, state.op, liveCount)] },
     ],
   };
 }

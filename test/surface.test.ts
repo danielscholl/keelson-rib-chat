@@ -34,11 +34,21 @@ import {
   swarmKey,
 } from "../src/surface/keys.ts";
 import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
-import { selectSwarm, stateLine } from "../src/surface/parts.ts";
+import {
+  type ServerLine,
+  selectSwarm,
+  serverAddress,
+  serverState,
+  stateLine,
+} from "../src/surface/parts.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
 import { buildRecord } from "../src/surface/record.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
-import { buildServerPanel, type ServerPanelState } from "../src/surface/server-panel.ts";
+import {
+  buildServerPanel,
+  type ServerOp,
+  type ServerPanelState,
+} from "../src/surface/server-panel.ts";
 import {
   createSwarmsSurface,
   MAX_SWARM_KEYS,
@@ -64,6 +74,26 @@ import {
 } from "../src/types.ts";
 
 const T0 = "2026-09-22T14:00:00.000Z";
+
+const serverFixtures = {
+  managedRunning: {
+    mode: "managed",
+    url: "http://127.0.0.1:18080",
+    running: true,
+    pid: 4242,
+    binary: "/usr/local/bin/clickclack",
+    dataDir: "/data/clickclack",
+    startedAt: T0,
+  },
+  managedStopped: { mode: "managed", url: "http://127.0.0.1:18080", running: false },
+  externalDown: {
+    mode: "external",
+    url: "https://cc.example",
+    running: false,
+    checkedAt: "2026-09-22T14:10:00.000Z",
+    unreachableSince: "2026-09-22T13:40:00.000Z",
+  },
+} satisfies Record<string, ServerLine>;
 
 function agent(
   id: string,
@@ -272,6 +302,28 @@ const state = (patch: Partial<SurfaceState> = {}): SurfaceState => ({
 
 const board = (key: string, view: unknown) =>
   expect(() => expectView(key, "board")(view)).not.toThrow();
+
+describe("the shared server text", () => {
+  test("state words distinguish managed processes from external reachability", () => {
+    expect(serverState({ mode: "managed", running: true })).toBe("running");
+    expect(serverState({ mode: "managed", running: false })).toBe("stopped");
+    expect(serverState({ mode: "external", running: true })).toBe("reachable");
+    expect(serverState({ mode: "external", running: false })).toBe("unreachable");
+    expect(serverState({ mode: "external", running: false, unreachableSince: T0 })).toBe(
+      `unreachable since ${hhmm(T0)}`,
+    );
+  });
+
+  test("addresses omit only the HTTP scheme and preserve unknown addresses", () => {
+    expect(serverAddress({ mode: "managed", running: true, url: "http://127.0.0.1:18080" })).toBe(
+      "127.0.0.1:18080",
+    );
+    expect(serverAddress({ mode: "external", running: false, url: "https://cc.example" })).toBe(
+      "cc.example",
+    );
+    expect(serverAddress({ mode: "managed", running: false })).toBeUndefined();
+  });
+});
 
 describe("the shared state line", () => {
   test("requests use the request title, its time, and the remaining count", () => {
@@ -609,7 +661,7 @@ describe("Swarms boards", () => {
     }
     const single = buildIndex(state({ live: [live[0]!] }));
     board(INDEX_KEY, single);
-    expect(single.sections).toEqual(buildCockpit(live[0]!, [], { titled: true }));
+    expect(single.sections.slice(0, -1)).toEqual(buildCockpit(live[0]!, [], { titled: true }));
   });
 
   test("Needs you combines all request kinds, one card per request with task and id", () => {
@@ -676,17 +728,19 @@ describe("Swarms boards", () => {
     expect(row?.kind === "rows" ? row.items[0]?.text : "").toContain("@w2 waits with 1 message");
   });
 
-  test("a connection request starts a stopped managed server and links the channel", () => {
+  test("a connection request starts a stopped managed server and links the transcript", () => {
     const down = { mode: "managed" as const, running: false };
     const card = cardsOf(buildIndex(state({ live: [fixtures.gone!], server: down })))[0];
     expect(card?.pill).toEqual({ label: "connection", tone: "error" });
+    expect(card?.title).toBe("ClickClack stopped answering");
+    expect(card?.actions?.[0]?.label).toBe("Start ClickClack");
     expect(card?.fields?.[0]?.value).toContain("the managed server is not running");
     expect(card?.fields?.[1]).toEqual({
       label: "since",
       clock: { at: "2026-09-22T12:50:00.000Z", mode: "since" },
     });
     expect(card?.fields?.[2]).toEqual({
-      value: "#swarm-s4n4x in ClickClack",
+      value: "transcript ↗",
       href: "http://127.0.0.1:18080/app/ws_1/ch_s4n4x",
     });
     expect(card?.actions?.map((a) => a.type)).toEqual(["server-start", "select-swarm"]);
@@ -713,10 +767,6 @@ describe("Swarms boards", () => {
           "fix-issue r20000-1 paused at approve-plan · only you can approve fix-issue on this host",
       },
       { label: "opened", clock: { at: "2026-09-22T14:31:00.000Z", mode: "since" } },
-      {
-        value: "the approval thread in ClickClack",
-        href: "http://127.0.0.1:18080/app/ws_1/msg_0042",
-      },
     ]);
     expect(card?.footnote).toBe("Fix issue #27: README undercounts frontend-mix nodes · s7k1p");
     expect(card?.reason).toBeUndefined();
@@ -733,6 +783,8 @@ describe("Swarms boards", () => {
     const question = cards[0];
     expect(question?.title).toBe("@w1 asked: which retry cap, 30 s or 60 s?");
     expect(question?.pill).toEqual({ label: "question", tone: "caution" });
+    expect(question?.fields?.some((field) => field.href)).toBe(false);
+    expect(JSON.stringify(question)).not.toContain("in ClickClack");
     expect(question?.actions?.[0]).toMatchObject({ type: "read-doc", label: "Read question" });
     expect(cards[1]?.title).toBe(
       "Review the plan for Fix issue #27: README undercounts frontend-mix nodes",
@@ -770,8 +822,41 @@ describe("Swarms boards", () => {
 
   test("an empty tab shows the journey, not a placeholder row", () => {
     const view = buildIndex(state());
-    expect(view.sections.map((x) => x.kind)).toEqual(["journey"]);
+    board(INDEX_KEY, view);
+    expect(view.sections.map((x) => x.kind)).toEqual(["journey", "rows"]);
+    const journey = view.sections[0];
+    expect(journey?.kind === "journey" ? journey.items[1] : undefined).toEqual({
+      title: "Agents work it out",
+      text: "The lead spawns workers, and they talk it through in #swarm-<id>.",
+    });
+    expect(view.sections.at(-1)).toEqual({
+      kind: "rows",
+      items: [
+        {
+          text: "Server · ClickClack checking…",
+          trailing: "Manage ›",
+          action: { type: "server-manage" },
+        },
+      ],
+    });
     expect(view.header).toBeUndefined();
+  });
+
+  test("the server row reflects the current op instead of stale server state", () => {
+    const server = { mode: "managed" as const, url: "http://127.0.0.1:18080", running: true };
+    const failed = { verb: "reset" as const, phase: "failed" as const, at: T0, error: "boom" };
+    const view = buildIndex(state({ server, op: failed, live: [] }));
+    expect(view.sections.at(-1)).toMatchObject({
+      kind: "rows",
+      items: [
+        {
+          chip: { label: "reset failed", tone: "error" },
+          text: "Server · ClickClack reset failed on 127.0.0.1:18080 · managed",
+          trailing: "Manage ›",
+          action: { type: "server-manage" },
+        },
+      ],
+    });
   });
 
   test("ended rows lead with the outcome, group by day, and keep eight", () => {
@@ -785,7 +870,7 @@ describe("Swarms boards", () => {
       }),
     );
     const view = buildIndex(state({ ended }), now);
-    const days = view.sections.filter((x) => x.kind === "rows");
+    const days = view.sections.filter((x) => x.kind === "rows" && x.title);
     expect(days.map((x) => x.title)).toEqual(["Today", "Yesterday", dayHeading(ago(7), now)]);
     const today = days[0]?.kind === "rows" ? days[0].items : [];
     expect(today).toHaveLength(3);
@@ -931,6 +1016,7 @@ describe("Swarms boards", () => {
     const items = actions[0]?.kind === "actions" ? actions[0].items : [];
     expect(items.map((i) => i.type)).toEqual(["message-lead", "open-record", "stop-swarm"]);
     expect(items[0]).toMatchObject({ label: "Message the lead", expanded: true });
+    expect(items[0]?.fields?.[0]?.placeholder).toBe("posts as you, wakes the lead");
     expect(items[1]).toMatchObject({ label: "Open the record", payload: { id: "s9hjy" } });
     expect(items[2]).toMatchObject({ inline: true, align: "end" });
     const review = view.sections[0];
@@ -1133,7 +1219,39 @@ describe("the details", () => {
     expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
   });
 
-  test("one outcome card holds the report, the conclusion and the channel", () => {
+  test("About ends with the transcript before an ended swarm's back-link", () => {
+    for (const s of [fixtures.running!, fixtures.done!]) {
+      const view = buildSwarmBoard(s);
+      board(swarmKey(s.id), view);
+      const rows = rowsTitled(view, "About");
+      expect(rows[0]?.text).not.toContain("ClickClack");
+      expect(rows[0]?.text).not.toContain("#swarm-");
+      const transcript = {
+        text: "transcript ↗",
+        href: `http://127.0.0.1:18080/app/ws_1/${s.channelId}`,
+      };
+      expect(s.status === "running" ? rows.at(-1) : rows.at(-2)).toEqual(transcript);
+      if (s.status !== "running") {
+        expect(rows.at(-1)).toEqual({
+          icon: "←",
+          text: "Ended swarms",
+          action: { type: "history-open" },
+        });
+      }
+    }
+    expect(
+      rowsTitled(buildSwarmBoard({ ...fixtures.running!, clickclack: undefined }), "About").some(
+        (row) => row.text === "transcript ↗",
+      ),
+    ).toBe(false);
+    const gone = buildGoneBoard("s0old");
+    board(swarmKey("s0old"), gone);
+    expect(gone.sections[0]?.kind === "rows" ? gone.sections[0].items[0]?.text : "").toBe(
+      "Swarm s0old is no longer in the rib's history. Its channel #swarm-s0old keeps the transcript.",
+    );
+  });
+
+  test("one outcome card holds only the report and conclusion, not channel chrome", () => {
     const s = swarm("s8out", {
       status: "done",
       endedAt: T0,
@@ -1149,14 +1267,13 @@ describe("the details", () => {
       title: "README count",
       pill: { label: "report", tone: "brand" },
       footnote: `by @lead · ${day(T0)} ${hhmm(T0)} · 20 characters · report 3 KB`,
-      fields: [
-        { value: "The count is twelve." },
-        {
-          value: "↗ #swarm-s8out in ClickClack",
-          href: "http://127.0.0.1:18080/app/ws_1/ch_s8out",
-        },
-      ],
     });
+    expect(cards[0]?.fields).toEqual([
+      {
+        value: "The count is twelve.",
+        copyAction: { type: "copy-conclusion", payload: { id: s.id } },
+      },
+    ]);
     expect(cards[0]?.actions?.map((a) => a.label)).toEqual([
       "Open the report",
       "Read the conclusion",
@@ -1298,6 +1415,28 @@ describe("the details", () => {
 });
 
 describe("the reading pane", () => {
+  test("metadata links the transcript while prose names the channel and keeps thread links", () => {
+    for (const s of [fixtures.done!, fixtures.stalled!, fixtures.asked!]) {
+      const doc = buildDoc(s, s.id);
+      expect(doc).toContain(`· [transcript ↗](http://127.0.0.1:18080/app/ws_1/${s.channelId})`);
+      expect(doc).not.toContain("in ClickClack");
+      expect(doc).not.toContain(`[#${s.channelName}]`);
+      const unlinked = buildDoc({ ...s, clickclack: undefined }, s.id);
+      expect(unlinked).not.toContain("transcript ↗");
+      expect(unlinked).not.toContain(" · *");
+    }
+    const asked = buildDoc(fixtures.asked!, fixtures.asked!.id);
+    expect(asked).toContain("[in its thread](http://127.0.0.1:18080/app/ws_1/msg_0100)");
+    expect(asked).toContain("[The approval thread](http://127.0.0.1:18080/app/ws_1/msg_0042)");
+    expect(asked).toContain("mention @w1 in #swarm-s6ask");
+    expect(buildDoc(fixtures.running!, fixtures.running!.id)).toContain(
+      "is working in #swarm-s9hjx.",
+    );
+    expect(buildDoc(undefined, "s0old")).toContain(
+      "Its channel `#swarm-s0old` keeps the transcript.",
+    );
+  });
+
   test("an open gate shows its files: markdown as is, other text fenced, failures named", () => {
     const withFiles = swarm("s9fil", {
       runs: [
@@ -1800,6 +1939,43 @@ const actionDeps = {
 describe("actions", () => {
   const deps = actionDeps;
 
+  test("server-manage opens the side inspector immediately and probes once", async () => {
+    let probes = 0;
+    let release = () => {};
+    const probing = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const manageDeps = {
+      ...deps,
+      probe: () => {
+        probes++;
+        return probing;
+      },
+    };
+    try {
+      const result = await handleSwarmsAction({ type: "server-manage" }, manageDeps);
+      const effect = {
+        effect: "open-canvas",
+        key: SERVER_KEY,
+        title: "ClickClack server",
+        placement: "side",
+      } as const;
+      expect(result).toEqual({ ok: true, data: effect });
+      expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual(effect);
+      expect(probes).toBe(1);
+      expect(
+        await handleSwarmsAction({ type: "server-manage", origin: "canvas-html" }, manageDeps),
+      ).toEqual({ ok: false, error: "the Swarms tab takes actions from its boards only" });
+      expect(probes).toBe(1);
+      expect(await handleSwarmsAction({ type: "server-manage" }, deps)).toEqual({
+        ok: true,
+        data: effect,
+      });
+    } finally {
+      release();
+    }
+  });
+
   test("select-swarm selects a live swarm without opening a drawer or showing a toast", async () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
@@ -2264,20 +2440,234 @@ describe("start and run again", () => {
   });
 });
 
-describe("the ClickClack footer", () => {
-  const running = {
-    mode: "managed" as const,
-    url: "http://127.0.0.1:18080",
-    running: true,
-    pid: 4242,
-    binary: "/usr/local/bin/clickclack",
-    dataDir: "/data/clickclack",
-    startedAt: T0,
-  };
+describe("the server line and inspector", () => {
+  const running = serverFixtures.managedRunning;
   const verbsOf = (st: ServerPanelState) =>
     buildServerPanel(st)
       .sections.filter((x) => x.kind === "actions")
       .flatMap((x) => (x.kind === "actions" ? x.items : []));
+
+  test("server refresh republishes matching index and inspector frames on the existing keys", async () => {
+    const sm = new FakeSnapshots();
+    let server: ServerLine | undefined;
+    let op: ServerOp | undefined;
+    const surface = createSwarmsSurface({
+      sm,
+      state: () => state({ server }),
+      find: () => ({}),
+      launch: () => ({ projects: [], live: 0, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ server, live: 0, ...(op ? { op } : {}) }),
+      readLog: async () => "log",
+      report: () => undefined,
+      views: [],
+      windowMs: 1,
+    });
+    try {
+      expect(sm.keys()).toContain(SERVER_KEY);
+      for (const fixture of Object.values(serverFixtures)) {
+        server = fixture;
+        surface.refresh();
+        await Bun.sleep(10);
+        const index = sm.frames.get(INDEX_KEY)?.at(-1);
+        const inspector = sm.frames.get(SERVER_KEY)?.at(-1);
+        board(INDEX_KEY, index);
+        board(SERVER_KEY, inspector);
+        expect(index).toEqual(buildIndex(state({ server })));
+        expect(inspector).toEqual(buildServerPanel({ server, live: 0 }));
+      }
+      for (const current of [
+        { verb: "reset", phase: "running", at: T0 },
+        { verb: "reset", phase: "failed", at: T0, error: "boom" },
+      ] satisfies ServerOp[]) {
+        op = current;
+        surface.refresh();
+        await Bun.sleep(10);
+        expect(sm.frames.get(INDEX_KEY)?.at(-1)).toEqual(buildIndex(state({ server, op })));
+      }
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+  });
+
+  test("request boards and the index no longer describe channels as being in ClickClack", () => {
+    for (const s of [fixtures.onlyYou!, fixtures.asked!, fixtures.gone!, fixtures.quiet!]) {
+      const index = buildIndex(state({ live: [s], server: serverFixtures.managedStopped }));
+      const swarmBoard = buildSwarmBoard(s, { server: serverFixtures.managedStopped });
+      board(INDEX_KEY, index);
+      board(swarmKey(s.id), swarmBoard);
+      expect(JSON.stringify(index)).not.toContain("in ClickClack");
+      expect(JSON.stringify(swarmBoard)).not.toContain("in ClickClack");
+    }
+  });
+
+  test("a reachable external server links its address, reports the probe and offers only Retry", () => {
+    const server = { ...serverFixtures.externalDown, running: true, unreachableSince: undefined };
+    const view = buildServerPanel({ server, live: 1 });
+    board(SERVER_KEY, view);
+    expect(view.header?.status).toEqual({ label: "reachable", tone: "ok" });
+    expect(view.sections[0]?.kind === "rows" ? view.sections[0].items[0] : undefined).toEqual({
+      text: "Address",
+      trailing: "cc.example",
+      href: "https://cc.example/app",
+    });
+    expect(view.sections[0]?.kind === "rows" ? view.sections[0].items[2] : undefined).toEqual({
+      text: "Last probe",
+      trailing: `answered at ${hhmm(server.checkedAt)}`,
+    });
+    expect(verbsOf({ server, live: 1 })).toEqual([
+      {
+        type: "server-probe",
+        label: "Retry",
+        glyph: "↻",
+        hint: "Probes the server again and updates the server line.",
+      },
+    ]);
+    const index = buildIndex(state({ server, live: [fixtures.running!] }));
+    board(INDEX_KEY, index);
+    expect(JSON.stringify(index.sections.at(-1))).toContain(
+      "Server · ClickClack reachable on cc.example · external · 1 swarm",
+    );
+    expect(
+      buildServerPanel({ server: serverFixtures.managedStopped, live: 0 }).header?.status,
+    ).toEqual({ label: "stopped", tone: "neutral" });
+    expect(buildServerPanel({ live: 0 }).header?.status).toEqual({
+      label: "unknown",
+      tone: "neutral",
+    });
+  });
+
+  test("the index always ends with one plain server line and a Manage action", () => {
+    const cases = [
+      {
+        server: serverFixtures.managedRunning,
+        live: [fixtures.running!],
+        text: "Server · ClickClack running on 127.0.0.1:18080 · managed · 1 swarm",
+      },
+      {
+        server: serverFixtures.managedStopped,
+        live: [],
+        text: "Server · ClickClack stopped on 127.0.0.1:18080 · managed",
+      },
+      {
+        server: serverFixtures.externalDown,
+        live: [],
+        text: `Server · ClickClack unreachable since ${hhmm(serverFixtures.externalDown.unreachableSince)} on cc.example · external`,
+      },
+    ];
+    for (const { server, live, text } of cases) {
+      const view = buildIndex(state({ server, live, ended: [fixtures.done!] }));
+      board(INDEX_KEY, view);
+      expect(view.sections.at(-1)).toEqual({
+        kind: "rows",
+        items: [{ text, trailing: "Manage ›", action: { type: "server-manage" } }],
+      });
+      expect(JSON.stringify(view)).not.toContain('"collapsed"');
+    }
+    const startingView = buildIndex(
+      state({
+        server: serverFixtures.managedRunning,
+        live: [fixtures.running!],
+        starting: [starting],
+      }),
+    );
+    board(INDEX_KEY, startingView);
+    expect(JSON.stringify(startingView.sections.at(-1))).toContain("managed · 2 swarms");
+    const unknownView = buildIndex(state({ starting: [starting] }));
+    board(INDEX_KEY, unknownView);
+    expect(JSON.stringify(unknownView.sections.at(-1))).toContain("ClickClack checking… · 1 swarm");
+    for (const [op, chip] of [
+      [
+        { verb: "reset", phase: "running", at: T0 },
+        { label: "resetting…", tone: "info" },
+      ],
+      [
+        { verb: "reset", phase: "failed", at: T0, error: "boom" },
+        { label: "reset failed", tone: "error" },
+      ],
+    ] as const) {
+      const view = buildIndex(state({ server: serverFixtures.managedRunning, op }));
+      const section = view.sections.at(-1);
+      expect(section?.kind === "rows" ? section.items[0]?.chip : undefined).toEqual(chip);
+    }
+  });
+
+  test("server inspectors box the managed process facts or the external probe", () => {
+    const managed = buildServerPanel({ server: running, live: 0 });
+    board(SERVER_KEY, managed);
+    expect(managed.title).toBe("ClickClack server");
+    expect(managed.sections[0]).toEqual({
+      kind: "rows",
+      boxed: true,
+      items: [
+        { text: "Address", trailing: "127.0.0.1:18080", href: `${running.url}/app` },
+        { text: "Mode", trailing: "managed · the rib starts, stops and resets it" },
+        { text: "Process", trailing: "4242" },
+        { text: "Started", trailing: `${day(T0)} ${hhmm(T0)}` },
+        { text: "Binary", trailing: running.binary },
+        { text: "Data directory", trailing: running.dataDir },
+      ],
+    });
+    const stopped = buildServerPanel({ server: serverFixtures.managedStopped, live: 0 });
+    board(SERVER_KEY, stopped);
+    expect(stopped.sections[0]).toEqual({
+      kind: "rows",
+      boxed: true,
+      items: [
+        { text: "Address", trailing: "127.0.0.1:18080" },
+        { text: "Mode", trailing: "managed · the rib starts, stops and resets it" },
+        { text: "Process", trailing: "not running" },
+      ],
+    });
+    const external = buildServerPanel({ server: serverFixtures.externalDown, live: 0 });
+    board(SERVER_KEY, external);
+    expect(external.sections[0]).toEqual({
+      kind: "rows",
+      boxed: true,
+      items: [
+        { text: "Address", trailing: "cc.example" },
+        {
+          text: "Mode",
+          trailing: "external · run by someone else; the rib doesn't start, stop or reset it",
+        },
+        {
+          text: "Last probe",
+          trailing: `no answer at ${hhmm(serverFixtures.externalDown.checkedAt)}; unreachable since ${hhmm(serverFixtures.externalDown.unreachableSince)}`,
+        },
+      ],
+    });
+    expect(buildServerPanel({ live: 0 }).sections).toEqual([
+      { kind: "rows", items: [{ text: "Checking the server…" }] },
+    ]);
+    for (const [patch, suffix] of [
+      [{ operator: true }, "started by hand"],
+      [{ adopted: true }, "adopted"],
+    ] as const) {
+      const view = buildServerPanel({ server: { ...running, ...patch }, live: 0 });
+      expect(view.sections[0]?.kind === "rows" ? view.sections[0].items[2]?.trailing : "").toBe(
+        `4242 · ${suffix}`,
+      );
+    }
+  });
+
+  test("server operation results remain separate from the boxed facts", () => {
+    for (const phase of ["done", "failed"] as const) {
+      const view = buildServerPanel({
+        server: running,
+        live: 0,
+        op: { verb: "start", phase, at: T0, error: "boom" },
+      });
+      board(SERVER_KEY, view);
+      expect(view.sections[1]).toMatchObject({ kind: "rows" });
+      expect(
+        view.sections[1]?.kind === "rows" ? view.sections[1].boxed : undefined,
+      ).toBeUndefined();
+      expect(JSON.stringify(view.sections[1])).toContain(
+        phase === "done" ? `start finished ${hhmm(T0)}` : "start failed: boom",
+      );
+    }
+  });
 
   test("composes for every server state, and holds stop and reset while a swarm is live", () => {
     const at = "2026-09-22T14:10:00.000Z";
@@ -2303,6 +2693,11 @@ describe("the ClickClack footer", () => {
     }
     expect(verbsOf({ server: running, live: 0 }).map((i) => i.type)).toEqual([
       "server-stop",
+      "server-reset",
+      "server-log",
+    ]);
+    expect(verbsOf({ server: serverFixtures.managedStopped, live: 0 }).map((i) => i.type)).toEqual([
+      "server-start",
       "server-reset",
       "server-log",
     ]);
@@ -2346,7 +2741,7 @@ describe("the ClickClack footer", () => {
     );
   });
 
-  test("a verb runs in the background, reports on the footer, and refuses while it or a swarm is busy", async () => {
+  test("a verb runs in the background, reports on the inspector, and refuses while it or a swarm is busy", async () => {
     let release: () => void = () => {};
     const calls: string[] = [];
     let live = 0;
@@ -2447,5 +2842,7 @@ describe("the rib's surface", () => {
     const surface = ribSurfaceDescriptorSchema.parse(rib.surfaces?.[0]);
     expect(surface).toMatchObject({ id: "swarms", title: "Swarms", hideRegionActions: true });
     expect(JSON.stringify(surface.layout)).toContain(INDEX_KEY);
+    expect(surface.layout.footer).toBeUndefined();
+    expect(JSON.stringify(surface.layout)).not.toContain(SERVER_KEY);
   });
 });

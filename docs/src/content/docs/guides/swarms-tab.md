@@ -6,8 +6,8 @@ sidebar:
 ---
 
 The rib adds a **Swarms** tab to Keelson. It shows every swarm at once. The
-conversation itself stays in ClickClack, and every channel and gate thread on
-the tab links there.
+conversation itself stays in ClickClack. About links its transcript, and the
+reading pane links question and approval threads.
 
 ## The index
 
@@ -110,8 +110,9 @@ turns, how long it ran, when it ended, how many of its runs verified, and
 last row opens the rest in the same day groups. The rib keeps the last 50 in
 its data directory, so they survive a restart.
 
-An empty tab shows the three steps: start a swarm above, agents talk in
-`#swarm-<id>`, the lead concludes here.
+An empty tab shows the three steps: **Start a swarm** above, **Agents work it
+out** in `#swarm-<id>`, **The lead concludes here**. The server line stays below
+them.
 
 ## When a swarm needs you
 
@@ -122,7 +123,7 @@ its own way of clearing. The tab's badge counts swarms with any request.
 |---|---|---|---|
 | **decide** | A run waits at an approval this swarm may not answer: the host refused the workflow under `ribApprovalGrants`, or offers the rib no way to answer. | **Review plan** for a plan approval, **Answer** for any other, opening the run beside the tab. **Reply** posts in the approval thread as you; it approves nothing. | The run leaves the approval. |
 | **question** | An agent opened a sentence with `@operator` (or your ClickClack handle), or asked a question naming you. A passing mention, such as "I'll present both to @operator", isn't one. | **Read question** opens the reading pane. **Reply** posts in the question's thread. **Dismiss** clears it from the tab. | You reply in that thread, post in the channel mentioning the asker, or dismiss it. Other questions stay open. A note to the lead answers the lead's own questions only. |
-| **connection** | The swarm's ClickClack socket closed twice without reopening. | **Start ClickClack** when the managed server is down, otherwise **Open swarm** expands the swarm on the page; the card links the channel. | The socket reopens. |
+| **connection** | The swarm's ClickClack socket closed twice without reopening. | **Start ClickClack** when the managed server is down, otherwise **Open swarm** expands the swarm on the page; the card links the transcript. | The socket reopens. |
 | **quiet** | A run waits at an approval the swarm could answer, and no agent has worked since. | **Message the lead** | Any agent takes a turn. |
 
 A swarm with an open question waits for you. It isn't nudged or stalled, and
@@ -148,7 +149,8 @@ Live, the board runs in this order:
   busy or waiting, and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
 - **Message the lead**, which posts in the channel as you and wakes the lead,
-  then **Open the record**, and **Stop swarm…** at the far end of the row. The button reads
+  with the placeholder **posts as you, wakes the lead**, then **Open the
+  record**, and **Stop swarm…** at the far end of the row. The button reads
   **Sending…** until the note is posted, the toast says where it went, and
   the note shows at once under Activity as **you posted in #swarm-<id>: …**
 
@@ -157,7 +159,7 @@ Ended, it runs: the outcome, the result strip with how many runs verified, and
 
 The outcome is one card. When the lead published a report, the card carries
 its title, the conclusion with a copy button, **Open the report** and **Read
-the conclusion**, the channel in ClickClack, and a footnote with who concluded,
+the conclusion**, and a footnote with who concluded,
 when, the conclusion's length and the report's size. Without a report the card
 is titled **Conclusion**. A swarm that did not conclude shows its cause
 instead, such as **Stopped by you at 21:50**, **Out of turns at 40** or
@@ -187,9 +189,9 @@ The details follow in both and read the same in the live cockpit:
   Each row starts with who it is by: the agent's handle in its color, or
   **you**. A turn is one row, written when it ends: **turn 3 ok · 42 s · 2
   new**, or **nudged** or **run update** when no message woke it
-- **About**: the channel, the times, the size's limits, the model per role, the
-  tokens, and any problems with ClickClack or the lead's turns; an ended board
-  ends with a row back to the ended swarms
+- **About**: the times, the size's limits, the model per role, the tokens, any
+  problems with ClickClack or the lead's turns, and the **transcript ↗** link;
+  an ended board keeps its row back to the ended swarms after the transcript
 
 **Message the lead** goes away once the lead concludes, since no new turn would
 read it. **Stop swarm…** names the runs it cancels, and the board shows
@@ -282,24 +284,31 @@ refreshed. Changing the model there sets it for every agent. The rib keeps each
 launch in its data directory next to the history, and a server reset forgets
 them with it.
 
-## The ClickClack footer
+## The server line
 
-The footer at the bottom of the tab is folded by default. Its head shows the
-server's state even while folded: **running** or **stopped** for a managed
-server, **reachable** or **unreachable since 21:40** for an external one, and
-**starting…**, **stopping…**, **resetting…** or **stop failed** while an
-operation runs or after one fails. Open it to see the server the rib uses:
+One muted server line ends the index, even on an empty tab. With a managed
+server and one live swarm it reads:
 
-- its address, and whether the rib manages it
-- for a managed server: the process, when it started, the binary, and the data
-  directory
+**Server · ClickClack running on 127.0.0.1:18080 · managed · 1 swarm**
+
+A managed server reads **running** or **stopped**; an external one reads
+**reachable** or **unreachable since 21:40**. The swarm count includes starts
+in progress and disappears when none is live.
+
+**Manage ›** opens **ClickClack server**, the server inspector at the side.
+Its boxed rows show **Address** and **Mode**. A managed server also shows
+**Process**, **Started**, **Binary**, and **Data directory** when known; an
+external one shows **Last probe**. A running server's address opens its web
+UI. The inspector's head pill carries **starting…**, **stopping…**,
+**resetting…** or **stop failed** while an operation runs or after one fails.
 
 For a managed server it has **Start** or **Stop**, **Reset…**, and **Log**.
-Start, Stop, and Reset run in the background, and the footer shows the result.
+Start, Stop, and Reset run in the background, and the inspector shows the result.
 A stop can take several seconds, and a reset up to 30. Stop and Reset wait
 until no swarm is live. Reset asks you to type `reset`, because it deletes
 every channel, transcript, bot, and session, and the ended swarms on the tab.
 **Log** opens the last 200 lines of the server log.
 
-An external server is probed on each refresh, and the footer says when it last
-answered. **Retry** probes it again. The rib doesn't start, stop, or reset it.
+An external server is probed on each refresh, and **Last probe** says when it
+answered or failed to answer. **Retry** probes it again and updates the server
+line. The rib doesn't start, stop, or reset it.

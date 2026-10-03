@@ -490,8 +490,8 @@ the clock when it ended, how many runs verified, and ◧ report.
 Requests come in a ladder: decide (a run waits at an approval only the operator
 can answer, because the host refused the workflow under \`ribApprovalGrants\`
 or offers no respond), question (an agent addressed \`@operator\` to ask something), connection
-(ClickClack's socket closed twice without reopening; the card offers Start
-ClickClack when the managed server is down), quiet (a run waits at an
+(ClickClack's socket closed twice without reopening; the card links the transcript
+and offers Start ClickClack when the managed server is down), quiet (a run waits at an
 approval the swarm could answer and no agent has worked since). The tab's badge
 counts swarms with any request. An approval a peer is reviewing appears in the
 state line and counts as no request.
@@ -504,7 +504,7 @@ then the details. Ended, it runs: the outcome, the result strip, Run again and
 Open the record, then the details.
 The outcome is one card: under the report's title when the lead published one
 (else Conclusion), the conclusion with a copy button, Open the report, Read the
-conclusion, and the channel in ClickClack; a swarm that did not conclude shows
+conclusion; a swarm that did not conclude shows
 its cause instead, such as Stopped by you at 21:50 or Out of turns at 40. The
 details are the same in both: the agents as a bench with an open seat per
 unfilled slot and a waiting pill on agents with messages and no slot, Spend
@@ -513,7 +513,8 @@ the runs (only when the launch named workflows; each names its branch, every
 pull request, how long it took, and why it failed), the task and each context
 item by id with its text under a disclosure, the activity with repeats counted
 (the last 200 events are in the reading pane, with each run's full error and
-CI detail), and About. Each activity row carries its actor as a chip in the
+CI detail), and About. About ends with a transcript link; an ended board keeps
+its back-link to Ended swarms after that. Each activity row carries its actor as a chip in the
 agent's color, or you for the operator, and a turn is one row written when it
 ends, with its outcome, how long it took and what woke it. Each bench card's
 footnote names the agent's last event, and the Turns tile keeps its spark after
@@ -542,11 +543,16 @@ URL or #N with no context is refused, since agents cannot open links; Prepare
 in chat opens a chat that gathers the evidence and calls \`chat_swarm_start\`.
 An ended swarm's board offers Run again, whose hint names what it reuses.
 
-A folded ClickClack footer carries the server's state in its head pill,
-including an operation in progress, and for an external server whether it
-answered the last probe. For a managed server it offers Start or Stop, Reset
-(typed confirm, refused while a swarm is live), and the last 200 lines of the
-server log.
+One muted server line ends the index, even on an empty tab:
+Server · ClickClack running on 127.0.0.1:18080 · managed · 1 swarm.
+A managed server reads running or stopped; an external one reads reachable or
+unreachable since HH:MM. Manage opens the server inspector at the side. Its boxed
+rows show address and mode, then process, started, binary and data directory for
+a managed server, or the last probe for an external one. Its head pill carries
+an operation in progress or a failed one. A managed server offers Start or Stop,
+Reset (type reset to confirm, refused while a swarm is live), and Log, which opens
+the last 200 lines of the server log. An external server offers Retry to probe it
+again; the rib never starts, stops or resets it.
 
 # Restarts
 
