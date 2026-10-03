@@ -3200,11 +3200,12 @@ describe("the details", () => {
       text: "fix-issue Fix issue #27: README undercounts frontend-mix nodes · keelson/rb · live checkout · node build failed: tsc exited 2",
       trailing: "3 min · failed",
     });
-    const doc = buildDoc(s, s.id);
-    expect(doc).toContain(`### fix-issue · ${shortRun("rb0000-1111-2222")} · failed`);
-    expect(doc).toContain("[PR #42](https://github.com/o/r/pull/42)");
-    expect(doc).toContain("src/a.ts(1,1): error TS1005");
-    expect(doc).toContain("CI: 2 checks failed");
+    const record = buildRecord(s, new Date(T0));
+    expect(record).toContain(`<code>${shortRun("rb0000-1111-2222")}</code>`);
+    expect(record).toContain("https://github.com/o/r/pull/42");
+    expect(record).toContain("node build failed: tsc exited 2");
+    expect(record).toContain("fail: 2 checks failed");
+    expect(buildDoc(s, s.id)).not.toContain("## Runs");
   });
 
   test("spend bars each agent's fresh tokens against the swarm's", () => {
@@ -3297,7 +3298,7 @@ describe("the details", () => {
 });
 
 describe("the reading pane", () => {
-  test("metadata links the transcript while prose names the channel and keeps thread links", () => {
+  test("metadata retains the transcript but question and gate threads belong to inspectors", () => {
     for (const s of [fixtures.done!, fixtures.stalled!, fixtures.asked!]) {
       const doc = buildDoc(s, s.id);
       expect(doc).toContain(`· [transcript ↗](http://127.0.0.1:18080/app/ws_1/${s.channelId})`);
@@ -3308,9 +3309,15 @@ describe("the reading pane", () => {
       expect(unlinked).not.toContain(" · *");
     }
     const asked = buildDoc(fixtures.asked!, fixtures.asked!.id);
-    expect(asked).toContain("[in its thread](http://127.0.0.1:18080/app/ws_1/msg_0100)");
-    expect(asked).toContain("[The approval thread](http://127.0.0.1:18080/app/ws_1/msg_0042)");
-    expect(asked).toContain("mention @w1 in #swarm-s6ask");
+    expect(asked).not.toContain("msg_0100");
+    expect(asked).not.toContain("msg_0042");
+    expect(asked).toContain("Open questions and gates in the tab's inspectors.");
+    expect(
+      JSON.stringify(buildQuestionInspector(fixtures.asked!, fixtures.asked!.health!.asks![0]!)),
+    ).toContain("http://127.0.0.1:18080/app/ws_1/msg_0100");
+    expect(
+      JSON.stringify(buildGateInspector(fixtures.asked!, fixtures.asked!.runs![0]!)),
+    ).toContain("http://127.0.0.1:18080/app/ws_1/msg_0042");
     expect(buildDoc(fixtures.running!, fixtures.running!.id)).toContain(
       "is working in #swarm-s9hjx.",
     );
@@ -3319,7 +3326,7 @@ describe("the reading pane", () => {
     );
   });
 
-  test("an open gate shows its files: markdown as is, other text fenced, failures named", () => {
+  test("gate files move to the inspector with complete literal prose and explicit failures", () => {
     const withFiles = swarm("s9fil", {
       runs: [
         run("r7", {
@@ -3336,10 +3343,30 @@ describe("the reading pane", () => {
         }),
       ],
     });
-    const doc = buildDoc(withFiles, "s9fil");
-    expect(doc).toContain("### plan.md\n\n## Steps\n\n1. Count the nodes.");
-    expect(doc).toContain("### diff.patch (cut short)\n\n````\n+12 nodes\n````");
-    expect(doc).toContain("### notes.txt\n\n*Could not be read: not found.*");
+    const inspector = buildGateInspector(withFiles, withFiles.runs![0]!);
+    board(gateKey(withFiles.id), inspector);
+    const files = inspector.sections.find((section) => section.title === "Files");
+    if (files?.kind !== "cards") throw new Error("missing files");
+    expect(files.items).toEqual([
+      { title: "plan.md", prose: true, fields: [{ value: "## Steps\n\n1. Count the nodes." }] },
+      {
+        title: "diff.patch",
+        prose: true,
+        fields: [{ value: "+12 nodes" }],
+        footnote: "Truncated by the host or rib; only retained text is shown.",
+      },
+      { title: "notes.txt", prose: true, footnote: "Could not be read: not found" },
+    ]);
+    const doc = buildDoc(withFiles, withFiles.id);
+    for (const text of [
+      "Approve?",
+      "plan.md",
+      "Count the nodes.",
+      "+12 nodes",
+      "notes.txt",
+      "not found",
+    ])
+      expect(doc).not.toContain(text);
   });
 
   test("the board's conclusion preview drops markdown marks; the pane keeps them", () => {
@@ -3370,13 +3397,77 @@ describe("the reading pane", () => {
     expect((await copy("s0non")).ok).toBe(false);
   });
 
-  test("shows the whole conclusion, the refused draft, or the open gate's prompt", () => {
+  test("shows the whole conclusion or refused draft, but not gate prompts", () => {
     expect(buildDoc(fixtures.done, "s8pln")).toContain("x".repeat(3000));
     expect(buildDoc(fixtures.stalled, "s5tcx")).toContain("a draft");
     const gated = buildDoc(fixtures.review, "s9hjy");
-    expect(gated).toContain("> Plan: set the README node count to 12.");
-    expect(gated).toContain("http://127.0.0.1:18080/app/ws_1/msg_0042");
+    expect(gated).not.toContain("Plan: set the README node count to 12.");
+    expect(gated).not.toContain("http://127.0.0.1:18080/app/ws_1/msg_0042");
+    expect(
+      JSON.stringify(buildGateInspector(fixtures.review!, fixtures.review!.runs![0]!)),
+    ).toContain("Plan: set the README node count to 12.");
     expect(buildDoc(undefined, "s0old")).toContain("no longer in the rib's history");
+  });
+
+  test("keeps the full task for every lifecycle and omits questions, gates, context, runs and activity", () => {
+    const task = "t".repeat(7_980) + "Final task sentence.";
+    const base: SwarmSummary = {
+      ...fixtures.asked!,
+      task,
+      activity: [{ at: T0, text: "retained activity sentinel" }],
+      context: [
+        {
+          id: "c1",
+          kind: "note",
+          title: "context sentinel",
+          chars: 16,
+          excerpt: "excerpt sentinel",
+        },
+      ],
+    };
+    for (const status of [
+      "running",
+      "stopping",
+      "done",
+      "stopped",
+      "stalled",
+      "exhausted",
+      "error",
+    ] as const) {
+      for (const conclusion of [undefined, "**Complete outcome**\n\nFinal conclusion sentence."]) {
+        const s = {
+          ...base,
+          status,
+          conclusion,
+          draftConclusion: "**Refused draft**",
+          ...(status !== "running" && status !== "stopping" ? { endedAt: T0 } : {}),
+        };
+        const doc = buildDoc(s, s.id);
+        expect(doc).toContain(`## Task\n\n${task}\n`);
+        expect(doc).toContain(`Swarm ${s.id}`);
+        expect(doc).toContain(status);
+        expect(doc).not.toContain("which retry cap");
+        for (const removed of [
+          "## Runs",
+          "## Activity",
+          "asked you",
+          "approve-plan",
+          "Plan: set",
+          "context sentinel",
+          "excerpt sentinel",
+          "retained activity sentinel",
+        ])
+          expect(doc).not.toContain(removed);
+        if (conclusion) {
+          expect(doc).toContain(conclusion);
+          expect(doc).not.toContain("**Refused draft**");
+        } else {
+          expect(doc).toContain("**Refused draft**");
+        }
+      }
+    }
+    const spaced = " \nFull task\n\nwith whitespace.  ";
+    expect(buildDoc({ ...base, task: spaced }, base.id)).toContain(`## Task\n\n${spaced}\n`);
   });
 });
 

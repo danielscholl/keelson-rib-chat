@@ -2,9 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { expectView } from "@keelson/shared";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { needsYou } from "../src/needs.ts";
+import { type ActionDeps, handleSwarmsAction } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import { buildIndex } from "../src/surface/index-board.ts";
-import { INDEX_KEY, swarmKey } from "../src/surface/keys.ts";
+import { buildQuestionInspector } from "../src/surface/inspectors.ts";
+import { askKey, INDEX_KEY, swarmKey } from "../src/surface/keys.ts";
+import { askText } from "../src/surface/parts.ts";
 import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import { Swarm } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
@@ -13,7 +16,7 @@ import { FakeClickClack, OWNER_TOKEN, type Script, scriptedProvider, WORKSPACE }
 
 const QUESTION = "@operator is the 30 s backoff cap a product decision or a guess?";
 
-function harness(script: Script, limits: Partial<SwarmLimits> = {}) {
+function harness(script: Script, limits: Partial<SwarmLimits> = {}, id = "s1") {
   const server = new FakeClickClack();
   const swarms = new Map<string, Swarm>();
   const owner = new ClickClackClient("http://fake", OWNER_TOKEN, server.transport);
@@ -27,7 +30,7 @@ function harness(script: Script, limits: Partial<SwarmLimits> = {}) {
   const provider = scriptedProvider(tools, script);
   const start = async () => {
     const swarm = await Swarm.start({
-      id: "s1",
+      id,
       task: "Tune the retry backoff",
       owner,
       workspaceId: WORKSPACE,
@@ -207,7 +210,7 @@ describe("an agent asking the operator", () => {
     await swarm.stop();
   });
 
-  test("a long ask keeps its question: the card shows the line that asks, the pane all of it", async () => {
+  test("a long ask keeps its question: bounded cards lead to the complete question inspector", async () => {
     const long = [
       "@operator The evidence does not decide this, so I need your preference.",
       "",
@@ -231,9 +234,14 @@ describe("an agent asking the operator", () => {
     expect(drawer).toContain('"title":"@lead asked: Which do you prefer, 8 of 12 or all 12?"');
     expect(drawer).toContain("Read question");
     const doc = buildDoc(s, "s1");
-    expect(doc).toContain("## @lead asked you");
-    expect(doc).toContain("2. Show all 12.");
-    expect(doc).not.toContain("@operator");
+    expect(doc).not.toContain("asked you");
+    expect(doc).not.toContain("2. Show all 12.");
+    const inspector = buildQuestionInspector(s, s.health!.asks![0]!);
+    expectView(askKey(s.id), "board")(inspector);
+    const question = inspector.sections[0];
+    expect(question?.kind === "cards" ? question.items[0]?.fields?.[0]?.value : undefined).toBe(
+      askText(long),
+    );
     await swarm.stop();
   });
 
@@ -252,6 +260,118 @@ describe("an agent asking the operator", () => {
       expect(swarm.summary().health?.asks?.map((ask) => ask.text)).toEqual(questions);
       expect(swarm.summary().health?.asks?.[1]?.text).toHaveLength(8_000);
       expect(swarm.summary().health?.asks?.[1]?.text).toEndWith(ending);
+      const summary = swarm.summary();
+      for (const ask of summary.health!.asks!) {
+        const inspector = buildQuestionInspector(summary, ask);
+        expectView(askKey(summary.id), "board")(inspector);
+        const question = inspector.sections[0];
+        expect(question?.kind === "cards" ? question.items[0]?.fields?.[0]?.value : undefined).toBe(
+          askText(ask.text),
+        );
+        expect(buildDoc(summary, summary.id)).not.toContain(ending.trim());
+      }
+    } finally {
+      await swarm.stop();
+    }
+  });
+
+  test("inspector Reply posts as the operator to the authoritative thread; Dismiss leaves messages and other asks intact", async () => {
+    const { server, start } = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId !== "s1ask-lead" || turn !== 1) return;
+        const first = (await call("chat_post", { body: "First topic." })).content.replace(
+          "posted ",
+          "",
+        );
+        await call("chat_reply", { message_id: first, body: "@operator first preference?" });
+        await call("chat_reply", { message_id: first, body: "@operator first clarification?" });
+        const second = (await call("chat_post", { body: "Second topic." })).content.replace(
+          "posted ",
+          "",
+        );
+        await call("chat_reply", { message_id: second, body: "@operator second preference?" });
+        await call("chat_post", { body: "@operator independent third preference?" });
+      },
+      {},
+      "s1ask",
+    );
+    const swarm = await start();
+    try {
+      await settle();
+      const asks = swarm.summary().health!.asks!;
+      expect(asks).toHaveLength(4);
+      const selected = asks[0]!;
+      const second = asks[2]!;
+      const third = asks[3]!;
+      expect(selected.threadRootId).not.toBe(selected.messageId);
+      const deps = {
+        surface: undefined,
+        find: (id) => (id === swarm.id ? { live: swarm.summary() } : {}),
+        live: (id) => (id === swarm.id ? swarm : undefined),
+        begin: () => {
+          throw new Error("not used");
+        },
+        launchOf: () => undefined,
+      } satisfies ActionDeps;
+      const inspector = buildQuestionInspector(swarm.summary(), selected);
+      expectView(askKey(swarm.id), "board")(inspector);
+      const actions = inspector.sections.find((section) => section.kind === "actions");
+      if (actions?.kind !== "actions") throw new Error("missing question actions");
+      const reply = actions.items.find((action) => action.type === "reply-ask")!;
+      expect(
+        await handleSwarmsAction(
+          {
+            type: reply.type,
+            payload: {
+              ...reply.binding,
+              note: "Use the measured cap.",
+              threadRootId: second.threadRootId,
+            },
+          },
+          deps,
+        ),
+      ).toMatchObject({ ok: true });
+      await settle(40);
+      const posted = server.messages.filter(
+        (message) =>
+          message.author_id === server.owner.id && message.body.startsWith("**Operator:**"),
+      );
+      expect(posted).toHaveLength(1);
+      expect(posted[0]).toMatchObject({
+        thread_root_id: selected.threadRootId,
+        parent_message_id: selected.threadRootId,
+        body: "**Operator:** Use the measured cap.",
+        author: { kind: "human" },
+      });
+      expect(swarm.summary().health!.asks!.map((ask) => ask.messageId)).toEqual([
+        second.messageId,
+        third.messageId,
+      ]);
+      const messages = server.messages.map((message) => ({ ...message }));
+      const secondInspector = buildQuestionInspector(swarm.summary(), second);
+      const secondActions = secondInspector.sections.find((section) => section.kind === "actions");
+      if (secondActions?.kind !== "actions") throw new Error("missing dismiss action");
+      const dismiss = secondActions.items.find((action) => action.type === "dismiss-ask")!;
+      expect(
+        await handleSwarmsAction({ type: dismiss.type, payload: dismiss.payload }, deps),
+      ).toMatchObject({ ok: true });
+      expect(server.messages).toEqual(messages);
+      expect(server.messages.some((message) => message.id === second.messageId)).toBe(true);
+      expect(swarm.summary().health!.asks!.map((ask) => ask.messageId)).toEqual([third.messageId]);
+      expect(swarm.summary().activity!.at(-1)).toMatchObject({
+        kind: "answer",
+        actor: "operator",
+        subject: second.threadRootId,
+      });
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: reply.type, payload: { ...reply.binding, note: "Stale reply." } },
+            deps,
+          )
+        ).ok,
+      ).toBe(false);
+      expect(server.messages).toEqual(messages);
     } finally {
       await swarm.stop();
     }
