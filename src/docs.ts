@@ -447,15 +447,40 @@ status and reason, and the summary is the run's last progress frame.
 
 > The Keelson tab that shows every swarm, what each asks of the operator, and each swarm's budget, agents, runs and outcome.
 
-The rib publishes a Swarms tab. Live swarms are cards, sorted with the ones
-that ask something of the operator first, then starting, then running. A card
-that asks something leads with the request as its title (Review the plan for
-…, @planner asked: …, ClickClack stopped answering, No agent has worked since
-…) and its verb as the first button (Review plan, Read question, Open swarm,
-Message the lead); the task drops to the footnote. A running card leads with
-what the swarm is doing this minute, then a named turn-budget meter. Ended
-swarms are rows grouped under the day they ended (Today, Yesterday, then the
-weekday and date), the newest eight on the tab and every one in the history
+The rib publishes a Swarms tab. Needs you is one list across every live swarm:
+one card per request, oldest first, with the oldest 12 shown when there are
+more. Each card leads with the request (Review the plan for …, @planner asked:
+…, ClickClack stopped answering, No agent has worked since …) and its verb
+(Review plan, Read question, Open swarm, Message the lead). The task and swarm
+id sit in the footnote. Open swarm expands that live swarm on the page.
+
+The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
+the task and id with a lifecycle or needs-you pill and people dots; a state
+line; an agent strip (busy, waiting, idle, capped, failed, with hatched open
+seats); three Budget tiles (Turns with its spark, Time as a ticking time-left
+clock, fresh Tokens with cached in the sub); the details described below; then
+Message the lead, Open the report when one exists, Open the record, and Stop
+swarm last. Message the lead is expanded while running, unless the lead has
+concluded. Tokens says none yet before any turn, or that the provider reported
+none when turns ran without usage.
+
+The state line names requests first, then busy agents with each turn number and
+start time, waiting agents with their queue counts, paused swarm-answerable
+runs with their gates and reviewers, and the conclusion. Otherwise it shows
+the newest activity or waits for the lead's first turn. Stopping overrides
+those clauses. Socket drops, channel faults, a failed lead turn and idle nudges
+append health warnings. Times are HH:MM so the line stays true between frames.
+
+With two or more live swarms a selection strip picks the expanded one. The
+choice is shared by every viewer. The pinned canvas contract does not allow
+selected items in its form tabs, so this is a wrapping action strip with the
+chosen swarm marked. Without a live selection, the first needing swarm by its
+oldest request expands, else the oldest running swarm. The others fold to one
+running card each under Also live, with the same state line and a named
+turn-budget meter; starting swarms stay cards there.
+
+Ended swarms are rows grouped under the day they ended (Today, Yesterday, then
+the weekday and date), the newest eight on the tab and every one in the history
 drawer. A row leads with what came of the swarm: the report's title, the
 conclusion's first sentence, or why it ended (Stopped by you, Out of turns at
 40), then · for: and the task. A done row carries a check and the rest a
@@ -468,10 +493,11 @@ or offers no respond), question (an agent addressed \`@operator\` to ask somethi
 (ClickClack's socket closed twice without reopening; the card offers Start
 ClickClack when the managed server is down), quiet (a run waits at an
 approval the swarm could answer and no agent has worked since). The tab's badge
-counts swarms with any request. An approval a peer is reviewing is shown as
-reviewing and counted nowhere.
+counts swarms with any request. An approval a peer is reviewing appears in the
+state line and counts as no request.
 
-Open swarm shows the board. Live, it runs: the requests, the outcome once a
+An ended row opens its board in the drawer. The per-swarm board also still
+composes for MCP clients, live or ended. Live, it runs: the requests, the outcome once a
 report exists, a budget strip (turns with what is left, time, agents, fresh
 tokens with cached beside them), Message the lead, Open the record and Stop,
 then the details. Ended, it runs: the outcome, the result strip, Run again and
