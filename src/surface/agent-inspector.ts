@@ -22,11 +22,13 @@ import {
   threadHref,
 } from "./format.ts";
 import { turnMeter } from "./parts.ts";
-import { AGENT_PILL, DETAIL_CHARS } from "./swarm-board.ts";
+import { AGENT_PILL, DETAIL_CHARS, openRecord } from "./swarm-board.ts";
 
 type Section = CanvasBoardView["sections"][number];
 type Row = Extract<Section, { kind: "rows" }>["items"][number];
 type Agent = SwarmSummary["agents"][number];
+
+export const INSPECTOR_TURNS_SHOWN = 40;
 
 function wakeSources(s: SwarmSummary, t: TurnSpan): string {
   const labels: Record<string, string> = {
@@ -166,11 +168,26 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
       },
       {
         kind: "rows",
-        title: "Turns",
+        title:
+          turns.length > INSPECTOR_TURNS_SHOWN
+            ? `Turns · newest ${INSPECTOR_TURNS_SHOWN} of ${turns.length}`
+            : "Turns",
         items: turns.length
-          ? turns.map((t) => ({ text: turnText(s, t), detail: `Woken by ${wakeSources(s, t)}` }))
+          ? turns
+              .slice(0, INSPECTOR_TURNS_SHOWN)
+              .map((t) => ({ text: turnText(s, t), detail: `Woken by ${wakeSources(s, t)}` }))
           : [{ text: "No turn spans recorded." }],
       },
+      ...(turns.length > INSPECTOR_TURNS_SHOWN
+        ? [
+            {
+              kind: "actions" as const,
+              items: [
+                { ...openRecord(s), hint: "All recorded turns are on the record's timeline." },
+              ],
+            },
+          ]
+        : []),
       ...(writableSwarm
         ? [
             {

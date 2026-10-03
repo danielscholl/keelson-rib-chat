@@ -81,6 +81,7 @@ You is informational; run nodes open the run; agent nodes select the agent.
 Map keeps at most **48 nodes and 200 edges**. It retains You, the lead and
 the selected agent before optional nodes, removes dangling edges, and names
 actual shown/total counts in the heading for each clipped dimension.
+Spawn and run **updates** edges are kept first, then wakes, then questions.
 Map and Conversation stack on narrow screens.
 
 ### Inspect or message an agent
@@ -88,7 +89,9 @@ Map and Conversation stack on narrow screens.
 Select an agent to open its freshly composed inspector at the side.
 Selection is shared by every viewer, separately from the expanded swarm
 choice; another agent replaces the side drawer. One inspector key per swarm
-keeps it bounded. The single-column board is designed for the 520 px inspector.
+keeps it bounded. Inspectors outside the retained swarm keys are released on
+the next tracking pass unless their swarm is live or starting.
+The single-column board is designed for the 520 px inspector.
 
 The identity card shows status, role and a turns meter. The lead's meter is
 the swarm budget, explicitly not a worker cap. Facts show the current or last
@@ -100,7 +103,9 @@ Provenance names the parent and join time. Writers show worktree, branch,
 draft PR and observed CI, with an **Open PR** link.
 
 **Said** is this agent's recent messages only, newest first, each linked to
-its thread. **Turns** keeps its recorded spans newest first. The quiet
+its thread. **Turns** shows its newest 40 recorded spans first and names the
+total when older turns are hidden. **Open the record** shows every recorded
+turn on the timeline. The quiet
 **its messages · transcript ↗** link opens the channel, not a complete
 agent-only message history.
 

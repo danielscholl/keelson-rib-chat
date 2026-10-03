@@ -17,7 +17,7 @@ import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
-import { buildAgentInspector } from "../src/surface/agent-inspector.ts";
+import { buildAgentInspector, INSPECTOR_TURNS_SHOWN } from "../src/surface/agent-inspector.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import type { forecastDelta } from "../src/surface/forecast.ts";
 import {
@@ -680,6 +680,45 @@ describe("the agent map", () => {
     expect(nodesOnly.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(["s1-w54"]);
     expect(graph(swarm("s0", { agents: [] })).nodes).toHaveLength(1);
   });
+
+  test("dense maps retain spawn and run updates before wakes, and wakes before questions", () => {
+    const agents = Array.from({ length: 16 }, (_, i) =>
+      agent("s1", i, i === 15 ? { spawnedBy: "s1-lead" } : {}),
+    );
+    const s = swarm("s1", {
+      agents,
+      spans: agents.map((a) => ({
+        agentId: a.id,
+        n: 1,
+        startedAt: T0,
+        messages: agents.length,
+        wokeBy: agents.map((source) => source.id),
+      })),
+      activity: agents.map((a) => ({
+        at: T0,
+        text: "question",
+        kind: "ask" as const,
+        actor: a.id,
+        count: 100,
+      })),
+      runs: [run("r1")],
+    });
+    expect(buildAgentEdges(s).filter((e) => e.kind === "woke").length).toBeGreaterThan(200);
+    const map = graph(s);
+    expect(map.edges).toHaveLength(200);
+    expect(map.edges.slice(0, 2)).toEqual([
+      { source: "s1-lead", target: "s1-w15", label: "×1" },
+      { source: `run:${s.runs![0]!.runId}`, target: "s1-lead", label: "updates" },
+    ]);
+    expect(map.edges.every((e) => !e.dashed)).toBe(true);
+    expect(map.title).toBe("Map · showing 200 of 257 edges");
+    const sparse = graph({ ...s, spans: [] });
+    expect(sparse.edges.slice(0, 2)).toEqual([
+      { source: "s1-lead", target: "s1-w15", label: "×0" },
+      { source: `run:${s.runs![0]!.runId}`, target: "s1-lead", label: "updates" },
+    ]);
+    expect(sparse.edges.slice(2).every((e) => e.dashed)).toBe(true);
+  });
 });
 
 describe("the agent inspector", () => {
@@ -819,6 +858,64 @@ describe("the agent inspector", () => {
       agents: [s.agents[0]!, { ...s.agents[1]!, usage: { input: 0, output: 0, cached: 0 } }],
     });
     expect(JSON.stringify(zero)).toContain("0 fresh tokens · 0 cached");
+  });
+
+  test("concentrated lead history stays under budget and links to all recorded turns", () => {
+    const agents = Array.from({ length: 12 }, (_, i) =>
+      agent("s9big", i, {
+        handle: `s9big-${String(i).padStart(2, "0")}${"w".repeat(18)}`,
+        role: "r".repeat(2000),
+        turns: i === 0 ? 189 : 1,
+      }),
+    );
+    const s = swarm("s9big", {
+      agents,
+      turnsUsed: 200,
+      limits: { ...SIZE_PRESETS.large, maxAgents: 12, maxTurns: 200 },
+      spans: Array.from({ length: 200 }, (_, i) => ({
+        agentId: agents[i < 189 ? 0 : i - 188]!.id,
+        n: i + 1,
+        startedAt: T0,
+        endedAt: T0,
+        outcome: "ok" as const,
+        messages: 11,
+        wokeBy: agents.slice(1).map((a) => a.id),
+      })),
+      recent: Array.from({ length: MESSAGES_KEPT }, (_, i) => ({
+        id: `msg_${i}`,
+        author: agents[0]!.id,
+        at: T0,
+        text: "m".repeat(MESSAGE_CHARS),
+      })),
+    });
+    for (const summary of [s, { ...s, status: "done" as const, endedAt: T0 }]) {
+      const view = inspect(summary, 0);
+      expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
+      const turns = view.sections.find((x) => x.title?.startsWith("Turns"));
+      expect(turns?.title).toBe(`Turns · newest ${INSPECTOR_TURNS_SHOWN} of 189`);
+      expect(turns?.kind === "rows" ? turns.items : []).toHaveLength(INSPECTOR_TURNS_SHOWN);
+      if (turns?.kind !== "rows") throw new Error("expected turns");
+      expect(turns.items[0]?.text).toStartWith("Turn 189");
+      expect(turns.items.at(-1)?.text).toStartWith(`Turn ${190 - INSPECTOR_TURNS_SHOWN}`);
+      expect(view.sections).toContainEqual({
+        kind: "actions",
+        items: [
+          {
+            type: "open-record",
+            label: "Open the record",
+            glyph: "◷",
+            hint: "All recorded turns are on the record's timeline.",
+            payload: { id: s.id },
+          },
+        ],
+      });
+      expect(buildRecord(summary, new Date(T0))).toContain("turn 1 · ok");
+      expect(summary.spans).toHaveLength(200);
+    }
+    const short = inspect({ ...s, spans: s.spans!.slice(0, INSPECTOR_TURNS_SHOWN) }, 0);
+    const turns = short.sections.find((x) => x.title === "Turns");
+    expect(turns?.kind === "rows" ? turns.items.at(-1)?.text : "").toStartWith("Turn 1");
+    expect(JSON.stringify(short)).not.toContain('"type":"open-record"');
   });
 
   test("all states render and retired workers cannot request another turn", () => {
@@ -2763,6 +2860,41 @@ describe("publishing", () => {
     expect(sm.keys()).toEqual([]);
     expect(views).toEqual([]);
     expect(await sm.recompose(agentKey("s1"))).toBeUndefined();
+  });
+
+  test("tracking at a full live budget releases inspector-only ended selections and highlights", async () => {
+    const { sm, summaries, surface } = inspectorHarness();
+    try {
+      const liveIds = Array.from({ length: MAX_SWARM_KEYS }, (_, i) => {
+        const id = `s${i}`;
+        summaries.set(id, swarm(id));
+        return id;
+      });
+      surface.track(liveIds);
+      const inspectorKeys = () => sm.keys().filter((key) => key.startsWith("rib:chat:agent:"));
+      for (let i = 0; i < 6; i++) {
+        const id = `ended${i}`;
+        summaries.set(id, swarm(id, { status: "done", endedAt: T0 }));
+        await surface.selectAgent(id, `${id}-w1`);
+        expect(inspectorKeys()).toEqual([agentKey(id)]);
+        expect(sm.keys()).not.toContain(swarmKey(id));
+        // History expiry does not call forget; track must clean up even with no new keys.
+        if (i % 2) summaries.delete(id);
+        surface.track(i % 2 ? [] : liveIds);
+        expect(inspectorKeys()).toEqual([]);
+        expect(await sm.recompose(agentKey(id))).toBeUndefined();
+      }
+      const id = "ended5";
+      summaries.set(id, swarm(id, { status: "done", endedAt: T0 }));
+      summaries.delete(liveIds[0]!);
+      surface.track([id]);
+      await Bun.sleep(10);
+      const drawer = expectView(swarmKey(id), "board")(sm.frames.get(swarmKey(id))?.at(-1));
+      expect(JSON.stringify(drawer)).not.toContain('"selected":true');
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
   });
 
   test("invalid selections allocate nothing; trimming and release reject pending selection", async () => {

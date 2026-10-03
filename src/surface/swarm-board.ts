@@ -391,8 +391,11 @@ export function buildAgentMap(s: SwarmSummary, selectedAgentId?: string): Canvas
     })),
   ];
   const allIds = new Set(allNodes.map((n) => n.id));
-  const allEdges: CanvasGraphSection["edges"] = buildAgentEdges(s)
+  const allEdges: (CanvasGraphSection["edges"][number] & { priority: number })[] = buildAgentEdges(
+    s,
+  )
     .map((e) => ({
+      priority: e.kind === "spawned" ? 0 : e.kind === "woke" ? 1 : 2,
       source: e.from === "operator" ? "you" : e.from,
       target: e.to === "operator" ? "you" : e.to,
       label:
@@ -403,7 +406,7 @@ export function buildAgentMap(s: SwarmSummary, selectedAgentId?: string): Canvas
   const lead = agents.find((a) => a.lead);
   if (lead) {
     for (const r of s.runs ?? []) {
-      allEdges.push({ source: `run:${r.runId}`, target: lead.id, label: "updates" });
+      allEdges.push({ source: `run:${r.runId}`, target: lead.id, label: "updates", priority: 0 });
     }
   }
   const required = allNodes.filter(
@@ -414,8 +417,10 @@ export function buildAgentMap(s: SwarmSummary, selectedAgentId?: string): Canvas
   );
   const nodes = allNodes.filter((n) => retained.has(n.id));
   const edges = allEdges
+    .sort((a, b) => a.priority - b.priority)
     .filter((e) => retained.has(e.source) && retained.has(e.target))
-    .slice(0, 200);
+    .slice(0, 200)
+    .map(({ priority, ...edge }) => edge);
   const clipped = [
     ...(nodes.length < allNodes.length
       ? [`showing ${nodes.length} of ${allNodes.length} nodes`]

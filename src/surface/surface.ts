@@ -308,12 +308,25 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     if (at >= 0) deps.views.splice(at, 1);
   }
 
-  function trim(): void {
+  function trim(): boolean {
+    let released = false;
     for (const id of swarms.keys()) {
-      if (swarms.size <= MAX_SWARM_KEYS) return;
+      if (swarms.size <= MAX_SWARM_KEYS) break;
       const found = deps.find(id);
-      if (!found.live && !found.starting) release(id);
+      if (!found.live && !found.starting) {
+        release(id);
+        released = true;
+      }
     }
+    for (const id of inspectors.keys()) {
+      if (swarms.has(id)) continue;
+      const found = deps.find(id);
+      if (!found.live && !found.starting) {
+        release(id);
+        released = true;
+      }
+    }
+    return released;
   }
 
   function track(ids: readonly string[]): void {
@@ -323,8 +336,9 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       added = ensureReport(id) || added;
       added = ensureRecord(id) || added;
     }
-    if (!added) return;
-    trim();
+    const trimmed = trim();
+    if (!added && !trimmed) return;
+    if (trimmed) index.schedule();
     deps.invalidateManifest?.();
   }
 
