@@ -468,8 +468,8 @@ describe("message lines", () => {
 });
 
 describe("the live cockpit", () => {
-  const sections = (s: SwarmSummary) => {
-    const sections = buildCockpit(s, needsYou(s), { titled: true });
+  const sections = (s: SwarmSummary, now?: Date) => {
+    const sections = buildCockpit(s, needsYou(s), { titled: true, now });
     board(INDEX_KEY, { view: "board", title: "Swarms", sections });
     return sections;
   };
@@ -660,11 +660,22 @@ describe("the live cockpit", () => {
 
   test("the budget always has Turns, Time and fresh Tokens with cached in the sub", () => {
     const s = fixtures.twoBusy!;
-    expect(sections(s)[3]).toMatchObject({
+    const now = new Date("2026-09-22T14:21:00.000Z");
+    expect(sections(s, now)[3]).toMatchObject({
       kind: "stats",
       title: "Budget",
       items: [
-        { label: "Turns", value: "11 of 40", spark: [1, 2, 0] },
+        {
+          label: "Turns",
+          value: "11 of 40",
+          sub: "pace over the last 5 min",
+          spark: [1, 2, 0],
+          delta: {
+            text: `29 left · at this pace about 24 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+            direction: "flat",
+            tone: "caution",
+          },
+        },
         { label: "Time", clock: { mode: "until" } },
         { label: "Tokens", value: "250", sub: "fresh · 100 cached" },
       ],
@@ -1160,7 +1171,9 @@ describe("Swarms boards", () => {
   });
 
   test("the bench shows each agent, waiting seats, and ghosts up to the cap", () => {
-    const view = buildSwarmBoard(fixtures.waiting!);
+    const now = new Date("2026-09-22T14:21:00.000Z");
+    const view = buildSwarmBoard(fixtures.waiting!, { now });
+    board(swarmKey(fixtures.waiting!.id), view);
     const bench = view.sections.find((x) => x.kind === "cards" && x.title?.startsWith("Agents"));
     const items = bench?.kind === "cards" ? bench.items : [];
     expect(bench).toMatchObject({ grid: true, columns: 4, title: "Agents · 2 of 5" });
@@ -1183,8 +1196,13 @@ describe("Swarms boards", () => {
     expect(tiles[0]).toMatchObject({
       label: "Turns",
       value: "11 of 40",
-      sub: "29 remaining",
+      sub: "pace over the last 5 min",
       spark: [1, 3, 2, 0, 1],
+      delta: {
+        text: `29 left · at this pace about 16 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+        direction: "flat",
+        tone: "caution",
+      },
     });
     expect(tiles[1]).toEqual({
       label: "Time",
@@ -1264,6 +1282,20 @@ ${"detail ".repeat(1000)}`,
     expect(items[0]).toMatchObject({ text: "@lead turn 12 ok", trailing: "14:21" });
     const index = JSON.stringify(buildIndex(state({ live: [s] })));
     expect(index).toContain(`"text":"${hhmm(activity.at(-1)?.at)} @lead turn 12 ok"`);
+  });
+
+  test("live conclusion previews reserve forecast room without truncating the full record", () => {
+    const conclusion = "c".repeat(2_000);
+    const s = swarm("s9pre", { conclusion });
+    const preview = (s: SwarmSummary) => {
+      const view = buildSwarmBoard(s);
+      board(swarmKey(s.id), view);
+      const outcome = view.sections.find((x) => x.kind === "cards" && x.title === "Outcome");
+      return outcome?.kind === "cards" ? outcome.items[0]?.fields?.[0]?.value : undefined;
+    };
+    expect(preview(s)).toBe(`${"c".repeat(1_000)}…`);
+    expect(preview({ ...s, status: "done", endedAt: T0 })).toBe(`${"c".repeat(1_200)}…`);
+    expect(buildDoc(s, s.id)).toContain(conclusion);
   });
 
   test("frames stay inside their budgets at the limits", () => {

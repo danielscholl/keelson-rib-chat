@@ -19,6 +19,7 @@ import {
   type SwarmSummary,
   sizeOf,
 } from "../types.ts";
+import { forecast, forecastDelta, PACE_WINDOW_MINUTES } from "./forecast.ts";
 import {
   activityText,
   actorText,
@@ -188,12 +189,13 @@ function requests(s: SwarmSummary, needs: readonly Need[], server?: ServerLine):
 
 // ---- Budget while live, result once ended. ----
 
-export function turnsTile(s: SwarmSummary): Stat {
+export function turnsTile(s: SwarmSummary, now = new Date()): Stat {
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
   return {
     label: "Turns",
     value: live(s) ? `${s.turnsUsed} of ${s.limits.maxTurns}` : s.turnsUsed,
-    sub: live(s) ? `${left} remaining` : `of ${s.limits.maxTurns}`,
+    sub: live(s) ? `pace over the last ${PACE_WINDOW_MINUTES} min` : `of ${s.limits.maxTurns}`,
+    ...(live(s) ? { delta: forecastDelta(forecast(s, now)) } : {}),
     ...(live(s) && left === 0 ? { tone: "warn" as const } : {}),
     ...(s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
   };
@@ -224,7 +226,7 @@ export function tokensTile(s: SwarmSummary): Stat {
   };
 }
 
-function stats(s: SwarmSummary): Leaf {
+function stats(s: SwarmSummary, now: Date): Leaf {
   const isLiveNow = live(s);
   const busy = s.agents.filter((a) => a.status === "busy").length;
   const waiting = s.agents.filter((a) => a.status === "waiting").length;
@@ -233,7 +235,7 @@ function stats(s: SwarmSummary): Leaf {
     ...(waiting > 0 ? [`${waiting} waiting`] : []),
   ];
   const items: Stat[] = [
-    turnsTile(s),
+    turnsTile(s, now),
     timeTile(s),
     {
       label: "Agents",
@@ -675,6 +677,8 @@ function reportCard(s: SwarmSummary): Card[] {
 // card holds the answer and its page.
 function conclusionCard(s: SwarmSummary, conclusion: string): Card {
   const when = s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : "";
+  // Live frames reserve room for the Turns forecast.
+  const previewChars = live(s) ? PREVIEW_CHARS - 200 : PREVIEW_CHARS;
   return {
     title: s.report?.title ?? "Conclusion",
     ...(s.report ? { pill: { label: "report", tone: "brand" as const } } : {}),
@@ -682,8 +686,8 @@ function conclusionCard(s: SwarmSummary, conclusion: string): Card {
     fields: [
       {
         value:
-          conclusion.length > PREVIEW_CHARS
-            ? `${plain(conclusion.slice(0, PREVIEW_CHARS)).trimEnd()}…`
+          conclusion.length > previewChars
+            ? `${plain(conclusion.slice(0, previewChars)).trimEnd()}…`
             : plain(conclusion),
         copyAction: { type: "copy-conclusion", payload: { id: s.id } },
       },
@@ -740,6 +744,7 @@ export interface BoardOptions {
   launch?: StartSwarmInput;
   // The ClickClack server, so a connection request can offer to start it.
   server?: ServerLine;
+  now?: Date;
 }
 
 export function liveDetails(s: SwarmSummary): Leaf[] {
@@ -761,7 +766,7 @@ function agentStrip(s: SwarmSummary): Leaf {
 export function buildCockpit(
   s: SwarmSummary,
   needs: readonly Need[],
-  opts: { server?: ServerLine; titled: boolean },
+  opts: { server?: ServerLine; titled: boolean; now?: Date },
 ): Section[] {
   const people = s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone }));
   const line = stateLine(s, needs, opts.server);
@@ -788,7 +793,11 @@ export function buildCockpit(
     },
     ...(s.conclusion !== undefined ? outcome(s) : []),
     agentStrip(s),
-    { kind: "stats", title: "Budget", items: [turnsTile(s), timeTile(s), tokensTile(s)] },
+    {
+      kind: "stats",
+      title: "Budget",
+      items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s)],
+    },
     ...conversation(s),
     ...(s.status === "running" && s.conclusion === undefined
       ? [
@@ -805,6 +814,7 @@ export function buildCockpit(
 }
 
 export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): CanvasBoardView {
+  const now = opts.now ?? new Date();
   const needs = needsYou(s);
   const isLiveNow = live(s);
   const pill = !isLiveNow
@@ -831,12 +841,12 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
       ? [
           ...requests(s, needs, opts.server),
           ...outcome(s),
-          stats(s),
+          stats(s, now),
           ...conversation(s),
           ...controls(s),
           ...details,
         ]
-      : [...outcome(s), stats(s), ...verbs(s, opts.launch), ...details],
+      : [...outcome(s), stats(s, now), ...verbs(s, opts.launch), ...details],
   };
 }
 
