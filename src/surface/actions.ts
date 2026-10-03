@@ -17,11 +17,15 @@ import {
   SWARM_SIZES,
   type SwarmPower,
   type SwarmSize,
+  type SwarmSummary,
 } from "../types.ts";
 import { shortHandle } from "./format.ts";
 import {
   agentKey,
+  askKey,
+  detailsKey,
   docKey,
+  gateKey,
   HISTORY_KEY,
   INDEX_KEY,
   recordKey,
@@ -31,7 +35,7 @@ import {
   SURFACE_TAB,
   swarmKey,
 } from "./keys.ts";
-import { sizesHint } from "./parts.ts";
+import { gateIdentity, sizesHint } from "./parts.ts";
 import type { ServerOps } from "./server-ops.ts";
 import type { ServerVerb } from "./server-panel.ts";
 import type { SwarmRecord, SwarmsSurface } from "./surface.ts";
@@ -201,6 +205,19 @@ function done(message: string): RibActionResult {
   return { ok: true, data: { message } };
 }
 
+function writable(summary: SwarmSummary): boolean {
+  return summary.status === "running" && !summary.endedAt && summary.conclusion === undefined;
+}
+
+function matchesGate(payload: Record<string, unknown>, identity: string | undefined): boolean {
+  return (
+    payload.gateIdentity === undefined ||
+    (typeof payload.gateIdentity === "string" &&
+      payload.gateIdentity.length > 0 &&
+      payload.gateIdentity === identity)
+  );
+}
+
 const SERVER_TOAST = {
   "server-start": "Starting ClickClack",
   "server-stop": "Stopping ClickClack",
@@ -262,6 +279,72 @@ export async function handleSwarmsAction(
         },
       };
     }
+    case "select-ask": {
+      const found = id ? deps.find(id) : {};
+      const summary = found.live ?? found.ended;
+      const messageId = typeof payload.messageId === "string" ? payload.messageId : "";
+      const ask = summary?.health?.asks?.find((a) => a.messageId === messageId);
+      if (!id || !messageId || !ask)
+        return fail(`swarm '${String(raw)}' has no open question '${messageId}'`);
+      if (!deps.surface)
+        return fail("The question inspector is unavailable; reopen the Swarms tab.");
+      try {
+        await deps.surface.selectAsk(id, messageId);
+      } catch (e) {
+        return fail(
+          `Could not publish the question inspector: ${errText(e)}. Retry the selection.`,
+        );
+      }
+      return {
+        ok: true,
+        data: {
+          effect: "open-canvas",
+          key: askKey(id),
+          title: `Question · ${id}`,
+          placement: "side",
+        },
+      };
+    }
+    case "select-gate": {
+      const found = id ? deps.find(id) : {};
+      const summary = found.live ?? found.ended;
+      const runId = typeof payload.runId === "string" ? payload.runId : "";
+      const run = summary?.runs?.find((r) => r.runId === runId);
+      const identity = typeof payload.gateIdentity === "string" ? payload.gateIdentity : "";
+      if (!id || !runId || run?.status !== "paused" || !identity || gateIdentity(run) !== identity)
+        return fail(`run '${runId}' has no matching gate in swarm '${String(raw)}'`);
+      if (!deps.surface) return fail("The gate inspector is unavailable; reopen the Swarms tab.");
+      try {
+        await deps.surface.selectGate(id, runId, identity);
+      } catch (e) {
+        return fail(`Could not publish the gate inspector: ${errText(e)}. Retry the selection.`);
+      }
+      return {
+        ok: true,
+        data: { effect: "open-canvas", key: gateKey(id), title: `Gate · ${id}`, placement: "side" },
+      };
+    }
+    case "open-details": {
+      const found = id ? deps.find(id) : {};
+      if (!id || !(found.live ?? found.ended))
+        return fail(`swarm '${String(raw)}' has no Details available`);
+      if (!deps.surface)
+        return fail("The Details inspector is unavailable; reopen the Swarms tab.");
+      try {
+        await deps.surface.openDetails(id);
+      } catch (e) {
+        return fail(`Could not publish the Details inspector: ${errText(e)}. Retry the selection.`);
+      }
+      return {
+        ok: true,
+        data: {
+          effect: "open-canvas",
+          key: detailsKey(id),
+          title: `Details · ${id}`,
+          placement: "side",
+        },
+      };
+    }
     case "swarm-open": {
       if (!id || !known(id)) return fail(`no swarm '${String(raw)}'`);
       deps.surface?.track([id]);
@@ -308,36 +391,58 @@ export async function handleSwarmsAction(
     case "reply": {
       const swarm = id ? deps.live(id) : undefined;
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
+      const summary = swarm.summary();
+      if (!writable(summary)) return fail(`swarm ${id} is no longer accepting replies`);
       const runId = typeof payload.runId === "string" ? payload.runId : "";
-      const run = swarm.summary().runs?.find((r) => r.runId === runId);
+      const run = summary.runs?.find((r) => r.runId === runId);
       if (run?.status !== "paused" || !run.pendingApproval?.threadId) {
         return fail(`run '${runId}' is not waiting at an approval`);
       }
+      if (!matchesGate(payload, gateIdentity(run)))
+        return fail(`run '${runId}' is no longer waiting at this gate; reopen the gate inspector`);
       const note = typeof payload.note === "string" ? payload.note.trim() : "";
       if (!note) return fail("a reply needs a note");
       if (note.length > BODY_MAX) return fail(`a reply is at most ${BODY_MAX} characters`);
-      await swarm.replyToGate(runId, note);
+      try {
+        await swarm.replyToGate(runId, note);
+      } catch (e) {
+        return fail(`Could not reply in the gate thread: ${errText(e)}`);
+      }
       return done(`Replied in the ${run.pendingApproval.nodeId} thread as you`);
     }
     case "reply-ask": {
       const swarm = id ? deps.live(id) : undefined;
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
+      const summary = swarm.summary();
+      if (!writable(summary)) return fail(`swarm ${id} is no longer accepting replies`);
       const messageId = typeof payload.messageId === "string" ? payload.messageId : "";
-      const ask = swarm.summary().health?.asks?.find((a) => a.messageId === messageId);
+      const ask = summary.health?.asks?.find((a) => a.messageId === messageId);
       if (!ask) return fail(`swarm ${id} has no open question '${messageId}'`);
+      if (!ask.threadRootId) return fail(`question '${messageId}' has no recorded thread`);
       const note = typeof payload.note === "string" ? payload.note.trim() : "";
       if (!note) return fail("a reply needs a note");
       if (note.length > BODY_MAX) return fail(`a reply is at most ${BODY_MAX} characters`);
-      await swarm.replyInThread(ask.threadRootId, note);
+      try {
+        await swarm.replyInThread(ask.threadRootId, note);
+      } catch (e) {
+        return fail(`Could not reply in the question thread: ${errText(e)}`);
+      }
       return done(`Replied to @${shortHandle(ask.handle, id)}'s question as you`);
     }
     case "dismiss-ask": {
       const swarm = id ? deps.live(id) : undefined;
       if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
+      const summary = swarm.summary();
+      if (!writable(summary)) return fail(`swarm ${id} is no longer accepting question actions`);
       const messageId = typeof payload.messageId === "string" ? payload.messageId : "";
-      const asker = swarm.summary().health?.asks?.find((a) => a.messageId === messageId)?.handle;
-      if (!asker || !swarm.dismissAsk(messageId))
-        return fail(`swarm ${id} has no open question '${messageId}'`);
+      const asker = summary.health?.asks?.find((a) => a.messageId === messageId)?.handle;
+      if (!asker) return fail(`swarm ${id} has no open question '${messageId}'`);
+      try {
+        if (!swarm.dismissAsk(messageId))
+          return fail(`swarm ${id} has no open question '${messageId}'`);
+      } catch (e) {
+        return fail(`Could not dismiss the question: ${errText(e)}`);
+      }
       return done(
         `Dismissed @${shortHandle(asker, id)}'s question; the message stays in the channel`,
       );
@@ -348,6 +453,11 @@ export async function handleSwarmsAction(
       const runId = typeof payload.runId === "string" ? payload.runId : "";
       const run = summary?.runs?.find((r) => r.runId === runId);
       if (!run) return fail(`run '${runId}' is not one of swarm '${String(raw)}''s runs`);
+      if (
+        !matchesGate(payload, gateIdentity(run)) ||
+        (payload.gateIdentity !== undefined && run.status !== "paused")
+      )
+        return fail(`run '${runId}' is no longer waiting at this gate; reopen the gate inspector`);
       return { ok: true, data: { effect: "open-run", runId, workflow: run.workflow } };
     }
     case "stop-swarm": {

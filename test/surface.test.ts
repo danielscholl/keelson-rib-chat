@@ -17,7 +17,7 @@ import { applyStatus } from "../src/dispatch.ts";
 import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
-import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
+import { type ActionDeps, handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildAgentInspector, INSPECTOR_TURNS_SHOWN } from "../src/surface/agent-inspector.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import type { forecastDelta } from "../src/surface/forecast.ts";
@@ -4446,6 +4446,552 @@ const actionDeps = {
 
 describe("actions", () => {
   const deps = actionDeps;
+
+  const inspectorSummary = () =>
+    swarm("s9hjx", {
+      health: {
+        asks: [{ ...fixtures.asked!.health!.asks![0]!, threadRootId: "authoritative-root" }],
+      },
+      runs: [
+        run("peer", {
+          status: "paused",
+          pendingApproval: { ...gate("swarm"), pauseId: "peer-pause" },
+        }),
+        run("operator", {
+          status: "paused",
+          pendingApproval: { ...gate("operator"), pauseId: "operator-pause" },
+        }),
+      ],
+    });
+  const inspectorActions = (s: SwarmSummary) => [
+    {
+      type: "select-ask",
+      payload: { id: s.id, messageId: s.health!.asks![0]!.messageId },
+      key: askKey(s.id),
+      title: `Question · ${s.id}`,
+    },
+    {
+      type: "select-gate",
+      payload: { id: s.id, runId: s.runs![0]!.runId, gateIdentity: gateIdentity(s.runs![0]!) },
+      key: gateKey(s.id),
+      title: `Gate · ${s.id}`,
+    },
+    {
+      type: "open-details",
+      payload: { id: s.id },
+      key: detailsKey(s.id),
+      title: `Details · ${s.id}`,
+    },
+  ];
+
+  test("question, gate and Details opens await publication and return exact native side effects", async () => {
+    let current = inspectorSummary();
+    const sm = new FakeSnapshots();
+    const find = (id: string): SwarmRecord =>
+      id !== current.id ? {} : current.status === "done" ? { ended: current } : { live: current };
+    const surface = createSwarmsSurface({
+      sm,
+      views: [],
+      state: () => state({ live: [current] }),
+      find,
+      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ live: 1 }),
+      readLog: async () => "log",
+      report: () => undefined,
+      windowMs: 1,
+    });
+    let unblock = () => {};
+    try {
+      for (const { type, payload, key, title } of inspectorActions(current)) {
+        sm.gate = new Promise<void>((resolve) => {
+          unblock = resolve;
+        });
+        let complete = false;
+        const pending = handleSwarmsAction({ type, payload }, { ...deps, surface, find }).then(
+          (result) => {
+            complete = true;
+            return result;
+          },
+        );
+        await Bun.sleep(2);
+        expect(complete).toBe(false);
+        unblock();
+        sm.gate = undefined;
+        const result = await pending;
+        const effect = { effect: "open-canvas", key, title, placement: "side" } as const;
+        expect(result).toEqual({ ok: true, data: effect });
+        expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual(effect);
+        expectView(key, "board")(sm.frames.get(key)?.at(-1));
+        sm.failures.set(key, new Error("bad publication"));
+        const failed = await handleSwarmsAction({ type, payload }, { ...deps, surface, find });
+        expect(failed.ok).toBe(false);
+        expect(!failed.ok ? failed.error : "").toContain("bad publication");
+        expect(!failed.ok ? failed.error : "").toContain("Could not publish");
+        sm.failures.delete(key);
+        expect((await handleSwarmsAction({ type, payload }, { ...deps, surface, find })).ok).toBe(
+          true,
+        );
+      }
+      const operator = await handleSwarmsAction(
+        {
+          type: "select-gate",
+          payload: {
+            id: current.id,
+            runId: current.runs![1]!.runId,
+            gateIdentity: gateIdentity(current.runs![1]!),
+          },
+        },
+        { ...deps, surface, find },
+      );
+      expect(ribClientEffectSchema.parse(operator.ok ? operator.data : undefined)).toEqual({
+        effect: "open-canvas",
+        key: gateKey(current.id),
+        title: `Gate · ${current.id}`,
+        placement: "side",
+      });
+      current = { ...current, status: "done", endedAt: T0 };
+      const result = await handleSwarmsAction(
+        { type: "open-details", payload: { id: current.id } },
+        { ...deps, surface, find },
+      );
+      expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual({
+        effect: "open-canvas",
+        key: detailsKey(current.id),
+        title: `Details · ${current.id}`,
+        placement: "side",
+      });
+      expect(JSON.stringify(sm.frames.get(detailsKey(current.id))?.at(-1))).not.toContain(
+        '"kind":"actions"',
+      );
+    } finally {
+      unblock();
+      sm.gate = undefined;
+      surface.dispose();
+    }
+  });
+
+  test("inspector actions reject malformed, cross-swarm, HTML-origin and starting inputs before selection", async () => {
+    const s = inspectorSummary();
+    const calls: unknown[][] = [];
+    const surface: SwarmsSurface = {
+      track: () => {},
+      select: () => {},
+      selectAgent: async () => {},
+      selectAsk: async (...args) => {
+        calls.push(["ask", ...args]);
+      },
+      selectGate: async (...args) => {
+        calls.push(["gate", ...args]);
+      },
+      openDetails: async (...args) => {
+        calls.push(["details", ...args]);
+      },
+      changed: () => {},
+      refresh: () => {},
+      forget: () => {},
+      logOpened: () => {},
+      dispose: () => {},
+    };
+    const actionDeps: ActionDeps = {
+      ...deps,
+      surface,
+      find: (id) => (id === s.id ? { live: s } : id === "s8pln" ? { ended: fixtures.done! } : {}),
+    };
+    for (const { type, payload } of inspectorActions(s)) {
+      for (const id of ["../bad", 7, "", undefined, "s0000"])
+        expect(
+          (await handleSwarmsAction({ type, payload: { ...payload, id } }, actionDeps)).ok,
+        ).toBe(false);
+      expect(
+        (await handleSwarmsAction({ type, payload, origin: "canvas-html" }, actionDeps)).ok,
+      ).toBe(false);
+      expect(
+        (await handleSwarmsAction({ type, payload }, { ...actionDeps, find: () => ({ starting }) }))
+          .ok,
+      ).toBe(false);
+      const unavailable = await handleSwarmsAction(
+        { type, payload },
+        { ...actionDeps, surface: undefined },
+      );
+      expect(unavailable.ok).toBe(false);
+      expect(!unavailable.ok ? unavailable.error : "").toContain("inspector is unavailable");
+    }
+    for (const messageId of [undefined, "", 7, "foreign-question"])
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "select-ask", payload: { id: s.id, messageId } },
+            actionDeps,
+          )
+        ).ok,
+      ).toBe(false);
+    for (const payload of [
+      { id: "s8pln", messageId: s.health!.asks![0]!.messageId },
+      { id: s.id, runId: s.runs![0]!.runId },
+      { id: s.id, runId: 7, gateIdentity: gateIdentity(s.runs![0]!) },
+      { id: s.id, gateIdentity: gateIdentity(s.runs![0]!) },
+      { id: s.id, runId: s.runs![0]!.runId, gateIdentity: 7 },
+      { id: s.id, runId: s.runs![0]!.runId, gateIdentity: {} },
+      { id: s.id, runId: s.runs![0]!.runId, gateIdentity: "" },
+      { id: s.id, runId: s.runs![0]!.runId, gateIdentity: "stale" },
+      { id: s.id, runId: "foreign-run", gateIdentity: gateIdentity(s.runs![0]!) },
+      { id: "s8pln", runId: s.runs![0]!.runId, gateIdentity: gateIdentity(s.runs![0]!) },
+    ]) {
+      const type = "messageId" in payload ? "select-ask" : "select-gate";
+      expect((await handleSwarmsAction({ type, payload }, actionDeps)).ok).toBe(false);
+    }
+    expect(calls).toEqual([]);
+    for (const { type, payload } of inspectorActions(s))
+      expect((await handleSwarmsAction({ type, payload }, actionDeps)).ok).toBe(true);
+    expect(calls).toEqual([
+      ["ask", s.id, s.health!.asks![0]!.messageId],
+      ["gate", s.id, s.runs![0]!.runId, gateIdentity(s.runs![0]!)],
+      ["details", s.id],
+    ]);
+  });
+
+  const replyHarness = () => {
+    let current = inspectorSummary();
+    const calls: unknown[][] = [];
+    let failure = false;
+    let blocked: Promise<void> | undefined;
+    const fake: NonNullable<ReturnType<ActionDeps["live"]>> = {
+      summary: () => current,
+      steer: async () => {
+        throw new Error("unexpected steer");
+      },
+      messageAgent: async () => {
+        throw new Error("unexpected agent message");
+      },
+      stop: async () => {
+        throw new Error("unexpected stop");
+      },
+      replyToGate: async (...args) => {
+        if (failure) throw new Error("posting failed");
+        calls.push(["gate", ...args]);
+        if (blocked) await blocked;
+      },
+      replyInThread: async (...args) => {
+        if (failure) throw new Error("posting failed");
+        calls.push(["thread", ...args]);
+        if (blocked) await blocked;
+      },
+      dismissAsk: (messageId) => {
+        if (failure) throw new Error("dismiss failed");
+        calls.push(["dismiss", messageId]);
+        return true;
+      },
+    };
+    const actionDeps: ActionDeps = {
+      ...deps,
+      find: (id) => (id === current.id ? { live: current } : {}),
+      live: (id) => (id === current.id ? fake : undefined),
+    };
+    return {
+      calls,
+      deps: actionDeps,
+      get current() {
+        return current;
+      },
+      set current(s: SwarmSummary) {
+        current = s;
+      },
+      fail() {
+        failure = true;
+      },
+      block(promise: Promise<void>) {
+        blocked = promise;
+      },
+    };
+  };
+
+  test("question replies await the authoritative current thread and dismiss invokes only the existing mutation", async () => {
+    const h = replyHarness();
+    const ask = h.current.health!.asks![0]!;
+    let unblock = () => {};
+    h.block(
+      new Promise<void>((resolve) => {
+        unblock = resolve;
+      }),
+    );
+    let complete = false;
+    const before = JSON.stringify(h.current.runs);
+    const pending = handleSwarmsAction(
+      {
+        type: "reply-ask",
+        payload: {
+          id: h.current.id,
+          messageId: ask.messageId,
+          threadRootId: "forged-route",
+          note: "  answer  ",
+        },
+      },
+      h.deps,
+    ).then((result) => {
+      complete = true;
+      return result;
+    });
+    try {
+      await Bun.sleep(2);
+      expect(complete).toBe(false);
+      expect(h.calls).toEqual([["thread", "authoritative-root", "answer"]]);
+      unblock();
+      expect(await pending).toEqual({
+        ok: true,
+        data: {
+          message: `Replied to @${ask.handle.replace(`${h.current.id}-`, "")}'s question as you`,
+        },
+      });
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "dismiss-ask", payload: { id: h.current.id, messageId: ask.messageId } },
+            h.deps,
+          )
+        ).ok,
+      ).toBe(true);
+      expect(h.calls).toEqual([
+        ["thread", "authoritative-root", "answer"],
+        ["dismiss", ask.messageId],
+      ]);
+      expect(JSON.stringify(h.current.runs)).toBe(before);
+    } finally {
+      unblock();
+    }
+  });
+
+  test("peer and operator gate replies post as you without approval and legacy run-only Reply still works", async () => {
+    const h = replyHarness();
+    const before = JSON.stringify(h.current.runs);
+    for (const run of h.current.runs!) {
+      const result = await handleSwarmsAction(
+        {
+          type: "reply",
+          payload: {
+            id: h.current.id,
+            runId: run.runId,
+            gateIdentity: gateIdentity(run),
+            note: "  feedback  ",
+          },
+        },
+        h.deps,
+      );
+      expect(result).toEqual({
+        ok: true,
+        data: { message: "Replied in the approve-plan thread as you" },
+      });
+    }
+    expect(
+      (
+        await handleSwarmsAction(
+          {
+            type: "reply",
+            payload: { id: h.current.id, runId: h.current.runs![0]!.runId, note: "legacy" },
+          },
+          h.deps,
+        )
+      ).ok,
+    ).toBe(true);
+    expect(h.calls).toEqual([
+      ["gate", h.current.runs![0]!.runId, "feedback"],
+      ["gate", h.current.runs![1]!.runId, "feedback"],
+      ["gate", h.current.runs![0]!.runId, "legacy"],
+    ]);
+    expect(JSON.stringify(h.current.runs)).toBe(before);
+  });
+
+  test("stale forms cannot reply or dismiss ended, stopping, concluded or disappeared targets", async () => {
+    const h = replyHarness();
+    const initial = h.current;
+    const question = {
+      id: initial.id,
+      messageId: initial.health!.asks![0]!.messageId,
+      note: "stale",
+    };
+    const gate = {
+      id: initial.id,
+      runId: initial.runs![0]!.runId,
+      gateIdentity: gateIdentity(initial.runs![0]!),
+      note: "stale",
+    };
+    for (const patch of [
+      { status: "done" as const, endedAt: T0 },
+      { status: "stopping" as const },
+      { conclusion: "finished" },
+      { endedAt: T0 },
+    ]) {
+      h.current = { ...initial, ...patch };
+      for (const [type, payload] of [
+        ["reply", gate],
+        ["reply", { id: initial.id, runId: gate.runId, note: "legacy stale" }],
+        ["reply-ask", question],
+        ["dismiss-ask", question],
+      ] as const)
+        expect((await handleSwarmsAction({ type, payload }, h.deps)).ok).toBe(false);
+    }
+    h.current = { ...initial, health: { asks: [] }, runs: [] };
+    for (const [type, payload] of [
+      ["reply", gate],
+      ["reply-ask", question],
+      ["dismiss-ask", question],
+    ] as const)
+      expect((await handleSwarmsAction({ type, payload }, h.deps)).ok).toBe(false);
+    h.current = initial;
+    for (const payload of [
+      { ...question, id: "s8pln" },
+      { ...question, messageId: 7 },
+      { ...question, messageId: "foreign" },
+    ])
+      for (const type of ["reply-ask", "dismiss-ask"])
+        expect((await handleSwarmsAction({ type, payload }, h.deps)).ok).toBe(false);
+    for (const [type, payload] of [
+      ["reply", gate],
+      ["reply-ask", question],
+      ["dismiss-ask", question],
+    ] as const)
+      expect((await handleSwarmsAction({ type, payload, origin: "canvas-html" }, h.deps)).ok).toBe(
+        false,
+      );
+    expect(h.calls).toEqual([]);
+  });
+
+  test("gate identity guards reject repeated pauses and malformed identities while allowing current replies", async () => {
+    const h = replyHarness();
+    const initial = h.current;
+    const first = initial.runs![0]!;
+    const payload = {
+      id: initial.id,
+      runId: first.runId,
+      gateIdentity: gateIdentity(first),
+      note: "feedback",
+    };
+    for (const gate of [
+      { ...first.pendingApproval!, pauseId: "next-pause" },
+      { ...first.pendingApproval!, pauseId: undefined, nodeId: "approve-deploy" },
+    ]) {
+      h.current = { ...initial, runs: [{ ...first, pendingApproval: gate }] };
+      expect((await handleSwarmsAction({ type: "reply", payload }, h.deps)).ok).toBe(false);
+      expect((await handleSwarmsAction({ type: "select-gate", payload }, h.deps)).ok).toBe(false);
+      expect((await handleSwarmsAction({ type: "open-run", payload }, h.deps)).ok).toBe(false);
+    }
+    const legacy = { ...first, pendingApproval: { ...first.pendingApproval!, pauseId: undefined } };
+    const legacyPayload = { ...payload, gateIdentity: gateIdentity(legacy) };
+    for (const patch of [
+      { nodeId: "approve-answer" },
+      { openedAt: "later" },
+      { threadId: "later-thread" },
+    ]) {
+      h.current = {
+        ...initial,
+        runs: [{ ...legacy, pendingApproval: { ...legacy.pendingApproval!, ...patch } }],
+      };
+      expect((await handleSwarmsAction({ type: "reply", payload: legacyPayload }, h.deps)).ok).toBe(
+        false,
+      );
+    }
+    h.current = initial;
+    for (const identity of [null, 7, "", {}, "foreign-pause"])
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "reply", payload: { ...payload, gateIdentity: identity } },
+            h.deps,
+          )
+        ).ok,
+      ).toBe(false);
+    for (const patch of [{ status: "running" as const }, { pendingApproval: undefined }]) {
+      h.current = { ...initial, runs: [{ ...first, ...patch }] };
+      expect((await handleSwarmsAction({ type: "reply", payload }, h.deps)).ok).toBe(false);
+      expect((await handleSwarmsAction({ type: "select-gate", payload }, h.deps)).ok).toBe(false);
+    }
+    h.current = initial;
+    expect(h.calls).toEqual([]);
+    expect((await handleSwarmsAction({ type: "reply", payload }, h.deps)).ok).toBe(true);
+    expect(h.calls).toEqual([["gate", first.runId, "feedback"]]);
+  });
+
+  test("reply actions validate notes and missing threads, await gate posting and surface posting failures", async () => {
+    const h = replyHarness();
+    const initial = h.current;
+    const question = { id: initial.id, messageId: initial.health!.asks![0]!.messageId };
+    const gate = {
+      id: initial.id,
+      runId: initial.runs![0]!.runId,
+      gateIdentity: gateIdentity(initial.runs![0]!),
+    };
+    for (const [type, payload] of [
+      ["reply", gate],
+      ["reply-ask", question],
+    ] as const)
+      for (const note of [undefined, 7, " ", "x".repeat(8001)])
+        expect((await handleSwarmsAction({ type, payload: { ...payload, note } }, h.deps)).ok).toBe(
+          false,
+        );
+    h.current = {
+      ...initial,
+      health: { asks: [{ ...initial.health!.asks![0]!, threadRootId: "" }] },
+    };
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "reply-ask", payload: { ...question, note: "answer" } },
+          h.deps,
+        )
+      ).ok,
+    ).toBe(false);
+    h.current = {
+      ...initial,
+      runs: [
+        {
+          ...initial.runs![0]!,
+          pendingApproval: { ...initial.runs![0]!.pendingApproval!, threadId: undefined },
+        },
+      ],
+    };
+    expect(
+      (await handleSwarmsAction({ type: "reply", payload: { ...gate, note: "answer" } }, h.deps))
+        .ok,
+    ).toBe(false);
+    expect(h.calls).toEqual([]);
+    h.current = initial;
+    let unblock = () => {};
+    h.block(
+      new Promise<void>((resolve) => {
+        unblock = resolve;
+      }),
+    );
+    let complete = false;
+    const pending = handleSwarmsAction(
+      { type: "reply", payload: { ...gate, note: "x".repeat(8000) } },
+      h.deps,
+    ).then((result) => {
+      complete = true;
+      return result;
+    });
+    try {
+      await Bun.sleep(2);
+      expect(complete).toBe(false);
+      unblock();
+      expect((await pending).ok).toBe(true);
+      h.fail();
+      for (const [type, payload] of [
+        ["reply", gate],
+        ["reply-ask", question],
+        ["dismiss-ask", question],
+      ] as const) {
+        const result = await handleSwarmsAction(
+          { type, payload: { ...payload, note: "answer" } },
+          h.deps,
+        );
+        expect(result.ok).toBe(false);
+        expect(!result.ok ? result.error : "").toContain("failed");
+      }
+      expect(h.calls).toHaveLength(1);
+    } finally {
+      unblock();
+    }
+  });
 
   test("select-agent composes before its side-open reply and accepts ended agents", async () => {
     const sm = new FakeSnapshots();
