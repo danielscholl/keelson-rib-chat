@@ -17,7 +17,7 @@ import { makeServerTools } from "./server-tools.ts";
 import { createSwarmFileStore } from "./store.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
 import type { SurfaceState } from "./surface/index-board.ts";
-import { BADGE_KEY, INDEX_KEY, LAUNCH_KEY, SERVER_KEY, SURFACE_ID } from "./surface/keys.ts";
+import { BADGE_KEY, INDEX_KEY, LAUNCH_KEY, SURFACE_ID } from "./surface/keys.ts";
 import { type LaunchState, launchByline } from "./surface/launch-board.ts";
 import type { ServerLine } from "./surface/parts.ts";
 import { createServerOps } from "./surface/server-ops.ts";
@@ -242,8 +242,8 @@ function changed(id: string, kind: SwarmChange): void {
   if (kind === "start" || kind === "end") void refreshServer();
 }
 
-// An external server is asked on each refresh whether it answers; the footer's
-// pill says since when it has not.
+// An external server is asked on each refresh whether it answers; the server
+// line says since when it has not.
 async function probeExternal(url: string, token: string | undefined): Promise<ServerLine> {
   const checkedAt = new Date().toISOString();
   const was = serverLine?.mode === "external" ? serverLine : undefined;
@@ -261,7 +261,7 @@ async function probeExternal(url: string, token: string | undefined): Promise<Se
   }
 }
 
-// The ClickClack row reads a cached status: probed on swarm start and end, after
+// The server line reads a cached status: probed on swarm start and end, after
 // the server tools, and every minute while a swarm is live.
 async function refreshServer(): Promise<void> {
   if (!surface) return;
@@ -667,7 +667,6 @@ const rib: Rib = {
       layout: {
         header: { key: LAUNCH_KEY, collapsible: true, byline: launchByline() },
         rows: [{ columns: [{ key: INDEX_KEY, live: true }] }],
-        footer: { key: SERVER_KEY, collapsible: true, collapsed: true },
       },
     },
   ],

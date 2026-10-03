@@ -2716,5 +2716,7 @@ describe("the rib's surface", () => {
     const surface = ribSurfaceDescriptorSchema.parse(rib.surfaces?.[0]);
     expect(surface).toMatchObject({ id: "swarms", title: "Swarms", hideRegionActions: true });
     expect(JSON.stringify(surface.layout)).toContain(INDEX_KEY);
+    expect(surface.layout.footer).toBeUndefined();
+    expect(JSON.stringify(surface.layout)).not.toContain(SERVER_KEY);
   });
 });
