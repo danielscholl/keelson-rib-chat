@@ -62,6 +62,7 @@ describe("swarm history", () => {
       activity: [{ at: "2026-09-22T10:00:00.000Z", text: "swarm s3 started", kind: "start" }],
       pace: [1, 0, 2],
       rerunOf: "s1",
+      operatorMessageCount: 42,
     };
     saveHistory(path, { ended: [full], refusedApprovals: [] });
     expect(loadHistory(path).ended[0]).toEqual(full);
@@ -116,6 +117,7 @@ describe("swarm history", () => {
     writeFileSync(path, JSON.stringify({ version: 1, ended: [legacy], refusedApprovals: [] }));
     const restored = loadHistory(path).ended[0]!;
     expect(restored.writeEnabled).toBeUndefined();
+    expect(restored.operatorMessageCount).toBeUndefined();
     expect(restored.prs?.[0]?.ci).toBeUndefined();
     const view = buildSwarmBoard(restored);
     expect(() => expectView("swarm-s5", "board")(view)).not.toThrow();

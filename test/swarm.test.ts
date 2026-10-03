@@ -1462,6 +1462,7 @@ describe("changes and records", () => {
     expect(recent.at(-1)).toMatchObject({ author: "s1-lead", kind: "conclusion" });
     expect(recent.every((m) => m.text.length <= MESSAGE_CHARS)).toBe(true);
     expect(summary.messageCount).toBe(ingested.length);
+    expect(summary.operatorMessageCount).toBe(1);
     expect(kinds.filter((kind) => kind === "message")).toHaveLength(ingested.length);
     const status = JSON.parse(
       (await callTool(h.tools, "chat_swarm_status", { swarm: "s1" })).content,
@@ -1512,6 +1513,7 @@ describe("changes and records", () => {
       for (let i = 0; i < 200 && swarm.summary().messageCount !== 51; i++) await Bun.sleep(5);
       const summary = swarm.summary();
       expect(summary.messageCount).toBe(51);
+      expect(summary.operatorMessageCount).toBe(50);
       expect(summary.recent).toHaveLength(MESSAGES_KEPT);
       expect(summary.recent?.map((m) => m.id)).toEqual(
         posts.slice(-MESSAGES_KEPT).map((m) => m.id),
@@ -1526,6 +1528,27 @@ describe("changes and records", () => {
     } finally {
       release();
       await swarm.finished;
+    }
+  });
+
+  test("operator counts exclude early kickoff echoes and notices, and deduplicate replies", async () => {
+    const h = harness(async () => never, {}, { settleMs: 1 });
+    h.server.writeDelayMs = 10;
+    const swarm = await h.start();
+    try {
+      expect(swarm.summary().operatorMessageCount).toBe(0);
+      const post = h.server.postAsOwner(swarm.summary().channelId, "a direct post");
+      await swarm.replyInThread(post.id, "a reply");
+      await swarm.steer("a steer");
+      for (let i = 0; i < 200 && swarm.summary().operatorMessageCount !== 3; i++) {
+        await Bun.sleep(5);
+      }
+      expect(swarm.summary().operatorMessageCount).toBe(3);
+      await Bun.sleep(20);
+      expect(swarm.summary().operatorMessageCount).toBe(3);
+      expect(publicSummary(swarm.summary()).operatorMessageCount).toBe(3);
+    } finally {
+      await swarm.stop();
     }
   });
 

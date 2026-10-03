@@ -394,6 +394,8 @@ export interface SwarmSummary {
   activity?: readonly ActivityEntry[];
   // Every message the swarm saw, including posts not kept in recent.
   messageCount?: number;
+  // Genuine human posts, excluding the rib's kickoff and notices; absent on old records.
+  operatorMessageCount?: number;
   // The newest 20 messages, oldest first; omitted from status tools and the op record.
   recent?: readonly RecentMessage[];
   // The lead's last conclusion that was refused, kept when no conclusion landed.

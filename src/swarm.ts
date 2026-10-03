@@ -358,10 +358,12 @@ export class Swarm {
   private readonly activity: ActivityEntry[] = [];
   private readonly recent: RecentMessage[] = [];
   private messageCount = 0;
+  private operatorMessageCount = 0;
   private kickoffId = "";
   private ownerHandle = "";
   // Messages the rib posts as the owner, which are not the operator talking.
   private readonly ownPosts = new Set<string>();
+  private readonly ownBodies = new Map<string, boolean>();
   private lastLeadFailure: string | undefined;
   // The last time an agent's channel call failed because ClickClack itself did.
   private channelFault: string | undefined;
@@ -474,10 +476,7 @@ export class Swarm {
       () => void this.finish("exhausted", "wall clock limit reached"),
       this.limits.wallClockMs,
     );
-    const kickoff = await this.owner.postMessage(
-      this.channel.id,
-      `**Swarm ${this.id}**\n\n${this.task}`,
-    );
+    const kickoff = await this.postOwn(`**Swarm ${this.id}**\n\n${this.task}`, true);
     this.kickoffId = kickoff.id;
     this.ownPosts.add(kickoff.id);
     this.log(`swarm ${this.id} started in #${this.channel.name}`, { kind: "start" });
@@ -545,6 +544,18 @@ export class Swarm {
     this.serial(async () => this.ingest(message));
   }
 
+  private async postOwn(body: string, kickoff = false): Promise<ChatMessage> {
+    this.ownBodies.set(body, kickoff);
+    try {
+      const message = await this.owner.postMessage(this.channel.id, body);
+      this.ownPosts.add(message.id);
+      if (kickoff) this.kickoffId = message.id;
+      return message;
+    } finally {
+      this.ownBodies.delete(body);
+    }
+  }
+
   // The rib's own bookkeeping posts (run and gate updates) wake no one, even
   // when they name a reviewer or land in a thread one joined. The body is
   // registered before the write, since the realtime copy can arrive first.
@@ -568,7 +579,12 @@ export class Swarm {
     const roster = [...this.agents.values()];
     const author = roster.find((a) => a.botUserId === message.authorId);
     const isRoot = message.threadRootId === message.id;
+    if (message.authorKind === "human" && this.ownBodies.has(message.body)) {
+      this.ownPosts.add(message.id);
+      if (this.ownBodies.get(message.body)) this.kickoffId = message.id;
+    }
     if (message.authorKind === "human" && !this.ownPosts.has(message.id)) {
+      this.operatorMessageCount++;
       this.answerAsks(message, isRoot);
     }
     if (author?.lead && !isRoot) this.noteReviewer(message);
@@ -714,8 +730,7 @@ export class Swarm {
     this.changed("agent");
     this.inboxes.set(agent.id, []);
     this.background.delete(agent.id);
-    void this.owner
-      .postMessage(this.channel.id, notice)
+    void this.postOwn(notice)
       .then((m) => {
         this.ownPosts.add(m.id);
         this.enqueueMessage(m);
@@ -2113,6 +2128,7 @@ export class Swarm {
       ...(this.activity.length > 0 ? { activity: this.activity.map((e) => ({ ...e })) } : {}),
       ...(this.recent.length > 0 ? { recent: this.recent.map((m) => ({ ...m })) } : {}),
       ...(this.messageCount > 0 ? { messageCount: this.messageCount } : {}),
+      operatorMessageCount: this.operatorMessageCount,
       ...(this.opts.context?.length
         ? { context: contextIndex(this.opts.context, { excerpts: true }) }
         : {}),
