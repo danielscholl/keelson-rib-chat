@@ -50,14 +50,69 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    time-left clock; and fresh **Tokens** with cached tokens in the sub.
    Before a turn, Tokens says **none yet**; after turns without usage, it
    says **the provider reported none**.
-6. **Conversation**: the eight newest channel messages, newest first, then
-   the message count and **transcript ↗** link.
+6. **Map** beside **Conversation**: the agents and runs as a graph, and the
+   eight newest channel messages, then the count and **transcript ↗** link.
 7. **Message the lead**, expanded directly under Conversation for a running
    swarm that has not concluded.
-8. The agent bench, Spend, Produced so far, Task and context, Activity, and
-   About, the same details as the per-swarm board below.
+8. Spend, Produced so far, Task and context, Activity, and About.
 9. **Open the report** when one exists; **Open the record**; and
    **Stop swarm…** last.
+
+### Map
+
+Map is a native graph with columns **You, Lead, Workers, Runs** at ranks
+**0, 1, 2, 3**. Grandchildren remain in Workers. Agent tones show identity;
+run tones show status: running/info, paused/caution, succeeded/ok,
+failed/error, cancelled/neutral.
+
+You shows genuine human posts, counted independently of the recent buffer.
+`operatorMessageCount` excludes kickoff and rib notices. Zero is measured
+zero; old records say **posts not recorded**. The lead shows turns and status,
+workers show turns against their cap and status, and runs show status and
+steps done. Lead turns have no worker cap.
+
+Solid spawn edges fold the parent's wakes into **×n**, including **×0** when
+none were recorded. Other wake edges count one wake per source per turn.
+Questions to you are dashed **asked ×n** edges, including retained repeats.
+Each individual run links to the lead with **updates**, not a fabricated
+per-run wake count. The aggregate `runs` source is never a map node.
+You is informational; run nodes open the run; agent nodes select the agent.
+
+Map keeps at most **48 nodes and 200 edges**. It retains You, the lead and
+the selected agent before optional nodes, removes dangling edges, and names
+actual shown/total counts in the heading for each clipped dimension.
+Map and Conversation stack on narrow screens.
+
+### Inspect or message an agent
+
+Select an agent to open its freshly composed inspector at the side.
+Selection is shared by every viewer, separately from the expanded swarm
+choice; another agent replaces the side drawer. One inspector key per swarm
+keeps it bounded. The single-column board is designed for the 520 px inspector.
+
+The identity card shows status, role and a turns meter. The lead's meter is
+the swarm budget, explicitly not a worker cap. Facts show the current or last
+turn, times, outcome, took, and wake sources: peers, you, kickoff/rib notices,
+run updates and idle nudges. Fresh tokens and cached tokens stay separate.
+The model/provider is the one actually served. Missing evidence says
+**not reported** or **not recorded**, never the requested model as served.
+Provenance names the parent and join time. Writers show worktree, branch,
+draft PR and observed CI, with an **Open PR** link.
+
+**Said** is this agent's recent messages only, newest first, each linked to
+its thread. **Turns** keeps its recorded spans newest first. The quiet
+**its messages · transcript ↗** link opens the channel, not a complete
+agent-only message history.
+
+**Message @agent** posts as you with the roster's full handle mentioned,
+through the unchanged router. It wakes the selected agent and spends a turn;
+additional mentions in your note follow normal routing. The activity names
+the recipient. The 8,000-character body limit includes the operator prefix
+and mention. Capped/failed workers and exhausted budgets disable messaging
+with a reason.
+
+Stopping, concluded and ended inspectors are read-only with no composer.
+Ended inspectors have no live clock, even when an old span has no recorded end.
 
 ### The budget forecast
 
@@ -212,8 +267,8 @@ Live, the board runs in this order:
   left on a live clock; agents against the cap with how many are busy or
   waiting; and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
-- **Conversation**, the same newest eight messages and transcript link as
-  the cockpit
+- **Map** beside **Conversation**, the same graph, newest eight messages
+  and transcript link as the cockpit, with **Message the lead** under it
 - **Message the lead**, which posts in the channel as you and wakes the lead,
   with the placeholder **posts as you, wakes the lead**, then **Open the
   record**, and **Stop swarm…** at the far end of the row. The button reads
@@ -237,20 +292,20 @@ is titled **Conclusion**. A swarm that did not conclude shows its cause
 instead, such as **Stopped by you at 21:50**, **Out of turns at 40** or
 **Failed: …**.
 
-The details follow in both and read the same in the live cockpit:
+The remaining details follow in both and in the live cockpit. Live details
+do not repeat an agent bench. Ended boards keep these agent cards:
 
-- **Agents**: a bench with one card per agent, its handle in its identity
-  color, a status pill while live (**busy**, **waiting** when it has messages
-  and no free slot, **idle**, **capped**, **failed**), its turns against the
-  per-worker cap, its role and its tokens, and in its footnote its last event
-  and when (**last: turn 3 ok · 42 s · 2 new · 11:52**); open seats up to the
-  swarm's cap show as dashed ghosts
+- **Agents** (ended only): proportional identity-colored agent cards with
+  turns, role, tokens and the last event. They select the same read-only
+  inspector, without monospace/stacked cards or ghost seats.
 - **Spend**, once two agents have spent: a bar per agent, its fresh tokens
   against the swarm's, with the count and share beside it
 - **Produced so far**: reports, dispatched runs, writer draft PRs, and, once
   ended, kept worktrees, as described below
-- **Task and context**: the task in full under a disclosure, and each context
-  item with its id, retrieval time, commit and text under its own
+- **Task and context**: a bounded task disclosure, and each context item with
+  its id, retrieval time, commit and text under its own. The cockpit shows at
+  most 1,000 task characters to reserve map space; the per-swarm board keeps
+  4,000 and the reading pane keeps the full task.
 - **Activity**: the last twelve events, newest first, with repeats counted,
   then **Read the full log**, which opens the last 200 in the reading pane.
   Each row starts with who it is by: the agent's handle in its color, or

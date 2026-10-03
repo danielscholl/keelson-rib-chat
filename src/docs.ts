@@ -472,11 +472,56 @@ The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
 the task and id with a lifecycle or needs-you pill and people dots; a state
 line; once the lead has concluded, the Outcome card; an agent strip (busy, waiting, idle, capped, failed, with hatched open
 seats); three Budget tiles (Turns with its spark and a forecast as its delta,
-Time as a ticking time-left clock, fresh Tokens with cached in the sub); Conversation; Message the lead;
+Time as a ticking time-left clock, fresh Tokens with cached in the sub); Map beside Conversation and Message the lead;
 the details described below; then Open the report when one exists, Open the
 record, and Stop swarm last. Message the lead is expanded directly under
 Conversation while running, unless the lead has concluded. Tokens says none yet
 before any turn, or that the provider reported none when turns ran without usage.
+
+Map is a native graph with columns You, Lead, Workers, Runs at ranks 0, 1, 2, 3.
+Grandchildren remain in Workers. Agent tones show identity; run tones show status:
+running/info, paused/caution, succeeded/ok, failed/error, cancelled/neutral.
+You shows genuine human posts, counted independently of the recent buffer;
+operatorMessageCount excludes kickoff and rib notices. Zero is measured zero;
+old records say posts not recorded. The lead shows turns and status, workers
+show turns against their cap and status, and runs show status and steps done.
+Lead turns have no worker cap.
+
+Solid spawn edges fold the parent's wakes into ×n, including ×0 when none were
+recorded. Other wake edges count one wake per source per turn. Questions to you
+are dashed asked ×n edges, including retained repeats. Each individual run links
+to the lead with updates, not a fabricated per-run wake count. The aggregate
+runs source is never a map node. You is informational; run nodes open the run;
+agent nodes select the agent.
+
+Map keeps at most 48 nodes and 200 edges. It retains You, the lead and the
+selected agent before optional nodes, removes dangling edges, and names actual
+shown/total counts in the heading for each clipped dimension. Map and Conversation
+stack on narrow screens. The cockpit task disclosure shows at most 1,000 characters
+to reserve map space; the per-swarm board keeps 4,000 and the reading pane keeps
+the full task.
+
+Selecting an agent opens its freshly composed inspector at the side. Selection
+is shared by every viewer, separately from the expanded swarm choice; another
+agent replaces the side drawer. One inspector key per swarm keeps it bounded.
+The single-column board is designed for the 520 px inspector. Its identity
+card shows status, role and a turns meter; the lead's meter is the swarm budget,
+explicitly not a worker cap. Facts show the current or last turn, times,
+outcome, took, wake sources, fresh tokens and cached tokens separately, and the
+actually served model/provider. Missing evidence says not reported or not recorded,
+never the requested model as served. Provenance names the parent and join time.
+Writers show worktree, branch, draft PR and observed CI, with an Open PR link.
+
+Said is this agent's recent messages only, newest first, each linked to its
+thread. Turns keeps its recorded spans newest first. The quiet its messages ·
+transcript ↗ link opens the channel, not a complete agent-only message history.
+Message @agent posts as you with the roster's full handle mentioned, through
+the unchanged router. It wakes the selected agent and spends a turn; additional
+mentions in your note follow normal routing. The activity names the recipient.
+The 8,000-character body limit includes the operator prefix and mention.
+Capped/failed workers and exhausted budgets disable messaging with a reason.
+Stopping, concluded and ended inspectors are read-only with no composer; ended
+inspectors have no live clock, even when an old span has no recorded end.
 
 The live Turns tile's sub reads "pace over the last 5 min". The forecast counts
 turn start timestamps over the last five minutes, or since the start when younger,
@@ -554,7 +599,7 @@ state line and counts as no request.
 An ended row opens its board in the drawer. The per-swarm board also still
 composes for MCP clients, live or ended. Live, it runs: the requests, the outcome once a
 report exists, a budget strip (turns with the same forecast delta, time, agents, fresh
-tokens with cached beside them), the same Conversation section, Message the
+tokens with cached beside them), the same Map beside Conversation and Message the
 lead, Open the record and Stop,
 then the details. Ended, it runs: the outcome, the result strip, Run again and
 Open the record, then the details. The ended Result includes Pull requests when
@@ -565,8 +610,9 @@ The outcome is one card: under the report's title when the lead published one
 (else Conclusion), the conclusion with a copy button, Open the report, Read the
 conclusion; a swarm that did not conclude shows
 its cause instead, such as Stopped by you at 21:50 or Out of turns at 40. The
-details are the same in both: the agents as a bench with an open seat per
-unfilled slot and a waiting pill on agents with messages and no slot, Spend
+live details no longer repeat an agent bench. Ended boards keep proportional
+identity-colored agent cards that select the same read-only inspector, without
+monospace/stacked cards or ghost seats. Both retain Spend
 (each agent's fresh tokens against the swarm's, once two agents have spent),
 Produced so far, the task and each context
 item by id with its text under a disclosure, the activity with repeats counted
