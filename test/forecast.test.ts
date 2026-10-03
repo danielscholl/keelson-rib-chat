@@ -108,4 +108,93 @@ describe("turn budget forecast", () => {
       clockEndsAt: endsAt(summary()),
     });
   });
+
+  test.each([20, 40, 80, 41])(
+    "uses the rounded-up tenth-of-budget boundary for %i turns",
+    (maxTurns) => {
+      const threshold = Math.ceil(maxTurns / 10);
+      const limits = { ...SIZE_PRESETS.medium, maxTurns };
+      const now = new Date("2026-09-22T14:20:00.000Z");
+      const pace = [1, 1, 1, 1, 1];
+      expect(
+        forecast(summary({ limits, pace, turnsUsed: maxTurns - 10 - threshold + 1 }), now),
+      ).toMatchObject({ reading: "fits", unused: threshold - 1 });
+      expect(
+        forecast(summary({ limits, pace, turnsUsed: maxTurns - 10 - threshold }), now),
+      ).toMatchObject({ reading: "clock-first", unused: threshold });
+    },
+  );
+
+  test("equal run-out and clock times fit rather than running out first", () => {
+    expect(forecast(summary({ turnsUsed: 31, pace: [1, 1, 1, 1, 1] }), NOW)).toMatchObject({
+      reading: "fits",
+      runOutAt: endsAt(summary()),
+      unused: 0,
+    });
+  });
+
+  test("clamps the time remaining at zero after the wall clock expires", () => {
+    const now = new Date("2026-09-22T14:31:00.000Z");
+    expect(forecast(summary({ pace: [1, 1, 1, 1, 1] }), now)).toMatchObject({
+      reading: "clock-first",
+      rate: 1,
+      runOutAt: "2026-09-22T14:53:00.000Z",
+      unused: 22,
+    });
+  });
+
+  test("uses at least a minute of elapsed time before the first minute ends", () => {
+    expect(forecast(summary({ turnsUsed: 3 }), new Date("2026-09-22T14:00:30.000Z"))).toMatchObject(
+      { reading: "runs-out-first", rate: 3 },
+    );
+  });
+
+  test("reports fewer than one turn as no pace without an infinite projection", () => {
+    const f = forecast(summary({ pace: [0, 0, 0, 0, 0.5] }), NOW);
+    expect(f).toMatchObject({ reading: "no-pace" });
+    expect(f).not.toHaveProperty("runOutAt");
+    expect(f).not.toHaveProperty("rate");
+  });
+
+  test.each([
+    [5, "1"],
+    [10, "2"],
+    [1, "0.2"],
+    [8, "1.6"],
+  ])("formats %i turns in five minutes as %s a minute", (turns, text) => {
+    const f = forecast(summary({ turnsUsed: 39, pace: [turns, 0, 0, 0, 0] }), NOW);
+    expect(forecastDelta(f).text).toContain(`at ${text} a minute`);
+  });
+
+  test("leaves directional glyphs to the host for every reading", () => {
+    const forecasts = [
+      forecast(summary({ turnsUsed: 32, pace: [2, 1, 2, 1, 2] }), NOW),
+      forecast(summary({ pace: [1, 1, 1, 1, 2] }), NOW),
+      forecast(summary({ pace: [2, 2, 2, 2, 3] }), NOW),
+      forecast(summary({ pace: [0, 0, 0, 0, 0] }), NOW),
+      forecast(summary({ turnsUsed: 40 }), NOW),
+    ];
+    expect(new Set(forecasts.map((f) => f.reading)).size).toBe(5);
+    for (const f of forecasts) {
+      const delta = forecastDelta(f);
+      expect(delta.text).not.toMatch(/[▼▲→]/);
+      if (f.reading === "fits" || f.reading === "no-pace") {
+        expect(delta).not.toHaveProperty("tone");
+      }
+    }
+  });
+
+  test("does not mutate the summary, its nested fields or the caller's clock", () => {
+    const s = Object.freeze(
+      summary({
+        pace: Object.freeze([2, 1, 2, 1, 2]),
+        limits: Object.freeze({ ...SIZE_PRESETS.medium }),
+      }),
+    );
+    const original = structuredClone(s);
+    const now = new Date(NOW);
+    expect(forecast(s, now)).toEqual(forecast(s, now));
+    expect(s).toEqual(original);
+    expect(now.toISOString()).toBe(NOW.toISOString());
+  });
 });
