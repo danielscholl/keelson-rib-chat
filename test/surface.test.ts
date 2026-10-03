@@ -3093,11 +3093,11 @@ describe("the details", () => {
     expect(rows[0]?.text).toBe("event 14");
     expect(rows.at(-1)).toMatchObject({
       text: "Read the full log · 3 earlier events",
-      action: { type: "read-doc", payload: { id: "s7log" } },
+      action: { type: "open-record", payload: { id: "s7log" } },
     });
-    const doc = buildDoc(s, s.id);
-    expect(doc).toContain("## Activity");
-    expect(doc).toContain("- 14:00 event 0\n");
+    const record = buildRecord(s, new Date(T0));
+    expect(record).toContain("<h2>Activity</h2>");
+    expect(record).toContain("<td>event 0</tbody>");
     const short = buildSwarmBoard(swarm("s7few", { activity: [{ at: T0, text: "one" }] }));
     expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
   });
@@ -4189,6 +4189,89 @@ describe("publishing", () => {
 });
 
 describe("the record page", () => {
+  const activitySection = (html: string) =>
+    html.match(/<section><h2>Activity<\/h2>.*?<\/section>/)?.[0] ?? "";
+
+  test("activity retains exactly the latest 200 events, newest first, including empty histories", () => {
+    for (const count of [0, 1, 200, 201]) {
+      const activity = Array.from({ length: count }, (_, i) => ({
+        at: new Date(Date.parse(T0) + i * 60_000).toISOString(),
+        text: `retained event ${i}`,
+      }));
+      const s = swarm("slog", { activity });
+      const html = buildRecord(s, new Date(T0));
+      const section = activitySection(html);
+      expect(section).toContain("not a complete transcript");
+      expect(html.indexOf(section)).toBeLessThan(html.indexOf("<footer>"));
+      const rows = section.split(/<tr id="e\d+"><td>/).slice(1);
+      expect(rows).toHaveLength(Math.min(count, 200));
+      expect(rows.map((row) => Number(row.match(/retained event (\d+)/)?.[1]))).toEqual(
+        activity
+          .slice(-200)
+          .reverse()
+          .map((event) => Number(event.text.split(" ").at(-1))),
+      );
+      if (count === 0) expect(section).toContain("No retained events.");
+      if (count === 201) expect(section).not.toContain("<td>retained event 0");
+    }
+  });
+
+  test("activity identifies actors and timestamps, counts repeats and escapes bounded event gists", () => {
+    const s = swarm("slog", {
+      activity: [
+        { at: T0, text: "rib event" },
+        { at: T0, text: "operator note", actor: "operator", count: 3 },
+        { at: T0, text: "@slog-w1 turn finished", actor: "slog-w1", count: 1 },
+        { at: T0, text: "<script> & ' \" <img>", actor: "<unknown>" },
+        { at: T0, text: "x".repeat(400), actor: "unknown-agent" },
+      ],
+    });
+    const section = activitySection(buildRecord(s, new Date(T0)));
+    expect(section).toContain(`<td>${day(T0)} ${hhmm(T0)} · rib<td>rib event`);
+    expect(section).toContain(" · you<td>operator note ×3");
+    expect(section).toContain(" · @w1<td>@w1 turn finished");
+    expect(section).not.toContain("×1");
+    expect(section).toContain(
+      " · &lt;unknown&gt;<td>&lt;script&gt; &amp; &#39; &quot; &lt;img&gt;",
+    );
+    expect(section).not.toContain("<script>");
+    expect(section).toContain(` · unknown-agent<td>${"x".repeat(159)}…`);
+    expect(section).not.toContain("x".repeat(160));
+  });
+
+  test("activity-only changes refresh a live record through the existing publishing window", async () => {
+    const sm = new FakeSnapshots();
+    let live = swarm("slog");
+    const surface = createSwarmsSurface({
+      sm,
+      state: () => state({ live: [live] }),
+      find: () => ({ live }),
+      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ live: 1 }),
+      readLog: async () => "",
+      report: () => undefined,
+      views: [],
+      windowMs: 5,
+    });
+    try {
+      surface.track([live.id]);
+      await Bun.sleep(10);
+      const frames = sm.frames.get(recordKey(live.id))!;
+      expect(frames).toHaveLength(1);
+      live = { ...live, activity: [{ at: T0, text: "dismissed one question", actor: "operator" }] };
+      surface.changed(live.id, "activity");
+      expect(sm.frames.get(recordKey(live.id))).toHaveLength(1);
+      await Bun.sleep(15);
+      expect(sm.frames.get(recordKey(live.id))).toHaveLength(2);
+      expect(sm.frames.get(recordKey(live.id))!.at(-1)).toContain(
+        " · you<td>dismissed one question",
+      );
+    } finally {
+      surface.dispose();
+    }
+  });
+
   test("semantic edges count distinct sources, fold spawn wakes and keep repeat asks", () => {
     const s = swarm("s1", {
       agents: [agent("s1", 0), agent("s1", 1, { spawnedBy: "s1-lead" })],
@@ -4313,11 +4396,14 @@ describe("the record page", () => {
 
   test("the timeline draws a lane per agent in turn order, the operator above and runs below", () => {
     const html = buildRecord(traced(), new Date(at(30)));
+    for (const reference of html.matchAll(/aria-describedby="(e\d+)"/g)) {
+      expect(html).toContain(`<tr id="${reference[1]}">`);
+    }
     const labels = [...html.matchAll(/<text class="lbl[^"]*"[^>]*>([^<]*)<\/text>/g)].map(
       (m) => m[1],
     );
     expect(labels).toEqual(["you", "@lead", "@w2", "@w1", "fix-issue r10000-1"]);
-    for (const x of html.matchAll(/<rect class="t-[^"]*" x="([\d.]+)"/g)) {
+    for (const x of html.matchAll(/<path[^>]* d="M([\d.]+) [\d.]+h/g)) {
       expect(Number(x[1])).toBeGreaterThanOrEqual(112);
       expect(Number(x[1])).toBeLessThanOrEqual(708);
     }
@@ -4427,7 +4513,10 @@ describe("the record page", () => {
       })),
       usage: { input: 9_000_000, output: 400_000, cached: 7_000_000 },
     });
-    expect(buildRecord(big, new Date(at(300))).length).toBeLessThan(128_000);
+    const record = buildRecord(big, new Date(at(300)));
+    expect(record.length).toBeLessThan(128_000);
+    expect(activitySection(record).match(/<tr id="e\d+">/g)).toHaveLength(200);
+    console.info(`Record (200 events, 200 turns, 12 runs): ${record.length} characters`);
   });
 
   test("each swarm's record registers with its other keys, and Open the record opens it", async () => {

@@ -103,6 +103,7 @@ const DOC_KINDS = new Set<SwarmChange>([
 // swarm's course changes, at most this often.
 const RECORD_WINDOW_MS = 5_000;
 const RECORD_KINDS = new Set<SwarmChange>([
+  "activity",
   "turn",
   "agent",
   "run",

@@ -732,7 +732,7 @@ function activity(s: SwarmSummary): Leaf[] {
               {
                 icon: "▤",
                 text: `Read the full log · ${plural(earlier, "earlier event")}`,
-                action: { type: "read-doc", payload: { id: s.id } },
+                action: { type: "open-record", payload: { id: s.id } },
               },
             ]
           : []),

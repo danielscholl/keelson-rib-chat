@@ -16,7 +16,16 @@ import {
   type SwarmSummary,
   type TurnSpan,
 } from "../types.ts";
-import { day, firstLine, hhmm, plural, shortHandle, shortRun, span } from "./format.ts";
+import {
+  activityText,
+  day,
+  firstLine,
+  hhmm,
+  plural,
+  shortHandle,
+  shortRun,
+  span,
+} from "./format.ts";
 import { LIFECYCLE, sizeWord } from "./parts.ts";
 
 // The record: a drawing of one swarm the rib composes as an html view. The host
@@ -129,7 +138,7 @@ svg .tick { stroke: var(--border); stroke-dasharray: 2 3; }
 svg .now { stroke: var(--accent); stroke-width: 1.5; }
 svg .endrule { stroke: var(--muted); stroke-width: 1; }
 svg .lbl { font-size: 11.5px; fill: var(--fg); }
-svg .mk { font-size: 12px; fill: var(--fg-strong); text-anchor: middle;
+svg .mk text { font-size: 12px; fill: var(--fg-strong); text-anchor: middle;
   paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
 svg .hatch { fill: url(#hatch); }
 svg .hatchline { stroke: var(--crit); stroke-width: 1.2; }
@@ -277,9 +286,10 @@ function spanTitle(s: SwarmSummary, t: TurnSpan): string {
   );
 }
 
-function mark(x: number, y: number, glyph: string, title: string): string {
+function mark(x: number, y: number, glyph: string, title: string, descriptionId?: string): string {
   if (!ok(x, y)) return "";
-  return `<text class="mk" x="${num(x)}" y="${num(y)}"><title>${esc(cut(title, 80))}</title>${glyph}</text>`;
+  // Event marks reuse the log row's accessible description instead of duplicating its prose.
+  return `<text x="${num(x)}" y="${num(y)}"${descriptionId ? ` aria-describedby="${descriptionId}"` : ""}>${descriptionId ? "" : `<title>${esc(cut(title, 80))}</title>`}${glyph}</text>`;
 }
 
 function timeline(s: SwarmSummary, composedAt: Date): string {
@@ -289,6 +299,8 @@ function timeline(s: SwarmSummary, composedAt: Date): string {
   const height = laneY(all, all.length - 1) + LANE + GAP + 4;
   const mid = (i: number) => laneY(all, i) + LANE / 2 + 4;
   const parts: string[] = [];
+  const marks: string[] = [];
+  const turns = new Map<string, string[]>();
 
   parts.push(
     `<defs><pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatchline" x1="0" y1="0" x2="0" y2="4"/></pattern></defs>`,
@@ -314,15 +326,15 @@ function timeline(s: SwarmSummary, composedAt: Date): string {
     const y = laneY(all, i) + 2;
     const cls = TONE_CLASS[agent?.tone ?? "neutral"] ?? "neu";
     const title = `<title>${esc(spanTitle(s, t))}</title>`;
-    parts.push(
-      `<rect class="t-${cls}${t.endedAt ? "" : " open"}" x="${num(x)}" y="${y}" width="${num(w)}" height="${LANE - 4}" rx="2">${title}</rect>`,
-    );
+    const path = `M${num(x)} ${y}h${num(w)}v${LANE - 4}h-${num(w)}z`;
+    const group = turns.get(cls) ?? [];
+    group.push(`<path${t.endedAt ? "" : ' class="open"'} d="${path}">${title}</path>`);
     if (t.outcome === "timeout" || t.outcome === "error") {
-      parts.push(
-        `<rect class="hatch" x="${num(x)}" y="${y}" width="${num(w)}" height="${LANE - 4}" rx="2">${title}</rect>`,
-      );
+      group.push(`<path class="hatch" d="${path}">${title}</path>`);
     }
+    turns.set(cls, group);
   }
+  for (const [cls, paths] of turns) parts.push(`<g class="t-${cls}">${paths.join("")}</g>`);
 
   for (const r of s.runs ?? []) {
     const i = index.get(r.runId);
@@ -338,7 +350,7 @@ function timeline(s: SwarmSummary, composedAt: Date): string {
       `<rect class="t-${RUN_CLASS[r.status] ?? "neu"}${r.completedAt ? "" : " open"}" x="${num(x)}" y="${y}" width="${num(w)}" height="${LANE - 8}" rx="2" opacity=".8"><title>${esc(cut(title, 80))}</title></rect>`,
     );
     for (const g of r.gates ?? []) {
-      parts.push(
+      marks.push(
         mark(xOf(f, when(g.openedAt)), mid(i), "◇", `${g.nodeId} opened ${hhmm(g.openedAt)}`),
       );
       if (g.closedAt) {
@@ -348,13 +360,13 @@ function timeline(s: SwarmSummary, composedAt: Date): string {
             : g.by === "operator"
               ? "answered by you"
               : "closed";
-        parts.push(
+        marks.push(
           mark(xOf(f, when(g.closedAt)), mid(i), "◆", `${g.nodeId} ${by} ${hhmm(g.closedAt)}`),
         );
       }
     }
     if (r.verified && r.completedAt) {
-      parts.push(
+      marks.push(
         mark(
           xOf(f, when(r.completedAt)),
           mid(i),
@@ -368,7 +380,7 @@ function timeline(s: SwarmSummary, composedAt: Date): string {
   for (const a of s.agents) {
     const i = index.get(a.id);
     if (i === undefined || !a.joinedAt || !a.spawnedBy) continue;
-    parts.push(
+    marks.push(
       mark(
         xOf(f, when(a.joinedAt)),
         mid(i),
@@ -377,22 +389,23 @@ function timeline(s: SwarmSummary, composedAt: Date): string {
       ),
     );
   }
-
-  for (const e of s.activity ?? []) {
+  for (const [eventIndex, e] of (s.activity ?? []).slice(-200).entries()) {
     const glyph = e.kind ? MARKS[e.kind] : undefined;
     if (!glyph) continue;
     const onLane = e.kind === "nudge" ? e.subject : e.kind === "answer" ? "operator" : e.actor;
     const i = onLane ? index.get(onLane) : undefined;
     if (i === undefined) continue;
-    parts.push(
+    marks.push(
       mark(
         xOf(f, when(e.at)),
         mid(i),
         glyph,
         `${hhmm(e.at)} ${e.text.replaceAll(`@${s.id}-`, "@")}`,
+        `e${eventIndex}`,
       ),
     );
   }
+  parts.push(`<g class="mk">${marks.join("")}</g>`);
 
   if (f.now !== undefined) {
     const x = num(xOf(f, f.now));
@@ -722,9 +735,25 @@ function provenance(s: SwarmSummary, composedAt: Date): string {
   return `<footer>From the swarm's summary${at}, covering ${esc(window)}. Marks come from the newest 200 events. Not on this page: the transcript, which is ClickClack's <code>#${esc(s.channelName || `swarm-${s.id}`)}</code>; the lead's report, which has its own page; and prices, which the summary does not carry.</footer>`;
 }
 
+function activity(s: SwarmSummary): string {
+  const entries = (s.activity ?? []).slice(-200).reverse();
+  const note =
+    '<p class="note">Latest retained events, newest first; not a complete transcript.</p>';
+  if (entries.length === 0)
+    return `<section><h2>Activity</h2>${note}<p>No retained events.</p></section>`;
+  const rows = entries.map((event, index) => {
+    const actor = event.actor ? handleOf(s, event.actor) : "rib";
+    const text = firstLine(activityText(s.id, event.text), 160);
+    const repeats = event.count && event.count > 1 ? ` ×${event.count}` : "";
+    // HTML table cells and rows have optional end tags; omit them to keep all 200 entries.
+    return `<tr id="e${entries.length - index - 1}"><td>${esc(`${day(event.at)} ${hhmm(event.at)} · ${actor}`)}<td>${esc(text)}${repeats}`;
+  });
+  return `<section><h2>Activity</h2>${note}<table><thead><tr><th>When · Actor</th><th>Event</th></tr></thead><tbody>${rows.join("")}</tbody></table></section>`;
+}
+
 export function buildRecord(s: SwarmSummary, composedAt: Date): string {
   const style = `<style>${designTokenCssBlock()}\n${identityCss()}\n${PAGE_CSS}</style>`;
-  return `${style}<main>${header(s)}${timeline(s, composedAt)}${whoWokeWhom(s)}${spend(s)}${runs(s)}${evidence(s)}${provenance(s, composedAt)}</main>`;
+  return `${style}<main>${header(s)}${timeline(s, composedAt)}${whoWokeWhom(s)}${spend(s)}${runs(s)}${evidence(s)}${activity(s)}${provenance(s, composedAt)}</main>`;
 }
 
 export function buildGoneRecord(id: string): string {
