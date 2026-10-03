@@ -211,6 +211,11 @@ export async function handleSwarmsAction(
   };
 
   switch (action.type) {
+    case "select-swarm": {
+      if (!id || !deps.find(id).live) return fail(`swarm '${String(raw)}' is not live`);
+      deps.surface?.select(id);
+      return { ok: true };
+    }
     case "swarm-open": {
       if (!id || !known(id)) return fail(`no swarm '${String(raw)}'`);
       deps.surface?.track([id]);

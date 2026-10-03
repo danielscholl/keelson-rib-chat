@@ -1703,6 +1703,48 @@ const actionDeps = {
 describe("actions", () => {
   const deps = actionDeps;
 
+  test("select-swarm selects a live swarm without opening a drawer or showing a toast", async () => {
+    const selected: string[] = [];
+    const surface: SwarmsSurface = {
+      select: (id) => {
+        selected.push(id);
+      },
+      track: () => {},
+      changed: () => {},
+      refresh: () => {},
+      forget: () => {},
+      logOpened: () => {},
+      dispose: () => {},
+    };
+    expect(
+      await handleSwarmsAction(
+        { type: "select-swarm", payload: { id: "s9hjx" } },
+        { ...deps, surface },
+      ),
+    ).toEqual({ ok: true });
+    expect(selected).toEqual(["s9hjx"]);
+    for (const id of ["s8pln", "s0000", "../x", 7, undefined]) {
+      expect(
+        await handleSwarmsAction({ type: "select-swarm", payload: { id } }, { ...deps, surface }),
+      ).toEqual({ ok: false, error: `swarm '${String(id)}' is not live` });
+    }
+    expect(
+      await handleSwarmsAction(
+        { type: "select-swarm", payload: { id: starting.id } },
+        { ...deps, surface, find: () => ({ starting }) },
+      ),
+    ).toEqual({ ok: false, error: `swarm '${starting.id}' is not live` });
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "select-swarm", payload: { id: "s9hjx" }, origin: "canvas-html" },
+          { ...deps, surface },
+        )
+      ).ok,
+    ).toBe(false);
+    expect(selected).toEqual(["s9hjx"]);
+  });
+
   test("open and read return an open-canvas effect on the rib's own key", async () => {
     for (const [type, key] of [
       ["swarm-open", swarmKey("s8pln")],
