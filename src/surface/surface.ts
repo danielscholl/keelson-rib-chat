@@ -325,6 +325,11 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     },
     changed(id, kind) {
       track([id]);
+      if (kind === "message") {
+        index.schedule();
+        swarms.get(id)?.board.schedule();
+        return;
+      }
       if (kind === "report" && ensureReport(id, true)) deps.invalidateManifest?.();
       index.schedule();
       badge.schedule();

@@ -1533,6 +1533,43 @@ class FakeSnapshots implements SnapshotManager {
 }
 
 describe("publishing", () => {
+  test("a burst of messages is one index and one board frame, with no other churn", async () => {
+    const sm = new FakeSnapshots();
+    const live = [fixtures.running!, fixtures.waiting!];
+    const a = live[0]!;
+    const surface = createSwarmsSurface({
+      sm,
+      state: () => state({ live }),
+      find: (id) => ({ live: live.find((s) => s.id === id) }),
+      launch: () => ({ projects: [], live: live.length, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ live: live.length }),
+      readLog: async () => "log",
+      report: () => undefined,
+      views: [],
+      windowMs: 50,
+    });
+    try {
+      surface.track(live.map((s) => s.id));
+      for (let i = 0; i < 200 && sm.keys().some((key) => !sm.frames.has(key)); i++) {
+        await Bun.sleep(5);
+      }
+      expect(sm.keys().every((key) => sm.frames.has(key))).toBe(true);
+      const seeded = new Map([...sm.frames].map(([key, frames]) => [key, frames.length]));
+      for (let i = 0; i < 50; i++) surface.changed(a.id, "message");
+      await Bun.sleep(100);
+      for (const [key, count] of seeded) {
+        const delta = key === INDEX_KEY || key === swarmKey(a.id) ? 1 : 0;
+        expect(sm.frames.get(key)).toHaveLength(count + delta);
+      }
+      for (const key of [INDEX_KEY, ...live.map((s) => swarmKey(s.id))]) {
+        for (const frame of sm.frames.get(key) ?? []) expectView(key, "board")(frame);
+      }
+    } finally {
+      surface.dispose();
+    }
+  });
+
   test("selection republishes the shared index, preserves drawer keys, and clears on forget", async () => {
     const sm = new FakeSnapshots();
     const a = fixtures.running!;
