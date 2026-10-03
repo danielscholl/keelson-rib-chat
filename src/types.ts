@@ -405,6 +405,21 @@ export interface SwarmSummary {
   rerunOf?: string;
 }
 
+export function agentMessageRefusal(
+  s: Pick<SwarmSummary, "id" | "status" | "conclusion" | "endedAt" | "turnsUsed" | "limits">,
+  a: Pick<SwarmAgent, "handle" | "status" | "lead" | "turns">,
+): string | undefined {
+  if (s.status !== "running" || s.endedAt)
+    return `Swarm ${s.id} is ${s.status}; messaging is read-only.`;
+  if (s.conclusion !== undefined) return "The lead has concluded; no new turns can be requested.";
+  if (a.status === "capped" || a.status === "failed")
+    return `@${a.handle} is ${a.status} and cannot take another turn.`;
+  if (!a.lead && a.turns >= s.limits.maxTurnsPerAgent)
+    return `@${a.handle} has reached its worker turn cap.`;
+  if (s.turnsUsed >= s.limits.maxTurns) return "The swarm has no turns remaining.";
+  return undefined;
+}
+
 // Whether a swarm already credits a pull request, to a run or to a writer.
 export function ownsPr(s: Pick<SwarmSummary, "runs" | "prs">, url: string): boolean {
   return (

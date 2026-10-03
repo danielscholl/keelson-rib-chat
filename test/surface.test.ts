@@ -16,6 +16,7 @@ import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
+import { buildAgentInspector } from "../src/surface/agent-inspector.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import type { forecastDelta } from "../src/surface/forecast.ts";
 import {
@@ -671,6 +672,193 @@ describe("the agent map", () => {
     expect(dense.edges).toHaveLength(200);
     expect(dense.title).toBe("Map · showing 200 of 240 edges");
     expect(graph(swarm("s0", { agents: [] })).nodes).toHaveLength(1);
+  });
+});
+
+describe("the agent inspector", () => {
+  const inspect = (s: SwarmSummary, index = 1) => {
+    const view = buildAgentInspector(s, s.agents[index]!);
+    board(`agent-${s.id}`, view);
+    return view;
+  };
+  const writer = () =>
+    swarm("s1", {
+      agents: [
+        agent("s1", 0),
+        agent("s1", 1, {
+          status: "busy",
+          joinedAt: T0,
+          spawnedBy: "s1-lead",
+          model: "requested",
+          servedModel: "served",
+          providerId: "copilot",
+          usage: { input: 1000, output: 2000, cached: 4000 },
+          worktree: { path: "/repo/.worktrees/w1", branch: "writer/w1", base: "main" },
+          prUrl: "https://github.com/o/r/pull/42",
+        }),
+      ],
+      spans: [
+        {
+          agentId: "s1-w1",
+          n: 1,
+          startedAt: T0,
+          endedAt: "2026-09-22T14:00:30.000Z",
+          outcome: "timeout",
+          messages: 1,
+          wokeBy: ["rib"],
+        },
+        { agentId: "s1-lead", n: 1, startedAt: T0, messages: 1, wokeBy: ["rib"] },
+        {
+          agentId: "s1-w1",
+          n: 2,
+          startedAt: T0,
+          messages: 4,
+          wokeBy: ["s1-lead", "operator", "runs", "nudge", "rib"],
+        },
+      ],
+      prs: [
+        {
+          agent: "s1-w2",
+          url: "https://github.com/o/r/pull/42",
+          branch: "other",
+          at: T0,
+          ci: { verdict: "fail" },
+        },
+        {
+          agent: "s1-w1",
+          url: "https://github.com/o/r/pull/42",
+          branch: "writer/w1",
+          at: T0,
+          ci: { verdict: "running", detail: "build queued" },
+        },
+      ],
+      recent: [
+        { id: "m1", author: "s1-w1", at: T0, text: "**First**", threadRootId: "root" },
+        { id: "m2", author: "s1-lead", at: T0, text: "Not the worker's message" },
+        { id: "m3", author: "s1-w1", at: T0, text: "`Latest` @s1-lead" },
+      ],
+    });
+
+  test("writer facts, real model, usage, provenance, recent threads and turns are native", () => {
+    const s = writer();
+    const view = inspect(s);
+    const text = JSON.stringify(view);
+    expect(view.sections[0]).toMatchObject({
+      kind: "cards",
+      items: [
+        {
+          title: "@w1",
+          titleTone: "id-blue",
+          pill: { label: "busy" },
+          bar: { value: 3, total: 12 },
+        },
+      ],
+    });
+    expect(text).toContain(`"clock":{"at":"${T0}","mode":"since"}`);
+    expect(text).toContain("3k fresh tokens · 4k cached");
+    expect(text).toContain("Served model: served · provider: copilot");
+    expect(text).not.toContain("requested");
+    expect(text).toContain("Spawned by @lead");
+    expect(text).toContain("joined");
+    expect(text).toContain("/repo/.worktrees/w1");
+    expect(text).toContain("Branch: writer/w1");
+    expect(text).toContain("Draft PR #42 · CI running");
+    expect(text).toContain("Open PR");
+    expect(text).toContain("Woken by @lead, you, run updates, idle nudge, kickoff / rib notice");
+    const said = view.sections.find((x) => x.kind === "rows" && x.title?.startsWith("Said"));
+    expect(said?.kind === "rows" ? said.items.map((r) => r.text) : []).toEqual([
+      "Latest @lead",
+      "First",
+    ]);
+    expect(said?.kind === "rows" ? said.items[1]?.href : "").toBe(threadHref(s, "root"));
+    const turns = view.sections.find((x) => x.title === "Turns");
+    expect(turns?.kind === "rows" ? turns.items.length : 0).toBe(2);
+    expect(text).toContain("took 30 s");
+    const composer = view.sections.find((x) => x.kind === "actions");
+    expect(composer).toMatchObject({
+      items: [
+        {
+          type: "message-agent",
+          label: "Message @w1",
+          binding: { id: "s1", agentId: "s1-w1" },
+          fields: [{ placeholder: "posts as you, wakes this agent, spends a turn" }],
+        },
+      ],
+    });
+    expect(view.sections.at(-1)).toMatchObject({
+      items: [{ text: "its messages · transcript ↗", href: channelHref(s) }],
+    });
+  });
+
+  test("lead meters use swarm budget and missing legacy evidence is honest", () => {
+    const s = swarm("s1", { agents: [agent("s1", 0, { turns: 20 }), agent("s1", 1)] });
+    const lead = inspect(s, 0);
+    expect(lead.sections[0]).toMatchObject({ items: [{ bar: { value: 11, total: 40 } }] });
+    expect(JSON.stringify(lead)).toContain("20 agent turns · no worker cap");
+    expect(JSON.stringify(lead)).toContain("started with the swarm");
+    const text = JSON.stringify(inspect(s));
+    for (const missing of [
+      "Token usage not reported",
+      "Served model: not reported",
+      "provider: not reported",
+      "Spawn provenance not recorded",
+      "Join time not recorded",
+      "No turn spans recorded",
+      "No messages by this agent",
+    ])
+      expect(text).toContain(missing);
+    const zero = inspect({
+      ...s,
+      agents: [s.agents[0]!, { ...s.agents[1]!, usage: { input: 0, output: 0, cached: 0 } }],
+    });
+    expect(JSON.stringify(zero)).toContain("0 fresh tokens · 0 cached");
+  });
+
+  test("all states render and retired workers cannot request another turn", () => {
+    for (const status of ["busy", "idle", "waiting", "capped", "failed"] as const) {
+      const s = writer();
+      const view = inspect({ ...s, agents: [s.agents[0]!, { ...s.agents[1]!, status }] });
+      const composer = view.sections.find((x) => x.kind === "actions");
+      const item = composer?.kind === "actions" ? composer.items[0] : undefined;
+      expect(item?.disabled ?? false).toBe(status === "capped" || status === "failed");
+      if (item?.disabled) expect(item.reason).toContain("cannot take another turn");
+    }
+  });
+
+  test("ended legacy spans have no clock or composer; stopping and concluded are read-only", () => {
+    const s = writer();
+    for (const status of [
+      "done",
+      "stopped",
+      "stalled",
+      "exhausted",
+      "error",
+      "stopping",
+    ] as const) {
+      const view = inspect({ ...s, status, endedAt: T0 });
+      const text = JSON.stringify(view);
+      expect(text).not.toContain('"clock"');
+      expect(text).not.toContain('"type":"message-agent"');
+      expect(text).toContain("messaging is read-only");
+    }
+    const legacy = inspect({ ...s, status: "done", endedAt: undefined });
+    expect(JSON.stringify(legacy)).not.toContain('"clock"');
+    expect(JSON.stringify(legacy)).toContain("end not recorded");
+    expect(
+      inspect({ ...s, conclusion: "finished" }).sections.some((x) => x.kind === "actions"),
+    ).toBe(false);
+    expect(JSON.stringify(inspect({ ...s, conclusion: "finished" }))).toContain("no new turns");
+  });
+
+  test("writer CI never borrows another owner or replaces missing evidence", () => {
+    for (const verdict of ["pass", "fail", "unknown", "running", undefined] as const) {
+      const s = writer();
+      const pr = s.prs![1]!;
+      const view = inspect({ ...s, prs: [{ ...pr, ci: verdict ? { verdict } : undefined }] });
+      expect(JSON.stringify(view)).toContain(`CI ${verdict ?? "not reported"}`);
+    }
+    const s = writer();
+    expect(JSON.stringify(inspect({ ...s, prs: [s.prs![0]!] }))).toContain("CI not reported");
   });
 });
 
