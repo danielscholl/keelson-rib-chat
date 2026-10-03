@@ -147,6 +147,7 @@ export interface WriterPr {
   url: string;
   branch: string;
   at: string;
+  ci?: { verdict: CiVerdict | "running"; detail?: string };
 }
 
 export interface AgentWorktree {
@@ -297,8 +298,8 @@ export interface ChildRun {
   // Every gate the run paused at, answered or not.
   gates?: RunGate[];
   prUrls: string[];
-  // The CI verdict the run's workflow printed, if it printed one.
-  ci?: { verdict: CiVerdict; detail?: string };
+  // The workflow's CI verdict; prUrl is absent when its PR cannot be identified.
+  ci?: { verdict: CiVerdict; detail?: string; prUrl?: string };
   error?: string;
   // Succeeded with the evidence its grant demands: for an isolated run, an
   // established worktree, a pull request, and a passing CI verdict.
@@ -360,6 +361,7 @@ export interface SwarmSummary {
   // What every turn asks for: the power's effort, unless the start named one.
   effort?: ReasoningEffortLevel;
   project?: SwarmProject;
+  writeEnabled?: boolean;
   // The durable op the swarm reports to.
   opId?: string;
   clickclack?: { url: string; workspaceId: string };

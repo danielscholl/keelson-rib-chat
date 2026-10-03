@@ -332,9 +332,23 @@ and \`gh pr create --draft\` with the project's \`gh\` login. Each writer opens
 one pull request: a second call pushes the branch again and returns the one
 already open. Nothing in the swarm merges; merging stays with the operator.
 
-The summary's \`prs\` records each one with its writer and branch, and the
-lead's turns list them for its report. Another swarm's run that quotes one of
-these pull requests does not claim it.
+The summary's \`prs\` records each one with its writer, branch, opening time,
+and optional \`ci\` verdict and detail. The lead's turns list them for its report.
+Another swarm's run that quotes one of these pull requests does not claim it.
+The optional \`writeEnabled\` summary flag records write capability even before
+the lead spawns a writer.
+
+The rib reads current-head checks with \`gh pr view\` after opening or pushing,
+then every 20 seconds, even without dispatched runs. A new pushed head clears
+the old observation; reads for a different head are discarded. Each read has a
+3-second timeout. CI is pass only for a nonempty rollup with successful evidence
+and no failing, running, or unrecognized checks. Neutral/skipped checks may
+accompany success, but alone they are unknown. Fail means a terminal failure;
+running means checks are queued or in progress. Unknown means unfamiliar
+evidence or a read fault, recorded with a detail and a fault entry. No checks
+means not reported, never pass. On ending, the rib makes one final read with
+the same timeout; a timeout keeps the last observation. Ended CI is a saved
+observation, not a continuously monitored guarantee.
 
 A reviewer reads a writer's change with \`chat_diff\`, and its files directly:
 the worktree sits under the project root, inside every agent's allowed
@@ -543,7 +557,10 @@ report exists, a budget strip (turns with the same forecast delta, time, agents,
 tokens with cached beside them), the same Conversation section, Message the
 lead, Open the record and Stop,
 then the details. Ended, it runs: the outcome, the result strip, Run again and
-Open the record, then the details.
+Open the record, then the details. The ended Result includes Pull requests when
+any exist: distinct URLs across runs and writers, with "M with CI passing".
+A URL counts as passing only when every recorded owner explicitly reports pass.
+Run verification is not a substitute for CI. Live and zero-PR boards omit it.
 The outcome is one card: under the report's title when the lead published one
 (else Conclusion), the conclusion with a copy button, Open the report, Read the
 conclusion; a swarm that did not conclude shows
@@ -551,8 +568,7 @@ its cause instead, such as Stopped by you at 21:50 or Out of turns at 40. The
 details are the same in both: the agents as a bench with an open seat per
 unfilled slot and a waiting pill on agents with messages and no slot, Spend
 (each agent's fresh tokens against the swarm's, once two agents have spent),
-the runs (only when the launch named workflows; each names its branch, every
-pull request, how long it took, and why it failed), the task and each context
+Produced so far, the task and each context
 item by id with its text under a disclosure, the activity with repeats counted
 (the last 200 events are in the reading pane, with each run's full error and
 CI detail), and About. About ends with a transcript link; an ended board keeps
@@ -562,6 +578,28 @@ ends, with its outcome, how long it took and what woke it. Each bench card's
 footnote names the agent's last event, and the Turns tile keeps its spark after
 the swarm ends. A note posted with Message the lead shows in the activity at
 once.
+
+Produced so far is one shared inventory in the cockpit and per-swarm board.
+Reports, dispatched runs, and writer draft PRs appear in landing order, oldest
+first: report publication time, run start time, and PR opening time. Equal times
+keep report/run/writer order and ledger order; missing legacy times fall back to
+the swarm start. Run gate answers stay immediately under their parent run.
+Kept worktrees follow all artifacts only after the swarm ends.
+
+The report row shows its title, KB size, and Open the report. Run rows keep their
+purpose, branch, every PR, elapsed time, status, error, worktree/PR/CI evidence
+strip, links and Open run action; gate rows keep the reviewer, reason and review
+link. Writer PR rows show the writer's short handle in its identity color, branch,
+draft PR link, and CI pass, fail, unknown, running, or not reported, with observed
+detail under a disclosure. Missing evidence never implies pass. Kept-worktree
+rows show the recorded path and retention reason, not a claim about the current
+filesystem.
+
+While empty, the section names permitted workflows and eligible writers. Before
+its first writer, a write-enabled swarm says the lead may spawn writers. Ended
+placeholders use past tense. An empty chat-only swarm without workflows omits
+the section; a published report still appears. Only the operator merges pull
+requests, and the board never removes worktrees. Engine cleanup policy is unchanged.
 
 Open the record shows the swarm's record, a page the rib draws: a timeline with
 a lane per agent (turns as bars in the agent's color, hatched when a turn timed

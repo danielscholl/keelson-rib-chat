@@ -10,6 +10,7 @@ import {
   ribSurfaceDescriptorSchema,
   type SnapshotManager,
 } from "@keelson/shared";
+import { applyStatus } from "../src/dispatch.ts";
 import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
@@ -328,6 +329,71 @@ const fixtures: Record<string, SwarmSummary> = {
     turnsUsed: 0,
   },
 };
+
+const producedFixtures = (() => {
+  const id = "s8art";
+  const at = (minute: number) => new Date(Date.parse(T0) + minute * 60_000).toISOString();
+  const wt = { path: "/repo/.worktrees/swarm-s8art-w1", branch: "writer/feature", base: "main" };
+  const writer = agent(id, 1, { id: "bot-writer", worktree: wt });
+  const mixed = swarm(id, {
+    status: "done",
+    endedAt: at(8),
+    writeEnabled: true,
+    workflows: ["fix-issue"],
+    agents: [agent(id, 0), writer],
+    report: { title: "Produced report", at: at(3), bytes: 4096 },
+    runs: [
+      run("later", {
+        startedAt: at(4),
+        status: "failed",
+        completedAt: at(7),
+        error: "build failed",
+      }),
+      run("early", {
+        startedAt: at(2),
+        status: "succeeded",
+        completedAt: at(6),
+        prUrls: ["https://github.com/o/r/pull/91"],
+        ci: { verdict: "pass" },
+        verified: true,
+        approvals: [
+          {
+            nodeId: "approve-plan",
+            decision: "approve",
+            reason: "Plan reviewed",
+            reviewer: `@${writer.handle}`,
+            review: "msg_review",
+            at: at(5),
+          },
+        ],
+      }),
+    ],
+    prs: [
+      {
+        agent: writer.handle,
+        branch: wt.branch,
+        url: "https://github.com/o/r/pull/90",
+        at: at(1),
+        ci: { verdict: "running", detail: "build queued" },
+      },
+    ],
+    worktrees: [
+      { agent: writer.handle, path: wt.path, branch: wt.branch, reason: "1 commit not pushed" },
+    ],
+  });
+  return {
+    writer: { ...mixed, report: undefined, runs: undefined, workflows: undefined },
+    dispatch: {
+      ...mixed,
+      report: undefined,
+      prs: undefined,
+      worktrees: undefined,
+      writeEnabled: undefined,
+      agents: [agent(id, 0), agent(id, 1)],
+    },
+    mixed,
+  } satisfies Record<string, SwarmSummary>;
+})();
 
 const state = (patch: Partial<SurfaceState> = {}): SurfaceState => ({
   live: [],
@@ -1224,6 +1290,115 @@ describe("Swarms boards", () => {
     );
   });
 
+  test("ended PR totals do not apply a run's passing CI to unrelated PR URLs", () => {
+    const first = "https://github.com/o/r/pull/1";
+    const unrelated = "https://github.com/o/r/pull/2";
+    const child = run("ci");
+    applyStatus(child, {
+      runId: child.runId,
+      workflowName: child.workflow,
+      status: "succeeded",
+      startedAt: T0,
+      checkout: child.checkout!,
+      nodes: [
+        {
+          nodeId: "await-ci",
+          status: "succeeded",
+          output: `Related PR: ${unrelated}\nCI_STATUS: PASS - ${first}`,
+        },
+      ],
+    });
+    expect(child.prUrls).toEqual([unrelated, first]);
+    const view = buildSwarmBoard(swarm("ci", { status: "done", endedAt: T0, runs: [child] }));
+    const tile = view.sections
+      .flatMap((section) => (section.kind === "stats" ? section.items : []))
+      .find((item) => item.label === "Pull requests");
+    expect(tile).toEqual({ label: "Pull requests", value: 2, sub: "1 with CI passing" });
+  });
+
+  test("ended PR totals count distinct URLs and require every owner to explicitly pass", () => {
+    const id = "s8cnt";
+    const url = (n: number) => `https://github.com/o/r/pull/${n}`;
+    const writerPr = (n: number, ci?: NonNullable<SwarmSummary["prs"]>[number]["ci"]) => ({
+      agent: `${id}-w1`,
+      branch: `writer/${n}`,
+      at: T0,
+      url: url(n),
+      ...(ci ? { ci } : {}),
+    });
+    const tile = (s: SwarmSummary) => {
+      const view = buildSwarmBoard(s);
+      board(swarmKey(id), view);
+      return view.sections
+        .flatMap((section) => (section.kind === "stats" ? section.items : []))
+        .find((item) => item.label === "Pull requests");
+    };
+    const base = swarm(id, { status: "done", endedAt: T0 });
+    const writers = [
+      writerPr(1, { verdict: "pass" }),
+      writerPr(2, { verdict: "fail" }),
+      writerPr(3, { verdict: "unknown" }),
+      writerPr(4, { verdict: "running" }),
+      writerPr(5),
+    ];
+    expect(tile({ ...base, prs: writers })).toEqual({
+      label: "Pull requests",
+      value: 5,
+      sub: "1 with CI passing",
+    });
+    expect(tile({ ...base, prs: [writerPr(1)] })).toEqual({
+      label: "Pull requests",
+      value: 1,
+      sub: "0 with CI passing",
+    });
+    const runs = [
+      run("ra", {
+        prUrls: [url(1), url(6), url(7)],
+        ci: { verdict: "pass", prUrl: url(7) },
+        verified: false,
+      }),
+      run("rb", { prUrls: [url(8)], verified: true }),
+    ];
+    expect(tile({ ...base, runs })).toEqual({
+      label: "Pull requests",
+      value: 4,
+      sub: "1 with CI passing",
+    });
+    expect(tile({ ...base, runs, prs: writers })).toEqual({
+      label: "Pull requests",
+      value: 8,
+      sub: "1 with CI passing",
+    });
+    expect(tile({ ...base, runs, prs: [writerPr(1), writerPr(6, { verdict: "pass" })] })).toEqual({
+      label: "Pull requests",
+      value: 4,
+      sub: "1 with CI passing",
+    });
+    expect(
+      tile({
+        ...base,
+        runs: [...runs, run("rc", { prUrls: [url(7), url(7)], ci: { verdict: "fail" } })],
+      }),
+    ).toEqual({ label: "Pull requests", value: 4, sub: "0 with CI passing" });
+    expect(
+      tile({
+        ...base,
+        runs: [run("rd", { prUrls: [url(1)], ci: { verdict: "pass", prUrl: url(1) } })],
+        prs: [writerPr(1, { verdict: "pass" })],
+      }),
+    ).toEqual({ label: "Pull requests", value: 1, sub: "1 with CI passing" });
+    expect(
+      tile({
+        ...base,
+        runs: [run("re", { prUrls: [url(1)], ci: { verdict: "pass" } })],
+      }),
+    ).toEqual({ label: "Pull requests", value: 1, sub: "0 with CI passing" });
+    for (const status of ["running", "stopping"] as const) {
+      expect(tile({ ...base, status, runs, prs: writers })).toBeUndefined();
+    }
+    expect(tile(base)).toBeUndefined();
+  });
+
   test("a custom size says which preset it was adjusted from", () => {
     const view = buildSwarmBoard(
       swarm("s2cus", { size: "custom", limits: { ...SIZE_PRESETS.medium, maxTurns: 60 } }),
@@ -1347,11 +1522,15 @@ describe("Swarms boards", () => {
     expect(endedBench?.kind === "cards" ? endedBench.items : []).toHaveLength(2);
   });
 
-  test("Runs appear only when the launch named workflows, and say so while none ran", () => {
+  test("Produced so far names permitted workflows while none ran", () => {
     const titles = (s: SwarmSummary) =>
       buildSwarmBoard(s).sections.flatMap((x) => (x.kind === "rows" && x.title ? [x.title] : []));
     expect(titles(fixtures.running!)).toEqual(["Conversation", "Task and context", "About"]);
-    expect(titles(fixtures.dispatchIdle!)).toEqual(["Runs", "Task and context", "About"]);
+    expect(titles(fixtures.dispatchIdle!)).toEqual([
+      "Produced so far",
+      "Task and context",
+      "About",
+    ]);
     expect(JSON.stringify(buildSwarmBoard(fixtures.dispatchIdle!))).toContain(
       "The lead may start fix-issue, docs-check; none started yet.",
     );
@@ -1480,19 +1659,44 @@ ${"detail ".repeat(1000)}`,
     for (const selected of [undefined, live[5]!.id]) {
       const view = buildIndex(state({ live, ended: many, selected }), now);
       board(INDEX_KEY, view);
+      const produced = view.sections.find(
+        (x) => x.kind === "rows" && x.title === "Produced so far",
+      );
+      expect(produced?.kind === "rows" ? produced.items.length : 0).toBe(12);
       expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
       console.info(
         `Conversation index (six live, selected ${selected ?? "default"}): ${Buffer.byteLength(JSON.stringify(view))} bytes`,
       );
     }
-    const single = buildIndex(state({ live: [big], ended: many }), now);
+    const artifacts: SwarmSummary = {
+      ...big,
+      report: { title: "Progress", at: T0, bytes: 512_000 },
+      prs: [
+        {
+          agent: agents[1]!.handle,
+          branch: "keelson/swarm/s9big/w1",
+          url: "https://github.com/o/r/pull/100",
+          at: T0,
+          ci: { verdict: "unknown", detail: "check state not recognized" },
+        },
+      ],
+    };
+    const single = buildIndex(state({ live: [artifacts], ended: many }), now);
     board(INDEX_KEY, single);
+    const inventory = single.sections.find(
+      (x) => x.kind === "rows" && x.title === "Produced so far",
+    );
+    expect(inventory?.kind === "rows" ? inventory.items.length : 0).toBe(14);
     const bytes = Buffer.byteLength(JSON.stringify(single));
     expect(bytes).toBeLessThan(48_000);
     console.info(`Conversation index (one live, 20 recent messages): ${bytes} bytes`);
-    const drawer = buildSwarmBoard(big, { now });
+    const drawer = buildSwarmBoard(artifacts, { now });
     board(swarmKey(big.id), drawer);
     expect(Buffer.byteLength(JSON.stringify(drawer))).toBeLessThan(48_000);
+    const produced = drawer.sections.find(
+      (x) => x.kind === "rows" && x.title === "Produced so far",
+    );
+    expect(produced?.kind === "rows" ? produced.items.length : 0).toBe(14);
     expect(buildDoc(big, big.id).length).toBeLessThan(128_000);
   });
 });
@@ -1502,6 +1706,175 @@ describe("the details", () => {
     const section = view.sections.find((x) => x.kind === "rows" && x.title === title);
     return section?.kind === "rows" ? section.items : [];
   };
+
+  test("writer, two-run and mixed inventories agree across cockpit, index and ended board", () => {
+    for (const ended of Object.values(producedFixtures)) {
+      const original = JSON.stringify(ended);
+      const endedBoard = buildSwarmBoard(ended);
+      board(swarmKey(ended.id), endedBoard);
+      const endedRows = rowsTitled(endedBoard, "Produced so far");
+      for (const status of ["running", "stopping"] as const) {
+        const s = { ...ended, status, endedAt: undefined };
+        const view = buildSwarmBoard(s);
+        const cockpit = { ...view, sections: buildCockpit(s, needsYou(s), { titled: true }) };
+        const index = buildIndex(state({ live: [s] }));
+        board(swarmKey(s.id), view);
+        board(INDEX_KEY, cockpit);
+        board(INDEX_KEY, index);
+        const rows = rowsTitled(view, "Produced so far");
+        expect(rowsTitled(cockpit, "Produced so far")).toEqual(rows);
+        expect(rowsTitled(index, "Produced so far")).toEqual(rows);
+        expect(rows).toEqual(endedRows.filter((row) => row.text !== ended.worktrees?.[0]?.path));
+        expect(
+          rows.some((row) => row.text.includes("none started") || row.text.includes("none opened")),
+        ).toBe(false);
+      }
+      expect(JSON.stringify(ended)).toBe(original);
+    }
+    const mixed = producedFixtures.mixed;
+    const rows = rowsTitled(buildSwarmBoard(mixed), "Produced so far");
+    expect(
+      rows.map((row) => row.action?.type ?? (row.href?.includes("/pull/90") ? "writer" : row.text)),
+    ).toEqual([
+      "writer",
+      "open-run",
+      "approve-plan approved on @w1's review",
+      "open-report",
+      "open-run",
+      mixed.worktrees![0]!.path,
+    ]);
+    expect(rows[1]?.action?.payload).toEqual({ id: mixed.id, runId: mixed.runs![1]!.runId });
+    expect(rows[2]).toMatchObject({
+      icon: "✓",
+      glyph: "ok",
+      detail: "Plan reviewed",
+      trailing: "14:05",
+      href: "http://127.0.0.1:18080/app/ws_1/msg_review",
+    });
+    expect(rows[4]?.text).toContain("build failed");
+  });
+
+  test("equal and absent legacy landing timestamps preserve stable groups and gate adjacency", () => {
+    const mixed = producedFixtures.mixed;
+    for (const at of [T0, "", "invalid date"]) {
+      const s: SwarmSummary = {
+        ...mixed,
+        report: { ...mixed.report!, at },
+        runs: mixed.runs!.map((r) => ({ ...r, startedAt: at })),
+        prs: mixed.prs!.map((pr) => ({ ...pr, at })),
+      };
+      const view = buildSwarmBoard(s);
+      board(swarmKey(s.id), view);
+      const rows = rowsTitled(view, "Produced so far");
+      expect(rows[0]?.action?.type).toBe("open-report");
+      expect(rows[1]?.action?.payload).toEqual({ id: mixed.id, runId: mixed.runs![0]!.runId });
+      expect(rows[2]?.action?.payload).toEqual({ id: mixed.id, runId: mixed.runs![1]!.runId });
+      expect(rows[3]?.text).toStartWith("approve-plan approved");
+      expect(rows[4]?.text).toBe(mixed.prs![0]!.branch);
+      expect(rows[5]?.text).toBe(mixed.worktrees![0]!.path);
+    }
+  });
+
+  test("produced rows preserve report actions, writer identities, CI states and kept paths", () => {
+    const id = "s8prd";
+    const writer = agent(id, 1, {
+      id: "bot-writer",
+      worktree: { path: "/wt/w1", branch: "writer/branch", base: "main" },
+    });
+    const base = swarm(id, {
+      agents: [agent(id, 0), writer],
+      report: { title: "The report", at: T0, bytes: 3072 },
+      prs: [
+        {
+          agent: writer.handle,
+          branch: "writer/branch",
+          url: "https://github.com/o/r/pull/81",
+          at: T0,
+        },
+      ],
+      worktrees: [
+        {
+          agent: writer.handle,
+          path: "/wt/kept",
+          branch: "writer/branch",
+          reason: "2 commits not pushed",
+        },
+      ],
+    });
+    for (const verdict of [undefined, "pass", "fail", "running", "unknown"] as const) {
+      const s = {
+        ...base,
+        prs: base.prs!.map((pr) => ({
+          ...pr,
+          ...(verdict ? { ci: { verdict, detail: "observed checks" } } : {}),
+        })),
+      };
+      const view = buildSwarmBoard(s);
+      board(swarmKey(id), view);
+      const rows = rowsTitled(view, "Produced so far");
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toEqual({
+        icon: "◧",
+        text: "The report",
+        trailing: "report 3 KB · Open the report",
+        action: { type: "open-report", payload: { id } },
+      });
+      expect(rows[1]).toEqual({
+        chip: { label: "w1", tone: "id-blue" },
+        text: "writer/branch",
+        trailing: `draft PR #81 · CI ${verdict ?? "not reported"}`,
+        href: "https://github.com/o/r/pull/81",
+        ...(verdict ? { detail: "observed checks" } : {}),
+      });
+      const ended = buildSwarmBoard({ ...s, status: "done", endedAt: T0 });
+      board(swarmKey(id), ended);
+      expect(rowsTitled(ended, "Produced so far").at(-1)).toEqual({
+        chip: { label: "w1", tone: "id-blue" },
+        text: "/wt/kept",
+        trailing: "2 commits not pushed",
+      });
+    }
+    const legacy = buildSwarmBoard({
+      ...base,
+      agents: [],
+      status: "done",
+      endedAt: T0,
+      prs: base.prs!.map((pr) => ({
+        ...pr,
+        ci: { verdict: "unknown", detail: "x".repeat(5_000) },
+      })),
+      worktrees: base.worktrees!.map((wt) => ({ ...wt, reason: "r".repeat(5_000) })),
+    });
+    board(swarmKey(id), legacy);
+    const rows = rowsTitled(legacy, "Produced so far");
+    expect(rows[1]?.chip).toEqual({ label: "w1", tone: "neutral" });
+    expect(rows[1]?.detail).toHaveLength(4_000);
+    expect(rows[2]?.detail).toHaveLength(4_000);
+    expect(rows[2]?.action).toBeUndefined();
+  });
+
+  test("empty inventory describes write capability and omits chat-only swarms", () => {
+    const id = "s8emp";
+    const beforeWriter = swarm(id, { writeEnabled: true });
+    for (const status of ["running", "stopping", "done"] as const) {
+      const s = { ...beforeWriter, status };
+      const view = buildSwarmBoard(s);
+      board(swarmKey(id), view);
+      expect(rowsTitled(view, "Produced so far")[0]?.text).toContain(
+        `The lead ${status === "done" ? "could" : "may"} spawn writers`,
+      );
+    }
+    const writer = agent(id, 1, { worktree: { path: "/wt/w1", branch: "w1", base: "main" } });
+    const named = buildSwarmBoard(
+      swarm(id, { agents: [agent(id, 0), writer], workflows: ["fix-issue"] }),
+    );
+    expect(rowsTitled(named, "Produced so far")[0]?.text).toContain("Writers @w1 may open");
+    expect(rowsTitled(named, "Produced so far")[0]?.text).toContain("fix-issue");
+    expect(rowsTitled(buildSwarmBoard(swarm(id)), "Produced so far")).toHaveLength(0);
+    const report = buildSwarmBoard(swarm(id, { report: { title: "Published", at: T0, bytes: 1 } }));
+    expect(rowsTitled(report, "Produced so far")).toHaveLength(1);
+    expect(JSON.stringify(rowsTitled(report, "Produced so far"))).not.toContain("none");
+  });
 
   test("activity shows the newest twelve and points at the full log", () => {
     const s = swarm("s7log", {
@@ -1612,7 +1985,7 @@ describe("the details", () => {
         }),
       ],
     });
-    const rows = rowsTitled(buildSwarmBoard(s), "Runs");
+    const rows = rowsTitled(buildSwarmBoard(s), "Produced so far");
     expect(rows[0]).toMatchObject({
       text: "fix-issue Fix issue #27: README undercounts frontend-mix nodes · keelson/ra",
       trailing: "PR #41, #42 · 7 min · verified",
@@ -1709,7 +2082,7 @@ describe("the details", () => {
   });
 
   test("an answered approval names its reviewer and discloses the reason", () => {
-    const rows = rowsTitled(buildSwarmBoard(fixtures.done!), "Runs");
+    const rows = rowsTitled(buildSwarmBoard(fixtures.done!), "Produced so far");
     expect(rows[1]).toMatchObject({
       text: "approve-plan approved on @w1's review",
       detail: "r",

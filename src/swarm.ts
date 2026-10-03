@@ -73,6 +73,7 @@ import {
   createWorktree,
   openDraftPr,
   pushBranch,
+  readWriterCi,
   releaseWorktree,
   uncommitted,
   type WorktreeDeps,
@@ -378,6 +379,13 @@ export class Swarm {
   // so a writer's worktree is checked only once they have.
   private readonly inFlight = new Map<string, Set<Promise<unknown>>>();
   private readonly prs: WriterPr[] = [];
+  private readonly pushingPrs = new Set<Promise<string>>();
+  private readonly openingPrs = new Set<Promise<WriterPr>>();
+  private readonly pushedHeads = new Map<string, string>();
+  private readonly readingPrs = new Map<
+    string,
+    { expectedHead: string | undefined; promise: Promise<void> }
+  >();
   private error: string | undefined;
   private endedAt: string | undefined;
   private quiesceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1354,18 +1362,106 @@ export class Swarm {
     if (inText) {
       throw new Error(`refused: the title or body carries AI attribution ("${inText}"); drop it`);
     }
-    await pushBranch(git, wt);
-    if (agent.prUrl) return { url: agent.prUrl, again: true };
-    const url = await openDraftPr(git, wt, input.title, input.body);
-    agent.prUrl = url;
-    this.prs.push({ agent: agent.handle, url, branch: wt.branch, at: new Date().toISOString() });
-    this.log(`@${agent.handle} opened draft ${url}`, {
-      kind: "pr",
-      actor: agent.id,
-      subject: url,
+    if (this.status !== "running") throw new Error("the swarm ended before pushing your branch");
+    const pushing = pushBranch(git, wt).then((head) => {
+      if (agent.prUrl) {
+        const pr = this.prs.find((p) => p.url === agent.prUrl)!;
+        if (this.pushedHeads.get(pr.url) !== head) {
+          this.setWriterCi(pr, undefined, this.status === "running");
+        }
+        this.pushedHeads.set(pr.url, head);
+      }
+      return head;
     });
-    this.changed("agent");
-    return { url, again: false };
+    this.pushingPrs.add(pushing);
+    let head: string;
+    try {
+      head = await pushing;
+    } finally {
+      this.pushingPrs.delete(pushing);
+    }
+    if (this.status !== "running") throw new Error("the swarm ended while pushing your branch");
+    if (agent.prUrl) {
+      const pr = this.prs.find((p) => p.url === agent.prUrl)!;
+      await this.syncWriterPr(pr);
+      return { url: agent.prUrl, again: true };
+    }
+    const opening = openDraftPr(git, wt, input.title, input.body).then((url) => {
+      agent.prUrl = url;
+      const pr = { agent: agent.handle, url, branch: wt.branch, at: new Date().toISOString() };
+      this.prs.push(pr);
+      this.pushedHeads.set(url, head);
+      this.log(`@${agent.handle} opened draft ${url}`, {
+        kind: "pr",
+        actor: agent.id,
+        subject: url,
+      });
+      return pr;
+    });
+    this.openingPrs.add(opening);
+    let pr: WriterPr;
+    try {
+      pr = await opening;
+    } finally {
+      this.openingPrs.delete(opening);
+    }
+    if (this.status === "running") {
+      this.changed("agent");
+      this.armRunPoll(this.opts.dispatch?.pollMs ?? 20_000);
+      await this.syncWriterPr(pr);
+    }
+    return { url: pr.url, again: false };
+  }
+
+  private setWriterCi(pr: WriterPr, ci: WriterPr["ci"], publish = true): void {
+    if (pr.ci?.verdict === ci?.verdict && pr.ci?.detail === ci?.detail) return;
+    if (ci) pr.ci = ci;
+    else delete pr.ci;
+    if (publish) this.changed("agent");
+  }
+
+  private syncWriterPr(pr: WriterPr, final = false): Promise<void> {
+    const write = this.opts.write;
+    if (!write || (!final && this.status !== "running")) return Promise.resolve();
+    const expectedHead = this.pushedHeads.get(pr.url);
+    const reading = this.readingPrs.get(pr.url);
+    if (reading) {
+      return reading.expectedHead === expectedHead
+        ? reading.promise
+        : reading.promise.then(() => this.syncWriterPr(pr, final));
+    }
+    const read = (async () => {
+      try {
+        const observed = await readWriterCi(write.git, write.root, pr.url);
+        if (!final && this.status !== "running") return;
+        if (expectedHead !== this.pushedHeads.get(pr.url)) return;
+        if (observed.headRefOid !== expectedHead) {
+          this.setWriterCi(
+            pr,
+            {
+              verdict: "unknown",
+              detail: `PR head ${observed.headRefOid} differs from last pushed head ${expectedHead}`,
+            },
+            !final,
+          );
+          return;
+        }
+        this.setWriterCi(pr, observed.ci, !final);
+      } catch (e) {
+        if (!final && this.status !== "running") return;
+        if (expectedHead !== this.pushedHeads.get(pr.url)) return;
+        this.log(`could not read writer PR ${pr.url}: ${errText(e)}`, {
+          kind: "fault",
+          subject: pr.url,
+        });
+        if (final && e instanceof DOMException && e.name === "TimeoutError") return;
+        this.setWriterCi(pr, { verdict: "unknown", detail: errText(e).slice(0, 200) }, !final);
+      } finally {
+        this.readingPrs.delete(pr.url);
+      }
+    })();
+    this.readingPrs.set(pr.url, { expectedHead, promise: read });
+    return read;
   }
 
   async diff(agentId: string, writerHandle: string): Promise<string> {
@@ -1523,6 +1619,7 @@ export class Swarm {
     if (this.runPoll) return;
     this.runPoll = setInterval(() => {
       for (const run of this.liveRuns()) void this.syncRun(run.runId);
+      for (const pr of this.prs) void this.syncWriterPr(pr);
     }, pollMs);
     (this.runPoll as { unref?: () => void }).unref?.();
   }
@@ -2007,6 +2104,7 @@ export class Swarm {
       ...(this.opts.power && !this.opts.model ? { power: this.opts.power } : {}),
       ...(effort ? { effort } : {}),
       ...(this.opts.project ? { project: this.opts.project } : {}),
+      ...(this.opts.write ? { writeEnabled: true } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
       ...(health ? { health } : {}),
@@ -2021,7 +2119,9 @@ export class Swarm {
       ...(this.opts.dispatch ? { workflows: this.opts.dispatch.grants.map((g) => g.name) } : {}),
       ...(this.opts.leadTools?.length ? { leadTools: [...this.opts.leadTools] } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
-      ...(this.prs.length > 0 ? { prs: this.prs.map((p) => ({ ...p })) } : {}),
+      ...(this.prs.length > 0
+        ? { prs: this.prs.map((p) => ({ ...p, ...(p.ci ? { ci: { ...p.ci } } : {}) })) }
+        : {}),
       ...(this.keptWorktrees.length > 0
         ? { worktrees: this.keptWorktrees.map((w) => ({ ...w })) }
         : {}),
@@ -2072,6 +2172,10 @@ export class Swarm {
     }
     // A spawn in flight seats its agent first, so its token and worktree are cleaned up too.
     await Promise.allSettled([...this.seating]);
+    // Successful pushes must invalidate old-head CI before the final read and snapshot.
+    await Promise.allSettled([...this.pushingPrs]);
+    // A remotely created draft must enter the ledger before the summary is frozen.
+    await Promise.allSettled([...this.openingPrs]);
     // The bots stay so the transcript keeps its authors; only their credentials go.
     for (const agent of this.agents.values()) {
       await this.owner.revokeBotToken(agent.tokenId).catch((e) => {
@@ -2086,6 +2190,8 @@ export class Swarm {
     }
     this.tokens.clear();
     await this.releaseWorktrees();
+    await Promise.allSettled([...this.readingPrs.values()].map((reading) => reading.promise));
+    await Promise.all(this.prs.map((pr) => this.syncWriterPr(pr, true)));
     // Turns aborted by the end may report after the summary is frozen.
     const now = new Date().toISOString();
     for (const t of this.spans) {

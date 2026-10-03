@@ -54,8 +54,8 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    the message count and **transcript ↗** link.
 7. **Message the lead**, expanded directly under Conversation for a running
    swarm that has not concluded.
-8. The agent bench, Spend, Runs, Task and context, Activity, and About, the
-   same details as the per-swarm board below.
+8. The agent bench, Spend, Produced so far, Task and context, Activity, and
+   About, the same details as the per-swarm board below.
 9. **Open the report** when one exists; **Open the record**; and
    **Stop swarm…** last.
 
@@ -223,6 +223,12 @@ Live, the board runs in this order:
 Ended, it runs: the outcome, the result strip with how many runs verified, and
 **Run again** beside **Open the record**.
 
+The ended **Result** adds **Pull requests** when any exist. It counts distinct
+URLs across runs and writers, with **M with CI passing** beneath the total.
+A URL counts as passing only when every recorded owner explicitly reports
+pass. A verified run is not a substitute for CI evidence. Live boards and
+zero-PR boards omit this tile.
+
 The outcome is one card. When the lead published a report, the card carries
 its title, the conclusion with a copy button, **Open the report** and **Read
 the conclusion**, and a footnote with who concluded,
@@ -241,13 +247,8 @@ The details follow in both and read the same in the live cockpit:
   swarm's cap show as dashed ghosts
 - **Spend**, once two agents have spent: a bar per agent, its fresh tokens
   against the swarm's, with the count and share beside it
-- **Runs**, only when the launch named workflows: each run with its purpose,
-  its branch, every pull request it opened, how long it took, and for a failed
-  or cancelled run the start of its error, then its worktree, PR and CI strip;
-  clicking a run opens it beside the tab.
-  Each approval the swarm answered sits under its run with the reviewer, a link
-  to the review, and the reason under a disclosure. It says which workflows the
-  lead may start while none has
+- **Produced so far**: reports, dispatched runs, writer draft PRs, and, once
+  ended, kept worktrees, as described below
 - **Task and context**: the task in full under a disclosure, and each context
   item with its id, retrieval time, commit and text under its own
 - **Activity**: the last twelve events, newest first, with repeats counted,
@@ -258,6 +259,47 @@ The details follow in both and read the same in the live cockpit:
 - **About**: the times, the size's limits, the model per role, the tokens, any
   problems with ClickClack or the lead's turns, and the **transcript ↗** link;
   an ended board keeps its row back to the ended swarms after the transcript
+
+### Produced so far
+
+The cockpit and per-swarm board share one inventory. Artifacts appear in
+landing order, oldest first: report publication time, run start time, and
+PR opening time. Equal times keep report/run/writer order and ledger order.
+Missing legacy times fall back to the swarm start. Run gate answers stay
+immediately under their parent run. Kept worktrees follow the artifact rows
+only after the swarm ends, never while running or stopping.
+
+| Row | Shows |
+|---|---|
+| Report | Title, KB size, and **Open the report** |
+| Dispatched run | Purpose, branch, every PR, elapsed time, status, the start of an error, and the worktree/PR/CI evidence strip; clicking it opens the run beside the tab |
+| Gate answer | Reviewer, review link, decision, time, and reason under a disclosure, immediately under its run |
+| Writer PR | The writer's short handle in its identity color, branch, draft PR link, and observed CI, with detail under a disclosure |
+| Kept worktree | Recorded path and retention reason, with the writer's chip when available; not a claim about the current filesystem |
+
+While empty, the section names permitted workflows and eligible writers.
+Before its first writer, a write-enabled swarm says the lead may spawn
+writers. Ended placeholders use past tense. An empty chat-only swarm without
+workflows omits the section, but a published report still appears.
+
+Writer CI comes from current-head checks read with `gh pr view` after opening
+or pushing, then every 20 seconds, even without dispatched runs. A new pushed
+head clears the old observation. Reads for a different head are discarded.
+Each read has a 3-second timeout.
+
+**Pass** requires a nonempty rollup with successful evidence and no failing,
+running, or unrecognized checks. Neutral/skipped checks may accompany
+success, but alone they are **unknown**. **Fail** means a terminal failure;
+**running** means checks are queued or in progress. **Unknown** means
+unfamiliar evidence or a read fault, shown with a detail and logged as a
+fault. No checks means **not reported**, never pass. Missing evidence never
+implies pass.
+
+On ending, the rib makes one final read with the same timeout. A timeout
+keeps the last observation. Ended CI is a saved observation, not a
+continuously monitored guarantee. Only the operator merges pull requests,
+and the board never removes worktrees. The engine still removes clean,
+fully pushed worktrees at the end and records why it keeps the others.
 
 **Message the lead** goes away once the lead concludes, since no new turn would
 read it. **Stop swarm…** names the runs it cancels, and the board shows

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectView } from "@keelson/shared";
 import { historyPath, loadHistory, saveHistory } from "../src/history.ts";
+import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import { DEFAULT_LIMITS, type SwarmSummary } from "../src/types.ts";
 
 const dirs: string[] = [];
@@ -63,6 +65,62 @@ describe("swarm history", () => {
     };
     saveHistory(path, { ended: [full], refusedApprovals: [] });
     expect(loadHistory(path).ended[0]).toEqual(full);
+  });
+
+  test("round-trips writer evidence, capability, report and retained worktrees together", () => {
+    const path = historyPath(tempDir());
+    const full: SwarmSummary = {
+      ...summary("s4"),
+      writeEnabled: true,
+      report: { title: "Shipped work", at: "2026-09-22T10:10:00.000Z", bytes: 3072 },
+      prs: [
+        {
+          agent: "s4-coder",
+          url: "https://github.com/o/r/pull/101",
+          branch: "writer/feature",
+          at: "2026-09-22T10:05:00.000Z",
+          ci: { verdict: "running", detail: "build queued" },
+        },
+      ],
+      worktrees: [
+        {
+          agent: "s4-coder",
+          path: "/repo/.worktrees/swarm-s4-coder",
+          branch: "writer/feature",
+          reason: "1 commit not pushed",
+        },
+      ],
+    };
+    saveHistory(path, { ended: [full], refusedApprovals: [] });
+    const restored = loadHistory(path).ended[0]!;
+    expect(restored).toEqual(full);
+    const view = buildSwarmBoard(restored);
+    expect(() => expectView("swarm-s4", "board")(view)).not.toThrow();
+    expect(JSON.stringify(view)).toContain("draft PR #101 · CI running");
+    expect(JSON.stringify(view)).toContain("1 commit not pushed");
+  });
+
+  test("legacy writer PRs load without new fields and render CI as not reported", () => {
+    const path = historyPath(tempDir());
+    const legacy = {
+      ...summary("s5"),
+      prs: [
+        {
+          agent: "s5-coder",
+          url: "https://github.com/o/r/pull/102",
+          branch: "writer/legacy",
+          at: "2026-09-22T10:05:00.000Z",
+        },
+      ],
+    };
+    writeFileSync(path, JSON.stringify({ version: 1, ended: [legacy], refusedApprovals: [] }));
+    const restored = loadHistory(path).ended[0]!;
+    expect(restored.writeEnabled).toBeUndefined();
+    expect(restored.prs?.[0]?.ci).toBeUndefined();
+    const view = buildSwarmBoard(restored);
+    expect(() => expectView("swarm-s5", "board")(view)).not.toThrow();
+    expect(JSON.stringify(view)).toContain("draft PR #102 · CI not reported");
+    expect(JSON.stringify(view)).toContain("0 with CI passing");
   });
 
   test("leaves no temp file behind", () => {

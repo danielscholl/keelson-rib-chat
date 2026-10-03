@@ -4,10 +4,11 @@ import rib from "../src/index.ts";
 import { Swarm, type SwarmOptions, WRITER_TOOLS } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
 import type { RunAgentTurn } from "../src/turn-runner.ts";
-import { ownsPr, type SwarmSummary } from "../src/types.ts";
-import { attributionIn, createWorktree, releaseWorktree } from "../src/worktree.ts";
+import { ownsPr, type SwarmSummary, type WriterPr } from "../src/types.ts";
+import { attributionIn, createWorktree, readWriterCi, releaseWorktree } from "../src/worktree.ts";
 import {
   FakeClickClack,
+  fakeDispatcher,
   fakeGit,
   OWNER_TOKEN,
   type Script,
@@ -17,6 +18,16 @@ import {
 
 const ROOT = "/repo";
 const WT = `${ROOT}/.worktrees/swarm-s1-coder`;
+const PR = "https://github.com/o/r/pull/101";
+const HEAD = "a".repeat(40);
+const check = (conclusion: string | null, status = "COMPLETED") => ({
+  __typename: "CheckRun",
+  status,
+  conclusion,
+});
+const legacy = (state: string) => ({ __typename: "StatusContext", state });
+const rollup = (checks: unknown[], headRefOid = HEAD) =>
+  JSON.stringify({ headRefOid, statusCheckRollup: checks });
 
 function harness(script: Script, extra: Partial<SwarmOptions> = {}, git = fakeGit()) {
   const server = new FakeClickClack();
@@ -53,7 +64,454 @@ const turnsOf = (h: ReturnType<typeof harness>, agentId: string) =>
 const toolNames = (r: { tools?: readonly { name: string }[] }) =>
   (r.tools ?? []).map((t) => t.name);
 
+async function writerHarness(git = fakeGit(), extra: Partial<SwarmOptions> = {}) {
+  const h = harness(async () => {}, { quiesceMs: 60_000, ...extra }, git);
+  const swarm = await h.start();
+  const writer = await swarm.spawn(swarm.summary().agents[0]!.id, {
+    handle: "coder",
+    role: "r",
+    brief: "b",
+    writes: true,
+  });
+  git.commits.set(WT, [{ sha: HEAD, subject: "fix: x", message: "fix: x\n" }]);
+  return { ...h, swarm, writer };
+}
+
+async function until(check: () => boolean) {
+  for (let i = 0; i < 200 && !check(); i++) await Bun.sleep(5);
+  expect(check()).toBe(true);
+}
+
+describe("writer CI lifecycle", () => {
+  test("shutdown waits for a remotely created draft to enter the PR ledger", async () => {
+    const git = fakeGit();
+    const run = git.deps.run;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let created = false;
+    git.deps.run = async (cmd, args, opts) => {
+      const response = await run(cmd, args, opts);
+      if (cmd === "gh" && args[0] === "pr" && args[1] === "create") {
+        created = true;
+        await held;
+      }
+      return response;
+    };
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    const h = await writerHarness(git);
+    const opened = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" }).then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+    await until(() => created);
+    let finished = false;
+    const stopped = h.swarm.stop().then((summary) => {
+      finished = true;
+      return summary;
+    });
+    await Bun.sleep(25);
+    const finishedBeforeResponse = finished;
+    release();
+    const ended = await stopped;
+    expect(await opened).toEqual({ value: { url: PR, again: false } });
+    expect(finishedBeforeResponse).toBe(false);
+    expect(ended.prs).toEqual([
+      expect.objectContaining({
+        url: PR,
+        agent: h.writer.handle,
+        ci: { verdict: "pass", detail: "1 check(s): pass" },
+      }),
+    ]);
+    expect(ended.agents.find((agent) => agent.id === h.writer.id)?.prUrl).toBe(PR);
+    const snapshot = JSON.stringify(h.swarm.summary());
+    await Bun.sleep(25);
+    expect(JSON.stringify(h.swarm.summary())).toBe(snapshot);
+  });
+
+  test.each(["timeout", "current head", "old head"] as const)(
+    "shutdown accounts for a repeat push before the final CI read: %s",
+    async (observation) => {
+      const git = fakeGit();
+      const run = git.deps.run;
+      let releasePush!: () => void;
+      const held = new Promise<void>((resolve) => {
+        releasePush = resolve;
+      });
+      git.deps.run = async (cmd, args, opts) => {
+        const response = await run(cmd, args, opts);
+        if (cmd === "git" && args[0] === "push" && git.ran("git push").length === 2) {
+          await held;
+        }
+        return response;
+      };
+      git.prChecks.set(PR, rollup([check("SUCCESS")]));
+      const h = await writerHarness(git);
+      await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+      expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("pass");
+      const nextHead = "b".repeat(40);
+      git.heads.set(WT, nextHead);
+      let releaseRead!: (response: string) => void;
+      if (observation === "timeout") {
+        git.prChecks.set(
+          PR,
+          () =>
+            new Promise<string>((resolve) => {
+              releaseRead = resolve;
+            }),
+        );
+      } else {
+        git.prChecks.set(
+          PR,
+          observation === "current head"
+            ? rollup([check("FAILURE")], nextHead)
+            : rollup([check("SUCCESS")]),
+        );
+      }
+      const reads = git.ran("gh pr view").length;
+      const pushed = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" }).then(
+        () => undefined,
+        (error: Error) => error.message,
+      );
+      await until(() => git.ran("git push").length === 2);
+      const stopped = h.swarm.stop();
+      await Bun.sleep(25);
+      const readsWhilePushing = git.ran("gh pr view").length;
+      const removalsWhilePushing = git.ran("git worktree remove").length;
+      releasePush();
+      const pushError = await pushed;
+      const ended = await stopped;
+      const snapshot = JSON.stringify(h.swarm.summary());
+      if (observation === "timeout") {
+        releaseRead(rollup([check("SUCCESS")], nextHead));
+        await Bun.sleep(10);
+      }
+      expect(pushError).toBe("the swarm ended while pushing your branch");
+      expect(readsWhilePushing).toBe(reads);
+      expect(removalsWhilePushing).toBe(0);
+      expect(git.ran("gh pr view")).toHaveLength(reads + 1);
+      expect(ended.prs?.[0]?.ci?.verdict).toBe(
+        observation === "timeout" ? undefined : observation === "current head" ? "fail" : "unknown",
+      );
+      expect(JSON.stringify(h.swarm.summary())).toBe(snapshot);
+    },
+  );
+
+  test("shutdown during PR preflight prevents a push after the summary is frozen", async () => {
+    const git = fakeGit();
+    const run = git.deps.run;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let checking = false;
+    git.deps.run = async (cmd, args, opts) => {
+      const response = await run(cmd, args, opts);
+      if (cmd === "git" && args[0] === "status" && opts?.cwd === WT && !checking) {
+        checking = true;
+        await held;
+      }
+      return response;
+    };
+    const h = await writerHarness(git);
+    const opened = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" }).then(
+      () => undefined,
+      (error: Error) => error.message,
+    );
+    await until(() => checking);
+    await h.swarm.stop();
+    const snapshot = JSON.stringify(h.swarm.summary());
+    release();
+    expect(await opened).toBe("the swarm ended before pushing your branch");
+    expect(git.ran("git push")).toHaveLength(0);
+    expect(JSON.stringify(h.swarm.summary())).toBe(snapshot);
+  });
+
+  test("a remotely changed PR head invalidates passing CI before shutdown", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    const h = await writerHarness(git, {
+      dispatch: { grants: [], dispatcher: fakeDispatcher().dispatcher, pollMs: 5 },
+    });
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("pass");
+    const nextHead = "b".repeat(40);
+    const reads = git.ran("gh pr view").length;
+    git.prChecks.set(PR, rollup([check("FAILURE")], nextHead));
+    await until(() => git.ran("gh pr view").length > reads);
+    await Bun.sleep(10);
+    const polled = h.swarm.summary().prs?.[0]?.ci;
+    const ended = await h.swarm.stop();
+    expect(polled?.verdict).toBe("unknown");
+    expect(polled?.detail).toContain(nextHead);
+    expect(ended.prs?.[0]?.ci).toEqual(polled);
+  });
+
+  test("the final CI read reports a head mismatch even when no live poll saw it", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    const h = await writerHarness(git);
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    const nextHead = "b".repeat(40);
+    git.prChecks.set(PR, rollup([], nextHead));
+    const ended = await h.swarm.stop();
+    expect(ended.prs?.[0]?.ci?.verdict).toBe("unknown");
+    expect(ended.prs?.[0]?.ci?.detail).toContain(nextHead);
+  });
+
+  test("writer-only swarms poll terminal observations without waking agents or duplicating reads", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    const dispatcher = fakeDispatcher();
+    const kinds: string[] = [];
+    const h = await writerHarness(git, {
+      dispatch: { grants: [], dispatcher: dispatcher.dispatcher, pollMs: 5 },
+      onChange: (kind) => kinds.push(kind),
+    });
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("pass");
+    await until(() => h.swarm.summary().agents.every((a) => a.status !== "busy"));
+    const turns = h.swarm.summary().turnsUsed;
+    const publications = kinds.filter((k) => k === "agent").length;
+    await until(() => git.ran("gh pr view").length >= 3);
+    expect(kinds.filter((k) => k === "agent")).toHaveLength(publications);
+    let release!: (response: string) => void;
+    git.prChecks.set(
+      PR,
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const before = git.ran("gh pr view").length;
+    await until(() => git.ran("gh pr view").length === before + 1);
+    await Bun.sleep(25);
+    expect(git.ran("gh pr view")).toHaveLength(before + 1);
+    git.prChecks.set(PR, rollup([check("FAILURE")]));
+    release(rollup([check("FAILURE")]));
+    await until(() => h.swarm.summary().prs?.[0]?.ci?.verdict === "fail");
+    expect(h.swarm.summary().runs).toBeUndefined();
+    expect(h.swarm.summary().turnsUsed).toBe(turns);
+    const ended = await h.swarm.stop();
+    expect(ended.prs?.[0]?.ci?.verdict).toBe("fail");
+  });
+
+  test("new pushes refresh the latest head after an old-head read without waiting for a poll", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    const h = await writerHarness(git);
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    let release!: (response: string) => void;
+    git.prChecks.set(
+      PR,
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const reads = git.ran("gh pr view").length;
+    const reading = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    await until(() => git.ran("gh pr view").length > reads);
+    const sameHead = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    await until(() => git.ran("git push").length === 3);
+    expect(git.ran("gh pr view")).toHaveLength(reads + 1);
+    const nextHead = "b".repeat(40);
+    git.heads.set(WT, nextHead);
+    const pushed = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    await until(() => h.swarm.summary().prs?.[0]?.ci === undefined);
+    git.prChecks.set(PR, rollup([check("FAILURE")], nextHead));
+    release(rollup([check("SUCCESS")]));
+    await Promise.all([reading, sameHead, pushed]);
+    expect(git.ran("gh pr view")).toHaveLength(reads + 2);
+    expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("fail");
+    // The forge may still report the old head on a subsequent read.
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("unknown");
+    expect(h.swarm.summary().prs?.[0]?.ci?.detail).toContain(HEAD);
+    git.prChecks.set(PR, rollup([check(null, "IN_PROGRESS")], nextHead));
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("running");
+    expect(git.ran("gh pr create")).toHaveLength(1);
+    await h.swarm.stop();
+  });
+
+  test("independent writers collect evidence and a failed read is visible and recoverable", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, new Error("forge unavailable"));
+    const h = await writerHarness(git);
+    const opened = await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    expect(opened.url).toBe(PR);
+    expect(h.swarm.summary().prs?.[0]?.ci).toEqual({
+      verdict: "unknown",
+      detail: "gh pr view failed: forge unavailable",
+    });
+    expect(h.swarm.summary().activity).toContainEqual(
+      expect.objectContaining({
+        kind: "fault",
+        subject: PR,
+      }),
+    );
+    const other = await h.swarm.spawn(h.swarm.summary().agents[0]!.id, {
+      handle: "other",
+      role: "r",
+      brief: "b",
+      writes: true,
+    });
+    git.commits.set(other.worktree!.path, [{ sha: HEAD, subject: "fix: y", message: "fix: y" }]);
+    const otherPr = "https://github.com/o/r/pull/102";
+    git.prChecks.set(otherPr, rollup([legacy("FAILURE")]));
+    await h.swarm.openPr(other.id, { title: "fix: y", body: "b" });
+    git.prChecks.set(PR, rollup([legacy("SUCCESS")]));
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    expect(h.swarm.summary().prs?.map((p) => p.ci?.verdict)).toEqual(["pass", "fail"]);
+    expect((await h.swarm.stop()).prs?.map((p) => p.ci?.verdict)).toEqual(["pass", "fail"]);
+  });
+
+  test("shutdown discards older reads, saves one final observation and never publishes late results", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, rollup([check(null, "QUEUED")]));
+    const kinds: string[] = [];
+    const h = await writerHarness(git, {
+      dispatch: { grants: [], dispatcher: fakeDispatcher().dispatcher, pollMs: 5 },
+      onChange: (kind) => kinds.push(kind),
+    });
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    let release!: (response: string) => void;
+    git.prChecks.set(
+      PR,
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const before = git.ran("gh pr view").length;
+    await until(() => git.ran("gh pr view").length > before);
+    const reads = git.ran("gh pr view").length;
+    const stopped = h.swarm.stop();
+    git.prChecks.set(PR, rollup([check("FAILURE")]));
+    release(rollup([check("SUCCESS")]));
+    const ended = await stopped;
+    expect(git.ran("gh pr view")).toHaveLength(reads + 1);
+    expect(ended.prs?.[0]?.ci?.verdict).toBe("fail");
+    const snapshot = JSON.stringify(h.swarm.summary());
+    const publications = kinds.length;
+    await Bun.sleep(25);
+    expect(JSON.stringify(h.swarm.summary())).toBe(snapshot);
+    expect(kinds).toHaveLength(publications);
+  });
+
+  test("a final read timeout keeps the last observation and drops a late success", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, rollup([check(null, "QUEUED")]));
+    const h = await writerHarness(git);
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    let release!: (response: string) => void;
+    git.prChecks.set(
+      PR,
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const reads = git.ran("gh pr view").length;
+    const ended = await h.swarm.stop();
+    expect(ended.prs?.[0]?.ci?.verdict).toBe("running");
+    expect(git.ran("gh pr view")).toHaveLength(reads + 1);
+    expect(git.ran("gh pr view").every((call) => call.timeoutMs === 3_000)).toBe(true);
+    release(rollup([check("SUCCESS")]));
+    await Bun.sleep(10);
+    expect(h.swarm.summary().prs?.[0]?.ci).toEqual(ended.prs?.[0]?.ci);
+  });
+});
+
+describe("writer PR CI reader", () => {
+  test("maps current-head checks conservatively, including legacy statuses", async () => {
+    const git = fakeGit();
+    const cases: [unknown[], NonNullable<WriterPr["ci"]>["verdict"] | undefined][] = [
+      [[], undefined],
+      [[check("SUCCESS")], "pass"],
+      [[check("SUCCESS"), check("NEUTRAL"), check("SKIPPED")], "pass"],
+      [[check("NEUTRAL"), check("SKIPPED")], "unknown"],
+      [[check("FAILURE")], "fail"],
+      [[check("CANCELLED")], "fail"],
+      [[check(null, "QUEUED")], "running"],
+      [[check(null, "IN_PROGRESS")], "running"],
+      [[check("FAILURE"), check(null, "QUEUED")], "fail"],
+      [[check("SUCCESS"), check("NEW_CONCLUSION")], "unknown"],
+      [[check("SUCCESS", "NEW_STATUS")], "unknown"],
+      [[legacy("SUCCESS")], "pass"],
+      [[legacy("PENDING")], "running"],
+      [[legacy("ERROR"), legacy("PENDING")], "fail"],
+      [[legacy("NEW_STATE")], "unknown"],
+      [[{ __typename: "NewCheck", state: "SUCCESS" }], "unknown"],
+    ];
+    for (const [checks, verdict] of cases) {
+      git.prChecks.set(PR, rollup(checks));
+      const observed = await readWriterCi(git.deps, ROOT, PR);
+      expect(observed.headRefOid).toBe(HEAD);
+      expect(observed.ci?.verdict).toBe(verdict);
+    }
+    expect(git.ran("gh pr create")).toHaveLength(0);
+    expect(git.calls[0]).toEqual({
+      cmd: "gh",
+      args: ["pr", "view", PR, "--json", "headRefOid,statusCheckRollup"],
+      cwd: ROOT,
+      timeoutMs: 3_000,
+    });
+    git.prChecks.set(PR, JSON.stringify({ headRefOid: HEAD, statusCheckRollup: null }));
+    expect((await readWriterCi(git.deps, ROOT, PR)).ci).toBeUndefined();
+  });
+
+  test("malformed JSON, malformed fields and CLI errors propagate", async () => {
+    const git = fakeGit();
+    for (const response of ["not json", "{}", rollup([null]), new Error("not authenticated")]) {
+      git.prChecks.set(PR, response);
+      await expect(readWriterCi(git.deps, ROOT, PR)).rejects.toThrow();
+    }
+  });
+
+  test("a deferred CLI response is bounded even when the execution seam hangs", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, () => new Promise(() => {}));
+    await expect(readWriterCi(git.deps, ROOT, PR, 5)).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    expect(git.calls[0]?.timeoutMs).toBe(5);
+  });
+});
+
 describe("write mode", () => {
+  test("launch capability is explicit before a writer exists and absent on read/chat launches", async () => {
+    for (const extra of [{}, { write: undefined }, { write: undefined, workTools: undefined }]) {
+      const h = harness(async () => {}, { quiesceMs: 60_000, ...extra });
+      const swarm = await h.start();
+      const summary = swarm.summary();
+      expect(summary.writeEnabled).toBe(
+        extra.write === undefined && "write" in extra ? undefined : true,
+      );
+      expect(summary.prs).toBeUndefined();
+      expect(summary.agents.some((a) => a.worktree)).toBe(false);
+      await swarm.stop();
+    }
+  });
+
+  test("writer CI is optional and summary observations are defensive copies", async () => {
+    const h = await writerHarness();
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    expect(h.swarm.summary().prs?.[0]?.ci).toBeUndefined();
+    h.git.prChecks.set(PR, rollup([check(null, "QUEUED")]));
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    const snapshot = h.swarm.summary();
+    snapshot.prs![0]!.ci!.detail = "changed by caller";
+    expect(h.swarm.summary().prs?.[0]?.ci).toEqual({
+      verdict: "running",
+      detail: "1 check(s): running",
+    });
+    await h.swarm.stop();
+  });
+
   test("a spawn with writes is refused in a swarm that only reads", async () => {
     let refusal = "";
     const h = harness(
