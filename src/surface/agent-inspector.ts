@@ -89,7 +89,9 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
     ...(!a.joinedAt ? [{ text: "Join time not recorded." }] : []),
     ...(a.worktree
       ? [{ text: `Worktree: ${a.worktree.path}` }, { text: `Branch: ${a.worktree.branch}` }]
-      : []),
+      : pr
+        ? [{ text: "Worktree not recorded." }, { text: `Branch: ${pr.branch}` }]
+        : []),
     ...(prUrl
       ? [
           {

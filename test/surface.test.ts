@@ -673,6 +673,11 @@ describe("the agent map", () => {
     expect(dense.nodes).toHaveLength(17);
     expect(dense.edges).toHaveLength(200);
     expect(dense.title).toBe("Map · showing 200 of 240 edges");
+    const nodesOnly = graph({ ...s, spans: [] }, "s1-w54");
+    expect(nodesOnly.nodes).toHaveLength(48);
+    expect(nodesOnly.edges).toHaveLength(0);
+    expect(nodesOnly.title).toBe("Map · showing 48 of 56 nodes");
+    expect(nodesOnly.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(["s1-w54"]);
     expect(graph(swarm("s0", { agents: [] })).nodes).toHaveLength(1);
   });
 });
@@ -861,6 +866,48 @@ describe("the agent inspector", () => {
     }
     const s = writer();
     expect(JSON.stringify(inspect({ ...s, prs: [s.prs![0]!] }))).toContain("CI not reported");
+  });
+
+  test("legacy writer branch evidence and latest closed turn stay accessible without a live clock", () => {
+    const s = writer();
+    const view = inspect({
+      ...s,
+      agents: [
+        s.agents[0]!,
+        { ...s.agents[1]!, worktree: undefined, servedModel: undefined, providerId: undefined },
+      ],
+      spans: [
+        {
+          agentId: "s1-w1",
+          n: 1,
+          startedAt: T0,
+          endedAt: T0,
+          outcome: "ok",
+          messages: 1,
+          wokeBy: ["missing"],
+        },
+        {
+          agentId: "s1-w1",
+          n: 2,
+          startedAt: T0,
+          endedAt: T0,
+          outcome: "error",
+          messages: 0,
+          wokeBy: [],
+        },
+      ],
+      prs: [s.prs![1]!],
+    });
+    const text = JSON.stringify(view);
+    expect(text).toContain("Branch: writer/w1");
+    expect(text).toContain("Worktree not recorded");
+    expect(text).toContain("Served model: not reported · provider: not reported");
+    expect(text).toContain("unknown source missing");
+    expect(text).toContain("Woken by not recorded");
+    expect(text).not.toContain('"clock"');
+    expect(view.sections[0]).toMatchObject({
+      items: [{ fields: [{}, { value: expect.stringContaining("Turn 2") }] }],
+    });
   });
 });
 
@@ -1949,6 +1996,7 @@ ${"detail ".repeat(1000)}`,
     const big = swarm("s9big", {
       agents,
       runs,
+      limits: { ...SIZE_PRESETS.large, maxAgents: 12, maxTurns: 200, maxTurnsPerAgent: 50 },
       task: "t".repeat(8000),
       conclusion: "c".repeat(20_000),
       messageCount: 500,
@@ -1992,7 +2040,15 @@ ${"detail ".repeat(1000)}`,
     const live = Array.from({ length: 6 }, (_, i) => ({ ...big, id: `s9bi${i}` }));
     const now = new Date("2026-09-22T14:21:00.000Z");
     for (const selected of [undefined, live[5]!.id]) {
-      const view = buildIndex(state({ live, ended: many, selected }), now);
+      const view = buildIndex(
+        state({
+          live,
+          ended: many,
+          selected,
+          selectedAgents: new Map(live.map((s) => [s.id, agents[11]!.id])),
+        }),
+        now,
+      );
       board(INDEX_KEY, view);
       const produced = view.sections.find(
         (x) => x.kind === "rows" && x.title === "Produced so far",
@@ -2028,6 +2084,9 @@ ${"detail ".repeat(1000)}`,
     const drawer = buildSwarmBoard(artifacts, { now });
     board(swarmKey(big.id), drawer);
     expect(Buffer.byteLength(JSON.stringify(drawer))).toBeLessThan(48_000);
+    console.info(
+      `Map per-swarm board (12 agents, 200 turns): ${Buffer.byteLength(JSON.stringify(drawer))} bytes`,
+    );
     const produced = drawer.sections.find(
       (x) => x.kind === "rows" && x.title === "Produced so far",
     );

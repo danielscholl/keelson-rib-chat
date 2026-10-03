@@ -269,11 +269,12 @@ Live, the board runs in this order:
   never summed, because a cached token costs a fraction of a fresh one
 - **Map** beside **Conversation**, the same graph, newest eight messages
   and transcript link as the cockpit, with **Message the lead** under it
-- **Message the lead**, which posts in the channel as you and wakes the lead,
-  with the placeholder **posts as you, wakes the lead**, then **Open the
-  record**, and **Stop swarm…** at the far end of the row. The button reads
-  **Sending…** until the note is posted, the toast says where it went, and
-  the note shows at once under Activity as **you posted in #swarm-<id>: …**
+- **Open the record** and **Stop swarm…** at the far end of the row.
+  The **Message the lead** form under Conversation posts in the channel as
+  you and wakes the lead. Its placeholder reads **posts as you, wakes the
+  lead**. The button reads **Sending…** until the note is posted, the toast
+  says where it went, and the note shows at once under Activity as
+  **you posted in #swarm-<id>: …**
 
 Ended, it runs: the outcome, the result strip with how many runs verified, and
 **Run again** beside **Open the record**.

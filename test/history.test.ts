@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectView } from "@keelson/shared";
 import { historyPath, loadHistory, saveHistory } from "../src/history.ts";
+import { buildAgentInspector } from "../src/surface/agent-inspector.ts";
 import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import { DEFAULT_LIMITS, type SwarmSummary } from "../src/types.ts";
 
@@ -73,6 +74,42 @@ describe("swarm history", () => {
     const full: SwarmSummary = {
       ...summary("s4"),
       writeEnabled: true,
+      operatorMessageCount: 12,
+      agents: [
+        {
+          id: "s4-coder",
+          handle: "s4-coder",
+          displayName: "coder",
+          role: "writes the fix",
+          lead: false,
+          tone: "id-blue",
+          botUserId: "u4",
+          status: "idle",
+          turns: 3,
+          spawnedBy: "s4-lead",
+          joinedAt: "2026-09-22T10:01:00.000Z",
+          servedModel: "served",
+          providerId: "copilot",
+          usage: { input: 1000, output: 500, cached: 2000 },
+          worktree: {
+            path: "/repo/.worktrees/swarm-s4-coder",
+            branch: "writer/feature",
+            base: "main",
+          },
+          prUrl: "https://github.com/o/r/pull/101",
+        },
+      ],
+      spans: [
+        {
+          agentId: "s4-coder",
+          n: 3,
+          startedAt: "2026-09-22T10:04:00.000Z",
+          endedAt: "2026-09-22T10:05:00.000Z",
+          outcome: "ok",
+          messages: 1,
+          wokeBy: ["operator"],
+        },
+      ],
       report: { title: "Shipped work", at: "2026-09-22T10:10:00.000Z", bytes: 3072 },
       prs: [
         {
@@ -99,6 +136,14 @@ describe("swarm history", () => {
     expect(() => expectView("swarm-s4", "board")(view)).not.toThrow();
     expect(JSON.stringify(view)).toContain("draft PR #101 · CI running");
     expect(JSON.stringify(view)).toContain("1 commit not pushed");
+    const inspector = buildAgentInspector(restored, restored.agents[0]!);
+    expect(() => expectView("agent-s4", "board")(inspector)).not.toThrow();
+    expect(JSON.stringify(inspector)).toContain("Served model: served");
+    expect(JSON.stringify(inspector)).toContain("Branch: writer/feature");
+    expect(JSON.stringify(inspector)).toContain("CI running");
+    expect(JSON.stringify(inspector)).toContain("Woken by you");
+    expect(JSON.stringify(inspector)).not.toContain('"clock"');
+    expect(JSON.stringify(inspector)).not.toContain("message-agent");
   });
 
   test("legacy writer PRs load without new fields and render CI as not reported", () => {
