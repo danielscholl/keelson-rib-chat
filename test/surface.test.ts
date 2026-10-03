@@ -37,6 +37,7 @@ import {
   endedRow,
   type SurfaceState,
 } from "../src/surface/index-board.ts";
+import { buildQuestionInspector } from "../src/surface/inspectors.ts";
 import {
   agentKey,
   askKey,
@@ -53,6 +54,7 @@ import {
 } from "../src/surface/keys.ts";
 import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
 import {
+  askText,
   dismissAskAction,
   healthRows,
   modelRow,
@@ -95,6 +97,7 @@ import {
   type ChildRun,
   MESSAGE_CHARS,
   MESSAGES_KEPT,
+  type OperatorAsk,
   SIZE_PRESETS,
   type StartingSwarm,
   type SwarmAgent,
@@ -793,6 +796,103 @@ describe("the agent map", () => {
       { source: `run:${s.runs![0]!.runId}`, target: "s1-lead", label: "updates" },
     ]);
     expect(sparse.edges.slice(2).every((e) => e.dashed)).toBe(true);
+  });
+});
+
+describe("the question inspector", () => {
+  const ask = fixtures.asked!.health!.asks![0]!;
+  const inspect = (s: SwarmSummary, selected: OperatorAsk = ask) => {
+    const view = buildQuestionInspector(s, selected);
+    board(askKey(s.id), view);
+    return view;
+  };
+
+  test("keeps a complete 8,000-character multiline question with native prose", () => {
+    const text = `@operator: **Full question**\n\n${"q".repeat(7900)}\nFinal sentence?`.padEnd(
+      8000,
+      "?",
+    );
+    const selected = { ...ask, text };
+    const s = { ...fixtures.asked!, health: { asks: [selected] } };
+    const view = inspect(s, selected);
+    const question = view.sections[0];
+    expect(question?.kind).toBe("cards");
+    if (question?.kind !== "cards") throw new Error("missing question");
+    expect(question.title).toBe("Question");
+    expect(question.items[0]).toMatchObject({
+      title: "@w1 asked",
+      prose: true,
+      fields: [
+        { value: askText(text) },
+        { value: `Asked ${ask.at}` },
+        { label: "asked", clock: { at: ask.at, mode: "since" } },
+      ],
+    });
+    expect(question.items[0]!.fields![0]!.value).toContain("\nFinal sentence?");
+    expect(question.items[0]!.fields![0]!.value).toContain("**Full question**");
+    const actions = view.sections.find((section) => section.kind === "actions");
+    if (actions?.kind !== "actions") throw new Error("missing actions");
+    expect(actions.title).toBe("Actions");
+    expect(actions.items.map((item) => item.type)).toEqual(["reply-ask", "dismiss-ask"]);
+    expect(actions.items[0]!.binding).toEqual({
+      id: s.id,
+      messageId: selected.messageId,
+      threadRootId: selected.threadRootId,
+    });
+    expect(actions.items[0]!.fields![0]!.placeholder).toContain("as you");
+    expect(actions.items[0]!.fields![0]!.placeholder).toContain("does not approve");
+    expect(actions.items[1]!.payload).toEqual({ id: s.id, messageId: selected.messageId });
+  });
+
+  test("links to the authoritative thread root, not the question message", () => {
+    const s = fixtures.asked!;
+    const view = inspect(s);
+    expect(view.sections[1]).toEqual({
+      kind: "rows",
+      title: "Thread",
+      items: [{ text: "thread ↗", href: threadHref(s, ask.threadRootId) }],
+    });
+    expect(JSON.stringify(view.sections[1])).not.toContain(ask.messageId);
+    const topLevel = { ...ask, threadRootId: ask.messageId };
+    expect(JSON.stringify(inspect(s, topLevel).sections[1])).toContain(
+      threadHref(s, ask.messageId)!,
+    );
+    expect(JSON.stringify(inspect(s, { ...ask, threadRootId: "" }).sections[1])).toContain(
+      threadHref(s, ask.messageId)!,
+    );
+  });
+
+  test("missing link metadata is explicit without inventing a URL", () => {
+    const s = { ...fixtures.asked!, clickclack: undefined };
+    const view = inspect(s);
+    expect(view.sections[1]).toEqual({
+      kind: "rows",
+      title: "Thread",
+      items: [{ text: "Thread link not recorded." }],
+    });
+    expect(view.sections.some((section) => section.kind === "actions")).toBe(true);
+  });
+
+  test("ended, stopping, concluded and disappeared questions are read-only without clocks", () => {
+    const s = fixtures.asked!;
+    const snapshots: SwarmSummary[] = [
+      ...(["done", "stopped", "stalled", "exhausted", "error", "stopping"] as const).map(
+        (status) => ({ ...s, status }),
+      ),
+      { ...s, endedAt: T0 },
+      { ...s, conclusion: "" },
+      { ...s, health: { asks: [] } },
+      { ...s, health: undefined },
+    ];
+    for (const snapshot of snapshots) {
+      const view = inspect(snapshot);
+      expect(view.sections.some((section) => section.kind === "actions")).toBe(false);
+      expect(JSON.stringify(view)).not.toContain('"clock"');
+      expect(JSON.stringify(view)).toContain("Read-only:");
+      const question = view.sections[0];
+      if (question?.kind !== "cards") throw new Error("missing question");
+      expect(question.items[0]!.fields![0]!.value).toBe(askText(ask.text));
+    }
   });
 });
 
