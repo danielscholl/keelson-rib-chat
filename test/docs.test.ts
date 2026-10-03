@@ -68,6 +68,14 @@ describe("contributed docs", () => {
     expect(swarms).toContain("Manage");
     expect(swarms).toContain("at the side");
     expect(swarms).toContain("About ends with a transcript link");
+    expect(swarms).toContain("Conversation");
+    expect(swarms).toContain("eight newest channel messages, newest first");
+    expect(swarms).toContain("newest 20");
+    expect(swarms).toContain("200 characters");
+    expect(swarms).toContain('"ask" | "run" | "conclusion"');
+    expect(swarms).toContain("run for the rib's quiet run and gate bookkeeping posts");
+    expect(swarms).toContain("`chat_report` never posts to the channel");
+    expect(swarms).toContain("durable op record leave this recent-message");
     expect(swarms).not.toContain("ClickClack footer");
     expect(swarms).not.toContain("and the channel in ClickClack");
   });
