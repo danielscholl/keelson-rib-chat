@@ -685,6 +685,23 @@ describe("the live cockpit", () => {
     });
   });
 
+  test("the index uses its compose clock for the cockpit's turn forecast", () => {
+    const s = swarm("s1for", { turnsUsed: 32, pace: [2, 1, 2, 1, 2] });
+    const now = new Date("2026-09-22T14:21:00.000Z");
+    const view = buildIndex(state({ live: [s] }), now);
+    board(INDEX_KEY, view);
+    const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
+    expect(budget?.kind === "stats" ? budget.items[0] : undefined).toMatchObject({
+      label: "Turns",
+      sub: "pace over the last 5 min",
+      delta: {
+        text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+        direction: "down",
+        tone: "warn",
+      },
+    });
+  });
+
   test("needs tone the head and health warnings tone the state row", () => {
     expect(sections(fixtures.onlyYou!)[0]).toMatchObject({
       items: [{ pill: { label: "needs you", tone: "caution" }, edge: "caution" }],
