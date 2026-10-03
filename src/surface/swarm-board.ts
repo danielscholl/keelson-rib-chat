@@ -764,6 +764,7 @@ export function buildCockpit(
       kind: "rows",
       items: [{ icon: "◉", text: line.text, ...(line.warn ? { glyph: "warn" as const } : {}) }],
     },
+    ...(s.conclusion !== undefined ? outcome(s) : []),
     agentStrip(s),
     { kind: "stats", title: "Budget", items: [turnsTile(s), timeTile(s), tokensTile(s)] },
     ...liveDetails(s),

@@ -432,6 +432,20 @@ describe("the live cockpit", () => {
     expect(types({ ...s, status: "stopping" })).toEqual(["open-report", "open-record"]);
   });
 
+  test("a live conclusion is readable from the cockpit", () => {
+    const cockpit = sections(swarm("s1done", { conclusion: "Completed result" }));
+    const outcome = cockpit.find((x) => x.kind === "cards" && x.title === "Outcome");
+    const conclusion = outcome?.kind === "cards" ? outcome.items[0] : undefined;
+    expect(conclusion?.title).toBe("Conclusion");
+    expect(conclusion?.fields?.[0]?.value).toBe("Completed result");
+    expect(conclusion?.actions).toContainEqual({
+      type: "read-doc",
+      label: "Read the conclusion",
+      glyph: "▤",
+      payload: { id: "s1done" },
+    });
+  });
+
   test("agent segments tone nonzero states and hatch the open seats", () => {
     const s = fixtures.twoBusy!;
     expect(sections(s)[2]).toEqual({
