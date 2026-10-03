@@ -1686,6 +1686,62 @@ describe("changes and records", () => {
     }
   });
 
+  test("a human reply matching an in-flight retirement notice is classified by ID", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-w") return;
+        if (turn === 1) {
+          await call("chat_post", { body: "@operator Reply in this thread to confirm." });
+          await call("chat_spawn", { handle: "w", role: "worker", brief: "Use one turn." });
+          await call("chat_post", { body: "@s1-w again" });
+          await held;
+        } else {
+          await call("chat_done", { summary: "Confirmed." });
+        }
+      },
+      { maxTurnsPerAgent: 1 },
+    );
+    h.server.writeDelayMs = 100;
+    const swarm = await h.start();
+    try {
+      const notice = "@s1-w has used all 1 of its turns and will not respond further.";
+      for (let i = 0; i < 200 && !h.server.messages.some((m) => m.body === notice); i++) {
+        await Bun.sleep(5);
+      }
+      const own = h.server.messages.find((m) => m.body === notice);
+      const ask = h.server.messages.find((m) => m.body.startsWith("@operator"));
+      if (!own || !ask) throw new Error("expected the retirement notice and operator ask");
+      expect(swarm.summary().health?.asks?.some((a) => a.messageId === ask.id)).toBe(true);
+      const reply = h.server.postAsOwner(swarm.summary().channelId, notice, ask.id);
+      const later = h.server.postAsOwner(swarm.summary().channelId, "after the matching reply");
+      expect(reply.id).not.toBe(own.id);
+      await Bun.sleep(20);
+      expect(swarm.summary().operatorMessageCount).toBe(0);
+      for (let i = 0; i < 200 && swarm.summary().operatorMessageCount !== 2; i++) {
+        await Bun.sleep(5);
+      }
+      const summary = swarm.summary();
+      expect(summary.operatorMessageCount).toBe(2);
+      expect(summary.recent?.some((m) => m.id === own.id)).toBe(false);
+      expect(summary.recent?.slice(-2).map((m) => m.id)).toEqual([reply.id, later.id]);
+      expect(summary.health?.asks?.some((a) => a.messageId === ask.id) ?? false).toBe(false);
+      release();
+      const ended = await swarm.finished;
+      expect(ended.status).toBe("done");
+      expect(ended.operatorMessageCount).toBe(2);
+      expect(ended.spans?.find((t) => t.agentId === "s1-lead" && t.n === 2)?.wokeBy).toEqual([
+        "operator",
+      ]);
+    } finally {
+      release();
+      await swarm.stop();
+    }
+  });
+
   test("a throwing listener never breaks the swarm", async () => {
     const h = harness(
       script,

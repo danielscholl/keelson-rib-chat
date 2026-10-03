@@ -330,7 +330,7 @@ export class Swarm {
   // they reach on the way out is not announced.
   private readonly cancelling = new Set<string>();
   private readonly quietPosts = new Set<string>();
-  private readonly quietBodies = new Map<string, number>();
+  private readonly pendingPosts = new Map<string, Set<Promise<void>>>();
   private readonly syncing = new Set<string>();
   private readonly resync = new Set<string>();
   // Run updates waiting for the lead's next turn; they wake it like a message.
@@ -365,7 +365,6 @@ export class Swarm {
   private ownerHandle = "";
   // Messages the rib posts as the owner, which are not the operator talking.
   private readonly ownPosts = new Set<string>();
-  private readonly ownBodies = new Map<string, boolean>();
   private lastLeadFailure: string | undefined;
   // The last time an agent's channel call failed because ClickClack itself did.
   private channelFault: string | undefined;
@@ -524,7 +523,7 @@ export class Swarm {
     // Events carry ids, never bodies, so each one is hydrated.
     this.serial(async () => {
       if (this.seen.has(messageId)) return;
-      this.ingest(await this.owner.getMessage(messageId));
+      await this.ingest(await this.owner.getMessage(messageId));
     });
   }
 
@@ -547,44 +546,55 @@ export class Swarm {
   }
 
   private async postOwn(body: string, kickoff = false): Promise<ChatMessage> {
-    this.ownBodies.set(body, kickoff);
+    return this.writeTracked(
+      body,
+      () => this.owner.postMessage(this.channel.id, body),
+      this.ownPosts,
+      kickoff,
+    );
+  }
+
+  private async writeTracked(
+    body: string,
+    write: () => Promise<ChatMessage>,
+    posts: Set<string>,
+    kickoff = false,
+  ): Promise<ChatMessage> {
+    const settled = deferred<void>();
+    const pending = this.pendingPosts.get(body) ?? new Set<Promise<void>>();
+    pending.add(settled.promise);
+    this.pendingPosts.set(body, pending);
     try {
-      const message = await this.owner.postMessage(this.channel.id, body);
-      this.ownPosts.add(message.id);
+      const message = await write();
+      posts.add(message.id);
       if (kickoff) this.kickoffId = message.id;
       return message;
     } finally {
-      this.ownBodies.delete(body);
+      pending.delete(settled.promise);
+      if (pending.size === 0) this.pendingPosts.delete(body);
+      settled.resolve();
     }
   }
 
   // The rib's own bookkeeping posts (run and gate updates) wake no one, even
-  // when they name a reviewer or land in a thread one joined. The body is
-  // registered before the write, since the realtime copy can arrive first.
+  // when they name a reviewer or land in a thread one joined.
   private async quietly(body: string, write: () => Promise<ChatMessage>): Promise<ChatMessage> {
-    this.quietBodies.set(body, (this.quietBodies.get(body) ?? 0) + 1);
-    try {
-      const message = await write();
-      this.quietPosts.add(message.id);
-      this.enqueueMessage(message);
-      return message;
-    } finally {
-      const left = (this.quietBodies.get(body) ?? 1) - 1;
-      if (left > 0) this.quietBodies.set(body, left);
-      else this.quietBodies.delete(body);
-    }
+    const message = await this.writeTracked(body, write, this.quietPosts);
+    this.enqueueMessage(message);
+    return message;
   }
 
-  private ingest(message: ChatMessage): void {
+  private async ingest(message: ChatMessage): Promise<void> {
+    if (this.status !== "running" || this.seen.has(message.id)) return;
+    // A realtime echo may beat its write response; matching text alone is not
+    // proof of authorship. Keep arrival order until the returned IDs are known.
+    const pending = this.pendingPosts.get(message.body);
+    if (pending) await Promise.all(pending);
     if (this.status !== "running" || this.seen.has(message.id)) return;
     this.seen.add(message.id);
     const roster = [...this.agents.values()];
     const author = roster.find((a) => a.botUserId === message.authorId);
     const isRoot = message.threadRootId === message.id;
-    if (message.authorKind === "human" && this.ownBodies.has(message.body)) {
-      this.ownPosts.add(message.id);
-      if (this.ownBodies.get(message.body)) this.kickoffId = message.id;
-    }
     if (message.authorKind === "human" && !this.ownPosts.has(message.id)) {
       this.operatorMessageCount++;
       this.answerAsks(message, isRoot);
@@ -593,7 +603,6 @@ export class Swarm {
     if (isRoot && author) this.threadStarters.set(message.id, author.id);
     const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
     const starter = this.threadStarters.get(message.threadRootId);
-    if (author?.lead && this.quietBodies.has(message.body)) this.quietPosts.add(message.id);
     this.remember(message, author, isRoot);
     const recipients = this.quietPosts.has(message.id)
       ? []
