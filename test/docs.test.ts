@@ -96,6 +96,56 @@ describe("contributed docs", () => {
     expect(swarms).toContain('An ended Turns tile has no forecast and its sub stays "of N".');
   });
 
+  test("packaged and site docs agree on produced rows, honest CI and PR totals", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    const page = readFileSync(
+      new URL("../docs/src/content/docs/guides/swarms-tab.md", import.meta.url),
+      "utf8",
+    );
+    const normalized = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
+    for (const text of [normalized(swarms), normalized(page)]) {
+      for (const phrase of [
+        "Produced so far",
+        "landing order, oldest first",
+        "report publication time",
+        "run start time",
+        "PR opening time",
+        "immediately under their parent run",
+        "retention reason",
+        "eligible writers",
+        "lead may spawn writers",
+        "chat-only swarm without workflows",
+        "Missing evidence never implies pass",
+        "Pull requests",
+        "distinct URLs across runs and writers",
+        "M with CI passing",
+        "every recorded owner explicitly reports pass",
+        "Only the operator merges",
+        "board never removes worktrees",
+      ])
+        expect(text).toContain(phrase);
+      expect(text).not.toContain("only when the launch named workflows");
+    }
+    const write = normalized(topics(content).find((t) => t.title === "Write mode")?.body ?? "");
+    for (const text of [write, normalized(page)]) {
+      for (const phrase of [
+        "current-head checks",
+        "gh pr view",
+        "every 20 seconds",
+        "3-second timeout",
+        "different head are discarded",
+        "not reported, never pass",
+        "unknown",
+        "running",
+        "one final read",
+        "timeout keeps the last observation",
+        "saved observation, not a continuously monitored guarantee",
+      ])
+        expect(text.toLowerCase()).toContain(phrase);
+    }
+    expect(write).toContain("writeEnabled");
+  });
+
   test("the corpus names every registered tool and no tool that does not exist", () => {
     const registered = new Set(tools.map((t) => t.name));
     const mentioned = new Set(content.match(/\bchat_[a-z_]+\b/g) ?? []);
