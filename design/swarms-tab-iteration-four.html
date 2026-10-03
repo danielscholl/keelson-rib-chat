@@ -1,0 +1,795 @@
+<title>Swarms Tab Iteration Four</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --surface-2:#e9eeec; --line:#d2dad6; --line-strong:#98a6a0;
+  --ink:#1a2320; --ink-2:#48554f; --ink-3:#78857f;
+  --o1:#3d5aa8;  --o1-bg:#e6ebf8;  --o1-ink:#2b4180;
+  --o2:#7a4aa6; --o2-bg:#efe6f7; --o2-ink:#5a3380;
+  --o3:#0e7c7c;   --o3-bg:#dcf2f1;   --o3-ink:#0a5a5a;
+  --o4:#5f6f7a; --o4-bg:#eaeef0; --o4-ink:#45535c;
+  --ok:#2c7a4e; --ok-bg:#dff0e5; --bad:#a83a2f; --bad-bg:#f5dcd8;
+  --warn:#9a6a12; --warn-bg:#fbefd9;
+  --brand:#6d4fe0; --brand-bg:#ece7fb;
+  --idb:#3b6fd6; --ida:#b7791f; --idt:#0e8a7d; --idr:#c2417a; --ido:#6b8e23;
+  --term:#14201d; --term-ink:#dfe8e4; --term-dim:#8fa39c; --term-red:#f08a7e; --term-green:#7fd1a0; --term-cyan:#7cc8c8;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#121817; --surface:#1a2220; --surface-2:#222d2a; --line:#31403c; --line-strong:#5a6c66;
+    --ink:#e6ecea; --ink-2:#b3bfba; --ink-3:#7f8d88;
+    --o1:#8b9ae6;  --o1-bg:#232b49;  --o1-ink:#c3cbf5;
+    --o2:#b08ad9; --o2-bg:#2c2140; --o2-ink:#d9c6f0;
+    --o3:#45bdbd;   --o3-bg:#123636;   --o3-ink:#a3e3e3;
+    --o4:#93a3ad; --o4-bg:#242d33; --o4-ink:#c4cfd6;
+    --ok:#7fd1a0; --ok-bg:#173226; --bad:#f08a7e; --bad-bg:#3d1f1b;
+    --warn:#e0b45c; --warn-bg:#3b2f14;
+    --brand:#a58cff; --brand-bg:#2a2347;
+    --idb:#8fb0ff; --ida:#e0b45c; --idt:#4fc9bb; --idr:#f08bb4; --ido:#a6c85a;
+    --term:#0c1311;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121817; --surface:#1a2220; --surface-2:#222d2a; --line:#31403c; --line-strong:#5a6c66;
+  --ink:#e6ecea; --ink-2:#b3bfba; --ink-3:#7f8d88;
+  --o1:#8b9ae6;  --o1-bg:#232b49;  --o1-ink:#c3cbf5;
+  --o2:#b08ad9; --o2-bg:#2c2140; --o2-ink:#d9c6f0;
+  --o3:#45bdbd;   --o3-bg:#123636;   --o3-ink:#a3e3e3;
+  --o4:#93a3ad; --o4-bg:#242d33; --o4-ink:#c4cfd6;
+  --ok:#7fd1a0; --ok-bg:#173226; --bad:#f08a7e; --bad-bg:#3d1f1b;
+  --warn:#e0b45c; --warn-bg:#3b2f14;
+  --brand:#a58cff; --brand-bg:#2a2347;
+  --idb:#8fb0ff; --ida:#e0b45c; --idt:#4fc9bb; --idr:#f08bb4; --ido:#a6c85a;
+  --term:#0c1311;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
+.wrap{max-width:1120px;margin:0 auto;padding-block:32px 64px;padding-inline:20px}
+h1{font-size:clamp(26px,4vw,36px);font-weight:600;letter-spacing:-.01em;margin:0 0 10px;text-wrap:balance}
+h2{font-size:22px;font-weight:600;margin:0 0 8px;text-wrap:balance}
+h3{font-size:15px;font-weight:600;margin:0 0 6px}
+p{margin:0 0 10px;max-width:72ch;color:var(--ink-2)}
+p.lead{font-size:17px;color:var(--ink);max-width:66ch}
+p b, li b{color:var(--ink);font-weight:500}
+.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin:0 0 6px}
+section{margin-top:48px;padding-top:30px;border-top:1px solid var(--line)}
+code{font-family:var(--mono);font-size:.92em}
+a{color:var(--o1-ink)}
+.problem{margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px}
+.problem p{max-width:78ch}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:16px;font-size:13.5px}
+.owner{display:inline-flex;align-items:center;gap:7px;font-weight:600;white-space:nowrap}
+.owner::before{content:"";width:10px;height:10px;border-radius:2px;background:var(--c);flex:none}
+.o-o1{--c:var(--o1);color:var(--o1-ink)} .o-o2{--c:var(--o2);color:var(--o2-ink)} .o-o3{--c:var(--o3);color:var(--o3-ink)} .o-o4{--c:var(--o4);color:var(--o4-ink)}
+.owner.dashed::before{background:none;border:1.5px dashed var(--line-strong)} .owner.dashed{color:var(--ink-2);font-weight:500}
+.status{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px;white-space:nowrap}
+.status.ok{background:var(--ok-bg);color:var(--ok)} .status.bad{background:var(--bad-bg);color:var(--bad)}
+
+.flow,.mock{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 16px;overflow-x:auto}
+.flow svg,.mock svg{display:block;width:100%;height:auto;min-width:820px}
+.flow text,.mock text{font-family:var(--sans);fill:var(--ink);font-size:12px}
+.flow .t,.mock .t{font-size:14px;font-weight:600}
+.flow .mono,.mock .mono{font-family:var(--mono)}
+.flow .sub,.mock .sub{fill:var(--ink-2)}
+.flow .tiny,.mock .tiny{fill:var(--ink-3);font-size:11px}
+.flow .box{rx:8;stroke-width:1.3}
+.flow .b-o1{fill:var(--o1-bg);stroke:var(--o1)}
+.flow .b-o2{fill:var(--o2-bg);stroke:var(--o2)}
+.flow .b-o3{fill:var(--o3-bg);stroke:var(--o3)}
+.flow .b-o4{fill:var(--o4-bg);stroke:var(--o4)}
+.flow .b-mute{fill:var(--surface-2);stroke:var(--line-strong);stroke-dasharray:4 3}
+.flow .arrow{stroke:var(--line-strong);stroke-width:1.5;fill:none;marker-end:url(#ah)}
+.flow .lanebg{fill:none;stroke:var(--line);stroke-dasharray:3 4}
+.flow .lanelbl,.mock .lbl{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;fill:var(--ink-3)}
+.note{font-size:13px;color:var(--ink-3);margin-top:10px;max-width:80ch}
+
+/* mockups of host-rendered surfaces */
+.mock{padding:14px}
+.mock .frame{fill:var(--bg);stroke:var(--line);rx:10}
+.mock .card{fill:var(--surface);stroke:var(--line);rx:8}
+.mock .well{fill:var(--surface-2);stroke:var(--line);rx:8}
+.mock .field{fill:var(--surface);stroke:var(--line-strong);rx:6}
+.mock .rule{stroke:var(--line);stroke-width:1}
+.mock .btn{fill:var(--surface);stroke:var(--line-strong);rx:6}
+.mock .btn-brand{fill:var(--brand);rx:6}
+.mock .btnt{font-size:12px;font-weight:600}
+.mock .btnt-brand{fill:#ffffff;font-size:12px;font-weight:600}
+.mock .pill{rx:10;stroke-width:1}
+.mock .pill-ok{fill:var(--ok-bg);stroke:var(--ok)} .mock .pill-info{fill:var(--o1-bg);stroke:var(--o1)}
+.mock .pill-warn{fill:var(--warn-bg);stroke:var(--warn)} .mock .pill-neutral{fill:var(--surface-2);stroke:var(--line-strong)}
+.mock .pill-brand{fill:var(--brand-bg);stroke:var(--brand)}
+.mock .pt{font-size:10.5px;font-weight:600}
+.mock .pt-ok{fill:var(--ok)} .mock .pt-info{fill:var(--o1-ink)} .mock .pt-warn{fill:var(--warn)} .mock .pt-neutral{fill:var(--ink-2)} .mock .pt-brand{fill:var(--brand)}
+.mock .chip{rx:4;fill:var(--surface-2);stroke:var(--line)}
+.mock .track{fill:var(--line)} .mock .fill{fill:var(--brand)}
+.mock .seg{rx:3}
+.mock .idb{fill:var(--idb)} .mock .ida{fill:var(--ida)} .mock .idt{fill:var(--idt)} .mock .idr{fill:var(--idr)} .mock .ido{fill:var(--ido)}
+.mock .okt{fill:var(--ok)} .mock .badt{fill:var(--bad)} .mock .brandt{fill:var(--brand)} .mock .warnt{fill:var(--warn)}
+.mock .ghost{fill:none;stroke:var(--line-strong);stroke-dasharray:4 3;rx:8}
+.mock .lane{fill:none;stroke:var(--line);stroke-dasharray:3 4;rx:6}
+.mock .span{rx:3}
+.mock .span-bad{fill:var(--bad-bg);stroke:var(--bad);stroke-dasharray:3 2;rx:3}
+.mock .tick{stroke:var(--line);stroke-dasharray:2 3}
+.mock .mark{stroke:var(--surface);stroke-width:1}
+.mock .segbar{stroke:none}
+
+.tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14px;margin-top:16px}
+.tbl th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+.tbl td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2);overflow-wrap:anywhere}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td b{color:var(--ink);font-weight:500}
+.tbl td:first-child{min-width:118px}
+.tblwrap{overflow-x:auto;margin-top:16px}
+.tblwrap .tbl{margin-top:0;min-width:640px}
+.tbl.compact td{padding:8px 12px;font-size:13.5px}
+.tbl td.mono{font-family:var(--mono);font-size:12.5px;color:var(--ink);white-space:nowrap}
+.callout{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--ink-2);border-radius:10px;padding:12px 16px;margin-top:14px;font-size:14px;color:var(--ink-2)}
+.callout b{color:var(--ink)}
+.appendix{margin-top:56px;padding-top:30px;border-top:3px solid var(--line)}
+.appendix h2{font-size:18px}
+.appendix section{margin-top:32px;padding-top:22px}
+@media (max-width:520px){ .wrap{padding-inline:16px} }
+@media (prefers-reduced-motion: reduce){ *{animation:none!important;transition:none!important} }
+
+
+<div class="wrap">
+.mock .sel{stroke:var(--brand);stroke-width:2}
+.mock .edge{stroke:var(--line-strong);stroke-width:1.3;fill:none;marker-end:url(#ah)}
+.mock .edge.asked{stroke-dasharray:4 3}
+.mock .node{fill:var(--surface);stroke-width:1.5;rx:8}
+.mock .s-brand{stroke:var(--brand)} .mock .s-idb{stroke:var(--idb)} .mock .s-ida{stroke:var(--ida)} .mock .s-idt{stroke:var(--idt)} .mock .s-neu{stroke:var(--line-strong)} .mock .s-info{stroke:var(--o1)}
+.mock .dim{opacity:.45}
+.mock .btn-danger{fill:var(--surface);stroke:var(--bad);rx:6} .mock .btnt-danger{fill:var(--bad);font-size:12px;font-weight:600}
+.mock .seg-info{fill:var(--o1)} .mock .seg-warn{fill:var(--warn)} .mock .seg-neu{fill:var(--line-strong)} .mock .seg-ok{fill:var(--ok)}
+.mock .span-open{stroke-dasharray:3 2;fill-opacity:.55}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">keelson-rib-chat · swarms surface · design, iteration four</p>
+  <h1>A Swarms tab you can watch</h1>
+  <p class="lead">The fourth pass puts a live swarm on the page instead of behind a drawer, shows what the agents are saying and who is working this minute, says whether the budget will last, and opens any agent, run or question in a side inspector while the page stays. Everything but one timeline strip renders on the canvas Keelson 0.117 ships; appendix C bounds that one addition, and appendix F orders the slices.</p>
+
+  <div class="problem">
+    <p>Today, watching a live swarm means opening a centered drawer that covers the index, reading nine sections of equal weight, opening a second drawer for the record, and switching to ClickClack to learn what the agents actually said. The board reports events (<b>turn 3 ok · 46 s · 1 new</b>), not words. The budget says what is spent and not whether it will last. The agent bench is a grid of monospace cards with ghost seats, which on a one-agent swarm is one card and four fifths of empty row. Pull requests that writers open in write mode are on the summary and nowhere on the tab. Four verbs (<b>Open the report</b>, <b>Read the conclusion</b>, <b>Open the record</b>, <b>Read the full log</b>) name four reading places.</p>
+    <p>This pass composes a live swarm's <b>cockpit</b> on the tab page itself: a state line derived from the record, the requests, a budget strip that forecasts the turn budget against the clock, the agents as a host-drawn map beside the newest messages, the work produced so far, and one strip of verbs. Clicking an agent, a run or a question opens a <b>side inspector</b> that docks beside the page and swaps in place on the next click; the page never leaves view. Ended swarms keep their drawer board, which gains writers' pull requests and sheds sections the record already draws. To draw the feed, the rib keeps the newest 20 messages on the summary; to draw the map, it uses the <code>graph</code> section Keelson 0.116 added. ClickClack becomes plumbing on the tab: the channel is reached through quiet transcript links and the server through one row at the foot of the page, and no card, title or button names it. One Keelson addition is specified and bounded in appendix C: a <code>timeline</code> board section, so the record's lanes can sit on the page too.</p>
+    <p>The tab still does not mirror the channel, pause a swarm, approve a gate from the page, or change an agent's role; those stay with ClickClack, the run drawer and the engine. Selection on the page is one state shared by every viewer of the tab, as the Beads tab's inspector already is. The record page stays centered, because the host docks only structured views. Spend stays in tokens. Nothing here changes routing, limits or what an agent may do.</p>
+  </div>
+
+  <p class="eyebrow" style="margin-top:28px">Colors identify who owns each part</p>
+  <div class="legend">
+    <span class="owner o-o1">Rib · composes every frame from the swarm summary</span>
+    <span class="owner o-o2">Host · renders the vocabulary, the page, the side drawer and toasts</span>
+    <span class="owner o-o3">Operator · reads, answers, messages, stops</span>
+    <span class="owner o-o4">ClickClack · holds the conversation; reached from the tab only through transcript links and the server row</span>
+    <span class="owner dashed">Dashed · appears only when it has content, or waits on the host addition</span>
+  </div>
+  <p class="note">The mockups draw agents in the tab's identity tones, as the host draws them, and reproduce the host's board parts. Ids, tasks, handles, times and figures are example values.</p>
+
+  <section>
+    <h2>What the operator asks, and where the answer is</h2>
+    <p>The surface exists for seven questions. Each row names where the answer sits today and where this pass puts it.</p>
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Question</th><th>Today</th><th>This pass</th></tr></thead>
+      <tbody>
+        <tr><td><b>Does anything need me?</b></td><td>A request card per swarm on the index, with <b>+N more</b> when a swarm asks twice.</td><td>One <b>Needs you</b> list across every live swarm, one card per request, oldest first. Unchanged ladder, pills and verbs.</td></tr>
+        <tr><td><b>What is the swarm doing right now?</b></td><td>A board in a centered drawer; the activity feed's newest event; a <b>busy</b> pill on a bench card.</td><td>The cockpit on the page: a state line naming who is on a turn, since when, and what waits; an agent-state strip; the map.</td></tr>
+        <tr><td><b>What are the agents saying?</b></td><td>Only in ClickClack.</td><td><b>Conversation</b> on the cockpit: the eight newest messages, each with its author's chip and its first line, linking its thread. A transcript link under them reaches the rest.</td></tr>
+        <tr><td><b>Will the budget last?</b></td><td>Turns used, turns left, a sparkline, a clock.</td><td>The Turns tile carries a forecast as its delta: at the current pace, when the turns run out, and whether that is before or after the clock.</td></tr>
+        <tr><td><b>What has it produced?</b></td><td>Runs rows when workflows were named; a report card. Writers' pull requests are not shown.</td><td><b>Produced so far</b>: the report, each run with its evidence strip, each writer's draft pull request with its CI state, and after the end any worktree left on disk.</td></tr>
+        <tr><td><b>What happened, by whom, at what cost?</b></td><td>The record page, one more drawer away.</td><td>The record page, unchanged in content, plus the activity log it did not have. With the host addition, its timeline also sits on the cockpit.</td></tr>
+        <tr><td><b>Should I steer or stop?</b></td><td><b>Message the lead</b> and <b>Stop swarm…</b> on the board.</td><td>The same two on the cockpit, plus <b>Message @agent</b> in the agent inspector, which says it wakes that agent and costs a turn.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The page is the cockpit</h2>
+    <p>The host holds one canvas drawer at a time. A centered drawer is modal and covers the tab; a side drawer docks beside the page, is not modal, and is replaced by the next one opened. Only a structured view can dock; html and markdown documents always open centered. Those three rules set the layout: a thing the operator watches continuously belongs on the page, and a thing the operator drills into belongs in the side drawer. Today the live board is in the first kind of drawer, so watching a swarm means reopening it after every drill-down.</p>
+    <p>The index board therefore composes a live swarm's cockpit inline, under <b>Needs you</b> and above the ended rows, the way the Beads tab composes its Overview, Now and wave map on one page. With two or more live swarms, a <code>tabs</code> actions strip above the cockpit picks which one is expanded and the others fold to one running card each; the choice is a <code>select-swarm</code> action the rib records and composes into the next frame, so it is shared by every viewer of the tab. The cockpit's own sections are the host's board vocabulary, and none of them is new to the rib except the map and the message feed.</p>
+
+    <div class="mock">
+      <svg viewBox="0 0 1000 1012" role="img" aria-label="The Swarms page with one live swarm: a folded launcher, a Needs you card, the swarm's cockpit with state line, agent strip, budget tiles, a map beside the conversation, the work produced, and a verbs row; then today's ended rows and one quiet server line.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--line-strong)"/></marker>
+        </defs>
+        <rect x="8" y="8" width="984" height="996" class="frame"/>
+        <text x="28" y="34" class="t brandt">Keelson</text>
+        <text x="112" y="34" class="sub">Chat</text>
+        <text x="160" y="34" class="sub">Workflows</text>
+        <rect x="236" y="17" width="72" height="24" class="card"/>
+        <text x="248" y="34" class="t" font-size="12.5">Swarms</text>
+        <rect x="312" y="13" width="14" height="14" rx="7" class="warnt"/>
+        <text x="319" y="23.5" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fff">1</text>
+        <text x="344" y="34" class="sub">Beads</text>
+        <line x1="8" y1="52" x2="992" y2="52" class="rule"/>
+
+        <rect x="24" y="66" width="952" height="40" class="card"/>
+        <text x="40" y="91" class="t">▸ Start a swarm</text>
+        <text x="176" y="91" class="tiny">Start runs medium · 5 agents · 40 turns · 30 min · balanced power</text>
+
+        <text x="24" y="132" class="lbl">Needs you · 1</text>
+        <rect x="24" y="140" width="952" height="96" class="card"/>
+        <rect x="24" y="140" width="4" height="96" class="warnt"/>
+        <text x="44" y="164" class="t">Review the plan for raise the smoke test wait and add a readiness probe</text>
+        <rect x="900" y="150" width="56" height="20" class="pill pill-warn"/>
+        <text x="928" y="164" text-anchor="middle" class="pt pt-warn">decide</text>
+        <text x="44" y="186" class="sub">fix-issue 7f3a2c paused at approve-plan · only you can approve fix-issue on this host · opened 4 min ago</text>
+        <text x="44" y="204" class="tiny">sk7p1 · Fix the smoke test that times out on cold start</text>
+        <rect x="44" y="212" width="88" height="18" class="btn-brand"/>
+        <text x="88" y="225" text-anchor="middle" class="btnt-brand">Review plan</text>
+        <rect x="140" y="212" width="52" height="18" class="btn"/>
+        <text x="166" y="225" text-anchor="middle" class="btnt">Reply</text>
+
+        <text x="24" y="266" class="lbl">Live · 1</text>
+        <rect x="24" y="274" width="952" height="566" class="card"/>
+        <rect x="40" y="288" width="60" height="22" class="pill pill-info"/>
+        <text x="70" y="303" text-anchor="middle" class="pt pt-info">running</text>
+        <text x="112" y="304" class="t">Fix the smoke test that times out on cold start · sk7p1</text>
+        <circle cx="928" cy="299" r="4" class="brandt"/><circle cx="940" cy="299" r="4" class="idb"/><circle cx="952" cy="299" r="4" class="ida"/><circle cx="964" cy="299" r="4" class="idt"/>
+        <text x="40" y="328" class="sub">@fixer is on turn 7 since 11:49 · @reviewer waits with 1 message · fix-issue 7f3a2c paused at approve-plan since 11:47</text>
+        <rect x="40" y="338" width="920" height="6" class="track"/>
+        <rect x="40" y="338" width="368" height="6" class="seg seg-info"/>
+        <rect x="410" y="338" width="182" height="6" class="seg seg-warn"/>
+        <rect x="594" y="338" width="182" height="6" class="seg seg-neu"/>
+        <rect x="778" y="338" width="182" height="6" class="ghost" rx="2"/>
+        <text x="40" y="358" class="tiny">2 busy · 1 waiting · 1 idle · 1 open seat</text>
+
+        <rect x="40" y="372" width="290" height="72" class="card"/>
+        <text x="54" y="396" class="mono" font-size="20" font-weight="500">32 of 40</text>
+        <text x="200" y="396" class="tiny mono">▂▃▅▃▅▆</text>
+        <text x="54" y="412" class="lbl">Turns</text>
+        <text x="54" y="427" class="tiny warnt">▼ 8 left · 1.5 a minute over the last 5 min</text>
+        <text x="54" y="440" class="tiny warnt">they run out about 11:56, before the clock</text>
+        <rect x="355" y="372" width="290" height="72" class="card"/>
+        <text x="369" y="396" class="mono" font-size="20" font-weight="500">9 min left</text>
+        <text x="369" y="412" class="lbl">Time</text>
+        <text x="369" y="427" class="tiny">of 30 min · ends 12:00</text>
+        <rect x="670" y="372" width="290" height="72" class="card"/>
+        <text x="684" y="396" class="mono" font-size="20" font-weight="500">212k</text>
+        <text x="684" y="412" class="lbl">Tokens, fresh</text>
+        <text x="684" y="427" class="tiny">1.8M cached · the lead spent 45%</text>
+
+        <text x="40" y="474" class="lbl">Map</text>
+        <text x="40" y="498" class="lbl" font-size="10">You</text>
+        <text x="150" y="498" class="lbl" font-size="10">Lead</text>
+        <text x="270" y="498" class="lbl" font-size="10">Workers</text>
+        <text x="395" y="498" class="lbl" font-size="10">Runs</text>
+
+        <rect x="40" y="552" width="90" height="36" class="node s-neu"/>
+        <text x="85" y="567" text-anchor="middle" class="t" font-size="12.5">you</text>
+        <text x="85" y="581" text-anchor="middle" class="tiny">1 post</text>
+        <rect x="150" y="552" width="100" height="36" class="node s-brand"/>
+        <text x="200" y="567" text-anchor="middle" class="mono brandt" font-size="12.5" font-weight="600">@lead</text>
+        <text x="200" y="581" text-anchor="middle" class="tiny">12 turns · idle</text>
+        <rect x="270" y="508" width="100" height="36" class="node s-idb"/>
+        <text x="320" y="523" text-anchor="middle" class="mono idb" font-size="12.5" font-weight="600">@fixer</text>
+        <text x="320" y="537" text-anchor="middle" class="tiny">7 of 12 · busy</text>
+        <rect x="270" y="552" width="100" height="36" class="node s-ida"/>
+        <text x="320" y="567" text-anchor="middle" class="mono ida" font-size="12.5" font-weight="600">@reviewer</text>
+        <text x="320" y="581" text-anchor="middle" class="tiny">6 of 12 · waiting</text>
+        <rect x="270" y="596" width="100" height="36" class="node s-idt"/>
+        <text x="320" y="611" text-anchor="middle" class="mono idt" font-size="12.5" font-weight="600">@tester</text>
+        <text x="320" y="625" text-anchor="middle" class="tiny">7 of 12 · idle</text>
+        <rect x="392" y="552" width="112" height="36" class="node s-info"/>
+        <text x="448" y="567" text-anchor="middle" class="t" font-size="12">fix-issue 7f3a2c</text>
+        <text x="448" y="581" text-anchor="middle" class="tiny">paused · 3 steps</text>
+        <path d="M130 570 L150 570" class="edge"/>
+        <text x="140" y="563" text-anchor="middle" class="tiny">×1</text>
+        <path d="M250 564 L270 530" class="edge"/>
+        <text x="266" y="543" text-anchor="end" class="tiny">×4</text>
+        <path d="M250 570 L270 570" class="edge"/>
+        <text x="260" y="563" text-anchor="middle" class="tiny">×3</text>
+        <path d="M250 576 L270 610" class="edge"/>
+        <text x="266" y="602" text-anchor="end" class="tiny">×3</text>
+        <path d="M200 588 C200 660 448 660 448 588" class="edge"/>
+        <text x="322" y="650" text-anchor="middle" class="tiny">started · run updates ×2</text>
+        <path d="M320 544 C300 548 260 548 250 556" class="edge asked"/>
+        <text x="40" y="686" class="tiny">Solid: a spawn, counted with the turns it woke · dashed: a question.</text>
+        <text x="40" y="700" class="tiny">Click a node for its inspector.</text>
+
+        <text x="520" y="474" class="lbl">Conversation</text>
+        <rect x="520" y="486" width="52" height="16" class="chip"/><text x="546" y="497.5" text-anchor="middle" class="mono ida" font-size="10.5">reviewer</text>
+        <text x="580" y="498" font-size="12">Plan reads right; one gap: retry the probe on 503, not…</text>
+        <text x="960" y="498" text-anchor="end" class="tiny mono">11:51</text>
+        <line x1="520" y1="506" x2="960" y2="506" class="rule"/>
+        <rect x="520" y="514" width="44" height="16" class="chip"/><text x="542" y="525.5" text-anchor="middle" class="mono idb" font-size="10.5">fixer</text>
+        <text x="572" y="526" font-size="12">Pushed the readiness probe to the branch; running the…</text>
+        <text x="960" y="526" text-anchor="end" class="tiny mono">11:50</text>
+        <line x1="520" y1="534" x2="960" y2="534" class="rule"/>
+        <rect x="520" y="542" width="44" height="16" class="chip"/><text x="542" y="553.5" text-anchor="middle" class="mono brandt" font-size="10.5">lead</text>
+        <text x="572" y="554" font-size="12">↳ @reviewer please check the plan in the approve-plan…</text>
+        <text x="960" y="554" text-anchor="end" class="tiny mono">11:47</text>
+        <line x1="520" y1="562" x2="960" y2="562" class="rule"/>
+        <rect x="520" y="570" width="36" height="16" class="chip"/><text x="538" y="581.5" text-anchor="middle" class="mono" font-size="10.5">you</text>
+        <text x="564" y="582" font-size="12">Keep the wait under 60 s if you can; CI caps the job at 2 min</text>
+        <text x="960" y="582" text-anchor="end" class="tiny mono">11:46</text>
+        <line x1="520" y1="590" x2="960" y2="590" class="rule"/>
+        <rect x="520" y="598" width="48" height="16" class="chip"/><text x="544" y="609.5" text-anchor="middle" class="mono idt" font-size="10.5">tester</text>
+        <text x="576" y="610" font-size="12">Reproduced: a cold start takes 45 s on a clean cache; the…</text>
+        <text x="960" y="610" text-anchor="end" class="tiny mono">11:44</text>
+        <line x1="520" y1="618" x2="960" y2="618" class="rule"/>
+        <rect x="520" y="626" width="44" height="16" class="chip"/><text x="542" y="637.5" text-anchor="middle" class="mono brandt" font-size="10.5">lead</text>
+        <text x="572" y="638" font-size="12">Splitting the work: @tester reproduces, @fixer patches,…</text>
+        <text x="960" y="638" text-anchor="end" class="tiny mono">11:40</text>
+        <line x1="520" y1="646" x2="960" y2="646" class="rule"/>
+        <text x="520" y="664" class="tiny">23 messages · transcript ↗</text>
+        <rect x="520" y="676" width="356" height="26" class="field"/>
+        <text x="530" y="693" class="sub" font-size="11.5">Message the lead · posts as you, wakes the lead</text>
+        <rect x="884" y="676" width="76" height="26" class="btn-brand"/>
+        <text x="922" y="693" text-anchor="middle" class="btnt-brand">Send</text>
+
+        <text x="40" y="724" class="lbl">Produced so far</text>
+        <text x="40" y="748">▸ fix-issue 7f3a2c · raise the wait and add a readiness probe · swarm/sk7p1-fix-issue</text>
+        <rect x="566" y="741" width="54" height="6" class="seg okt"/>
+        <rect x="624" y="741" width="54" height="6" class="seg" fill="var(--line)"/>
+        <rect x="682" y="741" width="54" height="6" class="seg" fill="var(--line)"/>
+        <text x="960" y="748" text-anchor="end" class="tiny mono">paused at approve-plan · 3 steps</text>
+        <line x1="40" y1="758" x2="960" y2="758" class="rule"/>
+        <text x="40" y="780">⎇ PR #41 draft · by @fixer on swarm/sk7p1-fixer · raise the wait and add a readiness probe</text>
+        <text x="960" y="780" text-anchor="end" class="tiny mono">CI running · opened 11:50</text>
+        <line x1="40" y1="790" x2="960" y2="790" class="rule"/>
+
+        <rect x="40" y="804" width="122" height="22" class="btn"/>
+        <text x="101" y="819" text-anchor="middle" class="btnt">◷ Open the record</text>
+        <rect x="862" y="804" width="98" height="22" class="btn-danger"/>
+        <text x="911" y="819" text-anchor="middle" class="btnt-danger">Stop swarm…</text>
+
+        <text x="24" y="874" class="lbl">Today</text>
+        <text x="30" y="896" class="okt" font-weight="600">✓</text>
+        <text x="52" y="896">Use “Degraded Performance” · for: propose a name for the degraded state</text>
+        <text x="960" y="896" text-anchor="end" class="tiny mono">gpt-5.6-luna · 5 turns · 1 min · 11:15 · ◧ report</text>
+        <line x1="24" y1="906" x2="976" y2="906" class="rule"/>
+        <rect x="26" y="914" width="56" height="16" class="pill pill-neutral"/>
+        <text x="54" y="925.5" text-anchor="middle" class="pt pt-neutral">stopped</text>
+        <text x="92" y="926">Stopped by you at 08:03 · for: debate whether uptime shows as a percentage or a duration</text>
+        <text x="960" y="926" text-anchor="end" class="tiny mono">gpt-5.6-luna · 8 turns · 50 s · 08:02</text>
+        <line x1="24" y1="936" x2="976" y2="936" class="rule"/>
+
+        <line x1="24" y1="958" x2="976" y2="958" class="rule"/>
+        <text x="24" y="980" class="tiny">Server · ClickClack running on 127.0.0.1:18080 · managed · 1 swarm</text>
+        <text x="976" y="980" text-anchor="end" class="tiny">Manage ›</text>
+      </svg>
+    </div>
+    <p class="note">Everything above the ended rows is one board frame. The cockpit's map and feed are a two-column section; at a narrow width the host stacks them, map first.</p>
+
+    <div class="tblwrap"><table class="tbl">
+      <thead><tr><th>Cockpit part</th><th>Primitive</th><th>What it says</th></tr></thead>
+      <tbody>
+        <tr><td><b>Head</b></td><td class="mono">header + cards title</td><td>The lifecycle pill (or <b>needs you</b>), the task and id, a dot per agent. The chip is gone: setup facts move to the inspector's About.</td></tr>
+        <tr><td><b>State line</b></td><td class="mono">rows (one)</td><td>Who is on a turn and since when, who waits with messages, what a run waits at. Derived from the summary by the rules in the next section.</td></tr>
+        <tr><td><b>Agent strip</b></td><td class="mono">segments</td><td>busy, waiting, idle, capped or failed, open seats: the bench's composition in one strip, with the counts under it.</td></tr>
+        <tr><td><b>Budget</b></td><td class="mono">stats (three)</td><td>Turns with spark and the forecast as its delta; time on a live <code>until</code> clock; fresh tokens with cached beside.</td></tr>
+        <tr><td><b>Map</b></td><td class="mono">graph</td><td>You, the lead, the workers and the runs as nodes in rank columns, toned by identity; spawns, wakes and questions as edges. A node click opens the agent inspector.</td></tr>
+        <tr><td><b>Conversation</b></td><td class="mono">rows + actions</td><td>The eight newest messages, newest first, each linking its thread; a line counting the rest with the transcript link; then the <b>Message the lead</b> composer.</td></tr>
+        <tr><td><b>Produced so far</b></td><td class="mono">rows</td><td>The report once published; each run with its evidence strip and <b>Open run</b>; each writer's draft pull request with its CI state.</td></tr>
+        <tr><td><b>Verbs</b></td><td class="mono">actions</td><td><b>Open the report</b> when one exists, <b>Open the record</b>, <b>Stop swarm…</b> at the end. <b>Message the lead</b> lives under the feed.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The state line</h2>
+    <p>The cockpit's first sentence says where the swarm stands, and it is derived, never typed by an agent, so it claims only what the record shows. It reads left to right from the most consequential fact: a request first, then turns in flight, then agents waiting, then what a run waits at, then the newest event when nothing else is true. Each clause names its actor and its time. The index's running card uses the same line, so the two agree.</p>
+    <div class="tblwrap"><table class="tbl compact">
+      <thead><tr><th>Situation</th><th>Clause</th><th>From</th></tr></thead>
+      <tbody>
+        <tr><td><b>A request is open</b></td><td><b>waits on you: review the plan for … · 4 min</b></td><td>the needs ladder, oldest first</td></tr>
+        <tr><td><b>Turns in flight</b></td><td><b>@fixer is on turn 7 since 11:49</b>, one clause per busy agent</td><td>open turn spans</td></tr>
+        <tr><td><b>Agents waiting</b></td><td><b>@reviewer waits with 1 message</b></td><td>agent status and queue</td></tr>
+        <tr><td><b>A run paused</b></td><td><b>fix-issue 7f3a2c paused at approve-plan since 11:47</b>, with <b>@reviewer reviewing</b> when a peer was asked</td><td>the run's pending approval</td></tr>
+        <tr><td><b>The lead concluded</b></td><td><b>concluded at 11:58; turns in flight finish</b></td><td>the conclusion</td></tr>
+        <tr><td><b>Nothing above</b></td><td>the newest activity entry with its time: <b>11:40 @lead spawned @tester</b></td><td>activity</td></tr>
+        <tr><td><b>Health</b></td><td>appended, toned: <b>· ClickClack socket closed twice</b>, <b>· the lead's last turn failed</b></td><td>health</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>A budget that forecasts</h2>
+    <p>The summary already keeps turns started per minute over the last thirty minutes. The rib reads the last five minutes of it as the pace and divides the turns left by that pace; the result is when the turn budget runs out. Set beside the wall clock, that gives one of three readings, and the Turns tile carries it as its <code>delta</code>, with the direction glyph the host draws and a tone that says whether the reading is good. A pace under one turn in five minutes is reported as no pace, not as infinite time.</p>
+    <div class="tblwrap"><table class="tbl compact">
+      <thead><tr><th>Reading</th><th>Delta text</th><th>Tone</th></tr></thead>
+      <tbody>
+        <tr><td><b>Turns run out before the clock</b></td><td><b>▼ 8 left · at 1.5 a minute they run out about 11:56, before the clock</b></td><td>warn</td></tr>
+        <tr><td><b>The clock ends first</b></td><td><b>→ 22 left · at this pace about 11 unused when the clock ends at 12:00</b></td><td>caution</td></tr>
+        <tr><td><b>Both hold</b></td><td><b>→ 22 left · pace fits the clock</b></td><td>none</td></tr>
+        <tr><td><b>No pace in five minutes</b></td><td><b>→ 22 left · no turn in 5 min</b></td><td>none; the quiet request says more when a gate is involved</td></tr>
+        <tr><td><b>Out of turns</b></td><td><b>▼ none left · agents finish their turns</b></td><td>warn</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">The forecast is a projection of the last five minutes and the tile says so in its sub. It never changes what the engine does; it tells the operator whether to raise the budget on the next run or to message the lead now.</p>
+  </section>
+
+  <section>
+    <h2>Agents as a map, and the inspector</h2>
+    <p>The bench becomes a map. The host's <code>graph</code> section ranks nodes in columns and draws edges between them, and since 0.116 a node carries a tone, a sublabel and badges, so the agents keep the identity colors the record gives them. The rib ranks the operator at zero, the lead at one, workers at two, runs at three, and labels the columns. A node's sublabel is its turns against the cap and its status; a run's is its status and steps. Edges are the record's <b>who woke whom</b>: a spawn as a solid edge whose label counts the turns the spawner went on to wake, a wake between peers as a labelled edge, a question to the operator dashed, and a run's updates to the lead labelled as such. Before 0.116 a node took no tone, which kept the map on the record page.</p>
+    <p>Clicking a node is a <code>select-agent</code> action. The rib composes the agent's inspector board and answers with <code>open-canvas</code>, placement <code>side</code>, so the inspector docks beside the page and the next click swaps it. The inspector is designed for 520 pixels and answers what the operator asks about one agent: what it is doing, what it has said, what it has made, what it has cost, and how to reach it. <b>Message @agent</b> posts in the channel as the operator with the agent mentioned, which the router turns into a wake; the field's placeholder says so and that the wake spends a turn. A writer's inspector names its worktree and branch and links its draft pull request. An ended swarm's agent inspector is the same board without the live clock and the composer.</p>
+
+    <div class="mock">
+      <svg viewBox="0 0 1000 572" role="img" aria-label="The Swarms page with the agent inspector docked at the right: the map with @fixer selected on the left, and the inspector showing its role, turn meter, current turn, spend, worktree and pull request, its messages, its turns, and the Message @fixer composer.">
+        <rect x="8" y="8" width="632" height="556" class="frame"/>
+        <g class="dim">
+          <text x="28" y="34" class="t brandt">Keelson</text>
+          <text x="112" y="34" class="sub">Chat</text>
+          <text x="160" y="34" class="sub">Workflows</text>
+          <rect x="236" y="17" width="72" height="24" class="card"/>
+          <text x="248" y="34" class="t" font-size="12.5">Swarms</text>
+          <line x1="8" y1="52" x2="640" y2="52" class="rule"/>
+          <rect x="24" y="66" width="600" height="30" class="card"/>
+          <text x="40" y="86" class="t" font-size="12.5">▸ Start a swarm</text>
+        </g>
+        <text x="24" y="124" class="lbl">Live · 1</text>
+        <rect x="24" y="132" width="600" height="420" class="card"/>
+        <rect x="40" y="146" width="60" height="22" class="pill pill-info"/>
+        <text x="70" y="161" text-anchor="middle" class="pt pt-info">running</text>
+        <text x="112" y="162" class="t">Fix the smoke test that times out on cold start · sk7p1</text>
+        <text x="40" y="186" class="sub">@fixer is on turn 7 since 11:49 · @reviewer waits with 1 message · fix-issue 7f3a2c paused at approve-plan</text>
+        <rect x="40" y="196" width="568" height="6" class="track"/>
+        <rect x="40" y="196" width="227" height="6" class="seg seg-info"/>
+        <rect x="269" y="196" width="112" height="6" class="seg seg-warn"/>
+        <rect x="383" y="196" width="112" height="6" class="seg seg-neu"/>
+        <rect x="497" y="196" width="111" height="6" class="ghost" rx="2"/>
+
+        <text x="40" y="236" class="lbl">Map</text>
+        <text x="40" y="258" class="lbl" font-size="10">You</text>
+        <text x="160" y="258" class="lbl" font-size="10">Lead</text>
+        <text x="290" y="258" class="lbl" font-size="10">Workers</text>
+        <text x="430" y="258" class="lbl" font-size="10">Runs</text>
+        <rect x="40" y="312" width="90" height="36" class="node s-neu"/>
+        <text x="85" y="327" text-anchor="middle" class="t" font-size="12.5">you</text>
+        <text x="85" y="341" text-anchor="middle" class="tiny">1 post</text>
+        <rect x="160" y="312" width="100" height="36" class="node s-brand"/>
+        <text x="210" y="327" text-anchor="middle" class="mono brandt" font-size="12.5" font-weight="600">@lead</text>
+        <text x="210" y="341" text-anchor="middle" class="tiny">12 turns · idle</text>
+        <rect x="290" y="268" width="100" height="36" class="node s-idb sel"/>
+        <text x="340" y="283" text-anchor="middle" class="mono idb" font-size="12.5" font-weight="600">@fixer</text>
+        <text x="340" y="297" text-anchor="middle" class="tiny">7 of 12 · busy</text>
+        <rect x="290" y="312" width="100" height="36" class="node s-ida"/>
+        <text x="340" y="327" text-anchor="middle" class="mono ida" font-size="12.5" font-weight="600">@reviewer</text>
+        <text x="340" y="341" text-anchor="middle" class="tiny">6 of 12 · waiting</text>
+        <rect x="290" y="356" width="100" height="36" class="node s-idt"/>
+        <text x="340" y="371" text-anchor="middle" class="mono idt" font-size="12.5" font-weight="600">@tester</text>
+        <text x="340" y="385" text-anchor="middle" class="tiny">7 of 12 · idle</text>
+        <rect x="424" y="312" width="112" height="36" class="node s-info"/>
+        <text x="480" y="327" text-anchor="middle" class="t" font-size="12">fix-issue 7f3a2c</text>
+        <text x="480" y="341" text-anchor="middle" class="tiny">paused · 3 steps</text>
+        <path d="M130 330 L160 330" class="edge"/>
+        <path d="M260 324 L290 290" class="edge"/>
+        <path d="M260 330 L290 330" class="edge"/>
+        <path d="M260 336 L290 370" class="edge"/>
+        <path d="M210 348 C210 420 480 420 480 348" class="edge"/>
+        <text x="40" y="456" class="lbl">Conversation</text>
+        <g class="dim">
+          <rect x="40" y="468" width="52" height="16" class="chip"/><text x="66" y="479.5" text-anchor="middle" class="mono ida" font-size="10.5">reviewer</text>
+          <text x="100" y="480" font-size="12">Plan reads right; one gap: the probe should retry on 503…</text>
+          <text x="608" y="480" text-anchor="end" class="tiny mono">11:51</text>
+          <line x1="40" y1="488" x2="608" y2="488" class="rule"/>
+          <rect x="40" y="496" width="44" height="16" class="chip"/><text x="62" y="507.5" text-anchor="middle" class="mono idb" font-size="10.5">fixer</text>
+          <text x="92" y="508" font-size="12">Pushed the readiness probe to swarm/sk7p1-fixer; running the…</text>
+          <text x="608" y="508" text-anchor="end" class="tiny mono">11:50</text>
+          <line x1="40" y1="516" x2="608" y2="516" class="rule"/>
+          <text x="40" y="538" class="tiny">23 messages · transcript ↗</text>
+        </g>
+
+        <rect x="652" y="8" width="340" height="556" class="card"/>
+        <text x="668" y="30" class="lbl">Agent · sk7p1</text>
+        <text x="976" y="31" text-anchor="end" class="sub">✕</text>
+        <line x1="652" y1="42" x2="992" y2="42" class="rule"/>
+        <text x="668" y="68" class="mono idb" font-size="16" font-weight="600">@fixer</text>
+        <rect x="736" y="54" width="42" height="18" class="pill pill-info"/>
+        <text x="757" y="67" text-anchor="middle" class="pt pt-info">busy</text>
+        <text x="668" y="88" class="sub">writes the fix · a writer with its own worktree</text>
+        <text x="668" y="110" class="tiny">Turns against the cap</text>
+        <rect x="668" y="116" width="200" height="4" class="track"/>
+        <rect x="668" y="116" width="117" height="4" class="fill"/>
+        <text x="880" y="120" class="tiny">7 of 12 · 5 left</text>
+
+        <text x="668" y="146" font-size="12.5">◐ On turn 7 since 11:49 · 1 min 40 s · woken by @lead</text>
+        <text x="668" y="168" font-size="12.5">∑ 48k fresh · 310k cached · gpt-5.6-luna on copilot</text>
+        <text x="668" y="190" font-size="12.5">○ Spawned by @lead at 11:31 · 4th seat</text>
+        <text x="668" y="212" font-size="12.5">⎇ swarm/sk7p1-fixer · PR #41 draft · CI running</text>
+
+        <text x="668" y="246" class="lbl">Said · each links its thread</text>
+        <text x="668" y="268" font-size="12">Pushed the readiness probe; running the…</text>
+        <text x="976" y="268" text-anchor="end" class="tiny mono">11:50</text>
+        <line x1="668" y1="276" x2="976" y2="276" class="rule"/>
+        <text x="668" y="296" font-size="12">Taking the fix: longer wait plus a probe…</text>
+        <text x="976" y="296" text-anchor="end" class="tiny mono">11:45</text>
+        <line x1="668" y1="304" x2="976" y2="304" class="rule"/>
+        <text x="668" y="324" font-size="12">Here; reading the smoke test and its server</text>
+        <text x="976" y="324" text-anchor="end" class="tiny mono">11:32</text>
+        <line x1="668" y1="332" x2="976" y2="332" class="rule"/>
+
+        <text x="668" y="364" class="lbl">Turns</text>
+        <text x="668" y="386" font-size="12">turn 7 · running since 11:49 · woken by @lead</text>
+        <line x1="668" y1="394" x2="976" y2="394" class="rule"/>
+        <text x="668" y="414" font-size="12">turn 6 ok · 1 min 12 s · 11:45 · woken by @lead, you</text>
+        <line x1="668" y1="422" x2="976" y2="422" class="rule"/>
+        <text x="668" y="442" font-size="12">turn 5 ok · 48 s · 11:41 · woken by @tester</text>
+        <line x1="668" y1="450" x2="976" y2="450" class="rule"/>
+        <text x="668" y="470" class="tiny">4 earlier turns in the record</text>
+
+        <rect x="668" y="486" width="238" height="26" class="field"/>
+        <text x="678" y="503" class="sub" font-size="11">Message @fixer · wakes it, costs a turn</text>
+        <rect x="914" y="486" width="62" height="26" class="btn-brand"/>
+        <text x="945" y="503" text-anchor="middle" class="btnt-brand">Send</text>
+        <rect x="668" y="522" width="92" height="22" class="btn"/>
+        <text x="714" y="537" text-anchor="middle" class="btnt">Open PR #41</text>
+        <text x="976" y="537" text-anchor="end" class="tiny">its messages · transcript ↗</text>
+      </svg>
+    </div>
+    <p class="note">The side drawer is not modal: the page stays live and clicking another node swaps the inspector. Opening the record or the report replaces it with a centered drawer, since those are html.</p>
+
+    <div class="tblwrap"><table class="tbl compact">
+      <thead><tr><th>Inspector</th><th>Opened by</th><th>Carries</th><th>Verbs</th></tr></thead>
+      <tbody>
+        <tr><td><b>Agent</b></td><td>a map node, a feed chip, a bench card on an ended board</td><td>handle, role, status, turn meter, the open or last turn with a live <code>since</code> clock and what woke it, spend, model served, spawned by, worktree and pull request, its newest messages, its turns</td><td>Message @agent, Open PR; the Said rows link their threads</td></tr>
+        <tr><td><b>Question</b></td><td>a question request's <b>Read question</b></td><td>the question in full as prose, who asked and when, the thread link</td><td>Reply (in its thread), Dismiss</td></tr>
+        <tr><td><b>Gate in review</b></td><td>a <b>reviewing</b> card</td><td>the gate's prompt and files as prose, the reviewer, the thread link</td><td>Reply; <b>Open run</b> for a gate only the operator answers, as today</td></tr>
+        <tr><td><b>Swarm details</b></td><td><b>Details</b> on the cockpit's verbs row</td><td>the task in full, each context item, the limits, the models per role, the channel, health</td><td>none; it is the About and Task and context sections moved off the page</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The conversation on the tab</h2>
+    <p>The rib ingests every message in the channel to route it, so it already holds each message body as it arrives. It keeps the newest 20 as <code>recent</code> on the summary: id, time, author (an agent id or <code>operator</code>), the first 200 characters of the body, the thread root when the message is a reply, and the message's kind when the rib knows it (a question to the operator, a report, the conclusion). The cockpit shows the newest eight as <b>Conversation</b>: the author as a chip in the agent's identity tone or <b>you</b>, a reply marked with ↳, the time at the end, and each row carrying its thread as its link, with no text naming where the thread lives. One quiet line under the rows counts the rest and links the transcript. The agent inspector filters the same list to one author.</p>
+    <p>The feed changes with every message, so the board republishes on a new <code>message</code> change kind inside the publisher's existing window; a burst of posts in one second is one frame. The 20-message buffer is the board's, not a transcript: the status tools leave it out as they leave out turn spans, and <code>chat_swarm_transcript</code> remains the way to read the channel in full. Message text is agent and operator text and reaches the board as field text, which the host renders without markup, as the activity feed's text does today.</p>
+  </section>
+
+  <section>
+    <h2>What the swarm has produced</h2>
+    <p>Today the runs section appears only when the launch named workflows, and writers' pull requests appear nowhere. <b>Produced so far</b> replaces it and lists every artifact a swarm can make, in the order they land: the report once published (title, size, <b>Open the report</b>), each dispatched run as today (purpose, branch, evidence strip of worktree, pull request and CI, took, and the error gist for a failed one, with <b>Open run</b> on the row and each gate answer under it), and each writer's draft pull request from <code>prs</code> with the writer's chip, its branch and the CI verdict the rib reads, linking the pull request. After the swarm ends, any worktree the rib left on disk is a row with its path and the reason it was kept, so the operator knows what to clean up. When the swarm can produce nothing yet, the section says what the lead may start or who may write.</p>
+  </section>
+
+  <section>
+    <h2>Requests beside the page</h2>
+    <p>The ladder, its pills and its first verbs are unchanged. What changes is where a request opens. <b>Read question</b> opens the question inspector at the side rather than the markdown reading pane in the center, so the operator reads the question with the feed and the map still in view, and replies from the same drawer. A <b>reviewing</b> card opens the gate inspector the same way. <b>Review plan</b> and <b>Answer</b> still open the run drawer, since only it carries the approval composer. <b>Start ClickClack</b> and <b>Message the lead</b> stay inline. The reading pane remains for the conclusion, a refused draft and the full task, where a long markdown document is the right form.</p>
+  </section>
+
+  <section>
+    <h2>The channel and the server</h2>
+    <p>ClickClack is where the agents talk and the rib's bus; it is not where the operator works. Today it is the most visible word on the tab: a footer card with its own pill and four verbs, a link line on every request card, a channel field on the outcome card, a row in About, and a title on the feed. Each of those invites the operator out of the tab into a chat client the rib does not control, and the tab's own reading surfaces lose the argument. This pass keeps every way to reach the channel and removes every piece of chrome that promotes it.</p>
+    <p>The rule is that the channel is reached through the thing being read, never named beside it. A message row links its thread. The conversation's count line links the transcript. A question or gate inspector carries its thread as a small link. About keeps one <b>transcript</b> row. Nothing else on the tab says ClickClack. The footer card becomes one muted line at the foot of the page naming the server, its address and mode, with a single <b>Manage</b> link that opens a server inspector at the side; Start, Stop, Reset with its typed confirm, and the log live there. The line turns into a request only through the ladder's connection kind, which already says <b>ClickClack stopped answering</b> and offers <b>Start ClickClack</b>, since that is the one moment the server is the operator's problem. The managed server still starts itself with the first swarm, so a stopped server on an idle tab is not a warning.</p>
+    <div class="tblwrap"><table class="tbl compact">
+      <thead><tr><th>Where ClickClack appears</th><th>Today</th><th>This pass</th></tr></thead>
+      <tbody>
+        <tr><td><b>Foot of the page</b></td><td>a folded card: <b>ClickClack</b>, a state pill, address, Start or Stop, Reset…, Log</td><td>one muted line: <b>Server · ClickClack running on 127.0.0.1:18080 · managed</b>, and <b>Manage ›</b> opening the server inspector</td></tr>
+        <tr><td><b>Request cards</b></td><td>a link line, <b>the approval thread in ClickClack</b> or <b>the question in ClickClack</b></td><td>no link line; the question and gate inspectors carry the thread as a small link</td></tr>
+        <tr><td><b>Message rows</b></td><td>none today</td><td>each row's link is its thread; no text names the place</td></tr>
+        <tr><td><b>Feed title</b></td><td>none today</td><td><b>Conversation</b>, and under it <b>23 messages · transcript ↗</b></td></tr>
+        <tr><td><b>Outcome card</b></td><td>a field <b>↗ #swarm-id in ClickClack</b></td><td>removed; About keeps the transcript row</td></tr>
+        <tr><td><b>Composer placeholder</b></td><td><b>Posts in #swarm-id as you and wakes the lead</b></td><td><b>posts as you, wakes the lead</b></td></tr>
+        <tr><td><b>Agent inspector</b></td><td>none today</td><td><b>its messages · transcript ↗</b> as a small link, not a button</td></tr>
+        <tr><td><b>About</b></td><td><b>#swarm-id in ClickClack</b> as the first row</td><td><b>transcript ↗</b> as the last row</td></tr>
+        <tr><td><b>Connection request</b></td><td><b>ClickClack stopped answering</b>, <b>Start ClickClack</b></td><td>unchanged: here the server is the subject</td></tr>
+        <tr><td><b>Empty tab</b></td><td><b>Agents talk in #swarm-&lt;id&gt;</b> as the second step</td><td><b>Agents work it out</b>; the channel is named in the step's text, not its title</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>The ended board</h2>
+    <p>An ended swarm opens its board in the centered drawer as today, since review is a reading task and the drawer gives it the width. The board keeps its order: the outcome card, the result strip, <b>Run again</b> and <b>Open the record</b>, then the details. Three things change. The result strip adds a <b>Pull requests</b> tile counting runs' and writers' pull requests with how many have passing CI, since that is what an operator checks before merging. <b>Produced so far</b> replaces Runs and shows writers' pull requests and kept worktrees. The bench cards drop <code>mono</code> and <code>stacked</code>: the handle keeps its identity tone in the title, the role and the figures read in proportional type, and a card click opens the agent inspector. Spend leaves the board for the record, which already draws it with cached tokens apart, and About shrinks to the times, health and one transcript row; the limits and the models move to the Details inspector with the task and context.</p>
+    <div class="tblwrap"><table class="tbl compact">
+      <thead><tr><th>Ended board part</th><th>Today</th><th>This pass</th></tr></thead>
+      <tbody>
+        <tr><td><b>Outcome</b></td><td>one card: report title, conclusion, verbs, channel</td><td>the same card without the channel field</td></tr>
+        <tr><td><b>Result</b></td><td>turns · time · agents · tokens · runs verified</td><td>turns · time · tokens · pull requests (n, m with CI passing) · runs verified when runs exist</td></tr>
+        <tr><td><b>Verbs</b></td><td>Run again · Open the record</td><td>Run again · Open the record · Details</td></tr>
+        <tr><td><b>Agents</b></td><td>mono cards, grid of four, ghost seats</td><td>proportional cards, no ghosts, click opens the agent inspector</td></tr>
+        <tr><td><b>Runs</b></td><td>rows, only when workflows were named</td><td><b>Produced so far</b>: report, runs, writers' pull requests, kept worktrees</td></tr>
+        <tr><td><b>Spend</b></td><td>inline bars</td><td>on the record only</td></tr>
+        <tr><td><b>Task and context</b></td><td>rows with disclosures</td><td>in the Details inspector</td></tr>
+        <tr><td><b>Activity</b></td><td>12 newest, Read the full log</td><td>12 newest; the full log is a section of the record</td></tr>
+        <tr><td><b>About</b></td><td>channel, times, limits, models, tokens, health, ← Ended swarms</td><td>times, health, transcript, ← Ended swarms</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>One Keelson addition: a timeline section</h2>
+    <p>The record's timeline is the one drawing that shows a swarm's rhythm: who worked when, where the gaps are, when a gate opened and how long it waited. It lives on an html page because the board has no primitive for spans on lanes; the chart section plots values and caps at six series. This pass proposes a <code>timeline</code> board section so the same lanes can sit on the cockpit, host-drawn and themed, with the now rule ticking between frames the way clocks do. The Beads wave map took the same route with the graph section: an html region first, then the primitive once the host had it. The cockpit ships without it and the record stays the drawing until the host adds it; the section then lands under the budget strip in one rib change.</p>
+    <div class="mock">
+      <svg viewBox="0 0 1000 236" role="img" aria-label="A timeline section: lanes for you, each agent and the run across the swarm's 30 minutes, turn spans in identity colors, marks for spawns, posts and gates, a now rule at 21 minutes and the clock's end at the right.">
+        <text x="24" y="22" class="lbl">Timeline · 30 min clock</text>
+        <text x="130" y="44" class="tiny">0</text>
+        <text x="268" y="44" class="tiny" text-anchor="middle">5 min</text>
+        <text x="407" y="44" class="tiny" text-anchor="middle">10</text>
+        <text x="545" y="44" class="tiny" text-anchor="middle">15</text>
+        <text x="683" y="44" class="tiny" text-anchor="middle">20</text>
+        <text x="822" y="44" class="tiny" text-anchor="middle">25</text>
+        <text x="960" y="44" class="tiny" text-anchor="end">ends 12:00</text>
+        <line x1="268" y1="50" x2="268" y2="214" class="tick"/><line x1="407" y1="50" x2="407" y2="214" class="tick"/><line x1="545" y1="50" x2="545" y2="214" class="tick"/><line x1="683" y1="50" x2="683" y2="214" class="tick"/><line x1="822" y1="50" x2="822" y2="214" class="tick"/>
+
+        <text x="122" y="66" text-anchor="end" class="sub">you</text>
+        <line x1="130" y1="72" x2="960" y2="72" class="rule"/>
+        <text x="573" y="67" text-anchor="middle" font-size="11">▲</text>
+
+        <text x="122" y="92" text-anchor="end" class="mono brandt" font-size="11.5">@lead</text>
+        <line x1="130" y1="98" x2="960" y2="98" class="rule"/>
+        <rect x="132" y="84" width="34" height="12" class="span brandt"/>
+        <rect x="200" y="84" width="26" height="12" class="span brandt"/>
+        <rect x="334" y="84" width="22" height="12" class="span brandt"/>
+        <rect x="430" y="84" width="20" height="12" class="span brandt"/>
+        <rect x="520" y="84" width="24" height="12" class="span brandt"/>
+        <rect x="600" y="84" width="22" height="12" class="span brandt"/>
+        <text x="186" y="93" text-anchor="middle" font-size="11">●</text>
+
+        <text x="122" y="118" text-anchor="end" class="mono idb" font-size="11.5">@fixer</text>
+        <line x1="130" y1="124" x2="960" y2="124" class="rule"/>
+        <text x="172" y="119" text-anchor="middle" font-size="11">○</text>
+        <rect x="178" y="110" width="30" height="12" class="span idb"/>
+        <rect x="300" y="110" width="40" height="12" class="span idb"/>
+        <rect x="440" y="110" width="52" height="12" class="span idb"/>
+        <rect x="548" y="110" width="44" height="12" class="span idb"/>
+        <rect x="656" y="110" width="55" height="12" class="span idb span-open"/>
+
+        <text x="122" y="144" text-anchor="end" class="mono ida" font-size="11.5">@reviewer</text>
+        <line x1="130" y1="150" x2="960" y2="150" class="rule"/>
+        <text x="172" y="145" text-anchor="middle" font-size="11">○</text>
+        <rect x="236" y="136" width="30" height="12" class="span ida"/>
+        <rect x="380" y="136" width="36" height="12" class="span ida"/>
+        <rect x="604" y="136" width="48" height="12" class="span ida"/>
+        <rect x="650" y="136" width="20" height="12" class="span-bad"/>
+
+        <text x="122" y="170" text-anchor="end" class="mono idt" font-size="11.5">@tester</text>
+        <line x1="130" y1="176" x2="960" y2="176" class="rule"/>
+        <text x="172" y="171" text-anchor="middle" font-size="11">○</text>
+        <rect x="180" y="162" width="60" height="12" class="span idt"/>
+        <rect x="290" y="162" width="36" height="12" class="span idt"/>
+        <rect x="498" y="162" width="30" height="12" class="span idt"/>
+
+        <line x1="130" y1="184" x2="960" y2="184" class="tick"/>
+        <text x="122" y="202" text-anchor="end" class="sub" font-size="11.5">fix-issue 7f3a2c</text>
+        <line x1="130" y1="208" x2="960" y2="208" class="rule"/>
+        <rect x="462" y="196" width="249" height="8" class="span seg-info" opacity=".8"/>
+        <text x="600" y="203" text-anchor="middle" font-size="11">◇</text>
+
+        <line x1="711" y1="50" x2="711" y2="214" class="fill" stroke="var(--brand)" stroke-width="1.5"/>
+        <text x="711" y="228" text-anchor="middle" class="tiny brandt">now 11:51</text>
+        <text x="40" y="228" class="tiny">○ spawned · ▲ you posted · ● conclusion · ◇ gate opened · hatched: failed or timed out · dashed: running</text>
+      </svg>
+    </div>
+    <p class="note">What the section would take: lanes with a label and a tone, spans with a lane, a start, an optional end, a tone and a title, marks with a lane, a time, a glyph and a title, and a window with a start and an end or a <code>clock</code>. Appendix C gives the shape and the caps.</p>
+  </section>
+
+  <section>
+    <h2>Vocabulary</h2>
+    <p>Each word on the tab names one thing, and the same thing is called the same everywhere: on the index, the cockpit, the drawer board, the record, the docs corpus and the tab guide.</p>
+    <div class="tblwrap"><table class="tbl compact">
+      <thead><tr><th>Today</th><th>This pass</th><th>Where</th></tr></thead>
+      <tbody>
+        <tr><td>A request card per swarm, <b>+N more requests</b></td><td><b>Needs you · N</b>, one card per request across live swarms</td><td>Index</td></tr>
+        <tr><td><b>Live</b> cards, the board behind <b>Open swarm</b></td><td><b>Live · N</b> with the cockpit on the page; <b>Open swarm</b> on a folded card expands it</td><td>Index</td></tr>
+        <tr><td><b>Agents · 4 of 5</b>, a bench</td><td><b>Map</b> on the cockpit; <b>Agents</b> stays on the ended board</td><td>Cockpit, board</td></tr>
+        <tr><td><b>Activity</b> (events)</td><td><b>Conversation</b> (messages) on the cockpit; <b>Activity</b> stays on the ended board and the record keeps the full log</td><td>Cockpit, board, record</td></tr>
+        <tr><td><b>ClickClack</b> footer card, <b>#swarm-id in ClickClack</b> links</td><td><b>Server</b> line with <b>Manage ›</b>; <b>transcript ↗</b> wherever the channel is reachable</td><td>Index, cockpit, board, inspectors</td></tr>
+        <tr><td><b>Runs</b></td><td><b>Produced so far</b>: the report, runs, pull requests, kept worktrees</td><td>Cockpit, board</td></tr>
+        <tr><td><b>Read question</b> opens the reading pane</td><td><b>Read question</b> opens the question inspector at the side</td><td>Requests</td></tr>
+        <tr><td><b>Read the full log</b></td><td>gone; the record carries <b>Activity</b> in full</td><td>Board, record</td></tr>
+        <tr><td><b>About</b> with limits, models and the token sum</td><td><b>Details</b> inspector carries the task, context, limits and models; <b>About</b> keeps the channel, times and health</td><td>Board</td></tr>
+        <tr><td>the header chip <b>medium · 18 of 40 turns · model</b></td><td>gone from the cockpit; the state line takes its place and the Details inspector keeps the setup</td><td>Cockpit</td></tr>
+        <tr><td><b>Message the lead</b> on the verbs row</td><td>the same action as the composer under the feed; <b>Message @agent</b> in the agent inspector</td><td>Cockpit, inspector</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Validation</h2>
+    <p>The index, the cockpit, the inspectors and the ended board are pure functions of the swarm summary and the selection, so the builders are tested against fixture summaries, one per state the design names: a running swarm with no request and one with each request kind; a swarm with two busy agents and a waiting one; a run paused at a gate a peer reviews; a write swarm with a draft pull request and a kept worktree; each of the five forecast readings, from a pace fixture; two live swarms with a selection; an ended swarm with a report, one with a conclusion only, one stopped, one out of turns; and the bounds, 12 agents and 200 turns, for the map and the feed. Each frame passes <code>expectView(key, kind)</code>, and the index stays under 48 KB with the cockpit and 20 recent messages, which the fixture at the bounds checks.</p>
+    <p>The feed is tested at the engine: 50 messages posted in one second produce one recent buffer of 20 and one board frame within the publisher's window; a message with markup reaches the board as text; the status tools' output carries no recent buffer. The inspector is tested at the action: a select-agent for an unknown id is refused; one for an agent composes its key before the open-canvas reply; a message to an agent posts with the mention and the activity names it. The forecast is tested on its rules: fewer than one turn in five minutes gives the no-pace reading, and a pace that runs out after the clock gives the clock-first reading.</p>
+    <p>The page is rendered from the bounds fixture with headless Chrome in both themes at 1200 and 640 pixels, and the screenshots go in the pull request; at 640 the two-column section stacks and the map's narrow fallback shows. The live smoke test asserts that a scripted swarm's cockpit appears on the index at start, that its feed shows the lead's first post, and that clicking the lead's node opens the inspector at the side. The <code>chat</code> docs corpus and the tab guide restate the page and change with it.</p>
+  </section>
+
+  <div class="appendix">
+    <p class="eyebrow">Appendix · reference material</p>
+    <h2>Reference detail</h2>
+
+    <section>
+      <h3>A · Boards and inspectors, and the primitive each uses</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Frame</th><th>Key</th><th>Kind · placement</th><th>Sections</th></tr></thead>
+        <tbody>
+          <tr><td>Index with cockpit</td><td class="mono">rib:chat:index</td><td>view · page</td><td>launch head · <code>cards</code> Needs you · <code>actions tabs</code> when two live · cockpit: <code>cards</code> head, <code>rows</code> state line, <code>segments</code>, <code>stats</code>, <code>columns</code>(<code>graph</code> | <code>rows</code> + <code>actions</code>), <code>rows</code> Produced, <code>actions</code> verbs · <code>rows</code> per day · <code>rows</code> server line</td></tr>
+          <tr><td>Agent inspector</td><td class="mono">rib:chat:agent:&lt;swarm&gt;</td><td>view · side</td><td><code>cards</code> head with bar · <code>rows</code> facts · <code>rows</code> Said · <code>rows</code> Turns · <code>actions</code></td></tr>
+          <tr><td>Question inspector</td><td class="mono">rib:chat:ask:&lt;swarm&gt;</td><td>view · side</td><td><code>cards</code> prose · <code>actions</code> Reply, Dismiss</td></tr>
+          <tr><td>Gate inspector</td><td class="mono">rib:chat:gate:&lt;swarm&gt;</td><td>view · side</td><td><code>cards</code> prose per file · <code>actions</code> Reply, Open run</td></tr>
+          <tr><td>Details inspector</td><td class="mono">rib:chat:details:&lt;swarm&gt;</td><td>view · side</td><td><code>rows</code> task and context with disclosures · <code>rows</code> setup · <code>rows</code> health and transcript</td></tr>
+          <tr><td>Server inspector</td><td class="mono">rib:chat:server</td><td>view · side</td><td><code>rows</code> address, mode, process, data directory · <code>actions</code> Start or Stop, Reset…, Log</td></tr>
+          <tr><td>Ended board</td><td class="mono">rib:chat:swarm:&lt;id&gt;</td><td>view · center</td><td>as today with the changes in the ended board table</td></tr>
+          <tr><td>Record</td><td class="mono">rib:chat:record:&lt;id&gt;</td><td>html · center</td><td>timeline · who woke whom · spend · runs · evidence · activity in full</td></tr>
+          <tr><td>Report</td><td class="mono">rib:chat:report:&lt;id&gt;</td><td>html · center</td><td>the lead's page, unchanged</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">One inspector key per swarm and kind, recomposed on selection, keeps the view list bounded: four keys per live swarm, released with the swarm's other keys, and one server key for the tab.</p>
+    </section>
+
+    <section>
+      <h3>B · Rib-side changes, ranked by what they unlock</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>#</th><th>Change</th><th>For</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td>The index composes a live swarm's cockpit inline, with a <code>select-swarm</code> tabs strip when two or more are live. The live board key stays for MCP clients and the history.</td><td>The page as cockpit</td></tr>
+          <tr><td class="mono">2</td><td>A <code>recent</code> ring of 20 messages on the summary, filled in <code>ingest</code>, with a <code>message</code> change kind the index and the agent inspector subscribe to. Left out of the status tools and the op record.</td><td>Feed, inspector</td></tr>
+          <tr><td class="mono">3</td><td>The map as a <code>graph</code> section from the record's edge builder, with ranks, column titles, tones, sublabels and a <code>select-agent</code> action per node.</td><td>Map</td></tr>
+          <tr><td class="mono">4</td><td>Agent, question, gate and details inspector keys per swarm, composed on selection and answered with <code>open-canvas</code> side; a <code>message-agent</code> action that posts as the operator with the mention.</td><td>Inspectors</td></tr>
+          <tr><td class="mono">5</td><td>The state line builder, shared by the cockpit and the index's running card.</td><td>State line</td></tr>
+          <tr><td class="mono">6</td><td>The forecast from the last five minutes of pace, as the Turns tile's <code>delta</code>.</td><td>Budget</td></tr>
+          <tr><td class="mono">7</td><td><b>Produced so far</b> from the report, runs, <code>prs</code> and <code>worktrees</code>; the CI verdict for a writer's pull request read the way a run's is.</td><td>Produced</td></tr>
+          <tr><td class="mono">8</td><td>The ended board's Pull requests tile, proportional bench cards with a click, Spend and the limits moved off it, the activity log added to the record.</td><td>Ended board, record</td></tr>
+          <tr><td class="mono">9</td><td>The agent strip as <code>segments</code> with open seats as a null segment, so an unfilled seat draws hatched rather than as a count of zero.</td><td>Agent strip</td></tr>
+          <tr><td class="mono">10</td><td>The server panel becomes one rows line on the index and a server inspector at the side; the request cards, the outcome card and the composer drop their channel text, and every remaining channel link reads <b>transcript</b>.</td><td>Channel and server</td></tr>
+          <tr><td class="mono">11</td><td>The timeline section on the cockpit, once the host ships it; the record keeps drawing it either way.</td><td>Timeline</td></tr>
+          <tr><td class="mono">12</td><td><code>src/docs.ts</code>, the tab guide, <code>deferred.md</code> and this page's successor updated with each slice.</td><td>Docs</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>C · Keelson-side change: the timeline section</h3>
+      <p>One addition to the board vocabulary, additive like the graph section. The host draws the lanes, the ticks, the spans and the marks from the design tokens, re-ticks the now rule from the window's clock between frames, and offers the same narrow fallback the graph has: a list of spans per lane.</p>
+      <pre class="cond">kind: "timeline"
+title?: string
+window: { from: iso, to: iso } | { from: iso, clock: { until: iso } }
+lanes: [{ id, label, tone?: id-* | brand | neutral | info, group?: string }]   // ≤ 12
+spans: [{ lane, from: iso, to?: iso, tone?, hatched?: boolean, title }]        // ≤ 400
+marks: [{ lane, at: iso, glyph: 1 char, title }]                               // ≤ 200
+legend?: string</pre>
+      <p class="note">An optional second change, smaller: let <code>open-canvas</code> dock an html document at the side. It would let the record sit beside the page; nothing in this pass depends on it.</p>
+    </section>
+
+    <section>
+      <h3>D · What the summary gains</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Field</th><th>Shape</th><th>Kept where</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">recent</td><td>up to 20 of { id, at, author, text ≤ 200, threadRootId?, kind? }, oldest first</td><td>summary and index frame; not the status tools, not the op record</td></tr>
+          <tr><td class="mono">selected</td><td>{ swarm?: id, agent?: id } on the surface state, not the summary</td><td>the rib's surface state, shared by every viewer</td></tr>
+          <tr><td class="mono">forecast</td><td>computed at compose from <code>pace</code>, <code>turnsUsed</code>, <code>limits</code> and the clock; not stored</td><td>nowhere</td></tr>
+          <tr><td class="mono">prs[].ci</td><td>{ verdict, detail? } for a writer's pull request, read when the rib checks the run's</td><td>summary</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>E · Alternatives not chosen</h3>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Alternative</th><th>Why not</th></tr></thead>
+        <tbody>
+          <tr><td><b>Keep the live board in a side drawer instead of on the page</b></td><td>The side drawer is 520 pixels and is replaced by the next thing opened, so the swarm would vanish every time the operator opened an agent or a question. The page is the one surface that stays.</td></tr>
+          <tr><td><b>Mirror the channel on the page</b></td><td>Decided against in the first design and unchanged: the channel is ClickClack's, and a mirror would invite replies the rib would then have to route. Eight recent lines with links is reading, not a mirror.</td></tr>
+          <tr><td><b>Let the lead set a status line</b></td><td>A typed status is a claim the board cannot check. The derived line names only what the record holds; a lead's status would go in the feed like any post.</td></tr>
+          <tr><td><b>Pause a swarm</b></td><td>The engine has no pause: a turn in flight finishes and the inbox fills. Stop and Message the lead are what the engine offers.</td></tr>
+          <tr><td><b>Approve a gate from the page</b></td><td>The run drawer carries the host's approval composer and its integrity checks; copying it into the rib would fork a host contract.</td></tr>
+          <tr><td><b>Per-viewer selection</b></td><td>A frame is shared by every subscriber of its key; per-viewer state would need a key per viewer. The Beads tab accepted the same limit and the tab is a single operator's.</td></tr>
+          <tr><td><b>An html region for the timeline now</b></td><td>The record already draws it, and a second copy on the page would reload on every frame. The host section is the right home; until then the record is one click away.</td></tr>
+          <tr><td><b>A cost in currency on the budget strip</b></td><td>The summary carries no prices. Keelson 0.113 prices turns in its own usage tables; when the summary carries a figure from the host, the Tokens tile takes it.</td></tr>
+          <tr><td><b>The agent inspector as a markdown document</b></td><td>Markdown opens centered and carries no actions; the inspector exists to message the agent and open its pull request.</td></tr>
+          <tr><td><b>Keep the ClickClack footer card and the channel links on every card</b></td><td>Each is a door out of the tab into a client the rib does not control, and a surface that names its bus on every card reads as a front end for it. The links stay where the thing being read is; the chrome goes.</td></tr>
+          <tr><td><b>Cards for recent messages</b></td><td>Eight messages are a feed; rows put the author, the line and the time on one line each.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section>
+      <h3>F · Sequence</h3>
+      <p>The page layout decides every other frame's shape, so the cockpit lands first. Each slice ships on its own and leaves the tab whole.</p>
+      <div class="tblwrap"><table class="tbl compact">
+        <thead><tr><th>Slice</th><th>Carries</th><th>Depends on</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td>The cockpit on the page with the state line, the agent strip and the budget strip; the bench stays as cards for now. The server line and the channel text trimmed (B1, B5, B9, B10).</td><td>nothing</td></tr>
+          <tr><td class="mono">2</td><td>The conversation feed and the recent buffer; the forecast on the Turns tile (B2, B6).</td><td>slice 1</td></tr>
+          <tr><td class="mono">3</td><td>The map as a graph section and the agent inspector; the server inspector (B3, B4 in part).</td><td>slice 1</td></tr>
+          <tr><td class="mono">4</td><td>The question, gate and details inspectors; Produced so far with writers' pull requests (B4, B7).</td><td>slice 3</td></tr>
+          <tr><td class="mono">5</td><td>The ended board's changes and the activity log on the record (B8).</td><td>slice 4</td></tr>
+          <tr><td class="mono">6</td><td>The timeline section on the cockpit (B11), after Keelson ships it.</td><td>appendix C</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+  </div>
+</div>
