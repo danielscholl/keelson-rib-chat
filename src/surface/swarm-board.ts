@@ -8,7 +8,7 @@
 
 import type { CanvasBoardView, CanvasGraphSection, CanvasTone } from "@keelson/shared";
 import { missingEvidence } from "../dispatch.ts";
-import { freshTokens, modelLabel, servedModels, tokenCount, tokensText } from "../labels.ts";
+import { freshTokens, modelLabel, tokenCount } from "../labels.ts";
 import { type Need, needsYou } from "../needs.ts";
 import type { StartSwarmInput } from "../tools.ts";
 import {
@@ -43,6 +43,7 @@ import { runAgainItem } from "./launch-board.ts";
 import {
   causeTitle,
   endsAt,
+  healthRows,
   LIFECYCLE,
   livePill,
   messageLead,
@@ -50,8 +51,8 @@ import {
   type Request,
   requestOf,
   type ServerLine,
+  setupRows,
   sinceClock,
-  sizeDetail,
   sizeWord,
   stateLine,
   stopAction,
@@ -88,25 +89,6 @@ export const AGENT_PILL: Record<AgentStatus, NonNullable<Card["pill"]>> = {
 
 function live(s: SwarmSummary): boolean {
   return isLive(s.status);
-}
-
-function modelRow(s: SwarmSummary): string {
-  const provider =
-    s.provider ?? s.agents.find((a) => a.providerId)?.providerId ?? "the host's default provider";
-  const lead = s.model;
-  const workers = s.workerModel ?? s.model;
-  if (lead && workers && lead !== workers) return `${provider} · lead ${lead} · workers ${workers}`;
-  if (lead) return `${provider} · every agent on ${lead}`;
-  const power = s.power ? `${s.power} power` : undefined;
-  if (workers) return `${provider} · lead at ${power ?? "its default"} · workers ${workers}`;
-  const models = servedModels(s);
-  const on =
-    models.length === 1
-      ? ` · every agent on ${models[0]}`
-      : models.length > 1
-        ? ` · agents on ${models.join(", ")}`
-        : "";
-  return power ? `${power} on ${provider}${on}` : `${provider} · the provider's default model${on}`;
 }
 
 // ---- Requests: what the operator is asked, one card each. ----
@@ -800,38 +782,13 @@ function about(s: SwarmSummary): Leaf {
   const when = live(s)
     ? `started ${hhmm(s.startedAt)}`
     : `ran ${day(s.startedAt)} ${hhmm(s.startedAt)} → ${hhmm(s.endedAt)}`;
-  const h = s.health;
-  const warn = (text: string): Row => ({ icon: "!", glyph: "warn", text });
-  const health: Row[] = [
-    ...(h?.socketDrops
-      ? [warn(`socket closed ${h.socketDrops} time(s) since it last opened`)]
-      : []),
-    ...(h?.channelFault ? [warn(`ClickClack fault: ${h.channelFault}`)] : []),
-    ...(h?.lastLeadFailure
-      ? [
-          warn(
-            `the lead's last turn failed (${h.leadFailures ?? 1} in a row): ${h.lastLeadFailure}`,
-          ),
-        ]
-      : []),
-    ...(h?.nudges
-      ? [{ icon: "◌", text: `idle: nudged the lead ${h.nudges} of ${s.limits.maxNudges} times` }]
-      : []),
-    ...(h?.refusedConclusions
-      ? [warn(`the lead's conclusion was refused ${h.refusedConclusions} time(s) for length`)]
-      : []),
-    ...(h?.cancelFault ? [warn(h.cancelFault)] : []),
-    ...(!live(s) && s.error ? [{ icon: "✕", glyph: "error" as const, text: s.error }] : []),
-  ];
   return {
     kind: "rows",
     title: "About",
     items: [
       { icon: "◷", text: `${when}${s.project ? ` · on ${s.project.name}` : ""}` },
-      { icon: "◫", text: sizeDetail(s) },
-      { icon: "◆", text: modelRow(s) },
-      ...(s.usage ? [{ icon: "∑", text: `${tokensText(s.usage)} tokens` }] : []),
-      ...health,
+      ...setupRows(s),
+      ...healthRows(s),
       ...(href ? [{ text: "transcript ↗", href }] : []),
       ...(live(s) ? [] : [{ icon: "←", text: "Ended swarms", action: { type: "history-open" } }]),
     ],

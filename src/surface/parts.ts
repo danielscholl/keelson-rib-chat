@@ -7,9 +7,15 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
-import { modelLabel, sizeText } from "../labels.ts";
+import { modelLabel, servedModels, sizeText, tokensText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
-import { SIZE_PRESETS, SWARM_SIZES, type SwarmStatus, type SwarmSummary } from "../types.ts";
+import {
+  isLive,
+  SIZE_PRESETS,
+  SWARM_SIZES,
+  type SwarmStatus,
+  type SwarmSummary,
+} from "../types.ts";
 import {
   activityText,
   channelHref,
@@ -28,6 +34,7 @@ import {
 
 type Card = Extract<CanvasBoardView["sections"][number], { kind: "cards" }>["items"][number];
 type Pill = NonNullable<Card["pill"]>;
+type Row = Extract<CanvasBoardView["sections"][number], { kind: "rows" }>["items"][number];
 
 export interface ServerLine {
   mode: "managed" | "external";
@@ -71,6 +78,61 @@ export function sizeWord(s: Pick<SwarmSummary, "size" | "sizeBase">): string {
 export function sizeDetail(s: Pick<SwarmSummary, "limits" | "size" | "sizeBase">): string {
   const l = s.limits;
   return `${sizeWord(s)}: up to ${l.maxAgents} agents · ${l.maxTurns} turns, ${l.maxTurnsPerAgent} per worker · ${l.maxConcurrent} at once · ${minutes(l.turnTimeoutMs)} min a turn`;
+}
+
+export function modelRow(s: SwarmSummary): string {
+  const provider =
+    s.provider ?? s.agents.find((a) => a.providerId)?.providerId ?? "the host's default provider";
+  const lead = s.model;
+  const workers = s.workerModel ?? s.model;
+  if (lead && workers && lead !== workers) return `${provider} · lead ${lead} · workers ${workers}`;
+  if (lead) return `${provider} · every agent on ${lead}`;
+  const power = s.power ? `${s.power} power` : undefined;
+  if (workers) return `${provider} · lead at ${power ?? "its default"} · workers ${workers}`;
+  const models = servedModels(s);
+  const on =
+    models.length === 1
+      ? ` · every agent on ${models[0]}`
+      : models.length > 1
+        ? ` · agents on ${models.join(", ")}`
+        : "";
+  return power ? `${power} on ${provider}${on}` : `${provider} · the provider's default model${on}`;
+}
+
+export function setupRows(s: SwarmSummary): Row[] {
+  return [
+    { icon: "◫", text: sizeDetail(s) },
+    { icon: "◆", text: modelRow(s) },
+    ...(s.usage ? [{ icon: "∑", text: `${tokensText(s.usage)} tokens` }] : []),
+  ];
+}
+
+export function healthRows(s: SwarmSummary): Row[] {
+  const h = s.health;
+  const warn = (text: string): Row => ({ icon: "!", glyph: "warn", text });
+  return [
+    ...(h?.socketDrops
+      ? [warn(`socket closed ${h.socketDrops} time(s) since it last opened`)]
+      : []),
+    ...(h?.channelFault ? [warn(`ClickClack fault: ${h.channelFault}`)] : []),
+    ...(h?.lastLeadFailure
+      ? [
+          warn(
+            `the lead's last turn failed (${h.leadFailures ?? 1} in a row): ${h.lastLeadFailure}`,
+          ),
+        ]
+      : []),
+    ...(h?.nudges
+      ? [{ icon: "◌", text: `idle: nudged the lead ${h.nudges} of ${s.limits.maxNudges} times` }]
+      : []),
+    ...(h?.refusedConclusions
+      ? [warn(`the lead's conclusion was refused ${h.refusedConclusions} time(s) for length`)]
+      : []),
+    ...(h?.cancelFault ? [warn(h.cancelFault)] : []),
+    ...(!isLive(s.status) && s.error
+      ? [{ icon: "✕", glyph: "error" as const, text: s.error }]
+      : []),
+  ];
 }
 
 // The question without the @operator that addressed it.
@@ -312,12 +374,7 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
       },
       more: [
         replyAction(s, { threadRootId: ask.threadRootId, messageId: ask.messageId }, "the thread"),
-        {
-          type: "dismiss-ask",
-          label: "Dismiss",
-          hint: "Clears the question from the tab. The message stays in the channel.",
-          payload: { id: s.id, messageId: ask.messageId },
-        },
+        dismissAskAction(s, ask.messageId),
       ],
     };
   }
@@ -402,7 +459,7 @@ export function messageLead(s: SwarmSummary, tone?: CanvasActionItem["tone"]): C
 
 // A reply as the operator in a thread: an approval's, or a question's. It never
 // approves anything, and the field says so.
-function replyAction(
+export function replyAction(
   s: SwarmSummary,
   where: { runId: string } | { threadRootId: string; messageId: string },
   what: string,
@@ -427,6 +484,15 @@ function replyAction(
     submitLabel: "Reply",
     pendingLabel: "Sending…",
     ...(href ? { hint: `Thread: ${href}` } : {}),
+  };
+}
+
+export function dismissAskAction(s: SwarmSummary, messageId: string): CanvasActionItem {
+  return {
+    type: "dismiss-ask",
+    label: "Dismiss",
+    hint: "Clears the question from the tab. The message stays in the channel.",
+    payload: { id: s.id, messageId },
   };
 }
 

@@ -39,7 +39,10 @@ import {
 } from "../src/surface/index-board.ts";
 import {
   agentKey,
+  askKey,
+  detailsKey,
   docKey,
+  gateKey,
   HISTORY_KEY,
   INDEX_KEY,
   LAUNCH_KEY,
@@ -50,10 +53,17 @@ import {
 } from "../src/surface/keys.ts";
 import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
 import {
+  dismissAskAction,
+  healthRows,
+  modelRow,
+  replyAction,
+  requestOf,
   type ServerLine,
   selectSwarm,
   serverAddress,
   serverState,
+  setupRows,
+  sizeDetail,
   stateLine,
 } from "../src/surface/parts.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
@@ -415,6 +425,71 @@ const state = (patch: Partial<SurfaceState> = {}): SurfaceState => ({
 
 const board = (key: string, view: unknown) =>
   expect(() => expectView(key, "board")(view)).not.toThrow();
+
+describe("shared inspector keys and presentation", () => {
+  test("keys stay in the per-swarm native inspector namespaces", () => {
+    expect(askKey("s1")).toBe("rib:chat:ask:s1");
+    expect(gateKey("s1")).toBe("rib:chat:gate:s1");
+    expect(detailsKey("s1")).toBe("rib:chat:details:s1");
+  });
+
+  test("question actions are shared without changing their board payloads", () => {
+    const s = fixtures.asked!;
+    const ask = s.health!.asks![0]!;
+    const request = requestOf(s, needsYou(s).find((n) => n.kind === "question")!);
+    expect(request.more).toEqual([
+      replyAction(s, { threadRootId: ask.threadRootId, messageId: ask.messageId }, "the thread"),
+      dismissAskAction(s, ask.messageId),
+    ]);
+    expect(request.more[0]!.binding).toEqual({
+      id: s.id,
+      threadRootId: ask.threadRootId,
+      messageId: ask.messageId,
+    });
+    expect(request.more[1]!.payload).toEqual({ id: s.id, messageId: ask.messageId });
+    expect(replyAction(s, { runId: "r1" }, "the approval thread").type).toBe("reply");
+  });
+
+  test("extracted setup and health retain the About row order and content", () => {
+    const s = swarm("shelp", {
+      workerModel: "worker-model",
+      usage: { input: 200, output: 50, cached: 100 },
+      health: {
+        socketDrops: 2,
+        channelFault: "offline",
+        leadFailures: 3,
+        lastLeadFailure: "timeout",
+        nudges: 1,
+        refusedConclusions: 2,
+        cancelFault: "could not cancel",
+      },
+    });
+    expect(modelRow(s)).toBe("copilot · lead gpt-5.6-sol · workers worker-model");
+    expect(setupRows(s)).toEqual([
+      { icon: "◫", text: sizeDetail(s) },
+      { icon: "◆", text: "copilot · lead gpt-5.6-sol · workers worker-model" },
+      { icon: "∑", text: "200 in · 50 out · 100 cached tokens" },
+    ]);
+    expect(healthRows(s).map((row) => row.text)).toEqual([
+      "socket closed 2 time(s) since it last opened",
+      "ClickClack fault: offline",
+      "the lead's last turn failed (3 in a row): timeout",
+      "idle: nudged the lead 1 of 2 times",
+      "the lead's conclusion was refused 2 time(s) for length",
+      "could not cancel",
+    ]);
+    const about = leaves(buildSwarmBoard(s).sections).find((section) => section.title === "About");
+    expect(about?.kind).toBe("rows");
+    if (about?.kind !== "rows") throw new Error("missing About");
+    expect(about.items.slice(1, -1)).toEqual([...setupRows(s), ...healthRows(s)]);
+    expect(healthRows({ ...s, status: "error", error: "fatal" }).at(-1)).toEqual({
+      icon: "✕",
+      glyph: "error",
+      text: "fatal",
+    });
+    expect(healthRows(swarm("sclean"))).toEqual([]);
+  });
+});
 
 describe("the shared server text", () => {
   test("state words distinguish managed processes from external reachability", () => {
