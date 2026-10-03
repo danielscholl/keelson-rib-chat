@@ -6,36 +6,28 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
+import type { CanvasActionItem, CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
 import { modelLabel } from "../labels.ts";
-import { type Need, needsYou, oldestNeed } from "../needs.ts";
+import { NEED_ORDER, type Need, needsYou, oldestNeed } from "../needs.ts";
 import { type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
+import { dayHeading, firstLine, gist, hhmm, plural, shortHandle, span } from "./format.ts";
 import {
-  activityText,
-  dayHeading,
-  firstLine,
-  gist,
-  hhmm,
-  plural,
-  shortHandle,
-  span,
-} from "./format.ts";
-import {
-  budgetLine,
   causeTitle,
   LIFECYCLE,
   livePill,
   openHint,
-  openSwarm,
   requestOf,
   type ServerLine,
+  selectSwarm,
   sinceClock,
   sizeWord,
+  stateLine,
   stopAction,
   timeLeft,
   turnMeter,
   verifiedText,
 } from "./parts.ts";
+import { buildCockpit } from "./swarm-board.ts";
 
 export interface SurfaceState {
   live: readonly SwarmSummary[];
@@ -43,6 +35,7 @@ export interface SurfaceState {
   // Oldest first, as the rib keeps them.
   ended: readonly SwarmSummary[];
   server?: ServerLine;
+  selected?: string;
 }
 
 type Section = CanvasBoardView["sections"][number];
@@ -54,28 +47,7 @@ export const ENDED_SHOWN = 8;
 // An ended row's outcome and task together stay under this.
 const ENDED_TEXT = 90;
 const OUTCOME_CHARS = 60;
-
-// What the swarm is doing this minute, from its latest event or health.
-function activityLine(s: SwarmSummary): string {
-  const h = s.health;
-  if (s.status === "stopping") return "stopping: cancelling runs and revoking tokens";
-  if (s.conclusion !== undefined) return "the lead has concluded; turns in flight finish";
-  const gated = s.runs?.find((r) => r.status === "paused" && r.pendingApproval);
-  if (gated?.pendingApproval) {
-    const who = gated.pendingApproval.reviewer;
-    return `${gated.pendingApproval.nodeId} on ${gated.workflow} is in review${who ? ` by @${shortHandle(who, s.id)}` : ""} since ${hhmm(gated.pendingApproval.openedAt)}`;
-  }
-  if (h?.channelFault) return `ClickClack fault: ${firstLine(h.channelFault, 80)}`;
-  if (h?.lastLeadFailure) return `the lead's last turn failed: ${firstLine(h.lastLeadFailure, 80)}`;
-  if (h?.nudges) return `idle: nudged the lead ${h.nudges} of ${s.limits.maxNudges} times`;
-  const busy = s.agents.filter((a) => a.status === "busy");
-  const last = s.activity?.at(-1);
-  if (busy.length > 0) {
-    return `${busy.map((a) => `@${shortHandle(a.handle, s.id)}`).join(", ")} working${last ? ` · ${firstLine(activityText(s.id, last.text), 60)}` : ""}`;
-  }
-  if (last) return `${hhmm(last.at)} ${firstLine(activityText(s.id, last.text), 90)}`;
-  return "waiting for the lead's first turn";
-}
+const NEEDS_SHOWN = 12;
 
 // The third level: what the swarm is, in one muted line.
 function setup(s: SwarmSummary, withTask: boolean): string {
@@ -108,43 +80,32 @@ function reportAction(s: SwarmSummary) {
     : [];
 }
 
-// A swarm that asks something: the request is the title, its verb the first
-// action, and the task drops to the footnote.
-function requestCard(s: SwarmSummary, needs: readonly Need[], server?: ServerLine): Card {
-  const first = needs[0] as Need;
-  const request = requestOf(s, first, server);
-  const more = needs.length - 1;
+function needCard(s: SwarmSummary, need: Need, server?: ServerLine): Card {
+  const request = requestOf(s, need, server);
+  const local = (action: CanvasActionItem): CanvasActionItem =>
+    action.type === "swarm-open" ? { ...action, type: "select-swarm", glyph: "↓" } : action;
+  const actions = [request.primary, ...request.more].map(local);
+  if (!actions.some((a) => a.type === "select-swarm")) actions.push(selectSwarm(s));
   return {
     title: request.title,
     pill: request.pill,
     edge: request.pill.tone,
-    // One level per line: the request, the budget, the roster.
     stacked: true,
-    fields: [
-      { value: request.line },
-      ...sinceClock(first),
-      ...(request.link ? [request.link] : []),
-      { value: budgetLine(s) },
-      timeLeft(s),
-      ...people(s),
-    ],
-    footnote: setup(s, true),
-    ...(more > 0 ? { reason: { text: `+${plural(more, "more request")}` } } : {}),
-    actions: [request.primary, openSwarm(s), ...reportAction(s), stopAction(s)],
+    fields: [{ value: request.line }, ...sinceClock(need), ...(request.link ? [request.link] : [])],
+    footnote: `${firstLine(s.task, 60)} · ${s.id}`,
+    actions,
   };
 }
 
-// A swarm that asks nothing: the task is the title, the first line is what it
-// is doing now, and the budget is a named meter under it.
-function runningCard(s: SwarmSummary): Card {
+function runningCard(s: SwarmSummary, needs: readonly Need[], server?: ServerLine): Card {
   return {
     title: `${firstLine(s.task)} · ${s.id}`,
-    pill: livePill(s),
+    pill: needs.length ? { label: "needs you", tone: "caution" } : livePill(s),
     bar: turnMeter(s),
     stacked: true,
-    fields: [{ value: activityLine(s) }, timeLeft(s), ...people(s)],
+    fields: [{ value: stateLine(s, needs, server).text }, timeLeft(s), ...people(s)],
     footnote: setup(s, false),
-    actions: [openSwarm(s, "brand"), ...reportAction(s), stopAction(s)],
+    actions: [selectSwarm(s, "brand"), ...reportAction(s), stopAction(s)],
   };
 }
 
@@ -231,10 +192,19 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
   const running = live
     .filter((x) => x.needs.length === 0)
     .sort((a, b) => a.s.startedAt.localeCompare(b.s.startedAt));
+  const ordered = [...needing, ...running];
+  const expanded = ordered.find((x) => x.s.id === state.selected) ?? ordered[0];
+  const needs = live
+    .flatMap((x) => x.needs.map((n) => ({ s: x.s, n })))
+    .sort(
+      (a, b) =>
+        (a.n.since ?? "").localeCompare(b.n.since ?? "") ||
+        NEED_ORDER.indexOf(a.n.kind) - NEED_ORDER.indexOf(b.n.kind) ||
+        a.s.startedAt.localeCompare(b.s.startedAt),
+    );
   const cards = [
-    ...needing.map((x) => requestCard(x.s, x.needs, state.server)),
+    ...ordered.filter((x) => x !== expanded).map((x) => runningCard(x.s, x.needs, state.server)),
     ...state.starting.map(startingCard),
-    ...running.map((x) => runningCard(x.s)),
   ];
   const ended = [...state.ended].reverse();
   const shown = ended.slice(0, ENDED_SHOWN);
@@ -257,7 +227,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
           { label: "starting", n: state.starting.length, tone: "neutral" as const },
         ].filter((seg) => seg.n > 0)
       : [];
-  const empty = cards.length === 0 && ended.length === 0;
+  const empty = liveCount === 0 && ended.length === 0;
   const days = byDay(shown, now);
   if (earlier > 0) {
     days.at(-1)?.items.push({
@@ -272,7 +242,42 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
     title: "Swarms",
     ...(status ? { header: { status, ...(segments.length > 0 ? { segments } : {}) } } : {}),
     sections: [
-      ...(cards.length > 0 ? [{ kind: "cards" as const, title: "Live", items: cards }] : []),
+      ...(needs.length > 0
+        ? [
+            {
+              kind: "cards" as const,
+              title:
+                needs.length > NEEDS_SHOWN
+                  ? `Needs you · ${needs.length} · oldest ${NEEDS_SHOWN} shown`
+                  : "Needs you",
+              items: needs.slice(0, NEEDS_SHOWN).map((x) => needCard(x.s, x.n, state.server)),
+            },
+          ]
+        : []),
+      ...(live.length >= 2
+        ? [
+            {
+              kind: "actions" as const,
+              title: `Live · ${live.length}`,
+              wrap: true,
+              items: ordered.map((x) => ({
+                type: "select-swarm",
+                label: `${firstLine(x.s.task, 28)} · ${x.s.id}`,
+                hint: `Expand ${x.s.id} on the page. This choice is shared by every viewer.`,
+                payload: { id: x.s.id },
+                ...(x.needs.length ? { tone: "caution" as const } : {}),
+                ...(x === expanded ? { selected: true } : {}),
+              })),
+            },
+          ]
+        : []),
+      ...(expanded
+        ? buildCockpit(expanded.s, expanded.needs, {
+            server: state.server,
+            titled: live.length < 2,
+          })
+        : []),
+      ...(cards.length > 0 ? [{ kind: "cards" as const, title: "Also live", items: cards }] : []),
       ...days,
       ...(empty
         ? [
