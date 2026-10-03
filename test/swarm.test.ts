@@ -939,7 +939,7 @@ describe("Workflow dispatch", () => {
     const runs = summary.recent?.filter((m) => m.text.startsWith("**Run"));
     expect(runs?.length).toBeGreaterThan(0);
     expect(runs?.every((m) => m.kind === "run" && m.author === "s1-lead")).toBe(true);
-    expect(new Set(summary.recent?.map((m) => m.id)).size).toBe(summary.recent?.length);
+    expect(summary.recent).toHaveLength(new Set(summary.recent?.map((m) => m.id)).size);
   });
 
   test("a worker reviews the gate's plan and the lead answers it for the operator", async () => {
