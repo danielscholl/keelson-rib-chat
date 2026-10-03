@@ -409,7 +409,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     },
     dispose() {
       disposed = true;
-      for (const id of [...swarms.keys(), ...records.keys()]) release(id);
+      for (const id of [...swarms.keys(), ...records.keys(), ...inspectors.keys()]) release(id);
       index.release();
       badge.release();
       history.release();

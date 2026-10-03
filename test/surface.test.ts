@@ -2740,6 +2740,31 @@ describe("publishing", () => {
     await expect(surface.selectAgent("s1", "s1-w1")).rejects.toThrow("disposed");
   });
 
+  test("disposal releases an inspector created after its ended swarm is trimmed", async () => {
+    const { sm, views, summaries, surface } = inspectorHarness(
+      swarm("s1", { status: "done", endedAt: T0 }),
+    );
+    try {
+      const liveIds = Array.from({ length: MAX_SWARM_KEYS }, (_, i) => {
+        const id = `s${i + 2}`;
+        summaries.set(id, swarm(id));
+        return id;
+      });
+      surface.track(liveIds);
+      expect(sm.keys()).not.toContain(swarmKey("s1"));
+      await surface.selectAgent("s1", "s1-w1");
+      expect(sm.keys()).not.toContain(swarmKey("s1"));
+      expect(sm.keys()).not.toContain(recordKey("s1"));
+      expect(sm.keys()).toContain(agentKey("s1"));
+      expect(sm.frames.get(agentKey("s1"))?.at(-1)).toMatchObject({ title: "Agent @w1 · s1" });
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+    expect(views).toEqual([]);
+    expect(await sm.recompose(agentKey("s1"))).toBeUndefined();
+  });
+
   test("invalid selections allocate nothing; trimming and release reject pending selection", async () => {
     const { sm, summaries, surface } = inspectorHarness(
       swarm("s1", { status: "done", endedAt: T0 }),
