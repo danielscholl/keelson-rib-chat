@@ -223,8 +223,11 @@ export async function uncommitted(deps: WorktreeDeps, wt: AgentWorktree): Promis
   return (await git(deps, wt.path, ["status", "--porcelain"])).trim();
 }
 
-export async function pushBranch(deps: WorktreeDeps, wt: AgentWorktree): Promise<void> {
+export async function pushBranch(deps: WorktreeDeps, wt: AgentWorktree): Promise<string> {
+  const head = (await git(deps, wt.path, ["rev-parse", "HEAD"])).trim();
+  if (!/^[a-f0-9]{40,64}$/i.test(head)) throw new Error("git rev-parse HEAD printed no commit SHA");
   await git(deps, wt.path, ["push", "-u", "origin", wt.branch]);
+  return head;
 }
 
 // Opens a draft pull request for the branch against its base; returns its URL.
@@ -280,16 +283,17 @@ export async function readWriterCi(
 ): Promise<{ headRefOid: string; ci?: WriterPr["ci"] }> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new DOMException("PR CI read timed out", "TimeoutError")),
+        timeoutMs,
+      );
+    });
     const out = await Promise.race([
+      timeout,
       deps.run("gh", ["pr", "view", url, "--json", "headRefOid,statusCheckRollup"], {
         cwd: root,
         timeoutMs,
-      }),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new DOMException("PR CI read timed out", "TimeoutError")),
-          timeoutMs,
-        );
       }),
     ]);
     if (!out.ok) throw new Error(`gh pr view failed: ${out.error}`);
