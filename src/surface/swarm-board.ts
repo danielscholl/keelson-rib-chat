@@ -50,6 +50,7 @@ import {
   sinceClock,
   sizeDetail,
   sizeWord,
+  stateLine,
   stopAction,
   verifiedText,
 } from "./parts.ts";
@@ -71,7 +72,7 @@ const CONTEXT_DETAIL_BUDGET = 24_000;
 export const RECENT_SHOWN = 12;
 const BENCH_COLUMNS = 4;
 
-const AGENT_PILL: Record<AgentStatus, Card["pill"]> = {
+export const AGENT_PILL: Record<AgentStatus, NonNullable<Card["pill"]>> = {
   idle: { label: "idle", tone: "neutral" },
   waiting: { label: "waiting", tone: "caution" },
   busy: { label: "busy", tone: "info" },
@@ -185,48 +186,59 @@ function requests(s: SwarmSummary, needs: readonly Need[], server?: ServerLine):
 
 // ---- Budget while live, result once ended. ----
 
+export function turnsTile(s: SwarmSummary): Stat {
+  const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
+  return {
+    label: "Turns",
+    value: live(s) ? `${s.turnsUsed} of ${s.limits.maxTurns}` : s.turnsUsed,
+    sub: live(s) ? `${left} remaining` : `of ${s.limits.maxTurns}`,
+    ...(live(s) && left === 0 ? { tone: "warn" as const } : {}),
+    ...(s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
+  };
+}
+
+export function timeTile(s: SwarmSummary): Stat {
+  const wall = minutes(s.limits.wallClockMs);
+  return live(s)
+    ? {
+        label: "Time",
+        clock: { at: endsAt(s), mode: "until" },
+        sub: `of ${wall} min · ends ${hhmm(endsAt(s))}`,
+      }
+    : { label: "Time", value: span(s.startedAt, s.endedAt) || "0 s", sub: `of ${wall} min` };
+}
+
+export function tokensTile(s: SwarmSummary): Stat {
+  if (!s.usage) {
+    return s.turnsUsed === 0
+      ? { label: "Tokens", value: 0, sub: "fresh · none yet" }
+      : { label: "Tokens", value: null, sub: "the provider reported none" };
+  }
+  return {
+    label: "Tokens",
+    value: tokenCount(freshTokens(s.usage)),
+    sub:
+      s.usage.cached > 0 ? `fresh · ${tokenCount(s.usage.cached)} cached` : "fresh · none cached",
+  };
+}
+
 function stats(s: SwarmSummary): Leaf {
   const isLiveNow = live(s);
-  const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
   const busy = s.agents.filter((a) => a.status === "busy").length;
   const waiting = s.agents.filter((a) => a.status === "waiting").length;
   const seats = [
     ...(busy > 0 ? [`${busy} busy`] : []),
     ...(waiting > 0 ? [`${waiting} waiting`] : []),
   ];
-  const wall = minutes(s.limits.wallClockMs);
   const items: Stat[] = [
-    {
-      label: "Turns",
-      value: isLiveNow ? `${s.turnsUsed} of ${s.limits.maxTurns}` : s.turnsUsed,
-      sub: isLiveNow ? `${left} remaining` : `of ${s.limits.maxTurns}`,
-      ...(isLiveNow && left === 0 ? { tone: "warn" as const } : {}),
-      ...(s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
-    },
-    isLiveNow
-      ? {
-          label: "Time",
-          clock: { at: endsAt(s), mode: "until" as const },
-          sub: `of ${wall} min · ends ${hhmm(endsAt(s))}`,
-        }
-      : { label: "Time", value: span(s.startedAt, s.endedAt) || "0 s", sub: `of ${wall} min` },
+    turnsTile(s),
+    timeTile(s),
     {
       label: "Agents",
       value: `${s.agents.length} of ${s.limits.maxAgents}`,
       ...(isLiveNow && seats.length > 0 ? { sub: seats.join(" · ") } : {}),
     },
-    ...(s.usage
-      ? [
-          {
-            label: "Tokens",
-            value: tokenCount(freshTokens(s.usage)),
-            sub:
-              s.usage.cached > 0
-                ? `fresh · ${tokenCount(s.usage.cached)} cached`
-                : "fresh · none cached",
-          },
-        ]
-      : []),
+    ...(s.usage ? [tokensTile(s)] : []),
   ];
   const verified = verifiedText(s);
   if (!isLiveNow && verified) {
@@ -243,7 +255,7 @@ function stats(s: SwarmSummary): Leaf {
 
 // ---- Reaching the lead, reading the record, and stopping. ----
 
-const openRecord = (s: SwarmSummary) => ({
+export const openRecord = (s: SwarmSummary) => ({
   type: "open-record",
   label: "Open the record",
   glyph: "◷",
@@ -612,7 +624,7 @@ function reportKb(s: SwarmSummary): string {
   return s.report ? `report ${Math.max(1, Math.round(s.report.bytes / 1024))} KB` : "";
 }
 
-const openReport = (s: SwarmSummary) => ({
+export const openReport = (s: SwarmSummary) => ({
   type: "open-report",
   label: "Open the report",
   glyph: "◧",
@@ -705,6 +717,61 @@ export interface BoardOptions {
   server?: ServerLine;
 }
 
+export function liveDetails(s: SwarmSummary): Leaf[] {
+  return [bench(s), ...spend(s), ...runs(s), ...taskAndContext(s), ...activity(s), about(s)];
+}
+
+function agentStrip(s: SwarmSummary): Leaf {
+  const statuses: AgentStatus[] = ["busy", "waiting", "idle", "capped", "failed"];
+  const items: Extract<Leaf, { kind: "segments" }>["items"] = [];
+  for (const status of statuses) {
+    const n = s.agents.filter((a) => a.status === status).length;
+    if (n > 0) items.push({ label: status, n, tone: AGENT_PILL[status].tone });
+  }
+  const open = Math.max(0, s.limits.maxAgents - s.agents.length);
+  if (live(s) && open > 0) items.push({ label: plural(open, "open seat"), n: null });
+  return { kind: "segments", title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`, items };
+}
+
+export function buildCockpit(
+  s: SwarmSummary,
+  needs: readonly Need[],
+  opts: { server?: ServerLine; titled: boolean },
+): Section[] {
+  const people = s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone }));
+  const line = stateLine(s, needs, opts.server);
+  const items: Extract<Leaf, { kind: "actions" }>["items"] = [];
+  if (s.status === "running" && s.conclusion === undefined) {
+    items.push({ ...messageLead(s), expanded: true });
+  }
+  if (s.report) items.push(openReport(s));
+  items.push(openRecord(s));
+  if (s.status === "running") items.push(stopAction(s, true));
+  return [
+    {
+      kind: "cards",
+      ...(opts.titled ? { title: "Live" } : {}),
+      items: [
+        {
+          title: `${firstLine(s.task)} · ${s.id}`,
+          pill: needs.length ? { label: "needs you", tone: "caution" } : livePill(s),
+          ...(needs.length ? { edge: "caution" as const } : {}),
+          ...(people.length ? { fields: [{ people }] } : {}),
+        },
+      ],
+    },
+    {
+      kind: "rows",
+      items: [{ icon: "◉", text: line.text, ...(line.warn ? { glyph: "warn" as const } : {}) }],
+    },
+    ...(s.conclusion !== undefined ? outcome(s) : []),
+    agentStrip(s),
+    { kind: "stats", title: "Budget", items: [turnsTile(s), timeTile(s), tokensTile(s)] },
+    ...liveDetails(s),
+    { kind: "actions", wrap: true, items },
+  ];
+}
+
 export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): CanvasBoardView {
   const needs = needsYou(s);
   const isLiveNow = live(s);
@@ -717,14 +784,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
   const chip = isLiveNow
     ? `${sizeWord(s)} · ${s.turnsUsed} of ${s.limits.maxTurns} turns · ${modelLabel(s)}`
     : `${sizeWord(s)} · ${plural(s.turnsUsed, "turn")}${took ? ` · ${took}` : ""} · ${modelLabel(s)}`;
-  const details: Leaf[] = [
-    bench(s),
-    ...spend(s),
-    ...runs(s),
-    ...taskAndContext(s),
-    ...activity(s),
-    about(s),
-  ];
+  const details = liveDetails(s);
   return {
     view: "board",
     title: `${firstLine(s.task)} · ${s.id}`,

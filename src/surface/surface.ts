@@ -65,6 +65,7 @@ export interface SurfaceDeps {
 
 export interface SwarmsSurface {
   track(ids: readonly string[]): void;
+  select(id: string): void;
   changed(id: string, kind: SwarmChange): void;
   // Recompose the index and history, for a change no swarm reports: the server
   // row, or history cleared by a reset.
@@ -117,10 +118,11 @@ function badgeOf(data: unknown): RibSurfaceBadge {
 
 export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   const { sm, windowMs } = deps;
+  let selected: string | undefined;
   const index = createKeyPublisher<CanvasView>(
     sm,
     INDEX_KEY,
-    () => buildIndex(deps.state()),
+    () => buildIndex({ ...deps.state(), ...(selected ? { selected } : {}) }),
     expectView(INDEX_KEY, "board"),
     windowMs,
   );
@@ -310,6 +312,10 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
 
   return {
     track,
+    select(id) {
+      selected = id;
+      index.schedule();
+    },
     changed(id, kind) {
       track([id]);
       if (kind === "report" && ensureReport(id, true)) deps.invalidateManifest?.();
@@ -327,6 +333,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       }
     },
     forget(ids) {
+      if (selected && ids.includes(selected)) selected = undefined;
       for (const id of ids) release(id);
       deps.invalidateManifest?.();
       index.schedule();

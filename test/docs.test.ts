@@ -54,6 +54,18 @@ describe("contributed docs", () => {
     }
   });
 
+  test("the Swarms topic describes the cockpit and shared selection without claiming form tabs", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    expect(swarms).toContain("one card per request, oldest first");
+    expect(swarms).toContain("oldest 12 shown");
+    expect(swarms).toContain("cockpit on the page, not in the drawer");
+    expect(swarms).toContain("hatched open");
+    expect(swarms).toContain("choice is shared by every viewer");
+    expect(swarms).toContain("wrapping action strip");
+    expect(swarms).toContain("per-swarm board also still");
+    expect(swarms).not.toContain("Live swarms are cards");
+  });
+
   test("the corpus names every registered tool and no tool that does not exist", () => {
     const registered = new Set(tools.map((t) => t.name));
     const mentioned = new Set(content.match(/\bchat_[a-z_]+\b/g) ?? []);

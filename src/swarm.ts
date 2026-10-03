@@ -346,6 +346,7 @@ export class Swarm {
   private report: SwarmReport | undefined;
   private refusedConclusions = 0;
   private socketDrops = 0;
+  private disconnectedAt?: string;
   private quietSince: string | undefined;
   private readonly asks: OperatorAsk[] = [];
   private readonly activity: ActivityEntry[] = [];
@@ -477,6 +478,7 @@ export class Swarm {
       onOpen: () => {
         if (this.socketDrops === 0) return;
         this.socketDrops = 0;
+        this.disconnectedAt = undefined;
         this.changed("health");
       },
     });
@@ -485,6 +487,7 @@ export class Swarm {
   private onSocketClose(code: number): void {
     this.subscription = undefined;
     if (this.status !== "running") return;
+    if (this.socketDrops === 0) this.disconnectedAt = new Date().toISOString();
     this.socketDrops++;
     this.changed("health");
     if (code === AUTH_REVOKED) {
@@ -1923,6 +1926,9 @@ export class Swarm {
     const leadFailures = lead ? (this.failures.get(lead.id) ?? 0) : 0;
     const health: SwarmHealth = {
       ...(this.socketDrops > 0 ? { socketDrops: this.socketDrops } : {}),
+      ...(this.socketDrops > 0 && this.disconnectedAt
+        ? { disconnectedAt: this.disconnectedAt }
+        : {}),
       ...(this.channelFault ? { channelFault: this.channelFault } : {}),
       ...(leadFailures > 0 ? { leadFailures } : {}),
       ...(this.lastLeadFailure ? { lastLeadFailure: this.lastLeadFailure } : {}),

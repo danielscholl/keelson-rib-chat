@@ -1463,6 +1463,7 @@ describe("health and needs", () => {
     dropAll();
     await until(() => h.server.sockets.size === 1);
     expect(swarm.summary().health?.socketDrops).toBe(2);
+    expect(swarm.summary().health?.disconnectedAt).toBeDefined();
     expect(needsYou(swarm.summary()).map((n) => n.kind)).toEqual(["connection"]);
     for (const socket of h.server.sockets) socket.open();
     expect(swarm.summary().health).toBeUndefined();

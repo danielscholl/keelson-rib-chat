@@ -400,6 +400,8 @@ export function publicSummary(s: SwarmSummary): Omit<SwarmSummary, "spans"> {
 export interface SwarmHealth {
   // Socket closes since it last opened; two means ClickClack stopped answering.
   socketDrops?: number;
+  // When the first of those closes happened; cleared once the socket reopens.
+  disconnectedAt?: string;
   channelFault?: string;
   leadFailures?: number;
   lastLeadFailure?: string;

@@ -25,6 +25,9 @@ export interface Need {
 
 const rank = (n: Need) => NEED_ORDER.indexOf(n.kind);
 
+// Collates after every real ISO timestamp, so a need with no time counts as the newest.
+export const UNDATED = "9999-12-31T23:59:59.999Z";
+
 export function needsYou(s: SwarmSummary): Need[] {
   if (s.status !== "running") return [];
   const needs: Need[] = [];
@@ -35,12 +38,17 @@ export function needsYou(s: SwarmSummary): Need[] {
     needs.push({ kind: "decide", run, ...(since ? { since } : {}) });
   }
   for (const ask of s.health?.asks ?? []) needs.push({ kind: "question", since: ask.at, ask });
-  if ((s.health?.socketDrops ?? 0) >= 2) needs.push({ kind: "connection" });
+  if ((s.health?.socketDrops ?? 0) >= 2) {
+    const since = s.health?.disconnectedAt;
+    needs.push({ kind: "connection", ...(since ? { since } : {}) });
+  }
   const quiet = s.health?.quietSince;
   const reviewed = gates.find((r) => r.pendingApproval?.answerer !== "operator");
   if (quiet && reviewed) needs.push({ kind: "quiet", since: quiet, run: reviewed });
   // The ladder first, then the oldest within a kind.
-  return needs.sort((a, b) => rank(a) - rank(b) || (a.since ?? "").localeCompare(b.since ?? ""));
+  return needs.sort(
+    (a, b) => rank(a) - rank(b) || (a.since ?? UNDATED).localeCompare(b.since ?? UNDATED),
+  );
 }
 
 // The oldest time among a swarm's needs, so the one waiting longest sorts first.

@@ -11,6 +11,7 @@ import { modelLabel, sizeText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
 import { SIZE_PRESETS, SWARM_SIZES, type SwarmStatus, type SwarmSummary } from "../types.ts";
 import {
+  activityText,
   channelHref,
   firstLine,
   hhmm,
@@ -101,6 +102,80 @@ export function livePill(s: SwarmSummary): Pill {
   if (s.status === "stopping") return LIFECYCLE.stopping;
   if (s.conclusion !== undefined) return { label: "concluding", tone: "info" };
   return LIFECYCLE.running;
+}
+
+export function stateLine(
+  s: SwarmSummary,
+  needs: readonly Need[],
+  server?: ServerLine,
+): { text: string; warn: boolean } {
+  const clauses: string[] = [];
+  const need = needs[0];
+  if (s.status === "stopping") {
+    clauses.push("stopping: cancelling runs and revoking tokens");
+  } else {
+    if (need) {
+      const title = requestOf(s, need, server).title;
+      const request = title.startsWith("@")
+        ? title
+        : title.charAt(0).toLowerCase() + title.slice(1);
+      clauses.push(
+        `waits on you: ${request}${need.since && need.kind !== "quiet" ? ` since ${hhmm(need.since)}` : ""}${needs.length > 1 ? ` (+${needs.length - 1} more)` : ""}`,
+      );
+    }
+    const busy = s.agents.filter((a) => a.status === "busy");
+    for (const a of busy.slice(0, 3)) {
+      const turn = [...(s.spans ?? [])].reverse().find((t) => t.agentId === a.id && !t.endedAt);
+      clauses.push(
+        `@${shortHandle(a.handle, s.id)} is on ${turn ? `turn ${turn.n} since ${hhmm(turn.startedAt)}` : "a turn"}`,
+      );
+    }
+    if (busy.length > 3) clauses.push(`+${busy.length - 3} more on turns`);
+    const waiting = s.agents.filter((a) => a.status === "waiting");
+    for (const a of waiting.slice(0, 3)) {
+      clauses.push(
+        `@${shortHandle(a.handle, s.id)} waits with ${plural(a.queued ?? 0, "message")}`,
+      );
+    }
+    if (waiting.length > 3) clauses.push(`+${waiting.length - 3} more waiting`);
+    for (const run of s.runs ?? []) {
+      const gate = run.pendingApproval;
+      if (
+        run.status !== "paused" ||
+        !gate ||
+        gate.answerer === "operator" ||
+        needs.some((n) => n.run?.runId === run.runId)
+      ) {
+        continue;
+      }
+      clauses.push(
+        `${run.workflow} ${shortRun(run.runId)} paused at ${gate.nodeId}${gate.openedAt ? ` since ${hhmm(gate.openedAt)}` : ""}${gate.reviewer ? `, with @${shortHandle(gate.reviewer, s.id)} reviewing` : ""}`,
+      );
+    }
+    if (s.conclusion !== undefined) {
+      const conclusion = [...(s.activity ?? [])].reverse().find((e) => e.kind === "conclusion");
+      clauses.push(
+        `${conclusion ? `concluded at ${hhmm(conclusion.at)}` : "the lead concluded"}; turns in flight finish`,
+      );
+    }
+    if (clauses.length === 0) {
+      const latest = s.activity?.at(-1);
+      clauses.push(
+        latest
+          ? `${hhmm(latest.at)} ${activityText(s.id, latest.text)}`
+          : "waiting for the lead's first turn",
+      );
+    }
+  }
+  const health: string[] = [];
+  const h = s.health;
+  if (h?.socketDrops && need?.kind !== "connection") {
+    health.push(`ClickClack socket closed ${plural(h.socketDrops, "time")}`);
+  }
+  if (h?.channelFault) health.push(`ClickClack fault: ${firstLine(h.channelFault, 80)}`);
+  if (h?.lastLeadFailure) health.push("the lead's last turn failed");
+  if (h?.nudges) health.push(`nudged the lead ${h.nudges} of ${s.limits.maxNudges} times`);
+  return { text: firstLine([...clauses, ...health].join(" · "), 240), warn: health.length > 0 };
 }
 
 // Runs that reached verified evidence, over the runs the lead started.
@@ -283,6 +358,17 @@ export function openSwarm(s: SwarmSummary, tone?: CanvasActionItem["tone"]): Can
     ...(tone ? { tone } : {}),
     payload: { id: s.id },
     hint: openHint(s),
+  };
+}
+
+export function selectSwarm(s: SwarmSummary, tone?: CanvasActionItem["tone"]): CanvasActionItem {
+  return {
+    type: "select-swarm",
+    label: "Open swarm",
+    glyph: "↓",
+    payload: { id: s.id },
+    hint: openHint(s),
+    ...(tone ? { tone } : {}),
   };
 }
 
