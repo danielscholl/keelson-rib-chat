@@ -76,6 +76,8 @@ import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
 import type { StartSwarmInput } from "../src/tools.ts";
 import {
   type ChildRun,
+  MESSAGE_CHARS,
+  MESSAGES_KEPT,
   SIZE_PRESETS,
   type StartingSwarm,
   type SwarmAgent,
@@ -570,6 +572,45 @@ describe("the live cockpit", () => {
     const liveBoard = buildSwarmBoard(s);
     board(swarmKey(s.id), liveBoard);
     expect(liveBoard.sections.find((x) => x.title === "Conversation")).toEqual(conversation);
+  });
+
+  test("Conversation is absent without messages or after ending, but remains while stopping", () => {
+    const s = fixtures.running!;
+    for (const patch of [
+      { recent: undefined },
+      { recent: [] },
+      { status: "done" as const, endedAt: T0 },
+    ]) {
+      expect(sections({ ...s, ...patch }).some((x) => x.title === "Conversation")).toBe(false);
+      const view = buildSwarmBoard({ ...s, ...patch });
+      board(swarmKey(s.id), view);
+      expect(view.sections.some((x) => x.title === "Conversation")).toBe(false);
+    }
+    expect(sections({ ...s, status: "stopping" }).some((x) => x.title === "Conversation")).toBe(
+      true,
+    );
+    const ended = buildSwarmBoard({
+      ...s,
+      status: "done",
+      endedAt: T0,
+      activity: [{ at: T0, text: "completed", kind: "conclusion" }],
+    });
+    expect(ended.sections.some((x) => x.title === "Activity")).toBe(true);
+  });
+
+  test("Conversation omits unknown chips and absent links, falling back to its kept count", () => {
+    const s = {
+      ...fixtures.running!,
+      clickclack: undefined,
+      messageCount: undefined,
+      recent: [{ id: "msg_lone", at: T0, author: "unknown", text: "[link](https://other)" }],
+    };
+    const conversation = sections(s).find((x) => x.title === "Conversation");
+    if (conversation?.kind !== "rows") throw new Error("expected Conversation rows");
+    expect(conversation.items).toEqual([
+      { text: "[link](https://other)", trailing: hhmm(T0) },
+      { icon: "▤", text: "1 message · transcript ↗" },
+    ]);
   });
 
   test("a live conclusion is readable from the cockpit", () => {
@@ -1235,6 +1276,17 @@ ${"detail ".repeat(1000)}`,
       runs,
       task: "t".repeat(8000),
       conclusion: "c".repeat(20_000),
+      messageCount: 500,
+      recent: Array.from({ length: MESSAGES_KEPT }, (_, i) => ({
+        id: `msg_${i}`,
+        at: T0,
+        author: agents[i % agents.length]?.id ?? "operator",
+        text: "<img src=x onerror=alert(1)> [click](javascript:alert(1)) **bold**".padEnd(
+          MESSAGE_CHARS,
+          "x",
+        ),
+        ...(i % 2 ? { threadRootId: "msg_0" } : {}),
+      })),
       activity: Array.from({ length: ACTIVITY_KEPT }, (_, i) => ({
         at: T0,
         text: "a".repeat(400),
@@ -1266,12 +1318,19 @@ ${"detail ".repeat(1000)}`,
     for (const selected of [undefined, live[5]!.id]) {
       const view = buildIndex(state({ live, ended: many, selected }));
       board(INDEX_KEY, view);
-      expect(JSON.stringify(view).length).toBeLessThan(48_000);
+      expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
+      console.info(
+        `Conversation index (six live, selected ${selected ?? "default"}): ${Buffer.byteLength(JSON.stringify(view))} bytes`,
+      );
     }
     const single = buildIndex(state({ live: [big], ended: many }));
     board(INDEX_KEY, single);
-    expect(JSON.stringify(single).length).toBeLessThan(48_000);
-    expect(JSON.stringify(buildSwarmBoard(big)).length).toBeLessThan(48_000);
+    const bytes = Buffer.byteLength(JSON.stringify(single));
+    expect(bytes).toBeLessThan(48_000);
+    console.info(`Conversation index (one live, 20 recent messages): ${bytes} bytes`);
+    const drawer = buildSwarmBoard(big);
+    board(swarmKey(big.id), drawer);
+    expect(Buffer.byteLength(JSON.stringify(drawer))).toBeLessThan(48_000);
     expect(buildDoc(big, big.id).length).toBeLessThan(128_000);
   });
 });
