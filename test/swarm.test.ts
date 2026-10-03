@@ -369,6 +369,7 @@ describe("Swarm", () => {
     expect(summary.agents.find((a) => a.handle === "s1-echo")?.status).toBe("capped");
     expect(server.messages.some((m) => m.body.includes("used all 2 of its turns"))).toBe(true);
     expect(summary.recent?.some((m) => m.text.includes("used all 2 of its turns"))).toBe(false);
+    expect(summary.operatorMessageCount).toBe(0);
   });
 
   test("a human post mid-run reaches the lead, and steer does the same", async () => {
@@ -1384,6 +1385,139 @@ describe("size and model", () => {
   });
 });
 
+describe("targeted operator messages", () => {
+  const until = async (check: () => boolean) => {
+    for (let i = 0; i < 200 && !check(); i++) await Bun.sleep(5);
+    expect(check()).toBe(true);
+  };
+
+  test("a full-handle human mention wakes only the selected idle worker and deduplicates its echo", async () => {
+    const prompts: string[] = [];
+    const h = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "scout", role: "scout", brief: "check" });
+          await call("chat_spawn", { handle: "other", role: "other", brief: "check" });
+        }
+        if (agentId === "s1-scout" && turn === 2) prompts.push(prompt);
+      },
+      {},
+      { quiesceMs: 10_000 },
+    );
+    const swarm = await h.start();
+    try {
+      await until(
+        () =>
+          swarm.summary().agents.length === 3 &&
+          swarm.summary().agents.every((a) => a.status === "idle"),
+      );
+      h.server.writeDelayMs = 10;
+      await swarm.messageAgent("s1-scout", "  Check the cache.  ");
+      await until(() => prompts.length === 1);
+      const message = h.server.messages.find(
+        (m) => m.body === "**Operator:** @s1-scout Check the cache.",
+      );
+      expect(message?.author.kind).toBe("human");
+      expect(message?.author.id).toBe(h.server.owner.id);
+      expect(prompts[0]).toContain("**Operator:** @s1-scout Check the cache.");
+      expect(swarm.summary().agents.map((a) => a.turns)).toEqual([1, 2, 1]);
+      expect(swarm.summary().operatorMessageCount).toBe(1);
+      expect(swarm.summary().activity).toContainEqual(
+        expect.objectContaining({
+          kind: "operator",
+          actor: "operator",
+          text: "you messaged @s1-scout: Check the cache.",
+        }),
+      );
+      await Bun.sleep(20);
+      expect(prompts).toHaveLength(1);
+      expect(swarm.summary().operatorMessageCount).toBe(1);
+    } finally {
+      await swarm.stop();
+    }
+  });
+
+  test("invalid targets and complete-body limits post nothing; the exact boundary posts", async () => {
+    const h = harness(async () => {}, {}, { quiesceMs: 10_000 });
+    const swarm = await h.start();
+    try {
+      await until(() => swarm.summary().agents[0]?.status === "idle");
+      const count = h.server.messages.length;
+      for (const [id, note] of [
+        ["s2-lead", "note"],
+        ["you", "note"],
+        ["s1-lead", "  "],
+        ["s1-lead", "x".repeat(BODY_MAX)],
+        ["s1-lead", "x".repeat(BODY_MAX + 1)],
+      ]) {
+        await expect(swarm.messageAgent(id!, note!)).rejects.toThrow();
+        expect(h.server.messages).toHaveLength(count);
+      }
+      const prefix = "**Operator:** @s1-lead ";
+      await swarm.messageAgent("s1-lead", "x".repeat(BODY_MAX - prefix.length));
+      expect(h.server.messages.at(-1)?.body).toHaveLength(BODY_MAX);
+      await until(() => swarm.summary().operatorMessageCount === 1);
+    } finally {
+      await swarm.stop();
+    }
+    const count = h.server.messages.length;
+    await expect(swarm.messageAgent("s1-lead", "too late")).rejects.toThrow("read-only");
+    expect(h.server.messages).toHaveLength(count);
+  });
+
+  test("capped and failed workers are refused; a lead is not worker-capped", async () => {
+    for (const failed of [false, true]) {
+      const h = harness(
+        async ({ agentId, turn, call }) => {
+          if (agentId === "s1-lead" && turn === 1) {
+            await call("chat_spawn", { handle: "w", role: "worker", brief: "check" });
+          } else if (agentId === "s1-w") {
+            if (failed) throw new Error("worker failed");
+            await call("chat_post", { body: "@s1-lead ping" });
+          } else if (!failed) {
+            await call("chat_post", { body: "@s1-w again" });
+          }
+        },
+        { maxTurnsPerAgent: failed ? 12 : 1 },
+        { quiesceMs: 10_000 },
+      );
+      const swarm = await h.start();
+      try {
+        await until(() => swarm.summary().agents[1]?.status === (failed ? "failed" : "capped"));
+        const count = h.server.messages.length;
+        await expect(swarm.messageAgent("s1-w", "again")).rejects.toThrow(
+          "cannot take another turn",
+        );
+        expect(h.server.messages).toHaveLength(count);
+        expect(swarm.summary().operatorMessageCount).toBe(0);
+        await swarm.messageAgent("s1-lead", "still eligible");
+      } finally {
+        await swarm.stop();
+      }
+    }
+  });
+
+  test("a concluded swarm and transport failures cannot report successful messaging", async () => {
+    const h = harness(async () => {}, {}, { quiesceMs: 10_000 });
+    const swarm = await h.start();
+    try {
+      await until(() => swarm.summary().agents[0]?.status === "idle");
+      const count = h.server.messages.length;
+      h.server.down = true;
+      await expect(swarm.messageAgent("s1-lead", "lost")).rejects.toThrow();
+      h.server.down = false;
+      expect(h.server.messages).toHaveLength(count);
+      expect(swarm.summary().activity?.some((e) => e.kind === "operator")).toBe(false);
+      expect(swarm.summary().operatorMessageCount).toBe(0);
+      await swarm.conclude("s1-lead", "done");
+      await expect(swarm.messageAgent("s1-lead", "late")).rejects.toThrow("concluded");
+    } finally {
+      h.server.down = false;
+      await swarm.stop();
+    }
+  });
+});
+
 describe("changes and records", () => {
   const script: Script = async ({ agentId, turn, call }) => {
     if (agentId === "s1-lead" && turn === 1) {
@@ -1462,6 +1596,7 @@ describe("changes and records", () => {
     expect(recent.at(-1)).toMatchObject({ author: "s1-lead", kind: "conclusion" });
     expect(recent.every((m) => m.text.length <= MESSAGE_CHARS)).toBe(true);
     expect(summary.messageCount).toBe(ingested.length);
+    expect(summary.operatorMessageCount).toBe(1);
     expect(kinds.filter((kind) => kind === "message")).toHaveLength(ingested.length);
     const status = JSON.parse(
       (await callTool(h.tools, "chat_swarm_status", { swarm: "s1" })).content,
@@ -1512,6 +1647,7 @@ describe("changes and records", () => {
       for (let i = 0; i < 200 && swarm.summary().messageCount !== 51; i++) await Bun.sleep(5);
       const summary = swarm.summary();
       expect(summary.messageCount).toBe(51);
+      expect(summary.operatorMessageCount).toBe(50);
       expect(summary.recent).toHaveLength(MESSAGES_KEPT);
       expect(summary.recent?.map((m) => m.id)).toEqual(
         posts.slice(-MESSAGES_KEPT).map((m) => m.id),
@@ -1526,6 +1662,83 @@ describe("changes and records", () => {
     } finally {
       release();
       await swarm.finished;
+    }
+  });
+
+  test("operator counts exclude early kickoff echoes and notices, and deduplicate replies", async () => {
+    const h = harness(async () => never, {}, { settleMs: 1 });
+    h.server.writeDelayMs = 10;
+    const swarm = await h.start();
+    try {
+      expect(swarm.summary().operatorMessageCount).toBe(0);
+      const post = h.server.postAsOwner(swarm.summary().channelId, "a direct post");
+      await swarm.replyInThread(post.id, "a reply");
+      await swarm.steer("a steer");
+      for (let i = 0; i < 200 && swarm.summary().operatorMessageCount !== 3; i++) {
+        await Bun.sleep(5);
+      }
+      expect(swarm.summary().operatorMessageCount).toBe(3);
+      await Bun.sleep(20);
+      expect(swarm.summary().operatorMessageCount).toBe(3);
+      expect(publicSummary(swarm.summary()).operatorMessageCount).toBe(3);
+    } finally {
+      await swarm.stop();
+    }
+  });
+
+  test("a human reply matching an in-flight retirement notice is classified by ID", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = harness(
+      async ({ agentId, turn, call }) => {
+        if (agentId === "s1-w") return;
+        if (turn === 1) {
+          await call("chat_post", { body: "@operator Reply in this thread to confirm." });
+          await call("chat_spawn", { handle: "w", role: "worker", brief: "Use one turn." });
+          await call("chat_post", { body: "@s1-w again" });
+          await held;
+        } else {
+          await call("chat_done", { summary: "Confirmed." });
+        }
+      },
+      { maxTurnsPerAgent: 1 },
+    );
+    h.server.writeDelayMs = 100;
+    const swarm = await h.start();
+    try {
+      const notice = "@s1-w has used all 1 of its turns and will not respond further.";
+      for (let i = 0; i < 200 && !h.server.messages.some((m) => m.body === notice); i++) {
+        await Bun.sleep(5);
+      }
+      const own = h.server.messages.find((m) => m.body === notice);
+      const ask = h.server.messages.find((m) => m.body.startsWith("@operator"));
+      if (!own || !ask) throw new Error("expected the retirement notice and operator ask");
+      expect(swarm.summary().health?.asks?.some((a) => a.messageId === ask.id)).toBe(true);
+      const reply = h.server.postAsOwner(swarm.summary().channelId, notice, ask.id);
+      const later = h.server.postAsOwner(swarm.summary().channelId, "after the matching reply");
+      expect(reply.id).not.toBe(own.id);
+      await Bun.sleep(20);
+      expect(swarm.summary().operatorMessageCount).toBe(0);
+      for (let i = 0; i < 200 && swarm.summary().operatorMessageCount !== 2; i++) {
+        await Bun.sleep(5);
+      }
+      const summary = swarm.summary();
+      expect(summary.operatorMessageCount).toBe(2);
+      expect(summary.recent?.some((m) => m.id === own.id)).toBe(false);
+      expect(summary.recent?.slice(-2).map((m) => m.id)).toEqual([reply.id, later.id]);
+      expect(summary.health?.asks?.some((a) => a.messageId === ask.id) ?? false).toBe(false);
+      release();
+      const ended = await swarm.finished;
+      expect(ended.status).toBe("done");
+      expect(ended.operatorMessageCount).toBe(2);
+      expect(ended.spans?.find((t) => t.agentId === "s1-lead" && t.n === 2)?.wokeBy).toEqual([
+        "operator",
+      ]);
+    } finally {
+      release();
+      await swarm.stop();
     }
   });
 

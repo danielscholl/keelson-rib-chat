@@ -38,6 +38,8 @@ import {
   type ActivityEntry,
   type ActivityKind,
   addTokens,
+  agentMessageBody,
+  agentMessageRefusal,
   BODY_MAX,
   type ChatMessage,
   type ChildRun,
@@ -328,7 +330,7 @@ export class Swarm {
   // they reach on the way out is not announced.
   private readonly cancelling = new Set<string>();
   private readonly quietPosts = new Set<string>();
-  private readonly quietBodies = new Map<string, number>();
+  private readonly pendingPosts = new Map<string, Set<Promise<void>>>();
   private readonly syncing = new Set<string>();
   private readonly resync = new Set<string>();
   // Run updates waiting for the lead's next turn; they wake it like a message.
@@ -358,6 +360,7 @@ export class Swarm {
   private readonly activity: ActivityEntry[] = [];
   private readonly recent: RecentMessage[] = [];
   private messageCount = 0;
+  private operatorMessageCount = 0;
   private kickoffId = "";
   private ownerHandle = "";
   // Messages the rib posts as the owner, which are not the operator talking.
@@ -474,10 +477,7 @@ export class Swarm {
       () => void this.finish("exhausted", "wall clock limit reached"),
       this.limits.wallClockMs,
     );
-    const kickoff = await this.owner.postMessage(
-      this.channel.id,
-      `**Swarm ${this.id}**\n\n${this.task}`,
-    );
+    const kickoff = await this.postOwn(`**Swarm ${this.id}**\n\n${this.task}`, true);
     this.kickoffId = kickoff.id;
     this.ownPosts.add(kickoff.id);
     this.log(`swarm ${this.id} started in #${this.channel.name}`, { kind: "start" });
@@ -523,7 +523,7 @@ export class Swarm {
     // Events carry ids, never bodies, so each one is hydrated.
     this.serial(async () => {
       if (this.seen.has(messageId)) return;
-      this.ingest(await this.owner.getMessage(messageId));
+      await this.ingest(await this.owner.getMessage(messageId));
     });
   }
 
@@ -545,37 +545,64 @@ export class Swarm {
     this.serial(async () => this.ingest(message));
   }
 
-  // The rib's own bookkeeping posts (run and gate updates) wake no one, even
-  // when they name a reviewer or land in a thread one joined. The body is
-  // registered before the write, since the realtime copy can arrive first.
-  private async quietly(body: string, write: () => Promise<ChatMessage>): Promise<ChatMessage> {
-    this.quietBodies.set(body, (this.quietBodies.get(body) ?? 0) + 1);
+  private async postOwn(body: string, kickoff = false): Promise<ChatMessage> {
+    return this.writeTracked(
+      body,
+      () => this.owner.postMessage(this.channel.id, body),
+      this.ownPosts,
+      kickoff,
+    );
+  }
+
+  private async writeTracked(
+    body: string,
+    write: () => Promise<ChatMessage>,
+    posts: Set<string>,
+    kickoff = false,
+  ): Promise<ChatMessage> {
+    const settled = deferred<void>();
+    const pending = this.pendingPosts.get(body) ?? new Set<Promise<void>>();
+    pending.add(settled.promise);
+    this.pendingPosts.set(body, pending);
     try {
       const message = await write();
-      this.quietPosts.add(message.id);
-      this.enqueueMessage(message);
+      posts.add(message.id);
+      if (kickoff) this.kickoffId = message.id;
       return message;
     } finally {
-      const left = (this.quietBodies.get(body) ?? 1) - 1;
-      if (left > 0) this.quietBodies.set(body, left);
-      else this.quietBodies.delete(body);
+      pending.delete(settled.promise);
+      if (pending.size === 0) this.pendingPosts.delete(body);
+      settled.resolve();
     }
   }
 
-  private ingest(message: ChatMessage): void {
+  // The rib's own bookkeeping posts (run and gate updates) wake no one, even
+  // when they name a reviewer or land in a thread one joined.
+  private async quietly(body: string, write: () => Promise<ChatMessage>): Promise<ChatMessage> {
+    const message = await this.writeTracked(body, write, this.quietPosts);
+    this.enqueueMessage(message);
+    return message;
+  }
+
+  private async ingest(message: ChatMessage): Promise<void> {
+    if (this.status !== "running" || this.seen.has(message.id)) return;
+    // A realtime echo may beat its write response; matching text alone is not
+    // proof of authorship. Keep arrival order until the returned IDs are known.
+    const pending = this.pendingPosts.get(message.body);
+    if (pending) await Promise.all(pending);
     if (this.status !== "running" || this.seen.has(message.id)) return;
     this.seen.add(message.id);
     const roster = [...this.agents.values()];
     const author = roster.find((a) => a.botUserId === message.authorId);
     const isRoot = message.threadRootId === message.id;
     if (message.authorKind === "human" && !this.ownPosts.has(message.id)) {
+      this.operatorMessageCount++;
       this.answerAsks(message, isRoot);
     }
     if (author?.lead && !isRoot) this.noteReviewer(message);
     if (isRoot && author) this.threadStarters.set(message.id, author.id);
     const participants = this.threadParticipants.get(message.threadRootId) ?? new Set<string>();
     const starter = this.threadStarters.get(message.threadRootId);
-    if (author?.lead && this.quietBodies.has(message.body)) this.quietPosts.add(message.id);
     this.remember(message, author, isRoot);
     const recipients = this.quietPosts.has(message.id)
       ? []
@@ -714,8 +741,7 @@ export class Swarm {
     this.changed("agent");
     this.inboxes.set(agent.id, []);
     this.background.delete(agent.id);
-    void this.owner
-      .postMessage(this.channel.id, notice)
+    void this.postOwn(notice)
       .then((m) => {
         this.ownPosts.add(m.id);
         this.enqueueMessage(m);
@@ -2022,6 +2048,17 @@ export class Swarm {
     this.enqueueMessage(message);
   }
 
+  async messageAgent(agentId: string, note: string): Promise<void> {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent ${agentId} does not belong to swarm ${this.id}.`);
+    const refusal = agentMessageRefusal(this.summary(), agent);
+    if (refusal) throw new Error(refusal);
+    const body = agentMessageBody(agent.handle, note);
+    const message = await this.owner.postMessage(this.channel.id, body);
+    this.noteOperator(`you messaged @${agent.handle}`, note);
+    this.enqueueMessage(message);
+  }
+
   // Posted as the owner in the gate's thread, so it wakes everyone working there.
   async replyToGate(runId: string, note: string): Promise<void> {
     const run = this.runs.get(runId);
@@ -2113,6 +2150,7 @@ export class Swarm {
       ...(this.activity.length > 0 ? { activity: this.activity.map((e) => ({ ...e })) } : {}),
       ...(this.recent.length > 0 ? { recent: this.recent.map((m) => ({ ...m })) } : {}),
       ...(this.messageCount > 0 ? { messageCount: this.messageCount } : {}),
+      operatorMessageCount: this.operatorMessageCount,
       ...(this.opts.context?.length
         ? { context: contextIndex(this.opts.context, { excerpts: true }) }
         : {}),

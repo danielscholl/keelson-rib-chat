@@ -6,7 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { CanvasBoardView } from "@keelson/shared";
+import type { CanvasBoardView, CanvasGraphSection, CanvasTone } from "@keelson/shared";
 import { missingEvidence } from "../dispatch.ts";
 import { freshTokens, modelLabel, servedModels, tokenCount, tokensText } from "../labels.ts";
 import { type Need, needsYou } from "../needs.ts";
@@ -14,6 +14,7 @@ import type { StartSwarmInput } from "../tools.ts";
 import {
   type AgentStatus,
   type ChildRun,
+  type ChildRunStatus,
   isLive,
   type StartingSwarm,
   type SwarmSummary,
@@ -56,6 +57,7 @@ import {
   stopAction,
   verifiedText,
 } from "./parts.ts";
+import { buildAgentEdges } from "./record.ts";
 
 type Section = CanvasBoardView["sections"][number];
 type Leaf = Exclude<Section, { kind: "columns" }>;
@@ -66,6 +68,7 @@ type Segment = Extract<NonNullable<Row["bar"]>, { segments: unknown }>["segments
 
 // The conclusion on the board is a preview; the reading pane has all of it.
 const PREVIEW_CHARS = 1_200;
+const COCKPIT_TASK_CHARS = 1_000;
 // A row's disclosure holds this much; the task tool caps at 8,000.
 export const DETAIL_CHARS = 4_000;
 // Context disclosures on one board, in total, so a swarm with twenty items
@@ -288,17 +291,18 @@ export const openRecord = (s: SwarmSummary) => ({
 function controls(s: SwarmSummary): Leaf[] {
   if (!live(s)) return [];
   const items: Extract<Leaf, { kind: "actions" }>["items"] = [];
-  if (s.status === "running" && s.conclusion === undefined) {
-    items.push({ ...messageLead(s), expanded: true });
-  }
   items.push(openRecord(s));
   if (s.status === "running") items.push(stopAction(s, true));
   return [{ kind: "actions", wrap: true, items }];
 }
 
-// ---- The bench: one card per agent, a ghost per open seat. ----
+// ---- Ended agents and the live map. ----
 
-function agentCard(s: SwarmSummary, a: SwarmSummary["agents"][number]): Card {
+function agentCard(
+  s: SwarmSummary,
+  a: SwarmSummary["agents"][number],
+  selectedAgentId?: string,
+): Card {
   const pinned = a.model && a.model !== (a.lead ? s.model : (s.workerModel ?? s.model));
   const tokens = a.usage ? `${tokenCount(freshTokens(a.usage))} tokens` : undefined;
   const turns = a.lead
@@ -316,12 +320,12 @@ function agentCard(s: SwarmSummary, a: SwarmSummary["agents"][number]): Card {
   return {
     title: shortHandle(a.handle, s.id),
     titleTone: a.tone,
-    mono: true,
+    action: { type: "select-agent", payload: { id: s.id, agentId: a.id } },
+    ...(a.id === selectedAgentId ? { selected: true } : {}),
     ...(live(s) ? { pill: AGENT_PILL[a.status] } : {}),
     ...(a.lead
       ? {}
       : { bar: { value: a.turns, total: s.limits.maxTurnsPerAgent, trailing: turns } }),
-    stacked: true,
     fields: [
       { value: firstLine(a.role, 64) },
       ...(a.lead
@@ -335,18 +339,125 @@ function agentCard(s: SwarmSummary, a: SwarmSummary["agents"][number]): Card {
   };
 }
 
-function bench(s: SwarmSummary): Leaf {
-  const open = live(s) ? Math.max(0, s.limits.maxAgents - s.agents.length) : 0;
-  const items: Card[] = [
-    ...s.agents.map((a) => agentCard(s, a)),
-    ...Array.from({ length: open }, () => ({ title: "open seat", ghost: true })),
-  ];
+function bench(s: SwarmSummary, selectedAgentId?: string): Leaf {
+  const items = s.agents.map((a) => agentCard(s, a, selectedAgentId));
   return {
     kind: "cards",
     title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`,
     grid: true,
     columns: BENCH_COLUMNS,
-    items: items.length > 0 ? items : [{ title: "No agents yet", ghost: true }],
+    items: items.length > 0 ? items : [{ title: "No agents recorded" }],
+  };
+}
+
+const RUN_TONE: Record<ChildRunStatus, CanvasTone> = {
+  running: "info",
+  paused: "caution",
+  succeeded: "ok",
+  failed: "error",
+  cancelled: "neutral",
+};
+
+export function buildAgentMap(s: SwarmSummary, selectedAgentId?: string): CanvasGraphSection {
+  const agents = [...s.agents.filter((a) => a.lead), ...s.agents.filter((a) => !a.lead)];
+  const allNodes: CanvasGraphSection["nodes"] = [
+    {
+      id: "you",
+      label: "you",
+      sublabel:
+        s.operatorMessageCount === undefined
+          ? "posts not recorded"
+          : plural(s.operatorMessageCount, "post"),
+      tone: "neutral",
+      rank: 0,
+    },
+    ...agents.map((a) => ({
+      id: a.id,
+      label: `@${shortHandle(a.handle, s.id)}`,
+      sublabel: `${a.lead ? `${a.turns} turns` : `${a.turns} of ${s.limits.maxTurnsPerAgent}`} · ${a.status}`,
+      tone: a.tone,
+      rank: a.lead ? 1 : 2,
+      ...(a.lead || a.worktree ? { badges: [{ text: a.lead ? "lead" : "writer" }] } : {}),
+      action: { type: "select-agent", payload: { id: s.id, agentId: a.id } },
+      ...(a.id === selectedAgentId ? { selected: true } : {}),
+    })),
+    ...(s.runs ?? []).map((r) => ({
+      id: `run:${r.runId}`,
+      label: `${r.workflow} ${shortRun(r.runId)}`,
+      sublabel: `${r.status} · ${r.nodesDone} steps`,
+      tone: RUN_TONE[r.status],
+      rank: 3,
+      action: { type: "open-run", payload: { id: s.id, runId: r.runId } },
+    })),
+  ];
+  const allIds = new Set(allNodes.map((n) => n.id));
+  const allEdges: (CanvasGraphSection["edges"][number] & { priority: number })[] = buildAgentEdges(
+    s,
+  )
+    .map((e) => ({
+      priority: e.kind === "spawned" ? 0 : e.kind === "woke" ? 1 : 2,
+      source: e.from === "operator" ? "you" : e.from,
+      target: e.to === "operator" ? "you" : e.to,
+      label:
+        e.kind === "asked" ? `asked ×${e.n}` : `×${e.kind === "spawned" ? (e.woke ?? 0) : e.n}`,
+      ...(e.kind === "asked" ? { dashed: true } : {}),
+    }))
+    .filter((e) => allIds.has(e.source) && allIds.has(e.target));
+  const lead = agents.find((a) => a.lead);
+  if (lead) {
+    for (const r of s.runs ?? []) {
+      allEdges.push({ source: `run:${r.runId}`, target: lead.id, label: "updates", priority: 0 });
+    }
+  }
+  const required = allNodes.filter(
+    (n) => n.id === "you" || n.rank === 1 || n.id === selectedAgentId,
+  );
+  const retained = new Set(
+    [...required, ...allNodes.filter((n) => !required.includes(n))].slice(0, 48).map((n) => n.id),
+  );
+  const nodes = allNodes.filter((n) => retained.has(n.id));
+  const edges = allEdges
+    .sort((a, b) => a.priority - b.priority)
+    .filter((e) => retained.has(e.source) && retained.has(e.target))
+    .slice(0, 200)
+    .map(({ priority, ...edge }) => edge);
+  const clipped = [
+    ...(nodes.length < allNodes.length
+      ? [`showing ${nodes.length} of ${allNodes.length} nodes`]
+      : []),
+    ...(edges.length < allEdges.length
+      ? [`showing ${edges.length} of ${allEdges.length} edges`]
+      : []),
+  ];
+  return {
+    kind: "graph",
+    title: ["Map", ...clipped].join(" · "),
+    columns: ["You", "Lead", "Workers", "Runs"],
+    nodes,
+    edges,
+  };
+}
+
+function mapConversation(s: SwarmSummary, selectedAgentId?: string): Section {
+  return {
+    kind: "columns",
+    columns: [
+      { sections: [buildAgentMap(s, selectedAgentId)] },
+      {
+        sections: [
+          ...conversation(s),
+          ...(s.status === "running" && s.conclusion === undefined
+            ? [
+                {
+                  kind: "actions" as const,
+                  wrap: true,
+                  items: [{ ...messageLead(s), expanded: true }],
+                },
+              ]
+            : []),
+        ],
+      },
+    ],
   };
 }
 
@@ -576,10 +687,10 @@ function detailOf(text: string, budget: number): { detail?: string; cut?: string
   };
 }
 
-function taskAndContext(s: SwarmSummary): Leaf[] {
+function taskAndContext(s: SwarmSummary, taskBudget = DETAIL_CHARS): Leaf[] {
   const task = s.task.trim();
   const head = firstLine(task, 80);
-  const disclosed = task.length > head.length ? detailOf(task, DETAIL_CHARS) : {};
+  const disclosed = task.length > head.length ? detailOf(task, taskBudget) : {};
   const rows: Row[] = [
     {
       icon: "▤",
@@ -829,10 +940,22 @@ export interface BoardOptions {
   // The ClickClack server, so a connection request can offer to start it.
   server?: ServerLine;
   now?: Date;
+  selectedAgentId?: string;
 }
 
-export function liveDetails(s: SwarmSummary): Leaf[] {
-  return [bench(s), ...spend(s), ...produced(s), ...taskAndContext(s), ...activity(s), about(s)];
+export function liveDetails(
+  s: SwarmSummary,
+  selectedAgentId?: string,
+  taskBudget = DETAIL_CHARS,
+): Leaf[] {
+  return [
+    ...(!live(s) ? [bench(s, selectedAgentId)] : []),
+    ...spend(s),
+    ...produced(s),
+    ...taskAndContext(s, taskBudget),
+    ...activity(s),
+    about(s),
+  ];
 }
 
 function agentStrip(s: SwarmSummary): Leaf {
@@ -850,7 +973,7 @@ function agentStrip(s: SwarmSummary): Leaf {
 export function buildCockpit(
   s: SwarmSummary,
   needs: readonly Need[],
-  opts: { server?: ServerLine; titled: boolean; now?: Date },
+  opts: { server?: ServerLine; titled: boolean; now?: Date; selectedAgentId?: string },
 ): Section[] {
   const people = s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone }));
   const line = stateLine(s, needs, opts.server);
@@ -882,17 +1005,8 @@ export function buildCockpit(
       title: "Budget",
       items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s)],
     },
-    ...conversation(s),
-    ...(s.status === "running" && s.conclusion === undefined
-      ? [
-          {
-            kind: "actions" as const,
-            wrap: true,
-            items: [{ ...messageLead(s), expanded: true }],
-          },
-        ]
-      : []),
-    ...liveDetails(s),
+    mapConversation(s, opts.selectedAgentId),
+    ...liveDetails(s, opts.selectedAgentId, COCKPIT_TASK_CHARS),
     { kind: "actions", wrap: true, items },
   ];
 }
@@ -910,7 +1024,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
   const chip = isLiveNow
     ? `${sizeWord(s)} · ${s.turnsUsed} of ${s.limits.maxTurns} turns · ${modelLabel(s)}`
     : `${sizeWord(s)} · ${plural(s.turnsUsed, "turn")}${took ? ` · ${took}` : ""} · ${modelLabel(s)}`;
-  const details = liveDetails(s);
+  const details = liveDetails(s, opts.selectedAgentId);
   return {
     view: "board",
     title: `${firstLine(s.task)} · ${s.id}`,
@@ -926,7 +1040,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
           ...requests(s, needs, opts.server),
           ...outcome(s),
           stats(s, now),
-          ...conversation(s),
+          mapConversation(s, opts.selectedAgentId),
           ...controls(s),
           ...details,
         ]

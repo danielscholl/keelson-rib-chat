@@ -3,11 +3,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  type CanvasBoardView,
   expectView,
   type RibViewDescriptor,
   ribClientEffectSchema,
   ribSurfaceBadgeSchema,
   ribSurfaceDescriptorSchema,
+  type SnapshotFrame,
   type SnapshotManager,
 } from "@keelson/shared";
 import { applyStatus } from "../src/dispatch.ts";
@@ -15,6 +17,7 @@ import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
+import { buildAgentInspector, INSPECTOR_TURNS_SHOWN } from "../src/surface/agent-inspector.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import type { forecastDelta } from "../src/surface/forecast.ts";
 import {
@@ -35,6 +38,7 @@ import {
   type SurfaceState,
 } from "../src/surface/index-board.ts";
 import {
+  agentKey,
   docKey,
   HISTORY_KEY,
   INDEX_KEY,
@@ -53,7 +57,7 @@ import {
   stateLine,
 } from "../src/surface/parts.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
-import { buildRecord } from "../src/surface/record.ts";
+import { buildAgentEdges, buildRecord } from "../src/surface/record.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
 import {
   buildServerPanel,
@@ -67,6 +71,7 @@ import {
   type SwarmsSurface,
 } from "../src/surface/surface.ts";
 import {
+  buildAgentMap,
   buildCockpit,
   buildGoneBoard,
   buildStartingBoard,
@@ -89,6 +94,12 @@ import {
 } from "../src/types.ts";
 
 const T0 = "2026-09-22T14:00:00.000Z";
+
+function leaves(sections: CanvasBoardView["sections"]) {
+  return sections.flatMap((s) =>
+    s.kind === "columns" ? s.columns.flatMap((c) => c.sections) : [s],
+  );
+}
 
 const serverFixtures = {
   managedRunning: {
@@ -545,11 +556,463 @@ describe("message lines", () => {
   });
 });
 
+describe("the agent map", () => {
+  const graph = (s: SwarmSummary, selected?: string) => {
+    const map = buildAgentMap(s, selected);
+    board(swarmKey(s.id), { view: "board", sections: [map] });
+    return map;
+  };
+
+  test("columns, identity tones, status figures and non-agent actions are explicit", () => {
+    const s = swarm("s1", {
+      operatorMessageCount: 25,
+      agents: [agent("s1", 0), agent("s1", 1), agent("s1", 2), agent("s1", 3)],
+      runs: [run("r1", { status: "paused" })],
+    });
+    const map = graph(s, "s1-w2");
+    expect(map.columns).toEqual(["You", "Lead", "Workers", "Runs"]);
+    expect(map.nodes.map((n) => n.rank)).toEqual([0, 1, 2, 2, 2, 3]);
+    expect(map.nodes.map((n) => n.tone)).toEqual([
+      "neutral",
+      "brand",
+      "id-blue",
+      "id-amber",
+      "id-teal",
+      "caution",
+    ]);
+    expect(map.nodes[0]).toMatchObject({ id: "you", sublabel: "25 posts" });
+    expect(map.nodes[0]?.action).toBeUndefined();
+    expect(map.nodes[1]?.sublabel).toBe("3 turns · idle");
+    expect(map.nodes[2]?.sublabel).toBe("3 of 12 · idle");
+    expect(map.nodes[3]).toMatchObject({
+      selected: true,
+      action: { type: "select-agent", payload: { id: "s1", agentId: "s1-w2" } },
+    });
+    expect(map.nodes[5]).toMatchObject({
+      sublabel: "paused · 4 steps",
+      action: { type: "open-run", payload: { id: "s1", runId: s.runs![0]!.runId } },
+    });
+    expect(graph({ ...s, operatorMessageCount: 0 }).nodes[0]?.sublabel).toBe("0 posts");
+    expect(graph({ ...s, operatorMessageCount: undefined }).nodes[0]?.sublabel).toBe(
+      "posts not recorded",
+    );
+    for (const [status, tone] of [
+      ["running", "info"],
+      ["succeeded", "ok"],
+      ["failed", "error"],
+      ["cancelled", "neutral"],
+    ] as const) {
+      expect(graph({ ...s, runs: [run("r1", { status })] }).nodes.at(-1)?.tone).toBe(tone);
+    }
+  });
+
+  test("spawn wakes fold, grandchildren stay workers and run updates have no invented counts", () => {
+    const s = swarm("s1", {
+      agents: [
+        agent("s1", 0),
+        agent("s1", 1, { spawnedBy: "s1-lead" }),
+        agent("s1", 2, { spawnedBy: "s1-w1" }),
+        agent("s1", 3, { spawnedBy: "s1-lead" }),
+      ],
+      spans: [
+        {
+          agentId: "s1-w1",
+          n: 1,
+          startedAt: T0,
+          messages: 3,
+          wokeBy: ["s1-lead", "s1-lead", "operator"],
+        },
+        {
+          agentId: "s1-lead",
+          n: 2,
+          startedAt: T0,
+          messages: 3,
+          wokeBy: ["s1-w2", "runs", "missing", "s1-lead"],
+        },
+      ],
+      activity: [{ at: T0, text: "question", kind: "ask", actor: "s1-w2", count: 4 }],
+      runs: [run("r1"), run("r2")],
+    });
+    const map = graph(s);
+    expect(map.nodes.find((n) => n.id === "s1-w2")?.rank).toBe(2);
+    for (const edge of [
+      { source: "s1-lead", target: "s1-w1", label: "×1" },
+      { source: "s1-lead", target: "s1-w3", label: "×0" },
+      { source: "you", target: "s1-w1", label: "×1" },
+      { source: "s1-w2", target: "s1-lead", label: "×1" },
+      { source: "s1-w2", target: "you", label: "asked ×4", dashed: true },
+      ...s.runs!.map((r) => ({ source: `run:${r.runId}`, target: "s1-lead", label: "updates" })),
+    ])
+      expect(map.edges).toContainEqual(edge);
+    expect(map.edges.some((e) => e.source === "runs")).toBe(false);
+    expect(graph({ ...s, spans: [...s.spans!].reverse() }).nodes).toEqual(map.nodes);
+  });
+
+  test("synthetic overflow retains selection, clips exact counts and never dangles", () => {
+    const agents = Array.from({ length: 55 }, (_, i) => agent("s1", i));
+    const s = swarm("s1", {
+      agents,
+      spans: agents.map((a) => ({
+        agentId: a.id,
+        n: 1,
+        startedAt: T0,
+        messages: agents.length,
+        wokeBy: agents.map((source) => source.id),
+      })),
+    });
+    const map = graph(s, "s1-w54");
+    expect(map.nodes).toHaveLength(48);
+    expect(map.edges).toHaveLength(200);
+    expect(map.title).toBe("Map · showing 48 of 56 nodes · showing 200 of 2970 edges");
+    expect(map.nodes.some((n) => n.id === "s1-w54" && n.selected)).toBe(true);
+    expect(map.nodes.some((n) => n.id === "s1-lead")).toBe(true);
+    const ids = new Set(map.nodes.map((n) => n.id));
+    expect(map.edges.every((e) => ids.has(e.source) && ids.has(e.target))).toBe(true);
+    expect(graph(s, "s1-w54")).toEqual(map);
+    const dense = graph({ ...s, agents: agents.slice(0, 16) });
+    expect(dense.nodes).toHaveLength(17);
+    expect(dense.edges).toHaveLength(200);
+    expect(dense.title).toBe("Map · showing 200 of 240 edges");
+    const nodesOnly = graph({ ...s, spans: [] }, "s1-w54");
+    expect(nodesOnly.nodes).toHaveLength(48);
+    expect(nodesOnly.edges).toHaveLength(0);
+    expect(nodesOnly.title).toBe("Map · showing 48 of 56 nodes");
+    expect(nodesOnly.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(["s1-w54"]);
+    expect(graph(swarm("s0", { agents: [] })).nodes).toHaveLength(1);
+  });
+
+  test("dense maps retain spawn and run updates before wakes, and wakes before questions", () => {
+    const agents = Array.from({ length: 16 }, (_, i) =>
+      agent("s1", i, i === 15 ? { spawnedBy: "s1-lead" } : {}),
+    );
+    const s = swarm("s1", {
+      agents,
+      spans: agents.map((a) => ({
+        agentId: a.id,
+        n: 1,
+        startedAt: T0,
+        messages: agents.length,
+        wokeBy: agents.map((source) => source.id),
+      })),
+      activity: agents.map((a) => ({
+        at: T0,
+        text: "question",
+        kind: "ask" as const,
+        actor: a.id,
+        count: 100,
+      })),
+      runs: [run("r1")],
+    });
+    expect(buildAgentEdges(s).filter((e) => e.kind === "woke").length).toBeGreaterThan(200);
+    const map = graph(s);
+    expect(map.edges).toHaveLength(200);
+    expect(map.edges.slice(0, 2)).toEqual([
+      { source: "s1-lead", target: "s1-w15", label: "×1" },
+      { source: `run:${s.runs![0]!.runId}`, target: "s1-lead", label: "updates" },
+    ]);
+    expect(map.edges.every((e) => !e.dashed)).toBe(true);
+    expect(map.title).toBe("Map · showing 200 of 257 edges");
+    const sparse = graph({ ...s, spans: [] });
+    expect(sparse.edges.slice(0, 2)).toEqual([
+      { source: "s1-lead", target: "s1-w15", label: "×0" },
+      { source: `run:${s.runs![0]!.runId}`, target: "s1-lead", label: "updates" },
+    ]);
+    expect(sparse.edges.slice(2).every((e) => e.dashed)).toBe(true);
+  });
+});
+
+describe("the agent inspector", () => {
+  const inspect = (s: SwarmSummary, index = 1) => {
+    const view = buildAgentInspector(s, s.agents[index]!);
+    board(`agent-${s.id}`, view);
+    return view;
+  };
+  const writer = () =>
+    swarm("s1", {
+      agents: [
+        agent("s1", 0),
+        agent("s1", 1, {
+          status: "busy",
+          joinedAt: T0,
+          spawnedBy: "s1-lead",
+          model: "requested",
+          servedModel: "served",
+          providerId: "copilot",
+          usage: { input: 1000, output: 2000, cached: 4000 },
+          worktree: { path: "/repo/.worktrees/w1", branch: "writer/w1", base: "main" },
+          prUrl: "https://github.com/o/r/pull/42",
+        }),
+      ],
+      spans: [
+        {
+          agentId: "s1-w1",
+          n: 1,
+          startedAt: T0,
+          endedAt: "2026-09-22T14:00:30.000Z",
+          outcome: "timeout",
+          messages: 1,
+          wokeBy: ["rib"],
+        },
+        { agentId: "s1-lead", n: 1, startedAt: T0, messages: 1, wokeBy: ["rib"] },
+        {
+          agentId: "s1-w1",
+          n: 2,
+          startedAt: T0,
+          messages: 4,
+          wokeBy: ["s1-lead", "operator", "runs", "nudge", "rib"],
+        },
+      ],
+      prs: [
+        {
+          agent: "s1-w2",
+          url: "https://github.com/o/r/pull/42",
+          branch: "other",
+          at: T0,
+          ci: { verdict: "fail" },
+        },
+        {
+          agent: "s1-w1",
+          url: "https://github.com/o/r/pull/42",
+          branch: "writer/w1",
+          at: T0,
+          ci: { verdict: "running", detail: "build queued" },
+        },
+      ],
+      recent: [
+        { id: "m1", author: "s1-w1", at: T0, text: "**First**", threadRootId: "root" },
+        { id: "m2", author: "s1-lead", at: T0, text: "Not the worker's message" },
+        { id: "m3", author: "s1-w1", at: T0, text: "`Latest` @s1-lead" },
+      ],
+    });
+
+  test("writer facts, real model, usage, provenance, recent threads and turns are native", () => {
+    const s = writer();
+    const view = inspect(s);
+    const text = JSON.stringify(view);
+    expect(view.sections[0]).toMatchObject({
+      kind: "cards",
+      items: [
+        {
+          title: "@w1",
+          titleTone: "id-blue",
+          pill: { label: "busy" },
+          bar: { value: 3, total: 12 },
+        },
+      ],
+    });
+    expect(text).toContain(`"clock":{"at":"${T0}","mode":"since"}`);
+    expect(text).toContain("3k fresh tokens · 4k cached");
+    expect(text).toContain("Served model: served · provider: copilot");
+    expect(text).not.toContain("requested");
+    expect(text).toContain("Spawned by @lead");
+    expect(text).toContain("joined");
+    expect(text).toContain("/repo/.worktrees/w1");
+    expect(text).toContain("Branch: writer/w1");
+    expect(text).toContain("Draft PR #42 · CI running");
+    expect(text).toContain("Open PR");
+    expect(text).toContain("Woken by @lead, you, run updates, idle nudge, kickoff / rib notice");
+    const said = view.sections.find((x) => x.kind === "rows" && x.title?.startsWith("Said"));
+    expect(said?.kind === "rows" ? said.items.map((r) => r.text) : []).toEqual([
+      "Latest @lead",
+      "First",
+    ]);
+    expect(said?.kind === "rows" ? said.items[1]?.href : "").toBe(threadHref(s, "root"));
+    const turns = view.sections.find((x) => x.title === "Turns");
+    expect(turns?.kind === "rows" ? turns.items.length : 0).toBe(2);
+    expect(text).toContain("took 30 s");
+    const composer = view.sections.find((x) => x.kind === "actions");
+    expect(composer).toMatchObject({
+      items: [
+        {
+          type: "message-agent",
+          label: "Message @w1",
+          binding: { id: "s1", agentId: "s1-w1" },
+          fields: [{ placeholder: "posts as you, wakes this agent, spends a turn" }],
+        },
+      ],
+    });
+    expect(view.sections.at(-1)).toMatchObject({
+      items: [{ text: "its messages · transcript ↗", href: channelHref(s) }],
+    });
+  });
+
+  test("lead meters use swarm budget and missing legacy evidence is honest", () => {
+    const s = swarm("s1", { agents: [agent("s1", 0, { turns: 20 }), agent("s1", 1)] });
+    const lead = inspect(s, 0);
+    expect(lead.sections[0]).toMatchObject({ items: [{ bar: { value: 11, total: 40 } }] });
+    expect(JSON.stringify(lead)).toContain("20 agent turns · no worker cap");
+    expect(JSON.stringify(lead)).toContain("started with the swarm");
+    const text = JSON.stringify(inspect(s));
+    for (const missing of [
+      "Token usage not reported",
+      "Served model: not reported",
+      "provider: not reported",
+      "Spawn provenance not recorded",
+      "Join time not recorded",
+      "No turn spans recorded",
+      "No messages by this agent",
+    ])
+      expect(text).toContain(missing);
+    const zero = inspect({
+      ...s,
+      agents: [s.agents[0]!, { ...s.agents[1]!, usage: { input: 0, output: 0, cached: 0 } }],
+    });
+    expect(JSON.stringify(zero)).toContain("0 fresh tokens · 0 cached");
+  });
+
+  test("concentrated lead history stays under budget and links to all recorded turns", () => {
+    const agents = Array.from({ length: 12 }, (_, i) =>
+      agent("s9big", i, {
+        handle: `s9big-${String(i).padStart(2, "0")}${"w".repeat(18)}`,
+        role: "r".repeat(2000),
+        turns: i === 0 ? 189 : 1,
+      }),
+    );
+    const s = swarm("s9big", {
+      agents,
+      turnsUsed: 200,
+      limits: { ...SIZE_PRESETS.large, maxAgents: 12, maxTurns: 200 },
+      spans: Array.from({ length: 200 }, (_, i) => ({
+        agentId: agents[i < 189 ? 0 : i - 188]!.id,
+        n: i + 1,
+        startedAt: T0,
+        endedAt: T0,
+        outcome: "ok" as const,
+        messages: 11,
+        wokeBy: agents.slice(1).map((a) => a.id),
+      })),
+      recent: Array.from({ length: MESSAGES_KEPT }, (_, i) => ({
+        id: `msg_${i}`,
+        author: agents[0]!.id,
+        at: T0,
+        text: "m".repeat(MESSAGE_CHARS),
+      })),
+    });
+    for (const summary of [s, { ...s, status: "done" as const, endedAt: T0 }]) {
+      const view = inspect(summary, 0);
+      expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
+      const turns = view.sections.find((x) => x.title?.startsWith("Turns"));
+      expect(turns?.title).toBe(`Turns · newest ${INSPECTOR_TURNS_SHOWN} of 189`);
+      expect(turns?.kind === "rows" ? turns.items : []).toHaveLength(INSPECTOR_TURNS_SHOWN);
+      if (turns?.kind !== "rows") throw new Error("expected turns");
+      expect(turns.items[0]?.text).toStartWith("Turn 189");
+      expect(turns.items.at(-1)?.text).toStartWith(`Turn ${190 - INSPECTOR_TURNS_SHOWN}`);
+      expect(view.sections).toContainEqual({
+        kind: "actions",
+        items: [
+          {
+            type: "open-record",
+            label: "Open the record",
+            glyph: "◷",
+            hint: "All recorded turns are on the record's timeline.",
+            payload: { id: s.id },
+          },
+        ],
+      });
+      expect(buildRecord(summary, new Date(T0))).toContain("turn 1 · ok");
+      expect(summary.spans).toHaveLength(200);
+    }
+    const short = inspect({ ...s, spans: s.spans!.slice(0, INSPECTOR_TURNS_SHOWN) }, 0);
+    const turns = short.sections.find((x) => x.title === "Turns");
+    expect(turns?.kind === "rows" ? turns.items.at(-1)?.text : "").toStartWith("Turn 1");
+    expect(JSON.stringify(short)).not.toContain('"type":"open-record"');
+  });
+
+  test("all states render and retired workers cannot request another turn", () => {
+    for (const status of ["busy", "idle", "waiting", "capped", "failed"] as const) {
+      const s = writer();
+      const view = inspect({ ...s, agents: [s.agents[0]!, { ...s.agents[1]!, status }] });
+      const composer = view.sections.find((x) => x.kind === "actions");
+      const item = composer?.kind === "actions" ? composer.items[0] : undefined;
+      expect(item?.disabled ?? false).toBe(status === "capped" || status === "failed");
+      if (item?.disabled) expect(item.reason).toContain("cannot take another turn");
+    }
+  });
+
+  test("ended legacy spans have no clock or composer; stopping and concluded are read-only", () => {
+    const s = writer();
+    for (const status of [
+      "done",
+      "stopped",
+      "stalled",
+      "exhausted",
+      "error",
+      "stopping",
+    ] as const) {
+      const view = inspect({ ...s, status, endedAt: T0 });
+      const text = JSON.stringify(view);
+      expect(text).not.toContain('"clock"');
+      expect(text).not.toContain('"type":"message-agent"');
+      expect(text).toContain("messaging is read-only");
+    }
+    const legacy = inspect({ ...s, status: "done", endedAt: undefined });
+    expect(JSON.stringify(legacy)).not.toContain('"clock"');
+    expect(JSON.stringify(legacy)).toContain("end not recorded");
+    expect(
+      inspect({ ...s, conclusion: "finished" }).sections.some((x) => x.kind === "actions"),
+    ).toBe(false);
+    expect(JSON.stringify(inspect({ ...s, conclusion: "finished" }))).toContain("no new turns");
+  });
+
+  test("writer CI never borrows another owner or replaces missing evidence", () => {
+    for (const verdict of ["pass", "fail", "unknown", "running", undefined] as const) {
+      const s = writer();
+      const pr = s.prs![1]!;
+      const view = inspect({ ...s, prs: [{ ...pr, ci: verdict ? { verdict } : undefined }] });
+      expect(JSON.stringify(view)).toContain(`CI ${verdict ?? "not reported"}`);
+    }
+    const s = writer();
+    expect(JSON.stringify(inspect({ ...s, prs: [s.prs![0]!] }))).toContain("CI not reported");
+  });
+
+  test("legacy writer branch evidence and latest closed turn stay accessible without a live clock", () => {
+    const s = writer();
+    const view = inspect({
+      ...s,
+      agents: [
+        s.agents[0]!,
+        { ...s.agents[1]!, worktree: undefined, servedModel: undefined, providerId: undefined },
+      ],
+      spans: [
+        {
+          agentId: "s1-w1",
+          n: 1,
+          startedAt: T0,
+          endedAt: T0,
+          outcome: "ok",
+          messages: 1,
+          wokeBy: ["missing"],
+        },
+        {
+          agentId: "s1-w1",
+          n: 2,
+          startedAt: T0,
+          endedAt: T0,
+          outcome: "error",
+          messages: 0,
+          wokeBy: [],
+        },
+      ],
+      prs: [s.prs![1]!],
+    });
+    const text = JSON.stringify(view);
+    expect(text).toContain("Branch: writer/w1");
+    expect(text).toContain("Worktree not recorded");
+    expect(text).toContain("Served model: not reported · provider: not reported");
+    expect(text).toContain("unknown source missing");
+    expect(text).toContain("Woken by not recorded");
+    expect(text).not.toContain('"clock"');
+    expect(view.sections[0]).toMatchObject({
+      items: [{ fields: [{}, { value: expect.stringContaining("Turn 2") }] }],
+    });
+  });
+});
+
 describe("the live cockpit", () => {
   const sections = (s: SwarmSummary, now?: Date) => {
     const sections = buildCockpit(s, needsYou(s), { titled: true, now });
     board(INDEX_KEY, { view: "board", title: "Swarms", sections });
-    return sections;
+    return leaves(sections);
   };
 
   test("the head, state, agent strip and budget precede conversation, composer, details and verbs", () => {
@@ -560,9 +1023,9 @@ describe("the live cockpit", () => {
       "rows",
       "segments",
       "stats",
+      "graph",
       "rows",
       "actions",
-      "cards",
       "rows",
       "rows",
       "actions",
@@ -578,7 +1041,11 @@ describe("the live cockpit", () => {
     expect(head).not.toHaveProperty("chip");
     expect(head?.footnote).toBeUndefined();
     expect(head?.fields?.[0]?.people).toHaveLength(2);
-    expect(cockpit.slice(6, -1)).toEqual(buildSwarmBoard(s).sections.slice(3));
+    expect(cockpit.slice(-3, -1)).toEqual(leaves(buildSwarmBoard(s).sections.slice(-2)));
+    const columns = buildCockpit(s, [], { titled: true }).find((x) => x.kind === "columns");
+    expect(
+      columns?.kind === "columns" ? columns.columns.map((c) => c.sections[0]?.kind) : [],
+    ).toEqual(["graph", "rows"]);
     expect(cockpit.at(-1)).toMatchObject({
       kind: "actions",
       wrap: true,
@@ -649,7 +1116,9 @@ describe("the live cockpit", () => {
     expect(markup.action).toBeUndefined();
     const liveBoard = buildSwarmBoard(s);
     board(swarmKey(s.id), liveBoard);
-    expect(liveBoard.sections.find((x) => x.title === "Conversation")).toEqual(conversation);
+    expect(leaves(liveBoard.sections).find((x) => x.title === "Conversation")).toEqual(
+      conversation,
+    );
   });
 
   test("Conversation is absent without messages or after ending, but remains while stopping", () => {
@@ -662,7 +1131,7 @@ describe("the live cockpit", () => {
       expect(sections({ ...s, ...patch }).some((x) => x.title === "Conversation")).toBe(false);
       const view = buildSwarmBoard({ ...s, ...patch });
       board(swarmKey(s.id), view);
-      expect(view.sections.some((x) => x.title === "Conversation")).toBe(false);
+      expect(leaves(view.sections).some((x) => x.title === "Conversation")).toBe(false);
     }
     expect(sections({ ...s, status: "stopping" }).some((x) => x.title === "Conversation")).toBe(
       true,
@@ -1443,21 +1912,23 @@ describe("Swarms boards", () => {
     expect(view.sections.map((x) => x.kind)).toEqual([
       "cards",
       "stats",
-      "rows",
+      "columns",
       "actions",
-      "cards",
       "rows",
       "rows",
       "rows",
     ]);
-    const actions = view.sections.filter((s) => s.kind === "actions");
-    expect(actions).toHaveLength(1);
+    const actions = leaves(view.sections).filter((s) => s.kind === "actions");
+    expect(actions).toHaveLength(2);
     const items = actions[0]?.kind === "actions" ? actions[0].items : [];
-    expect(items.map((i) => i.type)).toEqual(["message-lead", "open-record", "stop-swarm"]);
+    expect(items.map((i) => i.type)).toEqual(["message-lead"]);
     expect(items[0]).toMatchObject({ label: "Message the lead", expanded: true });
     expect(items[0]?.fields?.[0]?.placeholder).toBe("posts as you, wakes the lead");
-    expect(items[1]).toMatchObject({ label: "Open the record", payload: { id: "s9hjy" } });
-    expect(items[2]).toMatchObject({ inline: true, align: "end" });
+    expect(actions[1]?.items[0]).toMatchObject({
+      label: "Open the record",
+      payload: { id: "s9hjy" },
+    });
+    expect(actions[1]?.items[1]).toMatchObject({ inline: true, align: "end" });
     const review = view.sections[0];
     expect(review?.kind === "cards" ? review.title : "").toBe("Approvals in review");
     expect(JSON.stringify(review)).toContain('"pill":{"label":"reviewing","tone":"info"}');
@@ -1474,27 +1945,15 @@ describe("Swarms boards", () => {
     expect(JSON.stringify(named.sections[0])).toContain("@w1 reviews the plan in its thread");
   });
 
-  test("the bench shows each agent, waiting seats, and ghosts up to the cap", () => {
+  test("live agents use the map and ended cards select agents without ghosts", () => {
     const now = new Date("2026-09-22T14:21:00.000Z");
     const view = buildSwarmBoard(fixtures.waiting!, { now });
     board(swarmKey(fixtures.waiting!.id), view);
-    const bench = view.sections.find((x) => x.kind === "cards" && x.title?.startsWith("Agents"));
-    const items = bench?.kind === "cards" ? bench.items : [];
-    expect(bench).toMatchObject({ grid: true, columns: 4, title: "Agents · 2 of 5" });
-    expect(items).toHaveLength(5);
-    expect(items[0]).toMatchObject({
-      title: "lead",
-      titleTone: "brand",
-      mono: true,
-      pill: { label: "busy", tone: "info" },
-    });
-    expect(items[0]?.bar).toBeUndefined();
-    expect(items[1]).toMatchObject({
-      pill: { label: "waiting", tone: "caution" },
-      bar: { value: 3, total: 12, trailing: "3 of 12 turns" },
-      footnote: "2 messages waiting",
-    });
-    expect(items.slice(2).every((c) => c.ghost === true)).toBe(true);
+    expect(view.sections.some((x) => x.kind === "cards" && x.title?.startsWith("Agents"))).toBe(
+      false,
+    );
+    const map = leaves(view.sections).find((x) => x.kind === "graph");
+    expect(map?.kind === "graph" ? map.nodes.length : 0).toBe(3);
     const stats = view.sections.find((x) => x.kind === "stats");
     const tiles = stats?.kind === "stats" ? stats.items : [];
     expect(tiles[0]).toMatchObject({
@@ -1515,16 +1974,32 @@ describe("Swarms boards", () => {
     });
     expect(tiles[2]).toMatchObject({ label: "Agents", value: "2 of 5", sub: "1 busy · 1 waiting" });
     expect(JSON.stringify(view)).toContain('"text":"@lead turn 3 ok ×2"');
-    const ended = buildSwarmBoard(fixtures.done!);
+    const ended = buildSwarmBoard(fixtures.done!, {
+      selectedAgentId: fixtures.done!.agents[1]!.id,
+    });
     const endedBench = ended.sections.find(
       (x) => x.kind === "cards" && x.title?.startsWith("Agents"),
     );
-    expect(endedBench?.kind === "cards" ? endedBench.items : []).toHaveLength(2);
+    const cards = endedBench?.kind === "cards" ? endedBench.items : [];
+    expect(cards).toHaveLength(2);
+    for (const [i, card] of cards.entries()) {
+      expect(card.titleTone).toBe(fixtures.done!.agents[i]!.tone);
+      expect(card).not.toHaveProperty("mono");
+      expect(card).not.toHaveProperty("stacked");
+      expect(card).not.toHaveProperty("ghost");
+      expect(card.action).toEqual({
+        type: "select-agent",
+        payload: { id: fixtures.done!.id, agentId: fixtures.done!.agents[i]!.id },
+      });
+    }
+    expect(cards[1]?.selected).toBe(true);
   });
 
   test("Produced so far names permitted workflows while none ran", () => {
     const titles = (s: SwarmSummary) =>
-      buildSwarmBoard(s).sections.flatMap((x) => (x.kind === "rows" && x.title ? [x.title] : []));
+      leaves(buildSwarmBoard(s).sections).flatMap((x) =>
+        x.kind === "rows" && x.title ? [x.title] : [],
+      );
     expect(titles(fixtures.running!)).toEqual(["Conversation", "Task and context", "About"]);
     expect(titles(fixtures.dispatchIdle!)).toEqual([
       "Produced so far",
@@ -1564,6 +2039,10 @@ ${"detail ".repeat(1000)}`,
     const rows = section?.kind === "rows" ? section.items : [];
     expect(rows[0]?.text).toBe("Task: Fix issue #27");
     expect(rows[0]?.detail?.length).toBe(4000);
+    const cockpitTask = buildCockpit(s, [], { titled: true }).find(
+      (x) => x.kind === "rows" && x.title === "Task and context",
+    );
+    expect(cockpitTask?.kind === "rows" ? cockpitTask.items[0]?.detail?.length : 0).toBe(1000);
     expect(rows[0]?.trailing).toBe("first 4,000 of 7,014 characters");
     expect(rows[1]).toMatchObject({
       text: "issue: README count",
@@ -1614,6 +2093,7 @@ ${"detail ".repeat(1000)}`,
     const big = swarm("s9big", {
       agents,
       runs,
+      limits: { ...SIZE_PRESETS.large, maxAgents: 12, maxTurns: 200, maxTurnsPerAgent: 50 },
       task: "t".repeat(8000),
       conclusion: "c".repeat(20_000),
       messageCount: 500,
@@ -1657,7 +2137,15 @@ ${"detail ".repeat(1000)}`,
     const live = Array.from({ length: 6 }, (_, i) => ({ ...big, id: `s9bi${i}` }));
     const now = new Date("2026-09-22T14:21:00.000Z");
     for (const selected of [undefined, live[5]!.id]) {
-      const view = buildIndex(state({ live, ended: many, selected }), now);
+      const view = buildIndex(
+        state({
+          live,
+          ended: many,
+          selected,
+          selectedAgents: new Map(live.map((s) => [s.id, agents[11]!.id])),
+        }),
+        now,
+      );
       board(INDEX_KEY, view);
       const produced = view.sections.find(
         (x) => x.kind === "rows" && x.title === "Produced so far",
@@ -1693,6 +2181,9 @@ ${"detail ".repeat(1000)}`,
     const drawer = buildSwarmBoard(artifacts, { now });
     board(swarmKey(big.id), drawer);
     expect(Buffer.byteLength(JSON.stringify(drawer))).toBeLessThan(48_000);
+    console.info(
+      `Map per-swarm board (12 agents, 200 turns): ${Buffer.byteLength(JSON.stringify(drawer))} bytes`,
+    );
     const produced = drawer.sections.find(
       (x) => x.kind === "rows" && x.title === "Produced so far",
     );
@@ -2186,7 +2677,7 @@ class FakeSnapshots implements SnapshotManager {
     this.composers.set(key, { compose, ...(opts?.validate ? { validate: opts.validate } : {}) });
     return () => void this.composers.delete(key);
   }
-  async recompose(key: string) {
+  async recompose<T = unknown>(key: string): Promise<SnapshotFrame<T> | undefined> {
     const c = this.composers.get(key);
     if (!c) return undefined;
     this.inFlight++;
@@ -2195,10 +2686,16 @@ class FakeSnapshots implements SnapshotManager {
       const data = await c.compose();
       c.validate?.(data);
       this.frames.set(key, [...(this.frames.get(key) ?? []), data]);
+      return {
+        type: "snapshot_update",
+        key,
+        version: this.frames.get(key)!.length,
+        composedAt: new Date().toISOString(),
+        data: data as T,
+      };
     } finally {
       this.inFlight--;
     }
-    return undefined;
   }
   latest() {
     return undefined;
@@ -2210,6 +2707,341 @@ class FakeSnapshots implements SnapshotManager {
 }
 
 describe("publishing", () => {
+  const inspectorHarness = (summary = swarm("s1")) => {
+    const sm = new FakeSnapshots();
+    const views: RibViewDescriptor[] = [];
+    const summaries = new Map([[summary.id, summary]]);
+    const surface = createSwarmsSurface({
+      sm,
+      views,
+      state: () =>
+        state({
+          live: [...summaries.values()].filter(
+            (s) => s.status === "running" || s.status === "stopping",
+          ),
+          ended: [...summaries.values()].filter(
+            (s) => s.status !== "running" && s.status !== "stopping",
+          ),
+        }),
+      find: (id) => {
+        const s = summaries.get(id);
+        return !s
+          ? {}
+          : s.status === "running" || s.status === "stopping"
+            ? { live: s }
+            : { ended: s };
+      },
+      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ live: 1 }),
+      readLog: async () => "log",
+      report: () => undefined,
+      windowMs: 1,
+    });
+    return { sm, views, summaries, surface };
+  };
+
+  test("agent selection awaits a fresh frame and highlights both boards without changing swarm selection", async () => {
+    const { sm, summaries, surface } = inspectorHarness();
+    summaries.set("s2", swarm("s2"));
+    try {
+      surface.track(["s1", "s2"]);
+      surface.select("s2");
+      await surface.selectAgent("s1", "s1-w1");
+      const view = expectView(agentKey("s1"), "board")(sm.frames.get(agentKey("s1"))?.at(-1));
+      if (view.view !== "board") throw new Error("expected inspector board");
+      expect(view.title).toBe("Agent @w1 · s1");
+      await Bun.sleep(10);
+      const index = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (index.view !== "board") throw new Error("expected board");
+      const strip = index.sections.find((s) => s.kind === "actions" && s.title === "Live · 2");
+      expect(
+        strip?.kind === "actions" ? strip.items.find((i) => i.selected)?.payload : undefined,
+      ).toEqual({ id: "s2" });
+      const drawer = expectView(swarmKey("s1"), "board")(sm.frames.get(swarmKey("s1"))?.at(-1));
+      if (drawer.view !== "board") throw new Error("expected board");
+      expect(leaves(drawer.sections).find((s) => s.kind === "graph")).toMatchObject({
+        nodes: [{}, {}, { id: "s1-w1", selected: true }],
+      });
+      surface.select("s1");
+      await Bun.sleep(10);
+      const selectedIndex = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (selectedIndex.view !== "board") throw new Error("expected board");
+      expect(leaves(selectedIndex.sections).find((s) => s.kind === "graph")).toMatchObject({
+        nodes: [{}, {}, { id: "s1-w1", selected: true }],
+      });
+      await surface.selectAgent("s1", "s1-lead");
+      expect(sm.keys().filter((key) => key.startsWith("rib:chat:agent:"))).toEqual([
+        agentKey("s1"),
+      ]);
+    } finally {
+      surface.dispose();
+    }
+  });
+
+  test("rapid selection during the first compose leaves the latest inspector and highlight", async () => {
+    const { sm, surface } = inspectorHarness();
+    let unblock!: () => void;
+    sm.gate = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const a = surface.selectAgent("s1", "s1-lead");
+    const b = surface.selectAgent("s1", "s1-w1");
+    unblock();
+    sm.gate = undefined;
+    try {
+      await Promise.all([a, b]);
+      expect(sm.frames.get(agentKey("s1"))?.at(-1)).toMatchObject({ title: "Agent @w1 · s1" });
+      await Bun.sleep(10);
+      const index = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (index.view !== "board") throw new Error("expected board");
+      const map = leaves(index.sections).find((s) => s.kind === "graph");
+      expect(
+        map?.kind === "graph" ? map.nodes.filter((n) => n.selected).map((n) => n.id) : [],
+      ).toEqual(["s1-w1"]);
+    } finally {
+      surface.dispose();
+    }
+  });
+
+  test("existing inspectors refresh messages, turns, run CI, activity and end, then release on forget", async () => {
+    const { sm, views, summaries, surface } = inspectorHarness();
+    try {
+      await surface.selectAgent("s1", "s1-w1");
+      for (const kind of ["message", "turn", "agent", "run", "activity", "end"] as const) {
+        const count = sm.frames.get(agentKey("s1"))!.length;
+        summaries.set("s1", {
+          ...summaries.get("s1")!,
+          recent: [{ id: "m", at: T0, author: "s1-w1", text: kind }],
+          ...(kind === "end" ? { status: "done", endedAt: T0 } : {}),
+        });
+        surface.changed("s1", kind);
+        await Bun.sleep(10);
+        expect(sm.frames.get(agentKey("s1"))!.length).toBeGreaterThan(count);
+        expect(JSON.stringify(sm.frames.get(agentKey("s1"))?.at(-1))).toContain(`"text":"${kind}"`);
+      }
+      expect(JSON.stringify(sm.frames.get(agentKey("s1"))?.at(-1))).not.toContain("message-agent");
+      surface.forget(["s1"]);
+      expect(sm.keys()).not.toContain(agentKey("s1"));
+      expect(views.some((v) => v.key === agentKey("s1"))).toBe(false);
+      surface.track(["s1"]);
+      await Bun.sleep(10);
+      const drawer = expectView(swarmKey("s1"), "board")(sm.frames.get(swarmKey("s1"))?.at(-1));
+      expect(JSON.stringify(drawer)).not.toContain('"selected":true');
+      await surface.selectAgent("s1", "s1-lead");
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+    expect(views).toEqual([]);
+    await expect(surface.selectAgent("s1", "s1-w1")).rejects.toThrow("disposed");
+  });
+
+  test("disposal releases an inspector created after its ended swarm is trimmed", async () => {
+    const { sm, views, summaries, surface } = inspectorHarness(
+      swarm("s1", { status: "done", endedAt: T0 }),
+    );
+    try {
+      const liveIds = Array.from({ length: MAX_SWARM_KEYS }, (_, i) => {
+        const id = `s${i + 2}`;
+        summaries.set(id, swarm(id));
+        return id;
+      });
+      surface.track(liveIds);
+      expect(sm.keys()).not.toContain(swarmKey("s1"));
+      await surface.selectAgent("s1", "s1-w1");
+      expect(sm.keys()).not.toContain(swarmKey("s1"));
+      expect(sm.keys()).not.toContain(recordKey("s1"));
+      expect(sm.keys()).toContain(agentKey("s1"));
+      expect(sm.frames.get(agentKey("s1"))?.at(-1)).toMatchObject({ title: "Agent @w1 · s1" });
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+    expect(views).toEqual([]);
+    expect(await sm.recompose(agentKey("s1"))).toBeUndefined();
+  });
+
+  test("tracking at a full live budget releases inspector-only ended selections and highlights", async () => {
+    const { sm, summaries, surface } = inspectorHarness();
+    try {
+      const liveIds = Array.from({ length: MAX_SWARM_KEYS }, (_, i) => {
+        const id = `s${i}`;
+        summaries.set(id, swarm(id));
+        return id;
+      });
+      surface.track(liveIds);
+      const inspectorKeys = () => sm.keys().filter((key) => key.startsWith("rib:chat:agent:"));
+      for (let i = 0; i < 6; i++) {
+        const id = `ended${i}`;
+        summaries.set(id, swarm(id, { status: "done", endedAt: T0 }));
+        await surface.selectAgent(id, `${id}-w1`);
+        expect(inspectorKeys()).toEqual([agentKey(id)]);
+        expect(sm.keys()).not.toContain(swarmKey(id));
+        // History expiry does not call forget; track must clean up even with no new keys.
+        if (i % 2) summaries.delete(id);
+        surface.track(i % 2 ? [] : liveIds);
+        expect(inspectorKeys()).toEqual([]);
+        expect(await sm.recompose(agentKey(id))).toBeUndefined();
+      }
+      const id = "ended5";
+      summaries.set(id, swarm(id, { status: "done", endedAt: T0 }));
+      summaries.delete(liveIds[0]!);
+      surface.track([id]);
+      await Bun.sleep(10);
+      const drawer = expectView(swarmKey(id), "board")(sm.frames.get(swarmKey(id))?.at(-1));
+      expect(JSON.stringify(drawer)).not.toContain('"selected":true');
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+  });
+
+  test("invalid selections allocate nothing; trimming and release reject pending selection", async () => {
+    const { sm, summaries, surface } = inspectorHarness(
+      swarm("s1", { status: "done", endedAt: T0 }),
+    );
+    try {
+      for (const [id, agentId] of [
+        ["s1", "s2-w1"],
+        ["s0", "s1-lead"],
+        ["s1", "you"],
+      ]) {
+        await expect(surface.selectAgent(id!, agentId!)).rejects.toThrow("does not belong");
+      }
+      expect(sm.keys().some((key) => key.startsWith("rib:chat:agent:"))).toBe(false);
+      await surface.selectAgent("s1", "s1-w1");
+      for (let i = 0; i < MAX_SWARM_KEYS; i++) {
+        const id = `s${i + 2}`;
+        summaries.set(id, swarm(id, { status: "done", endedAt: T0 }));
+      }
+      surface.track([...summaries.keys()]);
+      expect(sm.keys()).not.toContain(agentKey("s1"));
+      let unblock!: () => void;
+      sm.gate = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      const pending = surface.selectAgent("s101", "s101-w1");
+      surface.forget(["s101"]);
+      await expect(pending).rejects.toThrow("released");
+      unblock();
+      sm.gate = undefined;
+    } finally {
+      surface.dispose();
+    }
+  });
+
+  test("flush waits past the initial seed, publishes the new state and cancels the throttle", async () => {
+    const sm = new FakeSnapshots();
+    let release!: () => void;
+    sm.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let value = "A";
+    const pub = createKeyPublisher(
+      sm,
+      "rib:chat:t",
+      () => value,
+      (d) => String(d),
+      50,
+    );
+    let complete = false;
+    value = "B";
+    const flushed = pub.flush().then(() => {
+      complete = true;
+    });
+    await Bun.sleep(5);
+    expect(complete).toBe(false);
+    release();
+    sm.gate = undefined;
+    await flushed;
+    expect(sm.frames.get("rib:chat:t")).toEqual(["B", "B"]);
+    value = "C";
+    pub.schedule();
+    await pub.flush();
+    expect(sm.frames.get("rib:chat:t")?.at(-1)).toBe("C");
+    await Bun.sleep(60);
+    expect(sm.frames.get("rib:chat:t")).toHaveLength(3);
+    pub.release();
+  });
+
+  test("flush shares the dirty loop during overlapping async compositions", async () => {
+    const sm = new FakeSnapshots();
+    let unblock!: () => void;
+    const held = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    let value = "A";
+    let passes = 0;
+    const pub = createKeyPublisher(
+      sm,
+      "rib:chat:t",
+      async () => {
+        const captured = value;
+        if (++passes === 1) await held;
+        return captured;
+      },
+      (d) => String(d),
+      1,
+    );
+    await Bun.sleep(1);
+    value = "B";
+    const a = pub.flush();
+    value = "C";
+    const b = pub.flush();
+    unblock();
+    await Promise.all([a, b]);
+    expect(sm.frames.get("rib:chat:t")).toEqual(["A", "C"]);
+    expect(sm.inFlight).toBe(0);
+    pub.release();
+  });
+
+  test("flush surfaces composition failures and missing frames, then allows retry", async () => {
+    const sm = new FakeSnapshots();
+    let fail = false;
+    const pub = createKeyPublisher(
+      sm,
+      "rib:chat:t",
+      () => {
+        if (fail) throw new Error("compose failed");
+        return "ok";
+      },
+      (d) => String(d),
+      1,
+    );
+    await pub.flush();
+    fail = true;
+    await expect(pub.flush()).rejects.toThrow("compose failed");
+    fail = false;
+    await pub.flush();
+    sm.composers.delete("rib:chat:t");
+    await expect(pub.flush()).rejects.toThrow("did not publish a frame");
+    pub.release();
+  });
+
+  test("release refuses an awaited flush even while the host is still composing", async () => {
+    const sm = new FakeSnapshots();
+    let unblock!: () => void;
+    sm.gate = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const pub = createKeyPublisher(
+      sm,
+      "rib:chat:t",
+      () => "ok",
+      (d) => String(d),
+      1,
+    );
+    const flushed = pub.flush();
+    pub.release();
+    await expect(flushed).rejects.toThrow("released");
+    await expect(pub.flush()).rejects.toThrow("released");
+    unblock();
+    sm.gate = undefined;
+    await Bun.sleep(1);
+    expect(sm.keys()).toEqual([]);
+  });
+
   test("a burst of messages is one index and one board frame, with no other churn", async () => {
     const sm = new FakeSnapshots();
     const live = [fixtures.running!, fixtures.waiting!];
@@ -2374,6 +3206,50 @@ describe("publishing", () => {
 });
 
 describe("the record page", () => {
+  test("semantic edges count distinct sources, fold spawn wakes and keep repeat asks", () => {
+    const s = swarm("s1", {
+      agents: [agent("s1", 0), agent("s1", 1, { spawnedBy: "s1-lead" })],
+      spans: [
+        {
+          agentId: "s1-w1",
+          n: 1,
+          startedAt: T0,
+          messages: 4,
+          wokeBy: ["s1-lead", "s1-lead", "s1-w1", "operator", "rib", "nudge", "missing"],
+        },
+        { agentId: "missing", n: 1, startedAt: T0, messages: 1, wokeBy: ["s1-lead"] },
+      ],
+      activity: [
+        { at: T0, text: "ask", kind: "ask", actor: "s1-w1", count: 3 },
+        { at: T0, text: "ask", kind: "ask", actor: "missing" },
+      ],
+    });
+    expect(buildAgentEdges(s)).toEqual([
+      { from: "s1-w1", to: "operator", kind: "asked", n: 3 },
+      { from: "s1-lead", to: "s1-w1", kind: "spawned", n: 1, woke: 1 },
+      { from: "operator", to: "s1-w1", kind: "woke", n: 1 },
+    ]);
+    expect(buildAgentEdges(s)).toEqual(buildAgentEdges(s));
+  });
+
+  test("semantic aggregation is not limited by the record's forty-edge budget", () => {
+    const agents = Array.from({ length: 12 }, (_, i) => agent("s1", i));
+    const s = swarm("s1", {
+      agents,
+      spans: agents.map((a) => ({
+        agentId: a.id,
+        n: 1,
+        startedAt: T0,
+        messages: 12,
+        wokeBy: agents.map((source) => source.id),
+      })),
+    });
+    expect(buildAgentEdges(s)).toHaveLength(132);
+    expect((buildRecord(s, new Date(T0)).match(/marker-end="url\(#arrow\)"/g) ?? []).length).toBe(
+      40,
+    );
+  });
+
   const at = (m: number) => new Date(Date.parse(T0) + m * 60_000).toISOString();
   const traced = (patch: Partial<SwarmSummary> = {}): SwarmSummary =>
     swarm("s6rec", {
@@ -2653,6 +3529,192 @@ const actionDeps = {
 describe("actions", () => {
   const deps = actionDeps;
 
+  test("select-agent composes before its side-open reply and accepts ended agents", async () => {
+    const sm = new FakeSnapshots();
+    const surface = createSwarmsSurface({
+      sm,
+      views: [],
+      state: () => state({ live: [fixtures.running!], ended: [fixtures.done!] }),
+      find: deps.find,
+      launch: () => ({ projects: [], live: 1, ended: 1 }),
+      launchOf: () => undefined,
+      server: () => ({ live: 1 }),
+      readLog: async () => "log",
+      report: () => undefined,
+      windowMs: 1,
+    });
+    let unblock!: () => void;
+    sm.gate = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    let replied = false;
+    const selection = handleSwarmsAction(
+      {
+        type: "select-agent",
+        payload: { id: "s9hjx", agentId: "s9hjx-w1" },
+      },
+      { ...deps, surface },
+    ).then((result) => {
+      replied = true;
+      return result;
+    });
+    try {
+      await Bun.sleep(5);
+      expect(replied).toBe(false);
+      expect(sm.frames.has(agentKey("s9hjx"))).toBe(false);
+      unblock();
+      sm.gate = undefined;
+      const result = await selection;
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          effect: "open-canvas",
+          key: agentKey("s9hjx"),
+          title: "Agent @w1 · s9hjx",
+          placement: "side",
+        },
+      });
+      expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toMatchObject({
+        placement: "side",
+      });
+      expect(sm.frames.get(agentKey("s9hjx"))?.at(-1)).toMatchObject({
+        title: "Agent @w1 · s9hjx",
+      });
+      const ended = await handleSwarmsAction(
+        {
+          type: "select-agent",
+          payload: { id: "s8pln", agentId: "s8pln-lead" },
+        },
+        { ...deps, surface },
+      );
+      expect(ended.ok).toBe(true);
+      expect(JSON.stringify(sm.frames.get(agentKey("s8pln"))?.at(-1))).not.toContain(
+        "message-agent",
+      );
+      sm.composers.set(agentKey("s9hjx"), {
+        compose: () => {
+          throw new Error("bad frame");
+        },
+      });
+      const failed = await handleSwarmsAction(
+        {
+          type: "select-agent",
+          payload: { id: "s9hjx", agentId: "s9hjx-lead" },
+        },
+        { ...deps, surface },
+      );
+      expect(failed).toEqual({
+        ok: false,
+        error: "Could not publish the agent inspector: bad frame. Retry the selection.",
+      });
+    } finally {
+      unblock();
+      sm.gate = undefined;
+      surface.dispose();
+    }
+  });
+
+  test("select-agent refuses malformed, cross-swarm, starting and HTML-origin selections without effects", async () => {
+    for (const payload of [
+      { id: "../bad", agentId: "s9hjx-w1" },
+      { id: "s9hjx", agentId: "s8pln-lead" },
+      { id: "s9hjx", agentId: "you" },
+      { id: "s9hjx", agentId: 7 },
+      { id: "s9hjx" },
+      { id: "s0000", agentId: "s0000-lead" },
+    ])
+      expect((await handleSwarmsAction({ type: "select-agent", payload }, deps)).ok).toBe(false);
+    const valid = { type: "select-agent", payload: { id: "s9hjx", agentId: "s9hjx-w1" } };
+    expect(await handleSwarmsAction(valid, deps)).toEqual({
+      ok: false,
+      error: "The agent inspector is unavailable; reopen the Swarms tab.",
+    });
+    expect((await handleSwarmsAction({ ...valid, origin: "canvas-html" }, deps)).ok).toBe(false);
+    expect(
+      (
+        await handleSwarmsAction(valid, {
+          ...deps,
+          find: () => ({ starting }),
+        })
+      ).ok,
+    ).toBe(false);
+  });
+
+  test("message-agent validates current eligibility, complete body and server posting failures", async () => {
+    let current = fixtures.running!;
+    const posted: [string, string][] = [];
+    const fake = {
+      ...liveSwarm,
+      summary: () => current,
+      stop: async () => current,
+      replyToGate: async () => {},
+      replyInThread: async () => {},
+      dismissAsk: () => false,
+      messageAgent: async (id: string, note: string) => {
+        if (note === "posting fails") throw new Error("ClickClack unavailable");
+        posted.push([id, note]);
+      },
+    };
+    const messageDeps = { ...deps, live: () => fake };
+    const send = (payload: Record<string, unknown>) =>
+      handleSwarmsAction(
+        {
+          type: "message-agent",
+          payload: { id: current.id, agentId: current.agents[1]!.id, ...payload },
+        },
+        messageDeps,
+      );
+    expect(await send({ note: "  check cache  " })).toMatchObject({
+      ok: true,
+      data: { message: "Posted to @w1 in #swarm-s9hjx as you" },
+    });
+    expect(posted).toEqual([["s9hjx-w1", "check cache"]]);
+    for (const payload of [
+      { note: undefined },
+      { note: 7 },
+      { note: " " },
+      { note: "x".repeat(8000) },
+      { agentId: "s8pln-lead", note: "wrong" },
+      { agentId: 7, note: "wrong" },
+      { note: "posting fails" },
+    ])
+      expect((await send(payload)).ok).toBe(false);
+    expect(posted).toHaveLength(1);
+    const prefix = `**Operator:** @${current.agents[1]!.handle} `;
+    expect((await send({ note: "x".repeat(8000 - prefix.length) })).ok).toBe(true);
+    expect((await send({ note: "x".repeat(8001 - prefix.length) })).ok).toBe(false);
+    for (const patch of [
+      { status: "stopping" as const },
+      { conclusion: "done" },
+      { turnsUsed: current.limits.maxTurns },
+      { agents: [current.agents[0]!, { ...current.agents[1]!, status: "capped" as const }] },
+      { agents: [current.agents[0]!, { ...current.agents[1]!, status: "failed" as const }] },
+      {
+        agents: [
+          current.agents[0]!,
+          { ...current.agents[1]!, turns: current.limits.maxTurnsPerAgent },
+        ],
+      },
+    ]) {
+      current = { ...fixtures.running!, ...patch };
+      expect((await send({ note: "stale" })).ok).toBe(false);
+    }
+    expect(posted).toHaveLength(2);
+    current = fixtures.running!;
+    expect(
+      (
+        await handleSwarmsAction(
+          {
+            type: "message-agent",
+            origin: "canvas-html",
+            payload: { id: current.id, agentId: current.agents[1]!.id, note: "no" },
+          },
+          messageDeps,
+        )
+      ).ok,
+    ).toBe(false);
+  });
+
   test("server-manage opens the side inspector immediately and probes once", async () => {
     let probes = 0;
     let release = () => {};
@@ -2693,6 +3755,7 @@ describe("actions", () => {
   test("select-swarm selects a live swarm without opening a drawer or showing a toast", async () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
+      selectAgent: async () => {},
       select: (id) => {
         selected.push(id);
       },

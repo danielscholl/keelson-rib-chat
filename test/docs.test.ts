@@ -146,6 +146,53 @@ describe("contributed docs", () => {
     expect(write).toContain("writeEnabled");
   });
 
+  test("packaged and site docs agree on the map, inspector and targeted messaging", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    const page = readFileSync(
+      new URL("../docs/src/content/docs/guides/swarms-tab.md", import.meta.url),
+      "utf8",
+    );
+    const normalized = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
+    for (const text of [normalized(swarms), normalized(page)]) {
+      for (const phrase of [
+        "You, Lead, Workers, Runs",
+        "0, 1, 2, 3",
+        "Grandchildren remain in Workers",
+        "Agent tones show identity",
+        "run tones show status",
+        "operatorMessageCount",
+        "posts not recorded",
+        "Lead turns have no worker cap",
+        "Solid spawn edges",
+        "one wake per source per turn",
+        "dashed",
+        "updates",
+        "per-run wake count",
+        "You is informational; run nodes open the run; agent nodes select the agent",
+        "48 nodes and 200 edges",
+        "shown/total counts",
+        "520 px inspector",
+        "shared by every viewer",
+        "replaces the side drawer",
+        "One inspector key per swarm",
+        "recent messages only",
+        "actually served",
+        "not reported",
+        "Open PR",
+        "Message @agent",
+        "roster's full handle",
+        "unchanged router",
+        "spends a turn",
+        "body limit includes the operator prefix",
+        "read-only with no composer",
+        "no live clock",
+        "monospace/stacked cards or ghost seats",
+      ])
+        expect(text).toContain(phrase);
+      expect(text).not.toContain("details are the same in both");
+    }
+  });
+
   test("the corpus names every registered tool and no tool that does not exist", () => {
     const registered = new Set(tools.map((t) => t.name));
     const mentioned = new Set(content.match(/\bchat_[a-z_]+\b/g) ?? []);

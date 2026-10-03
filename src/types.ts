@@ -394,6 +394,8 @@ export interface SwarmSummary {
   activity?: readonly ActivityEntry[];
   // Every message the swarm saw, including posts not kept in recent.
   messageCount?: number;
+  // Genuine human posts, excluding the rib's kickoff and notices; absent on old records.
+  operatorMessageCount?: number;
   // The newest 20 messages, oldest first; omitted from status tools and the op record.
   recent?: readonly RecentMessage[];
   // The lead's last conclusion that was refused, kept when no conclusion landed.
@@ -401,6 +403,34 @@ export interface SwarmSummary {
   error?: string;
   // The ended swarm this one was started from with Run again.
   rerunOf?: string;
+}
+
+export function agentMessageRefusal(
+  s: Pick<SwarmSummary, "id" | "status" | "conclusion" | "endedAt" | "turnsUsed" | "limits">,
+  a: Pick<SwarmAgent, "handle" | "status" | "lead" | "turns">,
+): string | undefined {
+  if (s.status !== "running" || s.endedAt)
+    return `Swarm ${s.id} is ${s.status}; messaging is read-only.`;
+  if (s.conclusion !== undefined) return "The lead has concluded; no new turns can be requested.";
+  if (a.status === "capped" || a.status === "failed")
+    return `@${a.handle} is ${a.status} and cannot take another turn.`;
+  if (!a.lead && a.turns >= s.limits.maxTurnsPerAgent)
+    return `@${a.handle} has reached its worker turn cap.`;
+  if (s.turnsUsed >= s.limits.maxTurns) return "The swarm has no turns remaining.";
+  return undefined;
+}
+
+export function agentMessageBody(handle: string, note: string): string {
+  const trimmed = note.trim();
+  if (!trimmed) throw new Error("a message needs a note");
+  if (trimmed.length > BODY_MAX) throw new Error(`a message is at most ${BODY_MAX} characters`);
+  const body = `**Operator:** @${handle} ${trimmed}`;
+  if (body.length > BODY_MAX) {
+    throw new Error(
+      `a message is at most ${BODY_MAX} characters including the operator prefix and agent mention (received ${body.length})`,
+    );
+  }
+  return body;
 }
 
 // Whether a swarm already credits a pull request, to a run or to a writer.
