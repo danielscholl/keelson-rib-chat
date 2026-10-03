@@ -53,7 +53,7 @@ import {
   stateLine,
 } from "../src/surface/parts.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
-import { buildRecord } from "../src/surface/record.ts";
+import { buildAgentEdges, buildRecord } from "../src/surface/record.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
 import {
   buildServerPanel,
@@ -2374,6 +2374,50 @@ describe("publishing", () => {
 });
 
 describe("the record page", () => {
+  test("semantic edges count distinct sources, fold spawn wakes and keep repeat asks", () => {
+    const s = swarm("s1", {
+      agents: [agent("s1", 0), agent("s1", 1, { spawnedBy: "s1-lead" })],
+      spans: [
+        {
+          agentId: "s1-w1",
+          n: 1,
+          startedAt: T0,
+          messages: 4,
+          wokeBy: ["s1-lead", "s1-lead", "s1-w1", "operator", "rib", "nudge", "missing"],
+        },
+        { agentId: "missing", n: 1, startedAt: T0, messages: 1, wokeBy: ["s1-lead"] },
+      ],
+      activity: [
+        { at: T0, text: "ask", kind: "ask", actor: "s1-w1", count: 3 },
+        { at: T0, text: "ask", kind: "ask", actor: "missing" },
+      ],
+    });
+    expect(buildAgentEdges(s)).toEqual([
+      { from: "s1-w1", to: "operator", kind: "asked", n: 3 },
+      { from: "s1-lead", to: "s1-w1", kind: "spawned", n: 1, woke: 1 },
+      { from: "operator", to: "s1-w1", kind: "woke", n: 1 },
+    ]);
+    expect(buildAgentEdges(s)).toEqual(buildAgentEdges(s));
+  });
+
+  test("semantic aggregation is not limited by the record's forty-edge budget", () => {
+    const agents = Array.from({ length: 12 }, (_, i) => agent("s1", i));
+    const s = swarm("s1", {
+      agents,
+      spans: agents.map((a) => ({
+        agentId: a.id,
+        n: 1,
+        startedAt: T0,
+        messages: 12,
+        wokeBy: agents.map((source) => source.id),
+      })),
+    });
+    expect(buildAgentEdges(s)).toHaveLength(132);
+    expect((buildRecord(s, new Date(T0)).match(/marker-end="url\(#arrow\)"/g) ?? []).length).toBe(
+      40,
+    );
+  });
+
   const at = (m: number) => new Date(Date.parse(T0) + m * 60_000).toISOString();
   const traced = (patch: Partial<SwarmSummary> = {}): SwarmSummary =>
     swarm("s6rec", {

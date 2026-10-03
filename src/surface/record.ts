@@ -424,7 +424,7 @@ function timeline(s: SwarmSummary, composedAt: Date): string {
 
 // ---- Who woke whom: agents as nodes, edges for spawns, wakes and questions. ----
 
-interface Edge {
+export interface AgentEdge {
   from: string;
   to: string;
   kind: "spawned" | "woke" | "asked";
@@ -433,25 +433,28 @@ interface Edge {
   woke?: number;
 }
 
-function edges(s: SwarmSummary): Edge[] {
+export function buildAgentEdges(s: SwarmSummary): AgentEdge[] {
   const ids = new Set(s.agents.map((a) => a.id));
-  const counted = new Map<string, Edge>();
-  const add = (from: string, to: string, kind: Edge["kind"]) => {
+  const counted = new Map<string, AgentEdge>();
+  const add = (from: string, to: string, kind: AgentEdge["kind"], n = 1) => {
     const key = `${kind}:${from}:${to}`;
     const held = counted.get(key);
-    if (held) held.n++;
-    else counted.set(key, { from, to, kind, n: 1 });
+    if (held) held.n += n;
+    else counted.set(key, { from, to, kind, n });
   };
   for (const a of s.agents)
     if (a.spawnedBy && ids.has(a.spawnedBy)) add(a.spawnedBy, a.id, "spawned");
   for (const t of s.spans ?? []) {
-    for (const w of t.wokeBy) {
+    if (!ids.has(t.agentId)) continue;
+    for (const w of new Set(t.wokeBy)) {
       if (w === t.agentId) continue;
       if (ids.has(w) || w === "operator" || w === "runs") add(w, t.agentId, "woke");
     }
   }
   for (const e of s.activity ?? []) {
-    if (e.kind === "ask" && e.actor && ids.has(e.actor)) add(e.actor, "operator", "asked");
+    if (e.kind === "ask" && e.actor && ids.has(e.actor)) {
+      add(e.actor, "operator", "asked", e.count ?? 1);
+    }
   }
   for (const spawned of counted.values()) {
     if (spawned.kind !== "spawned") continue;
@@ -461,7 +464,7 @@ function edges(s: SwarmSummary): Edge[] {
     spawned.woke = woke.n;
     counted.delete(key);
   }
-  return [...counted.values()].sort((a, b) => b.n - a.n).slice(0, MAX_EDGES);
+  return [...counted.values()].sort((a, b) => b.n - a.n);
 }
 
 interface Placed {
@@ -472,7 +475,7 @@ interface Placed {
   y: number;
 }
 
-function place(s: SwarmSummary, graphEdges: readonly Edge[]): Placed[] {
+function place(s: SwarmSummary, graphEdges: readonly AgentEdge[]): Placed[] {
   const depth = new Map<string, number>();
   const byId = new Map(s.agents.map((a) => [a.id, a]));
   const depthOf = (id: string, seen: Set<string>): number => {
@@ -535,7 +538,7 @@ function place(s: SwarmSummary, graphEdges: readonly Edge[]): Placed[] {
 }
 
 function whoWokeWhom(s: SwarmSummary): string {
-  const graphEdges = edges(s);
+  const graphEdges = buildAgentEdges(s).slice(0, MAX_EDGES);
   if (graphEdges.length === 0) {
     return `<section><h2>Who woke whom</h2><p class="note">No agent woke another.</p></section>`;
   }
