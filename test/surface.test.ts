@@ -144,6 +144,34 @@ const starting: StartingSwarm = {
 
 const fixtures: Record<string, SwarmSummary> = {
   running: swarm("s9hjx"),
+  twoBusy: swarm("s2bsy", {
+    agents: [
+      agent("s2bsy", 0, { status: "busy" }),
+      agent("s2bsy", 1, { status: "busy" }),
+      agent("s2bsy", 2, { status: "waiting", queued: 1 }),
+    ],
+    spans: [
+      { agentId: "s2bsy-lead", n: 1, startedAt: T0, endedAt: T0, messages: 1, wokeBy: [] },
+      {
+        agentId: "s2bsy-lead",
+        n: 3,
+        startedAt: "2026-09-22T14:05:00.000Z",
+        messages: 1,
+        wokeBy: [],
+      },
+      { agentId: "s2bsy-w1", n: 2, startedAt: "2026-09-22T14:07:00.000Z", messages: 2, wokeBy: [] },
+    ],
+    pace: [1, 2, 0],
+    usage: { input: 200, output: 50, cached: 100 },
+  }),
+  concluded: swarm("s4end", {
+    conclusion: "Done",
+    activity: [
+      { at: T0, text: "concluded", kind: "conclusion" },
+      { at: T0, text: "later turn", kind: "turn" },
+    ],
+  }),
+  leadFailure: swarm("s5bad", { health: { lastLeadFailure: "timeout" } }),
   review: swarm("s9hjy", {
     runs: [run("r1", { status: "paused", pendingApproval: gate("swarm") })],
   }),
@@ -257,20 +285,9 @@ describe("the shared state line", () => {
   });
 
   test("busy turns use the latest open span and waiting agents name their queues", () => {
-    const s = swarm("s2bsy", {
-      agents: [
-        agent("s2bsy", 0, { status: "busy" }),
-        agent("s2bsy", 1, { status: "busy" }),
-        agent("s2bsy", 2, { status: "waiting", queued: 1 }),
-      ],
-      spans: [
-        { agentId: "s2bsy-lead", n: 1, startedAt: T0, endedAt: T0, messages: 1, wokeBy: [] },
-        { agentId: "s2bsy-lead", n: 3, startedAt: T0, messages: 1, wokeBy: [] },
-        { agentId: "s2bsy-w1", n: 2, startedAt: T0, messages: 2, wokeBy: [] },
-      ],
-    });
+    const s = fixtures.twoBusy!;
     expect(stateLine(s, []).text).toBe(
-      `@lead is on turn 3 since ${hhmm(T0)} · @w1 is on turn 2 since ${hhmm(T0)} · @w2 waits with 1 message`,
+      `@lead is on turn 3 since ${hhmm(s.spans?.[1]?.startedAt)} · @w1 is on turn 2 since ${hhmm(s.spans?.[2]?.startedAt)} · @w2 waits with 1 message`,
     );
     expect(stateLine({ ...s, spans: [] }, []).text).toStartWith("@lead is on a turn");
   });
@@ -292,13 +309,7 @@ describe("the shared state line", () => {
   });
 
   test("conclusion precedes activity, with and without a recorded time", () => {
-    const s = swarm("s4end", {
-      conclusion: "Done",
-      activity: [
-        { at: T0, text: "concluded", kind: "conclusion" },
-        { at: T0, text: "later turn", kind: "turn" },
-      ],
-    });
+    const s = fixtures.concluded!;
     expect(stateLine(s, []).text).toBe(`concluded at ${hhmm(T0)}; turns in flight finish`);
     expect(stateLine({ ...s, activity: [] }, []).text).toBe(
       "the lead concluded; turns in flight finish",
@@ -422,13 +433,7 @@ describe("the live cockpit", () => {
   });
 
   test("agent segments tone nonzero states and hatch the open seats", () => {
-    const s = swarm("s2seg", {
-      agents: [
-        agent("s2seg", 0, { status: "busy" }),
-        agent("s2seg", 1, { status: "busy" }),
-        agent("s2seg", 2, { status: "waiting", queued: 1 }),
-      ],
-    });
+    const s = fixtures.twoBusy!;
     expect(sections(s)[2]).toEqual({
       kind: "segments",
       title: "Agents · 3 of 5",
@@ -459,10 +464,7 @@ describe("the live cockpit", () => {
   });
 
   test("the budget always has Turns, Time and fresh Tokens with cached in the sub", () => {
-    const s = swarm("s4bud", {
-      pace: [1, 2, 0],
-      usage: { input: 200, output: 50, cached: 100 },
-    });
+    const s = fixtures.twoBusy!;
     expect(sections(s)[3]).toMatchObject({
       kind: "stats",
       title: "Budget",
@@ -481,7 +483,7 @@ describe("the live cockpit", () => {
     expect(sections(fixtures.onlyYou!)[0]).toMatchObject({
       items: [{ pill: { label: "needs you", tone: "caution" }, edge: "caution" }],
     });
-    expect(sections(swarm("s5bad", { health: { lastLeadFailure: "timeout" } }))[1]).toMatchObject({
+    expect(sections(fixtures.leadFailure!)[1]).toMatchObject({
       items: [
         { glyph: "warn", text: "waiting for the lead's first turn · the lead's last turn failed" },
       ],
@@ -527,6 +529,9 @@ describe("Swarms boards", () => {
     board(HISTORY_KEY, buildHistory(state({ ended })));
     board(HISTORY_KEY, buildHistory(state()));
     for (const s of all) board(swarmKey(s.id), buildSwarmBoard(s));
+    for (const s of all.filter((s) => s.status === "running" || s.status === "stopping")) {
+      board(INDEX_KEY, buildIndex(state({ live: [s] })));
+    }
     board(swarmKey(starting.id), buildStartingBoard(starting));
     board(swarmKey("s0old"), buildGoneBoard("s0old"));
   });
@@ -585,6 +590,67 @@ describe("Swarms boards", () => {
     const single = buildIndex(state({ live: [live[0]!] }));
     board(INDEX_KEY, single);
     expect(single.sections).toEqual(buildCockpit(live[0]!, [], { titled: true }));
+  });
+
+  test("Needs you combines all request kinds, one card per request with task and id", () => {
+    const question = { ...fixtures.asked!, runs: [] };
+    const live = [fixtures.onlyYou!, question, fixtures.gone!, fixtures.quiet!];
+    const view = buildIndex(state({ live }));
+    const cards = cardsOf(view);
+    expect(view.sections[0]?.title).toBe("Needs you");
+    expect(cards.map((c) => c.pill?.label)).toEqual(["connection", "question", "decide", "quiet"]);
+    const ordered = [fixtures.gone!, question, fixtures.onlyYou!, fixtures.quiet!];
+    for (const [i, card] of cards.entries()) {
+      expect(card.footnote).toEndWith(` · ${ordered[i]!.id}`);
+      expect(card.reason).toBeUndefined();
+      expect(JSON.stringify(card)).not.toContain("more request");
+      expect(card.bar).toBeUndefined();
+      expect(card.fields?.some((f) => f.people)).toBe(false);
+      expect(card.actions?.some((a) => a.type === "swarm-open" || a.type === "stop-swarm")).toBe(
+        false,
+      );
+      expect(card.actions?.filter((a) => a.type === "select-swarm")).toHaveLength(1);
+    }
+    const strip = view.sections[1];
+    expect(strip?.kind === "actions" ? strip.items.every((x) => x.tone === "caution") : false).toBe(
+      true,
+    );
+  });
+
+  test("Needs you caps the cross-swarm list at the oldest twelve requests", () => {
+    const live = Array.from({ length: 2 }, (_, i) =>
+      swarm(`s0cap${i}`, {
+        runs: Array.from({ length: 8 }, (_, j) =>
+          run(`r${i}${j}`, {
+            status: "paused",
+            pendingApproval: {
+              ...gate("operator"),
+              openedAt: new Date(Date.parse(T0) + (i * 8 + j) * 60_000).toISOString(),
+            },
+          }),
+        ),
+      }),
+    );
+    const view = buildIndex(state({ live: live.reverse() }));
+    const cards = cardsOf(view);
+    expect(view.sections[0]?.title).toBe("Needs you · 16 · oldest 12 shown");
+    expect(cards).toHaveLength(12);
+    expect(cards[0]?.fields?.[1]?.clock?.at).toBe(T0);
+    expect(cards[11]?.fields?.[1]?.clock?.at).toBe("2026-09-22T14:11:00.000Z");
+  });
+
+  test("folding and expanding a swarm preserves its state line", () => {
+    const live = [fixtures.running!, fixtures.twoBusy!];
+    const foldedView = buildIndex(state({ live, selected: fixtures.running!.id }));
+    const expandedView = buildIndex(state({ live, selected: fixtures.twoBusy!.id }));
+    board(INDEX_KEY, foldedView);
+    board(INDEX_KEY, expandedView);
+    const folded = foldedView.sections.find((x) => x.kind === "cards" && x.title === "Also live");
+    const row = expandedView.sections[2];
+    expect(folded?.kind === "cards" ? folded.items[0]?.fields?.[0]?.value : undefined).toBe(
+      row?.kind === "rows" ? row.items[0]?.text : undefined,
+    );
+    expect(row?.kind === "rows" ? row.items[0]?.text : "").toContain("@w2 waits with 1 message");
   });
 
   test("a connection request starts a stopped managed server and links the channel", () => {
@@ -1001,10 +1067,14 @@ ${"detail ".repeat(1000)}`,
       }),
     );
     const live = Array.from({ length: 6 }, (_, i) => ({ ...big, id: `s9bi${i}` }));
-    expect(JSON.stringify(buildIndex(state({ live, ended: many }))).length).toBeLessThan(48_000);
-    expect(JSON.stringify(buildIndex(state({ live: [big], ended: many }))).length).toBeLessThan(
-      48_000,
-    );
+    for (const selected of [undefined, live[5]!.id]) {
+      const view = buildIndex(state({ live, ended: many, selected }));
+      board(INDEX_KEY, view);
+      expect(JSON.stringify(view).length).toBeLessThan(48_000);
+    }
+    const single = buildIndex(state({ live: [big], ended: many }));
+    board(INDEX_KEY, single);
+    expect(JSON.stringify(single).length).toBeLessThan(48_000);
     expect(JSON.stringify(buildSwarmBoard(big)).length).toBeLessThan(48_000);
     expect(buildDoc(big, big.id).length).toBeLessThan(128_000);
   });
