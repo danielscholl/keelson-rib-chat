@@ -420,6 +420,19 @@ export function agentMessageRefusal(
   return undefined;
 }
 
+export function agentMessageBody(handle: string, note: string): string {
+  const trimmed = note.trim();
+  if (!trimmed) throw new Error("a message needs a note");
+  if (trimmed.length > BODY_MAX) throw new Error(`a message is at most ${BODY_MAX} characters`);
+  const body = `**Operator:** @${handle} ${trimmed}`;
+  if (body.length > BODY_MAX) {
+    throw new Error(
+      `a message is at most ${BODY_MAX} characters including the operator prefix and agent mention (received ${body.length})`,
+    );
+  }
+  return body;
+}
+
 // Whether a swarm already credits a pull request, to a run or to a writer.
 export function ownsPr(s: Pick<SwarmSummary, "runs" | "prs">, url: string): boolean {
   return (

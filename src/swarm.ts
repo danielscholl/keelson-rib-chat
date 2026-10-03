@@ -38,6 +38,8 @@ import {
   type ActivityEntry,
   type ActivityKind,
   addTokens,
+  agentMessageBody,
+  agentMessageRefusal,
   BODY_MAX,
   type ChatMessage,
   type ChildRun,
@@ -2034,6 +2036,17 @@ export class Swarm {
     // Posted as the human owner, so it routes to the lead like any operator message.
     const message = await this.owner.postMessage(this.channel.id, `**Operator:** ${note}`);
     this.noteOperator(`you posted in #${this.channel.name}`, note);
+    this.enqueueMessage(message);
+  }
+
+  async messageAgent(agentId: string, note: string): Promise<void> {
+    const agent = this.agents.get(agentId);
+    if (!agent) throw new Error(`Agent ${agentId} does not belong to swarm ${this.id}.`);
+    const refusal = agentMessageRefusal(this.summary(), agent);
+    if (refusal) throw new Error(refusal);
+    const body = agentMessageBody(agent.handle, note);
+    const message = await this.owner.postMessage(this.channel.id, body);
+    this.noteOperator(`you messaged @${agent.handle}`, note);
     this.enqueueMessage(message);
   }
 

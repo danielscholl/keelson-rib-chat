@@ -369,6 +369,7 @@ describe("Swarm", () => {
     expect(summary.agents.find((a) => a.handle === "s1-echo")?.status).toBe("capped");
     expect(server.messages.some((m) => m.body.includes("used all 2 of its turns"))).toBe(true);
     expect(summary.recent?.some((m) => m.text.includes("used all 2 of its turns"))).toBe(false);
+    expect(summary.operatorMessageCount).toBe(0);
   });
 
   test("a human post mid-run reaches the lead, and steer does the same", async () => {
@@ -1381,6 +1382,139 @@ describe("size and model", () => {
     expect(summary.agents.every((a) => a.model === undefined && a.providerId === "fake")).toBe(
       true,
     );
+  });
+});
+
+describe("targeted operator messages", () => {
+  const until = async (check: () => boolean) => {
+    for (let i = 0; i < 200 && !check(); i++) await Bun.sleep(5);
+    expect(check()).toBe(true);
+  };
+
+  test("a full-handle human mention wakes only the selected idle worker and deduplicates its echo", async () => {
+    const prompts: string[] = [];
+    const h = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "scout", role: "scout", brief: "check" });
+          await call("chat_spawn", { handle: "other", role: "other", brief: "check" });
+        }
+        if (agentId === "s1-scout" && turn === 2) prompts.push(prompt);
+      },
+      {},
+      { quiesceMs: 10_000 },
+    );
+    const swarm = await h.start();
+    try {
+      await until(
+        () =>
+          swarm.summary().agents.length === 3 &&
+          swarm.summary().agents.every((a) => a.status === "idle"),
+      );
+      h.server.writeDelayMs = 10;
+      await swarm.messageAgent("s1-scout", "  Check the cache.  ");
+      await until(() => prompts.length === 1);
+      const message = h.server.messages.find(
+        (m) => m.body === "**Operator:** @s1-scout Check the cache.",
+      );
+      expect(message?.author.kind).toBe("human");
+      expect(message?.author.id).toBe(h.server.owner.id);
+      expect(prompts[0]).toContain("**Operator:** @s1-scout Check the cache.");
+      expect(swarm.summary().agents.map((a) => a.turns)).toEqual([1, 2, 1]);
+      expect(swarm.summary().operatorMessageCount).toBe(1);
+      expect(swarm.summary().activity).toContainEqual(
+        expect.objectContaining({
+          kind: "operator",
+          actor: "operator",
+          text: "you messaged @s1-scout: Check the cache.",
+        }),
+      );
+      await Bun.sleep(20);
+      expect(prompts).toHaveLength(1);
+      expect(swarm.summary().operatorMessageCount).toBe(1);
+    } finally {
+      await swarm.stop();
+    }
+  });
+
+  test("invalid targets and complete-body limits post nothing; the exact boundary posts", async () => {
+    const h = harness(async () => {}, {}, { quiesceMs: 10_000 });
+    const swarm = await h.start();
+    try {
+      await until(() => swarm.summary().agents[0]?.status === "idle");
+      const count = h.server.messages.length;
+      for (const [id, note] of [
+        ["s2-lead", "note"],
+        ["you", "note"],
+        ["s1-lead", "  "],
+        ["s1-lead", "x".repeat(BODY_MAX)],
+        ["s1-lead", "x".repeat(BODY_MAX + 1)],
+      ]) {
+        await expect(swarm.messageAgent(id!, note!)).rejects.toThrow();
+        expect(h.server.messages).toHaveLength(count);
+      }
+      const prefix = "**Operator:** @s1-lead ";
+      await swarm.messageAgent("s1-lead", "x".repeat(BODY_MAX - prefix.length));
+      expect(h.server.messages.at(-1)?.body).toHaveLength(BODY_MAX);
+      await until(() => swarm.summary().operatorMessageCount === 1);
+    } finally {
+      await swarm.stop();
+    }
+    const count = h.server.messages.length;
+    await expect(swarm.messageAgent("s1-lead", "too late")).rejects.toThrow("read-only");
+    expect(h.server.messages).toHaveLength(count);
+  });
+
+  test("capped and failed workers are refused; a lead is not worker-capped", async () => {
+    for (const failed of [false, true]) {
+      const h = harness(
+        async ({ agentId, turn, call }) => {
+          if (agentId === "s1-lead" && turn === 1) {
+            await call("chat_spawn", { handle: "w", role: "worker", brief: "check" });
+          } else if (agentId === "s1-w") {
+            if (failed) throw new Error("worker failed");
+            await call("chat_post", { body: "@s1-lead ping" });
+          } else if (!failed) {
+            await call("chat_post", { body: "@s1-w again" });
+          }
+        },
+        { maxTurnsPerAgent: failed ? 12 : 1 },
+        { quiesceMs: 10_000 },
+      );
+      const swarm = await h.start();
+      try {
+        await until(() => swarm.summary().agents[1]?.status === (failed ? "failed" : "capped"));
+        const count = h.server.messages.length;
+        await expect(swarm.messageAgent("s1-w", "again")).rejects.toThrow(
+          "cannot take another turn",
+        );
+        expect(h.server.messages).toHaveLength(count);
+        expect(swarm.summary().operatorMessageCount).toBe(0);
+        await swarm.messageAgent("s1-lead", "still eligible");
+      } finally {
+        await swarm.stop();
+      }
+    }
+  });
+
+  test("a concluded swarm and transport failures cannot report successful messaging", async () => {
+    const h = harness(async () => {}, {}, { quiesceMs: 10_000 });
+    const swarm = await h.start();
+    try {
+      await until(() => swarm.summary().agents[0]?.status === "idle");
+      const count = h.server.messages.length;
+      h.server.down = true;
+      await expect(swarm.messageAgent("s1-lead", "lost")).rejects.toThrow();
+      h.server.down = false;
+      expect(h.server.messages).toHaveLength(count);
+      expect(swarm.summary().activity?.some((e) => e.kind === "operator")).toBe(false);
+      expect(swarm.summary().operatorMessageCount).toBe(0);
+      await swarm.conclude("s1-lead", "done");
+      await expect(swarm.messageAgent("s1-lead", "late")).rejects.toThrow("concluded");
+    } finally {
+      h.server.down = false;
+      await swarm.stop();
+    }
   });
 });
 
