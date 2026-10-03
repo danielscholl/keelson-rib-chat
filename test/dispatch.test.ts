@@ -89,6 +89,30 @@ describe("dispatch evidence", () => {
     ).toBeUndefined();
   });
 
+  test("CI evidence identifies only an unambiguous PR from its line, node, or run", () => {
+    const first = "https://github.com/o/r/pull/3";
+    const other = "https://github.com/o/r/pull/4";
+    const observe = (output: string, context = "") =>
+      ciIn(
+        status({
+          nodes: [
+            { nodeId: "context", status: "ok", output: context },
+            { nodeId: "ci", status: "ok", output },
+          ],
+        }),
+      );
+    expect(observe(`Related: ${other}\nCI_STATUS: PASS - ${first}`)?.prUrl).toBe(first);
+    expect(observe(`Watching ${first}\nCI_STATUS: PASS`, other)?.prUrl).toBe(first);
+    expect(observe("CI_GATE: PASS", first)).toEqual({ verdict: "pass", prUrl: first });
+    expect(observe(`CI_STATUS: PASS - ${first} ${other}`)?.prUrl).toBeUndefined();
+    expect(observe(`${first}\n${other}\nCI_STATUS: PASS`)?.prUrl).toBeUndefined();
+    expect(observe("CI_GATE: PASS", `${first}\n${other}`)?.prUrl).toBeUndefined();
+    expect(observe(`CI_STATUS: PASS - ${first}\nCI_GATE: FAIL - ${other}`)?.prUrl).toBe(other);
+    expect(
+      observe(`${first}\n${other}\nCI_STATUS: PASS - ${first}\nCI_GATE: PASS`)?.prUrl,
+    ).toBeUndefined();
+  });
+
   test("an isolated run is verified only with its worktree, a pull request, and passing CI", () => {
     const own = { path: null, branch: null, worktreeEstablished: true };
     const pass = { verdict: "pass" as const };
@@ -312,7 +336,7 @@ describe("dispatch evidence", () => {
     expect(done).toContain("; verified.");
     expect(r.pendingApproval).toBeUndefined();
     expect(r.prUrls).toEqual(["https://github.com/o/r/pull/9"]);
-    expect(r.ci).toEqual({ verdict: "pass" });
+    expect(r.ci).toEqual({ verdict: "pass", prUrl: "https://github.com/o/r/pull/9" });
     expect(r.verified).toBe(true);
   });
 

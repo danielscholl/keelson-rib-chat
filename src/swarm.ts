@@ -379,6 +379,7 @@ export class Swarm {
   // so a writer's worktree is checked only once they have.
   private readonly inFlight = new Map<string, Set<Promise<unknown>>>();
   private readonly prs: WriterPr[] = [];
+  private readonly openingPrs = new Set<Promise<WriterPr>>();
   private readonly pushedHeads = new Map<string, string>();
   private readonly readingPrs = new Map<string, Promise<void>>();
   private error: string | undefined;
@@ -1366,21 +1367,31 @@ export class Swarm {
       await this.syncWriterPr(pr);
       return { url: agent.prUrl, again: true };
     }
-    const url = await openDraftPr(git, wt, input.title, input.body);
-    if (this.status !== "running") throw new Error(`the swarm ended while opening draft ${url}`);
-    agent.prUrl = url;
-    const pr = { agent: agent.handle, url, branch: wt.branch, at: new Date().toISOString() };
-    this.prs.push(pr);
-    this.pushedHeads.set(url, head);
-    this.log(`@${agent.handle} opened draft ${url}`, {
-      kind: "pr",
-      actor: agent.id,
-      subject: url,
+    const opening = openDraftPr(git, wt, input.title, input.body).then((url) => {
+      agent.prUrl = url;
+      const pr = { agent: agent.handle, url, branch: wt.branch, at: new Date().toISOString() };
+      this.prs.push(pr);
+      this.pushedHeads.set(url, head);
+      this.log(`@${agent.handle} opened draft ${url}`, {
+        kind: "pr",
+        actor: agent.id,
+        subject: url,
+      });
+      return pr;
     });
-    this.changed("agent");
-    this.armRunPoll(this.opts.dispatch?.pollMs ?? 20_000);
-    await this.syncWriterPr(pr);
-    return { url, again: false };
+    this.openingPrs.add(opening);
+    let pr: WriterPr;
+    try {
+      pr = await opening;
+    } finally {
+      this.openingPrs.delete(opening);
+    }
+    if (this.status === "running") {
+      this.changed("agent");
+      this.armRunPoll(this.opts.dispatch?.pollMs ?? 20_000);
+      await this.syncWriterPr(pr);
+    }
+    return { url: pr.url, again: false };
   }
 
   private setWriterCi(pr: WriterPr, ci: WriterPr["ci"], publish = true): void {
@@ -1400,7 +1411,18 @@ export class Swarm {
       try {
         const observed = await readWriterCi(write.git, write.root, pr.url);
         if (!final && this.status !== "running") return;
-        if (observed.headRefOid !== this.pushedHeads.get(pr.url)) return;
+        if (expectedHead !== this.pushedHeads.get(pr.url)) return;
+        if (observed.headRefOid !== expectedHead) {
+          this.setWriterCi(
+            pr,
+            {
+              verdict: "unknown",
+              detail: `PR head ${observed.headRefOid} differs from last pushed head ${expectedHead}`,
+            },
+            !final,
+          );
+          return;
+        }
         this.setWriterCi(pr, observed.ci, !final);
       } catch (e) {
         if (!final && this.status !== "running") return;
@@ -2127,6 +2149,8 @@ export class Swarm {
     }
     // A spawn in flight seats its agent first, so its token and worktree are cleaned up too.
     await Promise.allSettled([...this.seating]);
+    // A remotely created draft must enter the ledger before the summary is frozen.
+    await Promise.allSettled([...this.openingPrs]);
     // The bots stay so the transcript keeps its authors; only their credentials go.
     for (const agent of this.agents.values()) {
       await this.owner.revokeBotToken(agent.tokenId).catch((e) => {

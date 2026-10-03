@@ -96,7 +96,7 @@ export function isLive(run: ChildRun): boolean {
   return run.status === "running" || run.status === "paused";
 }
 
-export function prUrlsIn(status: RibRunStatus): string[] {
+export function prUrlsIn(status: Pick<RibRunStatus, "nodes">): string[] {
   const found = new Set<string>();
   for (const node of status.nodes) {
     for (const text of [node.output, node.error]) {
@@ -113,12 +113,18 @@ const CI_LINE = /^[ \t]*CI_(GATE|STATUS):[ \t]*(PASS|FAIL|UNKNOWN)\b[ \t—–-]
 export function ciIn(status: RibRunStatus): ChildRun["ci"] {
   let gate: ChildRun["ci"];
   let watch: ChildRun["ci"];
+  const runUrls = prUrlsIn(status);
   for (const node of status.nodes) {
+    const nodeUrls = prUrlsIn({ nodes: [node] });
     for (const text of [node.output, node.error]) {
-      for (const [, kind, verdict = "", detail = ""] of text?.matchAll(CI_LINE) ?? []) {
+      for (const [line, kind, verdict = "", detail = ""] of text?.matchAll(CI_LINE) ?? []) {
+        const lineUrls = [...new Set(line.match(PR_URL) ?? [])];
+        const urls = lineUrls.length > 0 ? lineUrls : nodeUrls.length > 0 ? nodeUrls : runUrls;
+        const prUrl = urls.length === 1 ? urls[0] : undefined;
         const found = {
           verdict: verdict.toLowerCase() as CiVerdict,
           ...(detail.trim() ? { detail: detail.trim() } : {}),
+          ...(prUrl ? { prUrl } : {}),
         };
         if (kind === "GATE") gate = found;
         else watch = found;

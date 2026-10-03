@@ -83,6 +83,85 @@ async function until(check: () => boolean) {
 }
 
 describe("writer CI lifecycle", () => {
+  test("shutdown waits for a remotely created draft to enter the PR ledger", async () => {
+    const git = fakeGit();
+    const run = git.deps.run;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let created = false;
+    git.deps.run = async (cmd, args, opts) => {
+      const response = await run(cmd, args, opts);
+      if (cmd === "gh" && args[0] === "pr" && args[1] === "create") {
+        created = true;
+        await held;
+      }
+      return response;
+    };
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    const h = await writerHarness(git);
+    const opened = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" }).then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+    await until(() => created);
+    let finished = false;
+    const stopped = h.swarm.stop().then((summary) => {
+      finished = true;
+      return summary;
+    });
+    await Bun.sleep(25);
+    const finishedBeforeResponse = finished;
+    release();
+    const ended = await stopped;
+    expect(await opened).toEqual({ value: { url: PR, again: false } });
+    expect(finishedBeforeResponse).toBe(false);
+    expect(ended.prs).toEqual([
+      expect.objectContaining({
+        url: PR,
+        agent: h.writer.handle,
+        ci: { verdict: "pass", detail: "1 check(s): pass" },
+      }),
+    ]);
+    expect(ended.agents.find((agent) => agent.id === h.writer.id)?.prUrl).toBe(PR);
+    const snapshot = JSON.stringify(h.swarm.summary());
+    await Bun.sleep(25);
+    expect(JSON.stringify(h.swarm.summary())).toBe(snapshot);
+  });
+
+  test("a remotely changed PR head invalidates passing CI before shutdown", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    const h = await writerHarness(git, {
+      dispatch: { grants: [], dispatcher: fakeDispatcher().dispatcher, pollMs: 5 },
+    });
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("pass");
+    const nextHead = "b".repeat(40);
+    const reads = git.ran("gh pr view").length;
+    git.prChecks.set(PR, rollup([check("FAILURE")], nextHead));
+    await until(() => git.ran("gh pr view").length > reads);
+    await Bun.sleep(10);
+    const polled = h.swarm.summary().prs?.[0]?.ci;
+    const ended = await h.swarm.stop();
+    expect(polled?.verdict).toBe("unknown");
+    expect(polled?.detail).toContain(nextHead);
+    expect(ended.prs?.[0]?.ci).toEqual(polled);
+  });
+
+  test("the final CI read reports a head mismatch even when no live poll saw it", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    const h = await writerHarness(git);
+    await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    const nextHead = "b".repeat(40);
+    git.prChecks.set(PR, rollup([], nextHead));
+    const ended = await h.swarm.stop();
+    expect(ended.prs?.[0]?.ci?.verdict).toBe("unknown");
+    expect(ended.prs?.[0]?.ci?.detail).toContain(nextHead);
+  });
+
   test("writer-only swarms poll terminal observations without waking agents or duplicating reads", async () => {
     const git = fakeGit();
     git.prChecks.set(PR, rollup([check("SUCCESS")]));
@@ -148,7 +227,8 @@ describe("writer CI lifecycle", () => {
     // The forge may still report the old head on the next poll.
     git.prChecks.set(PR, rollup([check("SUCCESS")]));
     await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
-    expect(h.swarm.summary().prs?.[0]?.ci).toBeUndefined();
+    expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("unknown");
+    expect(h.swarm.summary().prs?.[0]?.ci?.detail).toContain(HEAD);
     git.prChecks.set(PR, rollup([check(null, "IN_PROGRESS")], nextHead));
     await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
     expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("running");

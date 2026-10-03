@@ -259,7 +259,9 @@ function stats(s: SwarmSummary, now: Date): Leaf {
     const record = (url: string, passing: boolean) =>
       prs.set(url, (prs.get(url) ?? true) && passing);
     for (const run of s.runs ?? []) {
-      for (const url of run.prUrls) record(url, run.ci?.verdict === "pass");
+      for (const url of run.prUrls) {
+        record(url, run.ci?.verdict === "pass" && run.ci.prUrl === url);
+      }
     }
     for (const pr of s.prs ?? []) record(pr.url, pr.ci?.verdict === "pass");
     if (prs.size > 0) {

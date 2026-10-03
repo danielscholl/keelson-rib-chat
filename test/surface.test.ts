@@ -10,6 +10,7 @@ import {
   ribSurfaceDescriptorSchema,
   type SnapshotManager,
 } from "@keelson/shared";
+import { applyStatus } from "../src/dispatch.ts";
 import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
@@ -1289,6 +1290,32 @@ describe("Swarms boards", () => {
     );
   });
 
+  test("ended PR totals do not apply a run's passing CI to unrelated PR URLs", () => {
+    const first = "https://github.com/o/r/pull/1";
+    const unrelated = "https://github.com/o/r/pull/2";
+    const child = run("ci");
+    applyStatus(child, {
+      runId: child.runId,
+      workflowName: child.workflow,
+      status: "succeeded",
+      startedAt: T0,
+      checkout: child.checkout!,
+      nodes: [
+        {
+          nodeId: "await-ci",
+          status: "succeeded",
+          output: `Related PR: ${unrelated}\nCI_STATUS: PASS - ${first}`,
+        },
+      ],
+    });
+    expect(child.prUrls).toEqual([unrelated, first]);
+    const view = buildSwarmBoard(swarm("ci", { status: "done", endedAt: T0, runs: [child] }));
+    const tile = view.sections
+      .flatMap((section) => (section.kind === "stats" ? section.items : []))
+      .find((item) => item.label === "Pull requests");
+    expect(tile).toEqual({ label: "Pull requests", value: 2, sub: "1 with CI passing" });
+  });
+
   test("ended PR totals count distinct URLs and require every owner to explicitly pass", () => {
     const id = "s8cnt";
     const url = (n: number) => `https://github.com/o/r/pull/${n}`;
@@ -1325,30 +1352,47 @@ describe("Swarms boards", () => {
       sub: "0 with CI passing",
     });
     const runs = [
-      run("ra", { prUrls: [url(1), url(6), url(7)], ci: { verdict: "pass" }, verified: false }),
+      run("ra", {
+        prUrls: [url(1), url(6), url(7)],
+        ci: { verdict: "pass", prUrl: url(7) },
+        verified: false,
+      }),
       run("rb", { prUrls: [url(8)], verified: true }),
     ];
     expect(tile({ ...base, runs })).toEqual({
       label: "Pull requests",
       value: 4,
-      sub: "3 with CI passing",
+      sub: "1 with CI passing",
     });
     expect(tile({ ...base, runs, prs: writers })).toEqual({
       label: "Pull requests",
       value: 8,
-      sub: "3 with CI passing",
+      sub: "1 with CI passing",
     });
     expect(tile({ ...base, runs, prs: [writerPr(1), writerPr(6, { verdict: "pass" })] })).toEqual({
       label: "Pull requests",
       value: 4,
-      sub: "2 with CI passing",
+      sub: "1 with CI passing",
     });
     expect(
       tile({
         ...base,
         runs: [...runs, run("rc", { prUrls: [url(7), url(7)], ci: { verdict: "fail" } })],
       }),
-    ).toEqual({ label: "Pull requests", value: 4, sub: "2 with CI passing" });
+    ).toEqual({ label: "Pull requests", value: 4, sub: "0 with CI passing" });
+    expect(
+      tile({
+        ...base,
+        runs: [run("rd", { prUrls: [url(1)], ci: { verdict: "pass", prUrl: url(1) } })],
+        prs: [writerPr(1, { verdict: "pass" })],
+      }),
+    ).toEqual({ label: "Pull requests", value: 1, sub: "1 with CI passing" });
+    expect(
+      tile({
+        ...base,
+        runs: [run("re", { prUrls: [url(1)], ci: { verdict: "pass" } })],
+      }),
+    ).toEqual({ label: "Pull requests", value: 1, sub: "0 with CI passing" });
     for (const status of ["running", "stopping"] as const) {
       expect(tile({ ...base, status, runs, prs: writers })).toBeUndefined();
     }
