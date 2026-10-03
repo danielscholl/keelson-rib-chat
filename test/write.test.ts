@@ -130,6 +130,104 @@ describe("writer CI lifecycle", () => {
     expect(JSON.stringify(h.swarm.summary())).toBe(snapshot);
   });
 
+  test.each(["timeout", "current head", "old head"] as const)(
+    "shutdown accounts for a repeat push before the final CI read: %s",
+    async (observation) => {
+      const git = fakeGit();
+      const run = git.deps.run;
+      let releasePush!: () => void;
+      const held = new Promise<void>((resolve) => {
+        releasePush = resolve;
+      });
+      git.deps.run = async (cmd, args, opts) => {
+        const response = await run(cmd, args, opts);
+        if (cmd === "git" && args[0] === "push" && git.ran("git push").length === 2) {
+          await held;
+        }
+        return response;
+      };
+      git.prChecks.set(PR, rollup([check("SUCCESS")]));
+      const h = await writerHarness(git);
+      await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+      expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("pass");
+      const nextHead = "b".repeat(40);
+      git.heads.set(WT, nextHead);
+      let releaseRead!: (response: string) => void;
+      if (observation === "timeout") {
+        git.prChecks.set(
+          PR,
+          () =>
+            new Promise<string>((resolve) => {
+              releaseRead = resolve;
+            }),
+        );
+      } else {
+        git.prChecks.set(
+          PR,
+          observation === "current head"
+            ? rollup([check("FAILURE")], nextHead)
+            : rollup([check("SUCCESS")]),
+        );
+      }
+      const reads = git.ran("gh pr view").length;
+      const pushed = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" }).then(
+        () => undefined,
+        (error: Error) => error.message,
+      );
+      await until(() => git.ran("git push").length === 2);
+      const stopped = h.swarm.stop();
+      await Bun.sleep(25);
+      const readsWhilePushing = git.ran("gh pr view").length;
+      const removalsWhilePushing = git.ran("git worktree remove").length;
+      releasePush();
+      const pushError = await pushed;
+      const ended = await stopped;
+      const snapshot = JSON.stringify(h.swarm.summary());
+      if (observation === "timeout") {
+        releaseRead(rollup([check("SUCCESS")], nextHead));
+        await Bun.sleep(10);
+      }
+      expect(pushError).toBe("the swarm ended while pushing your branch");
+      expect(readsWhilePushing).toBe(reads);
+      expect(removalsWhilePushing).toBe(0);
+      expect(git.ran("gh pr view")).toHaveLength(reads + 1);
+      expect(ended.prs?.[0]?.ci?.verdict).toBe(
+        observation === "timeout" ? undefined : observation === "current head" ? "fail" : "unknown",
+      );
+      expect(JSON.stringify(h.swarm.summary())).toBe(snapshot);
+    },
+  );
+
+  test("shutdown during PR preflight prevents a push after the summary is frozen", async () => {
+    const git = fakeGit();
+    const run = git.deps.run;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let checking = false;
+    git.deps.run = async (cmd, args, opts) => {
+      const response = await run(cmd, args, opts);
+      if (cmd === "git" && args[0] === "status" && opts?.cwd === WT && !checking) {
+        checking = true;
+        await held;
+      }
+      return response;
+    };
+    const h = await writerHarness(git);
+    const opened = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" }).then(
+      () => undefined,
+      (error: Error) => error.message,
+    );
+    await until(() => checking);
+    await h.swarm.stop();
+    const snapshot = JSON.stringify(h.swarm.summary());
+    release();
+    expect(await opened).toBe("the swarm ended before pushing your branch");
+    expect(git.ran("git push")).toHaveLength(0);
+    expect(JSON.stringify(h.swarm.summary())).toBe(snapshot);
+  });
+
   test("a remotely changed PR head invalidates passing CI before shutdown", async () => {
     const git = fakeGit();
     git.prChecks.set(PR, rollup([check("SUCCESS")]));
@@ -199,12 +297,10 @@ describe("writer CI lifecycle", () => {
     expect(ended.prs?.[0]?.ci?.verdict).toBe("fail");
   });
 
-  test("new pushes invalidate pass and an old-head in-flight response cannot restore it", async () => {
+  test("new pushes refresh the latest head after an old-head read without waiting for a poll", async () => {
     const git = fakeGit();
     git.prChecks.set(PR, rollup([check("SUCCESS")]));
-    const h = await writerHarness(git, {
-      dispatch: { grants: [], dispatcher: fakeDispatcher().dispatcher, pollMs: 5 },
-    });
+    const h = await writerHarness(git);
     await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
     let release!: (response: string) => void;
     git.prChecks.set(
@@ -215,16 +311,21 @@ describe("writer CI lifecycle", () => {
         }),
     );
     const reads = git.ran("gh pr view").length;
+    const reading = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
     await until(() => git.ran("gh pr view").length > reads);
+    const sameHead = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
+    await until(() => git.ran("git push").length === 3);
+    expect(git.ran("gh pr view")).toHaveLength(reads + 1);
     const nextHead = "b".repeat(40);
     git.heads.set(WT, nextHead);
     const pushed = h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
     await until(() => h.swarm.summary().prs?.[0]?.ci === undefined);
-    git.prChecks.set(PR, rollup([check("SUCCESS")]));
+    git.prChecks.set(PR, rollup([check("FAILURE")], nextHead));
     release(rollup([check("SUCCESS")]));
-    await pushed;
-    expect(h.swarm.summary().prs?.[0]?.ci).toBeUndefined();
-    // The forge may still report the old head on the next poll.
+    await Promise.all([reading, sameHead, pushed]);
+    expect(git.ran("gh pr view")).toHaveLength(reads + 2);
+    expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("fail");
+    // The forge may still report the old head on a subsequent read.
     git.prChecks.set(PR, rollup([check("SUCCESS")]));
     await h.swarm.openPr(h.writer.id, { title: "fix: x", body: "b" });
     expect(h.swarm.summary().prs?.[0]?.ci?.verdict).toBe("unknown");
