@@ -565,7 +565,7 @@ function activity(s: SwarmSummary): Leaf[] {
   ];
 }
 
-// ---- About: where it talks, what it runs on, what went wrong. ----
+// ---- About: what it runs on, what went wrong, and the transcript. ----
 
 function about(s: SwarmSummary): Leaf {
   const href = channelHref(s);
@@ -599,16 +599,12 @@ function about(s: SwarmSummary): Leaf {
     kind: "rows",
     title: "About",
     items: [
-      {
-        icon: "↗",
-        text: `#${s.channelName || `swarm-${s.id}`} in ClickClack`,
-        ...(href ? { href } : {}),
-      },
       { icon: "◷", text: `${when}${s.project ? ` · on ${s.project.name}` : ""}` },
       { icon: "◫", text: sizeDetail(s) },
       { icon: "◆", text: modelRow(s) },
       ...(s.usage ? [{ icon: "∑", text: `${tokensText(s.usage)} tokens` }] : []),
       ...health,
+      ...(href ? [{ text: "transcript ↗", href }] : []),
       ...(live(s) ? [] : [{ icon: "←", text: "Ended swarms", action: { type: "history-open" } }]),
     ],
   };
@@ -645,9 +641,8 @@ function reportCard(s: SwarmSummary): Card[] {
 }
 
 // The conclusion under the report's title when the lead published one: one
-// card holds the answer, its page, and the way into the channel.
+// card holds the answer and its page.
 function conclusionCard(s: SwarmSummary, conclusion: string): Card {
-  const href = channelHref(s);
   const when = s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : "";
   return {
     title: s.report?.title ?? "Conclusion",
@@ -661,7 +656,6 @@ function conclusionCard(s: SwarmSummary, conclusion: string): Card {
             : plain(conclusion),
         copyAction: { type: "copy-conclusion", payload: { id: s.id } },
       },
-      ...(href ? [{ value: `↗ #${s.channelName || `swarm-${s.id}`} in ClickClack`, href }] : []),
     ],
     footnote: [
       `by @${leadHandle(s)}${when}`,
@@ -834,7 +828,7 @@ export function buildGoneBoard(id: string): CanvasBoardView {
         items: [
           {
             icon: "◌",
-            text: `Swarm ${id} is no longer in the rib's history. Its channel #swarm-${id} in ClickClack keeps the transcript.`,
+            text: `Swarm ${id} is no longer in the rib's history. Its channel #swarm-${id} keeps the transcript.`,
           },
           { icon: "←", text: "Ended swarms", action: { type: "history-open" } },
         ],

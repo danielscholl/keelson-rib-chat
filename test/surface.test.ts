@@ -1198,7 +1198,39 @@ describe("the details", () => {
     expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
   });
 
-  test("one outcome card holds the report, the conclusion and the channel", () => {
+  test("About ends with the transcript before an ended swarm's back-link", () => {
+    for (const s of [fixtures.running!, fixtures.done!]) {
+      const view = buildSwarmBoard(s);
+      board(swarmKey(s.id), view);
+      const rows = rowsTitled(view, "About");
+      expect(rows[0]?.text).not.toContain("ClickClack");
+      expect(rows[0]?.text).not.toContain("#swarm-");
+      const transcript = {
+        text: "transcript ↗",
+        href: `http://127.0.0.1:18080/app/ws_1/${s.channelId}`,
+      };
+      expect(s.status === "running" ? rows.at(-1) : rows.at(-2)).toEqual(transcript);
+      if (s.status !== "running") {
+        expect(rows.at(-1)).toEqual({
+          icon: "←",
+          text: "Ended swarms",
+          action: { type: "history-open" },
+        });
+      }
+    }
+    expect(
+      rowsTitled(buildSwarmBoard({ ...fixtures.running!, clickclack: undefined }), "About").some(
+        (row) => row.text === "transcript ↗",
+      ),
+    ).toBe(false);
+    const gone = buildGoneBoard("s0old");
+    board(swarmKey("s0old"), gone);
+    expect(gone.sections[0]?.kind === "rows" ? gone.sections[0].items[0]?.text : "").toBe(
+      "Swarm s0old is no longer in the rib's history. Its channel #swarm-s0old keeps the transcript.",
+    );
+  });
+
+  test("one outcome card holds only the report and conclusion, not channel chrome", () => {
     const s = swarm("s8out", {
       status: "done",
       endedAt: T0,
@@ -1214,14 +1246,13 @@ describe("the details", () => {
       title: "README count",
       pill: { label: "report", tone: "brand" },
       footnote: `by @lead · ${day(T0)} ${hhmm(T0)} · 20 characters · report 3 KB`,
-      fields: [
-        { value: "The count is twelve." },
-        {
-          value: "↗ #swarm-s8out in ClickClack",
-          href: "http://127.0.0.1:18080/app/ws_1/ch_s8out",
-        },
-      ],
     });
+    expect(cards[0]?.fields).toEqual([
+      {
+        value: "The count is twelve.",
+        copyAction: { type: "copy-conclusion", payload: { id: s.id } },
+      },
+    ]);
     expect(cards[0]?.actions?.map((a) => a.label)).toEqual([
       "Open the report",
       "Read the conclusion",
