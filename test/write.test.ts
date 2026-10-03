@@ -4,8 +4,8 @@ import rib from "../src/index.ts";
 import { Swarm, type SwarmOptions, WRITER_TOOLS } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
 import type { RunAgentTurn } from "../src/turn-runner.ts";
-import { ownsPr, type SwarmSummary } from "../src/types.ts";
-import { attributionIn, createWorktree, releaseWorktree } from "../src/worktree.ts";
+import { ownsPr, type SwarmSummary, type WriterPr } from "../src/types.ts";
+import { attributionIn, createWorktree, readWriterCi, releaseWorktree } from "../src/worktree.ts";
 import {
   FakeClickClack,
   fakeGit,
@@ -17,6 +17,16 @@ import {
 
 const ROOT = "/repo";
 const WT = `${ROOT}/.worktrees/swarm-s1-coder`;
+const PR = "https://github.com/o/r/pull/101";
+const HEAD = "a".repeat(40);
+const check = (conclusion: string | null, status = "COMPLETED") => ({
+  __typename: "CheckRun",
+  status,
+  conclusion,
+});
+const legacy = (state: string) => ({ __typename: "StatusContext", state });
+const rollup = (checks: unknown[], headRefOid = HEAD) =>
+  JSON.stringify({ headRefOid, statusCheckRollup: checks });
 
 function harness(script: Script, extra: Partial<SwarmOptions> = {}, git = fakeGit()) {
   const server = new FakeClickClack();
@@ -52,6 +62,62 @@ const turnsOf = (h: ReturnType<typeof harness>, agentId: string) =>
   h.provider.requests.filter((r) => r.turnContext?.agentId === agentId);
 const toolNames = (r: { tools?: readonly { name: string }[] }) =>
   (r.tools ?? []).map((t) => t.name);
+
+describe("writer PR CI reader", () => {
+  test("maps current-head checks conservatively, including legacy statuses", async () => {
+    const git = fakeGit();
+    const cases: [unknown[], NonNullable<WriterPr["ci"]>["verdict"] | undefined][] = [
+      [[], undefined],
+      [[check("SUCCESS")], "pass"],
+      [[check("SUCCESS"), check("NEUTRAL"), check("SKIPPED")], "pass"],
+      [[check("NEUTRAL"), check("SKIPPED")], "unknown"],
+      [[check("FAILURE")], "fail"],
+      [[check("CANCELLED")], "fail"],
+      [[check(null, "QUEUED")], "running"],
+      [[check(null, "IN_PROGRESS")], "running"],
+      [[check("FAILURE"), check(null, "QUEUED")], "fail"],
+      [[check("SUCCESS"), check("NEW_CONCLUSION")], "unknown"],
+      [[check("SUCCESS", "NEW_STATUS")], "unknown"],
+      [[legacy("SUCCESS")], "pass"],
+      [[legacy("PENDING")], "running"],
+      [[legacy("ERROR"), legacy("PENDING")], "fail"],
+      [[legacy("NEW_STATE")], "unknown"],
+      [[{ __typename: "NewCheck", state: "SUCCESS" }], "unknown"],
+    ];
+    for (const [checks, verdict] of cases) {
+      git.prChecks.set(PR, rollup(checks));
+      const observed = await readWriterCi(git.deps, ROOT, PR);
+      expect(observed.headRefOid).toBe(HEAD);
+      expect(observed.ci?.verdict).toBe(verdict);
+    }
+    expect(git.ran("gh pr create")).toHaveLength(0);
+    expect(git.calls[0]).toEqual({
+      cmd: "gh",
+      args: ["pr", "view", PR, "--json", "headRefOid,statusCheckRollup"],
+      cwd: ROOT,
+      timeoutMs: 3_000,
+    });
+    git.prChecks.set(PR, JSON.stringify({ headRefOid: HEAD, statusCheckRollup: null }));
+    expect((await readWriterCi(git.deps, ROOT, PR)).ci).toBeUndefined();
+  });
+
+  test("malformed JSON, malformed fields and CLI errors propagate", async () => {
+    const git = fakeGit();
+    for (const response of ["not json", "{}", rollup([null]), new Error("not authenticated")]) {
+      git.prChecks.set(PR, response);
+      await expect(readWriterCi(git.deps, ROOT, PR)).rejects.toThrow();
+    }
+  });
+
+  test("a deferred CLI response is bounded even when the execution seam hangs", async () => {
+    const git = fakeGit();
+    git.prChecks.set(PR, () => new Promise(() => {}));
+    await expect(readWriterCi(git.deps, ROOT, PR, 5)).rejects.toMatchObject({
+      name: "TimeoutError",
+    });
+    expect(git.calls[0]?.timeoutMs).toBe(5);
+  });
+});
 
 describe("write mode", () => {
   test("launch capability is explicit before a writer exists and absent on read/chat launches", async () => {

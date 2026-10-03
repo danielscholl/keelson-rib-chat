@@ -383,21 +383,41 @@ export function fakeGit(
     failBranchDelete?: boolean;
   } = {},
 ) {
-  const calls: { cmd: string; args: string[]; cwd: string }[] = [];
+  const calls: { cmd: string; args: string[]; cwd: string; timeoutMs?: number }[] = [];
   const dirty = new Map<string, string>();
   const ahead = new Map<string, number>();
   const commits = new Map<string, { sha: string; subject: string; message: string }[]>();
+  const heads = new Map<string, string>();
+  const prChecks = new Map<string, string | Error | (() => Promise<string>)>();
+  const prPaths = new Map<string, string>();
   let prs = 0;
   const appended: { file: string; line: string }[] = [];
   const ok = (data = "") => ({ ok: true as const, data, exitCode: 0 });
   const fail = (error: string) => ({ ok: false as const, error, code: 1 });
-  const run = async (cmd: string, args: string[], o: { cwd?: string } = {}) => {
+  const run = async (cmd: string, args: string[], o: { cwd?: string; timeoutMs?: number } = {}) => {
     const cwd = o.cwd ?? "";
-    calls.push({ cmd, args, cwd });
+    calls.push({ cmd, args, cwd, timeoutMs: o.timeoutMs });
     const sub = args.join(" ");
     if (cmd === "gh") {
-      prs++;
-      return ok(`Creating draft pull request\nhttps://github.com/o/r/pull/${100 + prs}\n`);
+      if (args[0] === "pr" && args[1] === "create") {
+        const url = `https://github.com/o/r/pull/${100 + ++prs}`;
+        prPaths.set(url, cwd);
+        return ok(`Creating draft pull request\n${url}\n`);
+      }
+      if (args[0] === "pr" && args[1] === "view") {
+        const response = prChecks.get(args[2] ?? "");
+        if (response instanceof Error) return fail(response.message);
+        return ok(
+          typeof response === "function"
+            ? await response()
+            : (response ??
+                JSON.stringify({
+                  headRefOid: heads.get(prPaths.get(args[2] ?? "") ?? cwd) ?? "a".repeat(40),
+                  statusCheckRollup: [],
+                })),
+        );
+      }
+      return fail(`unsupported gh command: ${sub}`);
     }
     if (cmd !== "git") return ok();
     if (sub.startsWith("log --format=")) {
@@ -415,6 +435,7 @@ export function fakeGit(
     if (sub.startsWith("rev-parse --verify")) return fail("");
     if (sub.startsWith("check-ignore")) return opts.ignored ? ok() : fail("exit 1");
     if (sub === "rev-parse --git-common-dir") return ok(".git\n");
+    if (sub === "rev-parse HEAD") return ok(heads.get(cwd) ?? "a".repeat(40));
     if (sub.startsWith("worktree add")) await opts.holdAdd;
     if (sub.startsWith("branch -D") && opts.failBranchDelete) return fail("cannot lock ref");
     if (sub === "status --porcelain") return ok(dirty.get(cwd) ?? "");
@@ -426,6 +447,8 @@ export function fakeGit(
     dirty,
     ahead,
     commits,
+    heads,
+    prChecks,
     appended,
     deps: { run, append: (file: string, line: string) => appended.push({ file, line }) },
     ran: (prefix: string) => calls.filter((c) => `${c.cmd} ${c.args.join(" ")}`.startsWith(prefix)),
