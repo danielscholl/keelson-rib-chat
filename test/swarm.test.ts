@@ -17,7 +17,11 @@ import { makeChatTools } from "../src/tools.ts";
 import {
   BODY_MAX,
   CONCLUSION_MAX,
+  MESSAGE_CHARS,
+  MESSAGES_KEPT,
   POWER_EFFORT,
+  publicSummary,
+  type RecentMessage,
   SIZE_PRESETS,
   SWARM_POWERS,
   type SwarmSummary,
@@ -1371,6 +1375,22 @@ describe("changes and records", () => {
       await call("chat_done", { summary: "ok" });
     }
   };
+
+  test("public summaries omit drawing buffers but keep the message count", async () => {
+    const summary = await (await harness(script).start()).finished;
+    const recent: RecentMessage[] = Array.from({ length: MESSAGES_KEPT }, (_, i) => ({
+      id: `m${i}`,
+      at: summary.startedAt,
+      author: "s1-lead",
+      text: "x".repeat(MESSAGE_CHARS),
+      kind: "run",
+    }));
+    const output = publicSummary({ ...summary, recent, spans: [], messageCount: 50 });
+    expect(output).not.toHaveProperty("recent");
+    expect(output).not.toHaveProperty("spans");
+    expect(output.messageCount).toBe(50);
+    expect(publicSummary(summary)).toMatchObject({ id: summary.id, status: summary.status });
+  });
 
   test("a swarm reports each change, ending with its end", async () => {
     const kinds: SwarmChange[] = [];
