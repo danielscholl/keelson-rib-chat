@@ -50,6 +50,7 @@ import {
   sinceClock,
   sizeDetail,
   sizeWord,
+  stateLine,
   stopAction,
   verifiedText,
 } from "./parts.ts";
@@ -718,6 +719,56 @@ export interface BoardOptions {
 
 export function liveDetails(s: SwarmSummary): Leaf[] {
   return [bench(s), ...spend(s), ...runs(s), ...taskAndContext(s), ...activity(s), about(s)];
+}
+
+function agentStrip(s: SwarmSummary): Leaf {
+  const statuses: AgentStatus[] = ["busy", "waiting", "idle", "capped", "failed"];
+  const items: Extract<Leaf, { kind: "segments" }>["items"] = [];
+  for (const status of statuses) {
+    const n = s.agents.filter((a) => a.status === status).length;
+    if (n > 0) items.push({ label: status, n, tone: AGENT_PILL[status].tone });
+  }
+  const open = Math.max(0, s.limits.maxAgents - s.agents.length);
+  if (live(s) && open > 0) items.push({ label: plural(open, "open seat"), n: null });
+  return { kind: "segments", title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`, items };
+}
+
+export function buildCockpit(
+  s: SwarmSummary,
+  needs: readonly Need[],
+  opts: { server?: ServerLine; titled: boolean },
+): Section[] {
+  const people = s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone }));
+  const line = stateLine(s, needs, opts.server);
+  const items: Extract<Leaf, { kind: "actions" }>["items"] = [];
+  if (s.status === "running" && s.conclusion === undefined) {
+    items.push({ ...messageLead(s), expanded: true });
+  }
+  if (s.report) items.push(openReport(s));
+  items.push(openRecord(s));
+  if (s.status === "running") items.push(stopAction(s, true));
+  return [
+    {
+      kind: "cards",
+      ...(opts.titled ? { title: "Live" } : {}),
+      items: [
+        {
+          title: `${firstLine(s.task)} · ${s.id}`,
+          pill: needs.length ? { label: "needs you", tone: "caution" } : livePill(s),
+          ...(needs.length ? { edge: "caution" as const } : {}),
+          ...(people.length ? { fields: [{ people }] } : {}),
+        },
+      ],
+    },
+    {
+      kind: "rows",
+      items: [{ icon: "◉", text: line.text, ...(line.warn ? { glyph: "warn" as const } : {}) }],
+    },
+    agentStrip(s),
+    { kind: "stats", title: "Budget", items: [turnsTile(s), timeTile(s), tokensTile(s)] },
+    ...liveDetails(s),
+    { kind: "actions", wrap: true, items },
+  ];
 }
 
 export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): CanvasBoardView {

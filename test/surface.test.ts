@@ -46,6 +46,7 @@ import {
   type SwarmsSurface,
 } from "../src/surface/surface.ts";
 import {
+  buildCockpit,
   buildGoneBoard,
   buildStartingBoard,
   buildSwarmBoard,
@@ -358,6 +359,133 @@ describe("the shared state line", () => {
       payload: { id: fixtures.running!.id },
     });
     expect(selectSwarm(fixtures.running!).hint).toContain("medium:");
+  });
+});
+
+describe("the live cockpit", () => {
+  const sections = (s: SwarmSummary) => {
+    const sections = buildCockpit(s, needsYou(s), { titled: true });
+    board(INDEX_KEY, { view: "board", title: "Swarms", sections });
+    return sections;
+  };
+
+  test("the head, state, agent strip and budget precede unchanged details and final verbs", () => {
+    const s = fixtures.running!;
+    const cockpit = sections(s);
+    expect(cockpit.map((x) => x.kind)).toEqual([
+      "cards",
+      "rows",
+      "segments",
+      "stats",
+      "cards",
+      "rows",
+      "rows",
+      "actions",
+    ]);
+    expect(cockpit[0]).toMatchObject({
+      kind: "cards",
+      title: "Live",
+      items: [
+        { title: `${s.task.split("\n")[0]} · ${s.id}`, pill: { label: "running", tone: "info" } },
+      ],
+    });
+    const head = cockpit[0]?.kind === "cards" ? cockpit[0].items[0] : undefined;
+    expect(head).not.toHaveProperty("chip");
+    expect(head?.footnote).toBeUndefined();
+    expect(head?.fields?.[0]?.people).toHaveLength(2);
+    expect(cockpit.slice(4, -1)).toEqual(buildSwarmBoard(s).sections.slice(2));
+    expect(cockpit.at(-1)).toMatchObject({
+      kind: "actions",
+      wrap: true,
+      items: [
+        { type: "message-lead", expanded: true },
+        { type: "open-record" },
+        { type: "stop-swarm", inline: true, align: "end" },
+      ],
+    });
+    expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
+  });
+
+  test("report, concluding and stopping verbs match their lifecycle", () => {
+    const s = swarm("s1rpt", { report: { title: "Progress", at: T0, bytes: 200 } });
+    const types = (s: SwarmSummary) => {
+      const actions = sections(s).at(-1);
+      return actions?.kind === "actions" ? actions.items.map((x) => x.type) : [];
+    };
+    expect(types(s)).toEqual(["message-lead", "open-report", "open-record", "stop-swarm"]);
+    expect(types({ ...s, conclusion: "Done" })).toEqual([
+      "open-report",
+      "open-record",
+      "stop-swarm",
+    ]);
+    expect(types({ ...s, status: "stopping" })).toEqual(["open-report", "open-record"]);
+  });
+
+  test("agent segments tone nonzero states and hatch the open seats", () => {
+    const s = swarm("s2seg", {
+      agents: [
+        agent("s2seg", 0, { status: "busy" }),
+        agent("s2seg", 1, { status: "busy" }),
+        agent("s2seg", 2, { status: "waiting", queued: 1 }),
+      ],
+    });
+    expect(sections(s)[2]).toEqual({
+      kind: "segments",
+      title: "Agents · 3 of 5",
+      items: [
+        { label: "busy", n: 2, tone: "info" },
+        { label: "waiting", n: 1, tone: "caution" },
+        { label: "2 open seats", n: null },
+      ],
+    });
+    const full = swarm("s3seg", {
+      limits: { ...SIZE_PRESETS.medium, maxAgents: 3 },
+      agents: [
+        agent("s3seg", 0, { status: "idle" }),
+        agent("s3seg", 1, { status: "capped" }),
+        agent("s3seg", 2, { status: "failed" }),
+      ],
+    });
+    expect(sections(full)[2]).toMatchObject({
+      items: [
+        { label: "idle", n: 1, tone: "neutral" },
+        { label: "capped", n: 1, tone: "warn" },
+        { label: "failed", n: 1, tone: "error" },
+      ],
+    });
+    expect(sections(swarm("s0seg", { agents: [], turnsUsed: 0 }))[2]).toMatchObject({
+      items: [{ label: "5 open seats", n: null }],
+    });
+  });
+
+  test("the budget always has Turns, Time and fresh Tokens with cached in the sub", () => {
+    const s = swarm("s4bud", {
+      pace: [1, 2, 0],
+      usage: { input: 200, output: 50, cached: 100 },
+    });
+    expect(sections(s)[3]).toMatchObject({
+      kind: "stats",
+      title: "Budget",
+      items: [
+        { label: "Turns", value: "11 of 40", spark: [1, 2, 0] },
+        { label: "Time", clock: { mode: "until" } },
+        { label: "Tokens", value: "250", sub: "fresh · 100 cached" },
+      ],
+    });
+    expect(sections(fixtures.running!)[3]).toMatchObject({
+      items: [{}, {}, { label: "Tokens", value: null, sub: "the provider reported none" }],
+    });
+  });
+
+  test("needs tone the head and health warnings tone the state row", () => {
+    expect(sections(fixtures.onlyYou!)[0]).toMatchObject({
+      items: [{ pill: { label: "needs you", tone: "caution" }, edge: "caution" }],
+    });
+    expect(sections(swarm("s5bad", { health: { lastLeadFailure: "timeout" } }))[1]).toMatchObject({
+      items: [
+        { glyph: "warn", text: "waiting for the lead's first turn · the lead's last turn failed" },
+      ],
+    });
   });
 });
 
