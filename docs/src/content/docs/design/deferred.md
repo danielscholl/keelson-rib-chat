@@ -33,8 +33,8 @@ says so and asks for an external server.
 ## An operator-only reset
 
 `chat_server_reset` is a tool, so an MCP client can call it, held back only by
-its `confirm` input and the live-swarm check. The Swarms tab's footer already
-carries Reset behind a typed confirm, so retiring the tool would keep a reset
+its `confirm` input and the live-swarm check. The Swarms tab's server inspector
+already carries Reset behind a typed confirm, so retiring the tool would keep a reset
 to the operator. That waits on deciding that an operator who reaches Keelson
 only over MCP no longer needs the tool.
 

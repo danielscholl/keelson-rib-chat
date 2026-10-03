@@ -64,6 +64,12 @@ describe("contributed docs", () => {
     expect(swarms).toContain("wrapping action strip");
     expect(swarms).toContain("per-swarm board also still");
     expect(swarms).not.toContain("Live swarms are cards");
+    expect(swarms).toContain("server line");
+    expect(swarms).toContain("Manage");
+    expect(swarms).toContain("at the side");
+    expect(swarms).toContain("About ends with a transcript link");
+    expect(swarms).not.toContain("ClickClack footer");
+    expect(swarms).not.toContain("and the channel in ClickClack");
   });
 
   test("the corpus names every registered tool and no tool that does not exist", () => {
