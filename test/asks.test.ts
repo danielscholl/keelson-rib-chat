@@ -237,6 +237,54 @@ describe("an agent asking the operator", () => {
     await swarm.stop();
   });
 
+  test("retains complete admitted questions above 2,000 and at 8,000 characters", async () => {
+    const ending = "\nFinal sentence: keep the measured cap?";
+    const questions = [2_500, 8_000].map(
+      (length) => "@operator ".padEnd(length - ending.length, "x") + ending,
+    );
+    const { start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId !== "s1-lead" || turn !== 1) return;
+      for (const body of questions) await call("chat_post", { body });
+    });
+    const swarm = await start();
+    try {
+      await settle();
+      expect(swarm.summary().health?.asks?.map((ask) => ask.text)).toEqual(questions);
+      expect(swarm.summary().health?.asks?.[1]?.text).toHaveLength(8_000);
+      expect(swarm.summary().health?.asks?.[1]?.text).toEndWith(ending);
+    } finally {
+      await swarm.stop();
+    }
+  });
+
+  test("five open 8,000-character questions keep board previews under 48,000 bytes", async () => {
+    const questions = Array.from({ length: 5 }, (_, i) =>
+      `@operator Question ${i + 1}: keep the cap?\n`.padEnd(8_000, "x"),
+    );
+    const { start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId !== "s1-lead" || turn !== 1) return;
+      for (const body of questions) await call("chat_post", { body });
+    });
+    const swarm = await start();
+    try {
+      await settle();
+      const summary = swarm.summary();
+      expect(summary.health?.asks?.map((ask) => ask.text)).toEqual(questions);
+      const index = buildIndex({ live: [summary], starting: [], ended: [] });
+      const board = buildSwarmBoard(summary);
+      expectView(INDEX_KEY, "board")(index);
+      expectView(swarmKey(summary.id), "board")(board);
+      for (const view of [index, board]) {
+        const frame = JSON.stringify(view);
+        expect(Buffer.byteLength(frame)).toBeLessThan(48_000);
+        expect(frame).toContain("Question 5: keep the cap?");
+        expect(frame).not.toContain("x".repeat(200));
+      }
+    } finally {
+      await swarm.stop();
+    }
+  });
+
   test("the card and the drawer say who asked what", async () => {
     const { start } = harness(async ({ agentId, turn, call }) => {
       if (agentId === "s1-lead" && turn === 1) await call("chat_post", { body: QUESTION });

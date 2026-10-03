@@ -124,7 +124,6 @@ const BACKGROUND_KEPT = 12;
 const ASKS_KEPT = 5;
 export const GATE_FILES_MAX = 64_000;
 export const ACTIVITY_KEPT = 200;
-const ASK_CHARS = 2_000;
 const PACE_MINUTES = 30;
 // An ended swarm's spark spreads its whole run over at most this many buckets.
 const PACE_BUCKETS = 30;
@@ -1180,8 +1179,7 @@ export class Swarm {
       handle: agent.handle,
       messageId: message.id,
       threadRootId: message.threadRootId || message.id,
-      text:
-        message.body.length > ASK_CHARS ? `${message.body.slice(0, ASK_CHARS - 1)}…` : message.body,
+      text: message.body.slice(0, BODY_MAX),
       at: message.createdAt || new Date().toISOString(),
     });
     this.log(`@${agent.handle} asked the operator`, {
