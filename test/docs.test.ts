@@ -80,6 +80,19 @@ describe("contributed docs", () => {
     expect(swarms).not.toContain("and the channel in ClickClack");
   });
 
+  test("the Swarms topic describes the advisory forecast and its five readings", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    for (const reading of ["runs-out-first", "clock-first", "fits", "no-pace", "out-of-turns"]) {
+      expect(swarms).toContain(`| ${reading} |`);
+    }
+    expect(swarms).toContain("pace over the last 5 min");
+    expect(swarms).toContain("Fewer than one turn is reported as no pace");
+    expect(swarms).toContain("turn budget (rounded up) would be unused");
+    expect(swarms).toContain("computed when the board composes");
+    expect(swarms).toContain("It changes nothing the engine does: no limits, nudges or stopping.");
+    expect(swarms).toContain('An ended Turns tile has no forecast and its sub stays "of N".');
+  });
+
   test("the corpus names every registered tool and no tool that does not exist", () => {
     const registered = new Set(tools.map((t) => t.name));
     const mentioned = new Set(content.match(/\bchat_[a-z_]+\b/g) ?? []);
