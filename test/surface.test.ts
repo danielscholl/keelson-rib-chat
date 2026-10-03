@@ -44,7 +44,11 @@ import {
 import { createKeyPublisher } from "../src/surface/publisher.ts";
 import { buildRecord } from "../src/surface/record.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
-import { buildServerPanel, type ServerPanelState } from "../src/surface/server-panel.ts";
+import {
+  buildServerPanel,
+  type ServerOp,
+  type ServerPanelState,
+} from "../src/surface/server-panel.ts";
 import {
   createSwarmsSurface,
   MAX_SWARM_KEYS,
@@ -2429,13 +2433,14 @@ describe("the server line and inspector", () => {
   test("server refresh republishes matching index and inspector frames on the existing keys", async () => {
     const sm = new FakeSnapshots();
     let server: ServerLine | undefined;
+    let op: ServerOp | undefined;
     const surface = createSwarmsSurface({
       sm,
       state: () => state({ server }),
       find: () => ({}),
       launch: () => ({ projects: [], live: 0, ended: 0 }),
       launchOf: () => undefined,
-      server: () => ({ server, live: 0 }),
+      server: () => ({ server, live: 0, ...(op ? { op } : {}) }),
       readLog: async () => "log",
       report: () => undefined,
       views: [],
@@ -2453,6 +2458,15 @@ describe("the server line and inspector", () => {
         board(SERVER_KEY, inspector);
         expect(index).toEqual(buildIndex(state({ server })));
         expect(inspector).toEqual(buildServerPanel({ server, live: 0 }));
+      }
+      for (const current of [
+        { verb: "reset", phase: "running", at: T0 },
+        { verb: "reset", phase: "failed", at: T0, error: "boom" },
+      ] satisfies ServerOp[]) {
+        op = current;
+        surface.refresh();
+        await Bun.sleep(10);
+        expect(sm.frames.get(INDEX_KEY)?.at(-1)).toEqual(buildIndex(state({ server, op })));
       }
     } finally {
       surface.dispose();
@@ -2546,6 +2560,20 @@ describe("the server line and inspector", () => {
     const unknownView = buildIndex(state({ starting: [starting] }));
     board(INDEX_KEY, unknownView);
     expect(JSON.stringify(unknownView.sections.at(-1))).toContain("ClickClack checking… · 1 swarm");
+    for (const [op, chip] of [
+      [
+        { verb: "reset", phase: "running", at: T0 },
+        { label: "resetting…", tone: "info" },
+      ],
+      [
+        { verb: "reset", phase: "failed", at: T0, error: "boom" },
+        { label: "reset failed", tone: "error" },
+      ],
+    ] as const) {
+      const view = buildIndex(state({ server: serverFixtures.managedRunning, op }));
+      const section = view.sections.at(-1);
+      expect(section?.kind === "rows" ? section.items[0]?.chip : undefined).toEqual(chip);
+    }
   });
 
   test("server inspectors box the managed process facts or the external probe", () => {

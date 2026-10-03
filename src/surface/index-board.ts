@@ -29,6 +29,7 @@ import {
   turnMeter,
   verifiedText,
 } from "./parts.ts";
+import { type ServerOp, pill as serverPill } from "./server-panel.ts";
 import { buildCockpit } from "./swarm-board.ts";
 
 export interface SurfaceState {
@@ -37,6 +38,7 @@ export interface SurfaceState {
   // Oldest first, as the rib keeps them.
   ended: readonly SwarmSummary[];
   server?: ServerLine;
+  op?: ServerOp;
   selected?: string;
 }
 
@@ -186,9 +188,11 @@ export function buildBadge(state: SurfaceState): RibSurfaceBadge {
     : { count };
 }
 
-function serverRow(server: ServerLine | undefined, live: number): Row {
+function serverRow(server: ServerLine | undefined, op: ServerOp | undefined, live: number): Row {
   const address = server ? serverAddress(server) : undefined;
+  const operation = op && op.phase !== "done" ? serverPill({ server, op, live }) : undefined;
   return {
+    ...(operation ? { chip: operation } : {}),
     text: [
       server
         ? `Server · ClickClack ${serverState(server)}${address ? ` on ${address}` : ""}`
@@ -314,7 +318,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
             },
           ]
         : []),
-      { kind: "rows", items: [serverRow(state.server, liveCount)] },
+      { kind: "rows", items: [serverRow(state.server, state.op, liveCount)] },
     ],
   };
 }

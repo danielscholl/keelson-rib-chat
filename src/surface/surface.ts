@@ -122,7 +122,14 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   const index = createKeyPublisher<CanvasView>(
     sm,
     INDEX_KEY,
-    () => buildIndex({ ...deps.state(), ...(selected ? { selected } : {}) }),
+    () => {
+      const op = deps.server().op;
+      return buildIndex({
+        ...deps.state(),
+        ...(op ? { op } : {}),
+        ...(selected ? { selected } : {}),
+      });
+    },
     expectView(INDEX_KEY, "board"),
     windowMs,
   );
