@@ -356,7 +356,7 @@ function spend(s: SwarmSummary): Leaf[] {
   ];
 }
 
-// ---- Runs, present only when the launch named workflows. ----
+// ---- Produced artifacts, in landing order. ----
 
 function evidence(run: ChildRun): Segment[] {
   const settled = run.status !== "running" && run.status !== "paused";
@@ -431,49 +431,115 @@ function runTrailing(run: ChildRun): string {
   ].join(" · ");
 }
 
-function runRows(s: SwarmSummary): Row[] {
-  const runs = s.runs ?? [];
-  if (runs.length === 0) {
-    const may = s.workflows?.length ? s.workflows.join(", ") : "workflows";
-    return [
-      {
-        icon: "·",
-        text: live(s)
-          ? `The lead may start ${may}; none started yet.`
-          : `The lead could start ${may}; none started.`,
-      },
-    ];
-  }
-  return runs.flatMap((run) => {
-    const href =
-      run.status === "paused" ? threadHref(s, run.pendingApproval?.threadId) : run.prUrls[0];
-    const row: Row = {
-      icon: "▸",
-      text: runText(run),
-      trailing: runTrailing(run),
-      bar: { segments: evidence(run) },
-      ...(href ? { href } : {}),
-      action: { type: "open-run", payload: { id: s.id, runId: run.runId } },
+function runRows(s: SwarmSummary, run: ChildRun): Row[] {
+  const href =
+    run.status === "paused" ? threadHref(s, run.pendingApproval?.threadId) : run.prUrls[0];
+  const row: Row = {
+    icon: "▸",
+    text: runText(run),
+    trailing: runTrailing(run),
+    bar: { segments: evidence(run) },
+    ...(href ? { href } : {}),
+    action: { type: "open-run", payload: { id: s.id, runId: run.runId } },
+  };
+  const answers: Row[] = (run.approvals ?? []).map((a) => {
+    const why = [a.reason, ...(a.feedback ? [`Changes asked: ${a.feedback}`] : [])].join("\n\n");
+    const review = threadHref(s, a.review);
+    return {
+      icon: a.decision === "approve" ? "✓" : "↺",
+      glyph: a.decision === "approve" ? "ok" : "warn",
+      text: `${a.nodeId} ${a.decision === "approve" ? "approved" : "sent back"} on ${activityText(s.id, a.reviewer)}'s review`,
+      trailing: hhmm(a.at),
+      ...(why.trim() ? { detail: why.slice(0, DETAIL_CHARS) } : {}),
+      ...(review ? { href: review } : {}),
     };
-    const answers: Row[] = (run.approvals ?? []).map((a) => {
-      const why = [a.reason, ...(a.feedback ? [`Changes asked: ${a.feedback}`] : [])].join("\n\n");
-      const review = threadHref(s, a.review);
-      return {
-        icon: a.decision === "approve" ? "✓" : "↺",
-        glyph: a.decision === "approve" ? "ok" : "warn",
-        text: `${a.nodeId} ${a.decision === "approve" ? "approved" : "sent back"} on ${activityText(s.id, a.reviewer)}'s review`,
-        trailing: hhmm(a.at),
-        ...(why.trim() ? { detail: why.slice(0, DETAIL_CHARS) } : {}),
-        ...(review ? { href: review } : {}),
-      };
-    });
-    return [row, ...answers];
   });
+  return [row, ...answers];
 }
 
-function runs(s: SwarmSummary): Leaf[] {
-  if (!s.workflows?.length && !s.runs?.length) return [];
-  return [{ kind: "rows", title: "Runs", items: runRows(s) }];
+function writerChip(s: SwarmSummary, handle: string): Row["chip"] {
+  const agent = s.agents.find((a) => a.handle === handle);
+  return actorChip(s, agent?.id) ?? { label: shortHandle(handle, s.id), tone: "neutral" };
+}
+
+function produced(s: SwarmSummary): Leaf[] {
+  const groups: { at: string; rows: Row[] }[] = [];
+  if (s.report) {
+    groups.push({
+      at: s.report.at,
+      rows: [
+        {
+          icon: "◧",
+          text: s.report.title,
+          trailing: `${reportKb(s)} · Open the report`,
+          action: { type: openReport(s).type, payload: openReport(s).payload },
+        },
+      ],
+    });
+  }
+  for (const run of s.runs ?? []) groups.push({ at: run.startedAt, rows: runRows(s, run) });
+  for (const pr of s.prs ?? []) {
+    groups.push({
+      at: pr.at,
+      rows: [
+        {
+          chip: writerChip(s, pr.agent),
+          text: pr.branch,
+          trailing: `draft ${prLabel(pr.url)} · CI ${pr.ci?.verdict ?? "not reported"}`,
+          href: pr.url,
+          ...(pr.ci?.detail ? { detail: detailOf(pr.ci.detail, DETAIL_CHARS).detail } : {}),
+        },
+      ],
+    });
+  }
+  const start = Date.parse(s.startedAt);
+  const landed = (at: string) => {
+    const parsed = Date.parse(at);
+    return Number.isFinite(parsed) ? parsed : Number.isFinite(start) ? start : 0;
+  };
+  const items = groups.sort((a, b) => landed(a.at) - landed(b.at)).flatMap((g) => g.rows);
+  if (!live(s)) {
+    for (const wt of s.worktrees ?? []) {
+      const reason = firstLine(wt.reason, 90);
+      items.push({
+        chip: writerChip(s, wt.agent),
+        text: wt.path,
+        trailing: reason,
+        ...(wt.reason.length > reason.length
+          ? { detail: detailOf(wt.reason, DETAIL_CHARS).detail }
+          : {}),
+      });
+    }
+  }
+  if (items.length === 0) {
+    const writers = s.agents
+      .filter((a) => a.worktree)
+      .map((a) => `@${shortHandle(a.handle, s.id)}`);
+    const empty: string[] = [];
+    if (s.workflows?.length) {
+      empty.push(
+        live(s)
+          ? `The lead may start ${s.workflows.join(", ")}; none started yet.`
+          : `The lead could start ${s.workflows.join(", ")}; none started.`,
+      );
+    }
+    if (writers.length) {
+      empty.push(
+        live(s)
+          ? `Writers ${writers.join(", ")} may open draft pull requests; none opened yet.`
+          : `Writers ${writers.join(", ")} could open draft pull requests; none opened.`,
+      );
+    } else if (s.writeEnabled) {
+      empty.push(
+        live(s)
+          ? "The lead may spawn writers to open draft pull requests; none opened yet."
+          : "The lead could spawn writers to open draft pull requests; none opened.",
+      );
+    }
+    if (empty.length === 0) return [];
+    items.push({ icon: "·", text: empty.join(" ") });
+  }
+  return [{ kind: "rows", title: "Produced so far", items }];
 }
 
 // ---- The task and the evidence the agents were given, disclosed in place. ----
@@ -748,7 +814,7 @@ export interface BoardOptions {
 }
 
 export function liveDetails(s: SwarmSummary): Leaf[] {
-  return [bench(s), ...spend(s), ...runs(s), ...taskAndContext(s), ...activity(s), about(s)];
+  return [bench(s), ...spend(s), ...produced(s), ...taskAndContext(s), ...activity(s), about(s)];
 }
 
 function agentStrip(s: SwarmSummary): Leaf {
