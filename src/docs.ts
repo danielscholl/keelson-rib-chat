@@ -456,7 +456,7 @@ id sit in the footnote. Open swarm expands that live swarm on the page.
 
 The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
 the task and id with a lifecycle or needs-you pill and people dots; a state
-line; an agent strip (busy, waiting, idle, capped, failed, with hatched open
+line; once the lead has concluded, the Outcome card; an agent strip (busy, waiting, idle, capped, failed, with hatched open
 seats); three Budget tiles (Turns with its spark, Time as a ticking time-left
 clock, fresh Tokens with cached in the sub); the details described below; then
 Message the lead, Open the report when one exists, Open the record, and Stop

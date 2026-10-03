@@ -40,15 +40,17 @@ One live swarm expands on the page as a cockpit. It runs in this order:
 
 1. The task and id, a lifecycle or **needs you** pill, and people dots.
 2. The state line, described below.
-3. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
+3. Once the lead has concluded, the **Outcome** card: the conclusion, with
+   **Open the report** and **Read the conclusion**.
+4. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
    omitting zero counts. Open seats are hatched.
-4. Three **Budget** tiles: **Turns** used and remaining with a sparkline,
+5. Three **Budget** tiles: **Turns** used and remaining with a sparkline,
    **Time** as a ticking time-left clock, and fresh **Tokens** with cached
    tokens in the sub. Before a turn, Tokens says **none yet**; after turns
    without usage, it says **the provider reported none**.
-5. The agent bench, Spend, Runs, Task and context, Activity, and About, the
+6. The agent bench, Spend, Runs, Task and context, Activity, and About, the
    same details as the per-swarm board below.
-6. **Message the lead**, expanded for a running swarm that has not concluded;
+7. **Message the lead**, expanded for a running swarm that has not concluded;
    **Open the report** when one exists; **Open the record**; and
    **Stop swarm…** last.
 

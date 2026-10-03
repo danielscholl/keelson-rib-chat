@@ -212,7 +212,13 @@ const fixtures: Record<string, SwarmSummary> = {
     health: { quietSince: "2026-09-22T14:40:00.000Z" },
     runs: [run("r3", { status: "paused", pendingApproval: gate("swarm") })],
   }),
-  gone: swarm("s4n4x", { health: { socketDrops: 2, channelFault: "fetch failed" } }),
+  gone: swarm("s4n4x", {
+    health: {
+      socketDrops: 2,
+      disconnectedAt: "2026-09-22T12:50:00.000Z",
+      channelFault: "fetch failed",
+    },
+  }),
   done: swarm("s8pln", {
     status: "done",
     endedAt: "2026-09-22T14:29:00.000Z",
@@ -338,7 +344,7 @@ describe("the shared state line", () => {
       },
     });
     expect(stateLine(s, [])).toEqual({
-      text: `stopping: cancelling runs and revoking tokens · ClickClack socket closed 1 times · ClickClack fault: fetch failed · the lead's last turn failed · nudged the lead 1 of ${s.limits.maxNudges} times`,
+      text: `stopping: cancelling runs and revoking tokens · ClickClack socket closed 1 time · ClickClack fault: fetch failed · the lead's last turn failed · nudged the lead 1 of ${s.limits.maxNudges} times`,
       warn: true,
     });
     const gone = fixtures.gone!;
@@ -614,6 +620,9 @@ describe("Swarms boards", () => {
     expect(view.sections[0]?.title).toBe("Needs you");
     expect(cards.map((c) => c.pill?.label)).toEqual(["connection", "question", "decide", "quiet"]);
     const ordered = [fixtures.gone!, question, fixtures.onlyYou!, fixtures.quiet!];
+    const undated = { ...fixtures.gone!, health: { socketDrops: 2 } };
+    const last = cardsOf(buildIndex(state({ live: [fixtures.onlyYou!, undated] })));
+    expect(last.map((c) => c.pill?.label)).toEqual(["decide", "connection"]);
     for (const [i, card] of cards.entries()) {
       expect(card.footnote).toEndWith(` · ${ordered[i]!.id}`);
       expect(card.reason).toBeUndefined();
@@ -673,6 +682,10 @@ describe("Swarms boards", () => {
     expect(card?.pill).toEqual({ label: "connection", tone: "error" });
     expect(card?.fields?.[0]?.value).toContain("the managed server is not running");
     expect(card?.fields?.[1]).toEqual({
+      label: "since",
+      clock: { at: "2026-09-22T12:50:00.000Z", mode: "since" },
+    });
+    expect(card?.fields?.[2]).toEqual({
       value: "#swarm-s4n4x in ClickClack",
       href: "http://127.0.0.1:18080/app/ws_1/ch_s4n4x",
     });

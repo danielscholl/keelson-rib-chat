@@ -48,6 +48,13 @@ describe("needsYou", () => {
     ]);
   });
 
+  test("a connection need is dated from the first socket close", () => {
+    const at = "2026-09-22T14:20:00.000Z";
+    expect(needsYou(swarm({ health: { socketDrops: 2, disconnectedAt: at } }))).toEqual([
+      { kind: "connection", since: at },
+    ]);
+  });
+
   test("needs come in ladder order, and a quiet gate is one the swarm could answer", () => {
     const needs = needsYou(
       swarm({

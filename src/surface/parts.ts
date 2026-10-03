@@ -170,7 +170,7 @@ export function stateLine(
   const health: string[] = [];
   const h = s.health;
   if (h?.socketDrops && need?.kind !== "connection") {
-    health.push(`ClickClack socket closed ${h.socketDrops} times`);
+    health.push(`ClickClack socket closed ${plural(h.socketDrops, "time")}`);
   }
   if (h?.channelFault) health.push(`ClickClack fault: ${firstLine(h.channelFault, 80)}`);
   if (h?.lastLeadFailure) health.push("the lead's last turn failed");

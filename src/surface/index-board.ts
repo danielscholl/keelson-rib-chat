@@ -8,7 +8,7 @@
 
 import type { CanvasActionItem, CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
 import { modelLabel } from "../labels.ts";
-import { NEED_ORDER, type Need, needsYou, oldestNeed } from "../needs.ts";
+import { NEED_ORDER, type Need, needsYou, oldestNeed, UNDATED } from "../needs.ts";
 import { type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
 import { dayHeading, firstLine, gist, hhmm, plural, shortHandle, span } from "./format.ts";
 import {
@@ -188,7 +188,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
   const live = state.live.map((s) => ({ s, needs: needsYou(s) }));
   const needing = live
     .filter((x) => x.needs.length > 0)
-    .sort((a, b) => (oldestNeed(a.needs) ?? "").localeCompare(oldestNeed(b.needs) ?? ""));
+    .sort((a, b) => (oldestNeed(a.needs) ?? UNDATED).localeCompare(oldestNeed(b.needs) ?? UNDATED));
   const running = live
     .filter((x) => x.needs.length === 0)
     .sort((a, b) => a.s.startedAt.localeCompare(b.s.startedAt));
@@ -198,7 +198,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
     .flatMap((x) => x.needs.map((n) => ({ s: x.s, n })))
     .sort(
       (a, b) =>
-        (a.n.since ?? "").localeCompare(b.n.since ?? "") ||
+        (a.n.since ?? UNDATED).localeCompare(b.n.since ?? UNDATED) ||
         NEED_ORDER.indexOf(a.n.kind) - NEED_ORDER.indexOf(b.n.kind) ||
         a.s.startedAt.localeCompare(b.s.startedAt),
     );
