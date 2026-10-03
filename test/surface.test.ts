@@ -43,7 +43,12 @@ import {
   type SwarmRecord,
   type SwarmsSurface,
 } from "../src/surface/surface.ts";
-import { buildGoneBoard, buildStartingBoard, buildSwarmBoard } from "../src/surface/swarm-board.ts";
+import {
+  buildGoneBoard,
+  buildStartingBoard,
+  buildSwarmBoard,
+  tokensTile,
+} from "../src/surface/swarm-board.ts";
 import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
 import type { StartSwarmInput } from "../src/tools.ts";
 import {
@@ -232,6 +237,23 @@ const board = (key: string, view: unknown) =>
   expect(() => expectView(key, "board")(view)).not.toThrow();
 
 describe("Swarms boards", () => {
+  test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
+    expect(tokensTile(swarm("s0tok", { turnsUsed: 0 }))).toEqual({
+      label: "Tokens",
+      value: 0,
+      sub: "fresh · none yet",
+    });
+    expect(tokensTile(fixtures.running!)).toEqual({
+      label: "Tokens",
+      value: null,
+      sub: "the provider reported none",
+    });
+    const s = swarm("s1tok", { usage: { input: 200, output: 50, cached: 100 } });
+    expect(tokensTile(s)).toEqual({ label: "Tokens", value: "250", sub: "fresh · 100 cached" });
+    const stats = buildSwarmBoard(s).sections.find((x) => x.kind === "stats");
+    expect(stats?.kind === "stats" ? stats.items[3] : undefined).toEqual(tokensTile(s));
+  });
+
   test("every fixture composes a frame the host accepts", () => {
     board(INDEX_KEY, buildIndex(state()));
     board(INDEX_KEY, buildIndex(state({ server: { mode: "managed", running: false } })));
