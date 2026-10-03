@@ -15,6 +15,7 @@ import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
+import type { forecastDelta } from "../src/surface/forecast.ts";
 import {
   channelHref,
   day,
@@ -82,6 +83,7 @@ import {
   type StartingSwarm,
   type SwarmAgent,
   type SwarmSummary,
+  type TurnSpan,
   WORKER_TONES,
 } from "../src/types.ts";
 
@@ -174,6 +176,16 @@ function swarm(id: string, patch: Partial<SwarmSummary> = {}): SwarmSummary {
     agents: [agent(id, 0), agent(id, 1)],
     ...patch,
   };
+}
+
+function turnSpans(id: string, minutes: readonly number[]): TurnSpan[] {
+  return minutes.map((minute, i) => ({
+    agentId: `${id}-lead`,
+    n: i + 1,
+    startedAt: new Date(Date.parse(T0) + minute * 60_000).toISOString(),
+    messages: 1,
+    wokeBy: ["rib"],
+  }));
 }
 
 const starting: StartingSwarm = {
@@ -468,8 +480,8 @@ describe("message lines", () => {
 });
 
 describe("the live cockpit", () => {
-  const sections = (s: SwarmSummary) => {
-    const sections = buildCockpit(s, needsYou(s), { titled: true });
+  const sections = (s: SwarmSummary, now?: Date) => {
+    const sections = buildCockpit(s, needsYou(s), { titled: true, now });
     board(INDEX_KEY, { view: "board", title: "Swarms", sections });
     return sections;
   };
@@ -660,17 +672,48 @@ describe("the live cockpit", () => {
 
   test("the budget always has Turns, Time and fresh Tokens with cached in the sub", () => {
     const s = fixtures.twoBusy!;
-    expect(sections(s)[3]).toMatchObject({
+    const now = new Date("2026-09-22T14:21:00.000Z");
+    expect(sections(s, now)[3]).toMatchObject({
       kind: "stats",
       title: "Budget",
       items: [
-        { label: "Turns", value: "11 of 40", spark: [1, 2, 0] },
+        {
+          label: "Turns",
+          value: "11 of 40",
+          sub: "pace over the last 5 min",
+          spark: [1, 2, 0],
+          delta: {
+            text: "29 left · no turn in 5 min",
+            direction: "flat",
+          },
+        },
         { label: "Time", clock: { mode: "until" } },
         { label: "Tokens", value: "250", sub: "fresh · 100 cached" },
       ],
     });
     expect(sections(fixtures.running!)[3]).toMatchObject({
       items: [{}, {}, { label: "Tokens", value: null, sub: "the provider reported none" }],
+    });
+  });
+
+  test("the index uses its compose clock for the cockpit's turn forecast", () => {
+    const s = swarm("s1for", {
+      turnsUsed: 32,
+      pace: [2, 1, 2, 1, 2],
+      spans: turnSpans("s1for", [17, 17, 18, 19, 19, 20, 21, 21]),
+    });
+    const now = new Date("2026-09-22T14:21:00.000Z");
+    const view = buildIndex(state({ live: [s] }), now);
+    board(INDEX_KEY, view);
+    const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
+    expect(budget?.kind === "stats" ? budget.items[0] : undefined).toMatchObject({
+      label: "Turns",
+      sub: "pace over the last 5 min",
+      delta: {
+        text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+        direction: "down",
+        tone: "warn",
+      },
     });
   });
 
@@ -687,6 +730,103 @@ describe("the live cockpit", () => {
 });
 
 describe("Swarms boards", () => {
+  test("all five live forecast deltas pass the host schema on both boards", () => {
+    const now = new Date("2026-09-22T14:21:00.000Z");
+    const readings = [
+      {
+        turnsUsed: 32,
+        pace: [2, 1, 2, 1, 2],
+        delta: {
+          text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+          direction: "down",
+          tone: "warn",
+        },
+      },
+      {
+        turnsUsed: 18,
+        pace: [1, 1, 1, 1, 2],
+        delta: {
+          text: `22 left · at this pace about 11 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          direction: "flat",
+          tone: "caution",
+        },
+      },
+      {
+        turnsUsed: 18,
+        pace: [2, 2, 2, 2, 3],
+        delta: { text: "22 left · pace fits the clock", direction: "flat" },
+      },
+      {
+        turnsUsed: 18,
+        pace: [0, 0, 0, 0, 0],
+        delta: { text: "22 left · no turn in 5 min", direction: "flat" },
+      },
+      {
+        turnsUsed: 40,
+        pace: [2, 2, 2, 2, 2],
+        delta: { text: "none left · agents finish their turns", direction: "down", tone: "warn" },
+      },
+    ] satisfies (Pick<SwarmSummary, "turnsUsed" | "pace"> & {
+      delta: ReturnType<typeof forecastDelta>;
+    })[];
+    for (const { turnsUsed, pace, delta } of readings) {
+      const s = swarm("s5for", {
+        turnsUsed,
+        pace,
+        spans: turnSpans(
+          "s5for",
+          pace.flatMap((n, i) => Array.from({ length: n }, () => 17 + i)),
+        ),
+      });
+      const index = buildIndex(state({ live: [s] }), now);
+      const drawer = buildSwarmBoard(s, { now });
+      board(INDEX_KEY, index);
+      board(swarmKey(s.id), drawer);
+      for (const view of [index, drawer]) {
+        const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
+        const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
+        expect(tile?.delta).toEqual(delta);
+        expect(tile?.tone).toBe(turnsUsed === 40 ? "warn" : undefined);
+      }
+    }
+  });
+
+  test.each(["running", "stopping"] as const)(
+    "both boards count the full recent window across start-aligned buckets while %s",
+    (status) => {
+      const s = swarm("s6for", {
+        status,
+        turnsUsed: 5,
+        pace: [0, 1, 1, 1, 1, 1, 0],
+        spans: turnSpans("s6for", [1.75, 2.75, 3.75, 4.75, 5.75]),
+      });
+      const now = new Date("2026-09-22T14:06:30.000Z");
+      const index = buildIndex(state({ live: [s] }), now);
+      const drawer = buildSwarmBoard(s, { now });
+      for (const view of [index, drawer]) {
+        const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
+        const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
+        expect(tile?.delta).toEqual({
+          text: `35 left · at this pace about 12 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          direction: "flat",
+          tone: "caution",
+        });
+        expect(tile?.spark).toEqual([0, 1, 1, 1, 1, 1, 0]);
+      }
+    },
+  );
+
+  test("an ended Turns tile keeps its spent count and spark but has no forecast", () => {
+    const s = { ...fixtures.done!, pace: [1, 3, 2, 0, 1] };
+    const view = buildSwarmBoard(s, { now: new Date("2026-09-22T14:21:00.000Z") });
+    board(swarmKey(s.id), view);
+    const result = view.sections.find((x) => x.kind === "stats" && x.title === "Result");
+    const tile = result?.kind === "stats" ? result.items[0] : undefined;
+    expect(tile).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: s.pace });
+    expect(tile?.delta).toBeUndefined();
+    expect(tile).not.toHaveProperty("delta");
+  });
+
   test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
     expect(tokensTile(swarm("s0tok", { turnsUsed: 0 }))).toEqual({
       label: "Tokens",
@@ -1160,7 +1300,9 @@ describe("Swarms boards", () => {
   });
 
   test("the bench shows each agent, waiting seats, and ghosts up to the cap", () => {
-    const view = buildSwarmBoard(fixtures.waiting!);
+    const now = new Date("2026-09-22T14:21:00.000Z");
+    const view = buildSwarmBoard(fixtures.waiting!, { now });
+    board(swarmKey(fixtures.waiting!.id), view);
     const bench = view.sections.find((x) => x.kind === "cards" && x.title?.startsWith("Agents"));
     const items = bench?.kind === "cards" ? bench.items : [];
     expect(bench).toMatchObject({ grid: true, columns: 4, title: "Agents · 2 of 5" });
@@ -1183,8 +1325,13 @@ describe("Swarms boards", () => {
     expect(tiles[0]).toMatchObject({
       label: "Turns",
       value: "11 of 40",
-      sub: "29 remaining",
+      sub: "pace over the last 5 min",
       spark: [1, 3, 2, 0, 1],
+      delta: {
+        text: `29 left · at this pace about 13 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+        direction: "flat",
+        tone: "caution",
+      },
     });
     expect(tiles[1]).toEqual({
       label: "Time",
@@ -1266,6 +1413,20 @@ ${"detail ".repeat(1000)}`,
     expect(index).toContain(`"text":"${hhmm(activity.at(-1)?.at)} @lead turn 12 ok"`);
   });
 
+  test("live conclusion previews reserve forecast room without truncating the full record", () => {
+    const conclusion = "c".repeat(2_000);
+    const s = swarm("s9pre", { conclusion });
+    const preview = (s: SwarmSummary) => {
+      const view = buildSwarmBoard(s);
+      board(swarmKey(s.id), view);
+      const outcome = view.sections.find((x) => x.kind === "cards" && x.title === "Outcome");
+      return outcome?.kind === "cards" ? outcome.items[0]?.fields?.[0]?.value : undefined;
+    };
+    expect(preview(s)).toBe(`${"c".repeat(1_000)}…`);
+    expect(preview({ ...s, status: "done", endedAt: T0 })).toBe(`${"c".repeat(1_200)}…`);
+    expect(buildDoc(s, s.id)).toContain(conclusion);
+  });
+
   test("frames stay inside their budgets at the limits", () => {
     const agents = Array.from({ length: 12 }, (_, i) => agent("s9big", i));
     const runs = Array.from({ length: 12 }, (_, i) =>
@@ -1315,20 +1476,21 @@ ${"detail ".repeat(1000)}`,
       }),
     );
     const live = Array.from({ length: 6 }, (_, i) => ({ ...big, id: `s9bi${i}` }));
+    const now = new Date("2026-09-22T14:21:00.000Z");
     for (const selected of [undefined, live[5]!.id]) {
-      const view = buildIndex(state({ live, ended: many, selected }));
+      const view = buildIndex(state({ live, ended: many, selected }), now);
       board(INDEX_KEY, view);
       expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
       console.info(
         `Conversation index (six live, selected ${selected ?? "default"}): ${Buffer.byteLength(JSON.stringify(view))} bytes`,
       );
     }
-    const single = buildIndex(state({ live: [big], ended: many }));
+    const single = buildIndex(state({ live: [big], ended: many }), now);
     board(INDEX_KEY, single);
     const bytes = Buffer.byteLength(JSON.stringify(single));
     expect(bytes).toBeLessThan(48_000);
     console.info(`Conversation index (one live, 20 recent messages): ${bytes} bytes`);
-    const drawer = buildSwarmBoard(big);
+    const drawer = buildSwarmBoard(big, { now });
     board(swarmKey(big.id), drawer);
     expect(Buffer.byteLength(JSON.stringify(drawer))).toBeLessThan(48_000);
     expect(buildDoc(big, big.id).length).toBeLessThan(128_000);

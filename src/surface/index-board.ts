@@ -297,6 +297,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
         ? buildCockpit(expanded.s, expanded.needs, {
             server: state.server,
             titled: live.length < 2,
+            now,
           })
         : []),
       ...(cards.length > 0 ? [{ kind: "cards" as const, title: "Also live", items: cards }] : []),

@@ -205,7 +205,7 @@ export function budgetLine(s: SwarmSummary): string {
   return `${s.turnsUsed} of ${s.limits.maxTurns} turns used · ${left} remaining`;
 }
 
-export function endsAt(s: SwarmSummary): string {
+export function endsAt(s: Pick<SwarmSummary, "startedAt" | "limits">): string {
   return new Date(Date.parse(s.startedAt) + s.limits.wallClockMs).toISOString();
 }
 

@@ -457,12 +457,36 @@ id sit in the footnote. Open swarm expands that live swarm on the page.
 The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
 the task and id with a lifecycle or needs-you pill and people dots; a state
 line; once the lead has concluded, the Outcome card; an agent strip (busy, waiting, idle, capped, failed, with hatched open
-seats); three Budget tiles (Turns with its spark, Time as a ticking time-left
-clock, fresh Tokens with cached in the sub); Conversation; Message the lead;
+seats); three Budget tiles (Turns with its spark and a forecast as its delta,
+Time as a ticking time-left clock, fresh Tokens with cached in the sub); Conversation; Message the lead;
 the details described below; then Open the report when one exists, Open the
 record, and Stop swarm last. Message the lead is expanded directly under
 Conversation while running, unless the lead has concluded. Tokens says none yet
 before any turn, or that the provider reported none when turns ran without usage.
+
+The live Turns tile's sub reads "pace over the last 5 min". The forecast counts
+turn start timestamps over the last five minutes, or since the start when younger,
+with at least one minute as the rate's denominator. Older records without spans
+use the last five pace buckets over their covered time, accounting for the partial
+last minute; without buckets, they use turns so far. Fewer than one turn is reported as no pace.
+With positive pace, it projects when the remaining turns run out. If that is
+before the wall clock ends, it reads runs-out-first. Otherwise, it rounds the
+projected unused turns and reads clock-first when at least a tenth of the total
+turn budget (rounded up) would be unused; less reads fits.
+
+| Reading | Delta text | Direction | Tone |
+|---|---|---|---|
+| runs-out-first | N left · at R a minute they run out about hh:mm, before the clock | down | warn |
+| clock-first | N left · at this pace about M unused when the clock ends at hh:mm | flat | caution |
+| fits | N left · pace fits the clock | flat | none |
+| no-pace | N left · no turn in 5 min | flat | none |
+| out-of-turns | none left · agents finish their turns | down | warn |
+
+N is turns left, R is turns a minute and M is projected unused turns. The host
+supplies the directional glyph, not the text. This is an advisory projection
+computed when the board composes, not stored or periodically refreshed.
+It changes nothing the engine does: no limits, nudges or stopping.
+An ended Turns tile has no forecast and its sub stays "of N".
 
 Conversation shows the eight newest channel messages, newest first. Each row
 carries its author's short handle in an identity-colored chip (you for the
@@ -515,7 +539,7 @@ state line and counts as no request.
 
 An ended row opens its board in the drawer. The per-swarm board also still
 composes for MCP clients, live or ended. Live, it runs: the requests, the outcome once a
-report exists, a budget strip (turns with what is left, time, agents, fresh
+report exists, a budget strip (turns with the same forecast delta, time, agents, fresh
 tokens with cached beside them), the same Conversation section, Message the
 lead, Open the record and Stop,
 then the details. Ended, it runs: the outcome, the result strip, Run again and
