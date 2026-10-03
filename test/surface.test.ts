@@ -459,7 +459,7 @@ describe("shared inspector keys and presentation", () => {
     expect(replyAction(s, { runId: "r1" }, "the approval thread").type).toBe("reply");
   });
 
-  test("extracted setup and health retain the About row order and content", () => {
+  test("shared setup and health rows are available in Details instead of live About", () => {
     const s = swarm("shelp", {
       workerModel: "worker-model",
       usage: { input: 200, output: 50, cached: 100 },
@@ -487,10 +487,11 @@ describe("shared inspector keys and presentation", () => {
       "the lead's conclusion was refused 2 time(s) for length",
       "could not cancel",
     ]);
-    const about = leaves(buildSwarmBoard(s).sections).find((section) => section.title === "About");
-    expect(about?.kind).toBe("rows");
-    if (about?.kind !== "rows") throw new Error("missing About");
-    expect(about.items.slice(1, -1)).toEqual([...setupRows(s), ...healthRows(s)]);
+    expect(leaves(buildSwarmBoard(s).sections).some((section) => section.title === "About")).toBe(
+      false,
+    );
+    const health = buildDetailsInspector(s).sections.find((section) => section.title === "Health");
+    expect(health?.kind === "rows" ? health.items : []).toEqual(healthRows(s));
     expect(healthRows({ ...s, status: "error", error: "fatal" }).at(-1)).toEqual({
       icon: "✕",
       glyph: "error",
@@ -1675,8 +1676,6 @@ describe("the live cockpit", () => {
       "graph",
       "rows",
       "actions",
-      "rows",
-      "rows",
       "actions",
     ]);
     expect(cockpit[0]).toMatchObject({
@@ -1690,7 +1689,6 @@ describe("the live cockpit", () => {
     expect(head).not.toHaveProperty("chip");
     expect(head?.footnote).toBeUndefined();
     expect(head?.fields?.[0]?.people).toHaveLength(2);
-    expect(cockpit.slice(-3, -1)).toEqual(leaves(buildSwarmBoard(s).sections.slice(-2)));
     const columns = buildCockpit(s, [], { titled: true }).find((x) => x.kind === "columns");
     expect(
       columns?.kind === "columns" ? columns.columns.map((c) => c.sections[0]?.kind) : [],
@@ -1698,7 +1696,11 @@ describe("the live cockpit", () => {
     expect(cockpit.at(-1)).toMatchObject({
       kind: "actions",
       wrap: true,
-      items: [{ type: "open-record" }, { type: "stop-swarm", inline: true, align: "end" }],
+      items: [
+        { type: "open-record" },
+        { type: "open-details", label: "Details", payload: { id: s.id } },
+        { type: "stop-swarm", inline: true, align: "end" },
+      ],
     });
     expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
   });
@@ -1709,13 +1711,18 @@ describe("the live cockpit", () => {
       const actions = sections(s).at(-1);
       return actions?.kind === "actions" ? actions.items.map((x) => x.type) : [];
     };
-    expect(types(s)).toEqual(["open-report", "open-record", "stop-swarm"]);
+    expect(types(s)).toEqual(["open-report", "open-record", "open-details", "stop-swarm"]);
     expect(types({ ...s, conclusion: "Done" })).toEqual([
       "open-report",
       "open-record",
+      "open-details",
       "stop-swarm",
     ]);
-    expect(types({ ...s, status: "stopping" })).toEqual(["open-report", "open-record"]);
+    expect(types({ ...s, status: "stopping" })).toEqual([
+      "open-report",
+      "open-record",
+      "open-details",
+    ]);
     const composer = (s: SwarmSummary) =>
       sections(s).find((x) => x.kind === "actions" && x.items[0]?.type === "message-lead");
     expect(composer(s)).toMatchObject({
@@ -1725,6 +1732,40 @@ describe("the live cockpit", () => {
     });
     expect(composer({ ...s, conclusion: "Done" })).toBeUndefined();
     expect(composer({ ...s, status: "stopping" })).toBeUndefined();
+  });
+
+  test("peer review opens its gate from the cockpit without becoming or duplicating a request", () => {
+    const peer = fixtures.review!;
+    expect(needsYou(peer)).toEqual([]);
+    expect(buildBadge(state({ live: [peer] }))).toEqual({ count: 0 });
+    const index = buildIndex(state({ live: [peer] }));
+    board(INDEX_KEY, index);
+    expect(index.sections.some((section) => section.title === "Needs you")).toBe(false);
+    const reviewing = index.sections.find((section) => section.title === "Approvals in review");
+    if (reviewing?.kind !== "cards") throw new Error("missing peer gate");
+    const card = reviewing.items[0]!;
+    const payload = {
+      id: peer.id,
+      runId: peer.runs![0]!.runId,
+      gateIdentity: gateIdentity(peer.runs![0]!),
+    };
+    expect(card.action).toEqual({ type: "select-gate", payload });
+    expect(card.actions?.[0]).toEqual({ type: "select-gate", label: "Read gate", payload });
+    expect(card.actions?.find((action) => action.type === "reply")?.binding).toEqual(payload);
+    expect(
+      sections({ ...peer, conclusion: "Done" }).some(
+        (section) => section.title === "Approvals in review",
+      ),
+    ).toBe(false);
+    const operator = buildIndex(state({ live: [fixtures.onlyYou!] }));
+    const operatorCards = leaves(operator.sections).flatMap((section) =>
+      section.kind === "cards" ? section.items : [],
+    );
+    expect(
+      operatorCards.filter((card) =>
+        card.actions?.some((action) => action.label === "Review plan"),
+      ),
+    ).toHaveLength(1);
   });
 
   test("Conversation shows the eight newest messages with authors, threads, times and transcript", () => {
@@ -2217,9 +2258,22 @@ describe("Swarms boards", () => {
     ]);
     expect(card?.footnote).toBe("Fix issue #27: README undercounts frontend-mix nodes · s7k1p");
     expect(card?.reason).toBeUndefined();
-    expect(card?.actions?.map((a) => a.label)).toEqual(["Review plan", "Reply", "Open swarm"]);
+    expect(card?.actions?.map((a) => a.label)).toEqual([
+      "Review plan",
+      "Read gate",
+      "Reply",
+      "Open swarm",
+    ]);
     expect(card?.actions?.[0]).toMatchObject({ type: "open-run", tone: "brand" });
-    expect(card?.actions?.[2]?.hint).toBe(
+    expect(card?.actions?.[1]).toMatchObject({
+      type: "select-gate",
+      payload: {
+        id: fixtures.onlyYou!.id,
+        runId: fixtures.onlyYou!.runs![0]!.runId,
+        gateIdentity: gateIdentity(fixtures.onlyYou!.runs![0]!),
+      },
+    });
+    expect(card?.actions?.[3]?.hint).toBe(
       "large: up to 8 agents · 80 turns, 16 per worker · 4 at once · 5 min a turn. Model: gpt-6-astra.",
     );
   });
@@ -2232,7 +2286,11 @@ describe("Swarms boards", () => {
     expect(question?.pill).toEqual({ label: "question", tone: "caution" });
     expect(question?.fields?.some((field) => field.href)).toBe(false);
     expect(JSON.stringify(question)).not.toContain("in ClickClack");
-    expect(question?.actions?.[0]).toMatchObject({ type: "read-doc", label: "Read question" });
+    expect(question?.actions?.[0]).toMatchObject({
+      type: "select-ask",
+      label: "Read question",
+      payload: { id: fixtures.asked!.id, messageId: fixtures.asked!.health!.asks![0]!.messageId },
+    });
     expect(cards[1]?.title).toBe(
       "Review the plan for Fix issue #27: README undercounts frontend-mix nodes",
     );
@@ -2397,10 +2455,12 @@ describe("Swarms boards", () => {
       "medium · 11 turns · 29 min · gpt-6-astra · workers gpt-5.6-sol",
     );
     const text = JSON.stringify(view);
-    expect(text).toContain(
-      "medium: up to 5 agents · 40 turns, 12 per worker · 3 at once · 5 min a turn",
+    const details = JSON.stringify(buildDetailsInspector(fixtures.done!));
+    expect(details).toContain(
+      "Effective limits: 5 agents · 40 total turns · 12 turns per worker · 3 concurrent turns",
     );
-    expect(text).toContain("copilot · lead gpt-6-astra · workers gpt-5.6-sol");
+    expect(details).toContain("Requested lead model: gpt-6-astra");
+    expect(details).toContain("Requested worker model: gpt-5.6-sol");
     expect(text).not.toContain('"type":"steer"');
     expect(text).toContain('"label":"Runs verified","value":"1 of 1","tone":"ok"');
     expect(JSON.stringify(buildIndex(state({ ended: [fixtures.done!] })))).toContain(
@@ -2522,7 +2582,16 @@ describe("Swarms boards", () => {
       swarm("s2cus", { size: "custom", limits: { ...SIZE_PRESETS.medium, maxTurns: 60 } }),
     );
     expect(view.header?.chip).toBe("medium, adjusted · 11 of 60 turns · gpt-5.6-sol");
-    expect(JSON.stringify(view)).toContain("medium, adjusted: up to 5 agents · 60 turns");
+    expect(
+      JSON.stringify(
+        buildDetailsInspector(
+          swarm("s2cus", {
+            size: "custom",
+            limits: { ...SIZE_PRESETS.medium, maxTurns: 60 },
+          }),
+        ),
+      ),
+    ).toContain("Effective limits: 5 agents · 60 total turns");
   });
 
   test("an ended swarm leads with its cause, shows how long it ran, and no agent status", () => {
@@ -2564,8 +2633,6 @@ describe("Swarms boards", () => {
       "columns",
       "actions",
       "rows",
-      "rows",
-      "rows",
     ]);
     const actions = leaves(view.sections).filter((s) => s.kind === "actions");
     expect(actions).toHaveLength(2);
@@ -2577,7 +2644,12 @@ describe("Swarms boards", () => {
       label: "Open the record",
       payload: { id: "s9hjy" },
     });
-    expect(actions[1]?.items[1]).toMatchObject({ inline: true, align: "end" });
+    expect(actions[1]?.items[1]).toMatchObject({
+      type: "open-details",
+      label: "Details",
+      payload: { id: "s9hjy" },
+    });
+    expect(actions[1]?.items[2]).toMatchObject({ inline: true, align: "end" });
     const review = view.sections[0];
     expect(review?.kind === "cards" ? review.title : "").toBe("Approvals in review");
     expect(JSON.stringify(review)).toContain('"pill":{"label":"reviewing","tone":"info"}');
@@ -2649,12 +2721,8 @@ describe("Swarms boards", () => {
       leaves(buildSwarmBoard(s).sections).flatMap((x) =>
         x.kind === "rows" && x.title ? [x.title] : [],
       );
-    expect(titles(fixtures.running!)).toEqual(["Conversation", "Task and context", "About"]);
-    expect(titles(fixtures.dispatchIdle!)).toEqual([
-      "Produced so far",
-      "Task and context",
-      "About",
-    ]);
+    expect(titles(fixtures.running!)).toEqual(["Conversation"]);
+    expect(titles(fixtures.dispatchIdle!)).toEqual(["Produced so far"]);
     expect(JSON.stringify(buildSwarmBoard(fixtures.dispatchIdle!))).toContain(
       "The lead may start fix-issue, docs-check; none started yet.",
     );
@@ -2664,7 +2732,7 @@ describe("Swarms boards", () => {
     expect(JSON.stringify(buildSwarmBoard(fixtures.review!))).toContain("4 steps done");
   });
 
-  test("the task and each context item disclose their text under the row", () => {
+  test("boards relocate full task, context and setup to Details", () => {
     const s = swarm("s8ctx", {
       task: `Fix issue #27
 
@@ -2682,26 +2750,24 @@ ${"detail ".repeat(1000)}`,
         { id: "note-1", kind: "note", title: "a note", chars: 12, excerpt: "twelve chars" },
       ],
     });
-    const section = buildSwarmBoard(s).sections.find(
-      (x) => x.kind === "rows" && x.title === "Task and context",
-    );
-    const rows = section?.kind === "rows" ? section.items : [];
-    expect(rows[0]?.text).toBe("Task: Fix issue #27");
-    expect(rows[0]?.detail?.length).toBe(4000);
-    const cockpitTask = buildCockpit(s, [], { titled: true }).find(
-      (x) => x.kind === "rows" && x.title === "Task and context",
-    );
-    expect(cockpitTask?.kind === "rows" ? cockpitTask.items[0]?.detail?.length : 0).toBe(1000);
-    expect(rows[0]?.trailing).toBe("first 4,000 of 7,014 characters");
-    expect(rows[1]).toMatchObject({
-      text: "issue: README count",
-      trailing: "issue-27 · retrieved Sep 22 13:00 · first 4,000 of 5,000 chars",
-    });
-    expect(rows[1]?.detail?.length).toBe(4000);
-    expect(rows[1]?.href).toBeUndefined();
-    expect(rows[2]).toMatchObject({ trailing: "note-1 · 12 chars", detail: "twelve chars" });
-    board(swarmKey("s8ctx"), buildSwarmBoard(s));
-    expect(buildDoc(s, "s8ctx")).toContain("## issue: README count");
+    for (const snapshot of [s, { ...s, status: "done" as const, endedAt: T0 }]) {
+      const view = buildSwarmBoard(snapshot);
+      board(swarmKey(s.id), view);
+      const frame = JSON.stringify(view);
+      expect(frame).not.toContain("Task and context");
+      expect(frame).not.toContain("twelve chars");
+      expect(frame).not.toContain("x".repeat(4000));
+      expect(frame).not.toContain("detail ".repeat(100));
+      expect(frame).not.toContain("up to 5 agents");
+      expect(frame).toContain('"type":"open-details","label":"Details","payload":{"id":"s8ctx"}');
+    }
+    const cockpit = JSON.stringify(buildCockpit(s, [], { titled: true }));
+    expect(cockpit).not.toContain("Task and context");
+    expect(cockpit).not.toContain('"title":"About"');
+    expect(cockpit).toContain('"type":"open-details"');
+    const inspector = buildDetailsInspector(s);
+    board(detailsKey(s.id), inspector);
+    expect(JSON.stringify(inspector)).toContain("twelve chars");
   });
 
   test("activity lists the newest first, and the running card carries the last line", () => {
@@ -3036,8 +3102,8 @@ describe("the details", () => {
     expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
   });
 
-  test("About ends with the transcript before an ended swarm's back-link", () => {
-    for (const s of [fixtures.running!, fixtures.done!]) {
+  test("ended About contains only times, health and one transcript with navigation separate", () => {
+    for (const s of [fixtures.done!, { ...fixtures.done!, health: { socketDrops: 2 } }]) {
       const view = buildSwarmBoard(s);
       board(swarmKey(s.id), view);
       const rows = rowsTitled(view, "About");
@@ -3047,17 +3113,16 @@ describe("the details", () => {
         text: "transcript ↗",
         href: `http://127.0.0.1:18080/app/ws_1/${s.channelId}`,
       };
-      expect(s.status === "running" ? rows.at(-1) : rows.at(-2)).toEqual(transcript);
-      if (s.status !== "running") {
-        expect(rows.at(-1)).toEqual({
-          icon: "←",
-          text: "Ended swarms",
-          action: { type: "history-open" },
-        });
-      }
+      expect(rows.at(-1)).toEqual(transcript);
+      expect(rows.slice(1, -1)).toEqual(healthRows(s));
+      expect(rows.filter((row) => row.text === "transcript ↗")).toHaveLength(1);
+      expect(view.sections.at(-1)).toEqual({
+        kind: "rows",
+        items: [{ icon: "←", text: "Ended swarms", action: { type: "history-open" } }],
+      });
     }
     expect(
-      rowsTitled(buildSwarmBoard({ ...fixtures.running!, clickclack: undefined }), "About").some(
+      rowsTitled(buildSwarmBoard({ ...fixtures.done!, clickclack: undefined }), "About").some(
         (row) => row.text === "transcript ↗",
       ),
     ).toBe(false);
@@ -5474,8 +5539,12 @@ describe("launching from the tab", () => {
       buildSwarmBoard(fixtures.done!, launch ? { launch } : {})
         .sections.filter((x) => x.kind === "actions")
         .flatMap((x) => (x.kind === "actions" ? x.items : []));
-    expect(actions(undefined).map((a) => a.type)).toEqual(["open-record"]);
-    expect(actions(oldLaunch).map((a) => a.type)).toEqual(["run-again", "open-record"]);
+    expect(actions(undefined).map((a) => a.type)).toEqual(["open-record", "open-details"]);
+    expect(actions(oldLaunch).map((a) => a.type)).toEqual([
+      "run-again",
+      "open-record",
+      "open-details",
+    ]);
     const again = actions(oldLaunch)[0];
     expect(again).toMatchObject({ type: "run-again", binding: { id: "s8pln" } });
     expect(again?.hint).toBe(
@@ -5525,7 +5594,7 @@ describe("opening a run and the tab's count", () => {
 });
 
 describe("power and the served model", () => {
-  test("the drawer names the power, its provider, and the model that served it", () => {
+  test("Details names the power, its provider, and the model that served it", () => {
     const done = fixtures.done!;
     const s = {
       ...done,
@@ -5534,8 +5603,10 @@ describe("power and the served model", () => {
       power: "deep" as const,
       agents: done.agents.map((a) => ({ ...a, model: undefined, servedModel: "gpt-6-pro" })),
     };
-    const drawer = JSON.stringify(buildSwarmBoard(s));
-    expect(drawer).toContain("deep power on copilot · every agent on gpt-6-pro");
+    const details = JSON.stringify(buildDetailsInspector(s));
+    expect(details).toContain("Requested power: deep");
+    expect(details).toContain("Requested provider: copilot");
+    expect(details).toContain("Served model for @lead (lead): gpt-6-pro");
     board(swarmKey(s.id), buildSwarmBoard(s));
   });
 });

@@ -43,15 +43,16 @@ import { runAgainItem } from "./launch-board.ts";
 import {
   causeTitle,
   endsAt,
+  gateIdentity,
   healthRows,
   LIFECYCLE,
   livePill,
   messageLead,
   openHint,
+  replyAction,
   type Request,
   requestOf,
   type ServerLine,
-  setupRows,
   sinceClock,
   sizeWord,
   stateLine,
@@ -69,12 +70,8 @@ type Segment = Extract<NonNullable<Row["bar"]>, { segments: unknown }>["segments
 
 // The conclusion on the board is a preview; the reading pane has all of it.
 const PREVIEW_CHARS = 1_200;
-const COCKPIT_TASK_CHARS = 1_000;
 // A row's disclosure holds this much; the task tool caps at 8,000.
 export const DETAIL_CHARS = 4_000;
-// Context disclosures on one board, in total, so a swarm with twenty items
-// does not ship eighty thousand characters in every frame.
-const CONTEXT_DETAIL_BUDGET = 24_000;
 export const RECENT_SHOWN = 12;
 export const CONVERSATION_SHOWN = 8;
 const BENCH_COLUMNS = 4;
@@ -109,8 +106,10 @@ function reviewingCard(s: SwarmSummary, run: ChildRun): Card {
   const gate = run.pendingApproval;
   const thread = threadHref(s, gate?.threadId);
   const reviewer = gate?.reviewer;
+  const payload = { id: s.id, runId: run.runId, gateIdentity: gateIdentity(run) };
   return {
     title: `${gate?.nodeId ?? "approval"} · ${run.workflow} ${shortRun(run.runId)}`,
+    action: { type: "select-gate", payload },
     pill: { label: "reviewing", tone: "info" },
     fields: [
       {
@@ -123,6 +122,7 @@ function reviewingCard(s: SwarmSummary, run: ChildRun): Card {
     ],
     footnote: firstLine(gate?.prompt ?? "", 200),
     actions: [
+      { type: "select-gate", label: "Read gate", payload },
       {
         type: "open-run",
         label: "Open run",
@@ -131,34 +131,32 @@ function reviewingCard(s: SwarmSummary, run: ChildRun): Card {
       },
       ...(gate?.threadId
         ? [
-            {
-              type: "reply",
-              label: "Reply",
-              binding: { id: s.id, runId: run.runId },
-              fields: [
-                {
-                  name: "note",
-                  label: "Reply",
-                  placeholder:
-                    "Posts in the approval thread as you · does not approve; the lead answers · Enter sends",
-                  required: true,
-                },
-              ],
-              submitLabel: "Reply",
-            },
+            replyAction(
+              s,
+              { runId: run.runId, gateIdentity: gateIdentity(run) },
+              "the approval thread",
+            ),
           ]
         : []),
     ],
   };
 }
 
-function requests(s: SwarmSummary, needs: readonly Need[], server?: ServerLine): Leaf[] {
+function requests(
+  s: SwarmSummary,
+  needs: readonly Need[],
+  server?: ServerLine,
+  includeAsked = true,
+): Leaf[] {
   if (!live(s)) return [];
-  const asked = needs.map((n) => requestCard(requestOf(s, n, server), n));
+  const asked = includeAsked ? needs.map((n) => requestCard(requestOf(s, n, server), n)) : [];
   const reviewing = (s.runs ?? [])
     .filter(
       (r) =>
-        r.status === "paused" && r.pendingApproval && r.pendingApproval.answerer !== "operator",
+        s.conclusion === undefined &&
+        r.status === "paused" &&
+        r.pendingApproval &&
+        r.pendingApproval.answerer !== "operator",
     )
     .filter((r) => !needs.some((n) => n.run?.runId === r.runId))
     .map((r) => reviewingCard(s, r));
@@ -270,10 +268,16 @@ export const openRecord = (s: SwarmSummary) => ({
   payload: { id: s.id },
 });
 
+const openDetails = (s: SwarmSummary) => ({
+  type: "open-details",
+  label: "Details",
+  payload: { id: s.id },
+});
+
 function controls(s: SwarmSummary): Leaf[] {
   if (!live(s)) return [];
   const items: Extract<Leaf, { kind: "actions" }>["items"] = [];
-  items.push(openRecord(s));
+  items.push(openRecord(s), openDetails(s));
   if (s.status === "running") items.push(stopAction(s, true));
   return [{ kind: "actions", wrap: true, items }];
 }
@@ -653,8 +657,6 @@ function produced(s: SwarmSummary): Leaf[] {
   return [{ kind: "rows", title: "Produced so far", items }];
 }
 
-// ---- The task and the evidence the agents were given, disclosed in place. ----
-
 // The first DETAIL_CHARS of a text for a row's disclosure, and a note when it was cut.
 function detailOf(text: string, budget: number): { detail?: string; cut?: string } {
   const cap = Math.min(DETAIL_CHARS, budget);
@@ -667,42 +669,6 @@ function detailOf(text: string, budget: number): { detail?: string; cut?: string
         }
       : {}),
   };
-}
-
-function taskAndContext(s: SwarmSummary, taskBudget = DETAIL_CHARS): Leaf[] {
-  const task = s.task.trim();
-  const head = firstLine(task, 80);
-  const disclosed = task.length > head.length ? detailOf(task, taskBudget) : {};
-  const rows: Row[] = [
-    {
-      icon: "▤",
-      text: `Task: ${head}`,
-      ...(disclosed.detail ? { detail: disclosed.detail } : {}),
-      ...(disclosed.cut ? { trailing: disclosed.cut } : {}),
-    },
-  ];
-  let budget = CONTEXT_DETAIL_BUDGET;
-  for (const c of s.context ?? []) {
-    const excerpt = c.excerpt && budget > 0 ? detailOf(c.excerpt, budget) : {};
-    budget -= excerpt.detail?.length ?? 0;
-    const shown = excerpt.detail?.length ?? 0;
-    const meta = [
-      c.id,
-      ...(c.retrievedAt ? [`retrieved ${day(c.retrievedAt)} ${hhmm(c.retrievedAt)}`] : []),
-      ...(c.headSha ? [`at ${c.headSha.slice(0, 7)}`] : []),
-      shown > 0 && shown < c.chars
-        ? `first ${shown.toLocaleString("en-US")} of ${c.chars.toLocaleString("en-US")} chars`
-        : `${c.chars.toLocaleString("en-US")} chars`,
-    ];
-    rows.push({
-      icon: "◇",
-      text: `${c.kind}: ${c.title}`,
-      trailing: meta.join(" · "),
-      ...(c.sourceUrl && !excerpt.detail ? { href: c.sourceUrl } : {}),
-      ...(excerpt.detail ? { detail: excerpt.detail } : {}),
-    });
-  }
-  return [{ kind: "rows", title: "Task and context", items: rows }];
 }
 
 // ---- Activity, newest first, repeats counted. ----
@@ -775,22 +741,18 @@ function activity(s: SwarmSummary): Leaf[] {
   ];
 }
 
-// ---- About: what it runs on, what went wrong, and the transcript. ----
+// ---- Ended times, health, and the transcript. ----
 
 function about(s: SwarmSummary): Leaf {
   const href = channelHref(s);
-  const when = live(s)
-    ? `started ${hhmm(s.startedAt)}`
-    : `ran ${day(s.startedAt)} ${hhmm(s.startedAt)} → ${hhmm(s.endedAt)}`;
+  const when = `ran ${day(s.startedAt)} ${hhmm(s.startedAt)} → ${hhmm(s.endedAt)}`;
   return {
     kind: "rows",
     title: "About",
     items: [
       { icon: "◷", text: `${when}${s.project ? ` · on ${s.project.name}` : ""}` },
-      ...setupRows(s),
       ...healthRows(s),
       ...(href ? [{ text: "transcript ↗", href }] : []),
-      ...(live(s) ? [] : [{ icon: "←", text: "Ended swarms", action: { type: "history-open" } }]),
     ],
   };
 }
@@ -886,7 +848,7 @@ function verbs(s: SwarmSummary, launch: StartSwarmInput | undefined): Leaf[] {
     {
       kind: "actions",
       wrap: true,
-      items: [...(launch ? [runAgainItem(s, launch)] : []), openRecord(s)],
+      items: [...(launch ? [runAgainItem(s, launch)] : []), openRecord(s), openDetails(s)],
     },
   ];
 }
@@ -900,18 +862,21 @@ export interface BoardOptions {
   selectedAgentId?: string;
 }
 
-export function liveDetails(
-  s: SwarmSummary,
-  selectedAgentId?: string,
-  taskBudget = DETAIL_CHARS,
-): Leaf[] {
+export function liveDetails(s: SwarmSummary, selectedAgentId?: string): Leaf[] {
   return [
     ...(!live(s) ? [bench(s, selectedAgentId)] : []),
     ...spend(s),
     ...produced(s),
-    ...taskAndContext(s, taskBudget),
     ...activity(s),
-    about(s),
+    ...(!live(s)
+      ? [
+          about(s),
+          {
+            kind: "rows" as const,
+            items: [{ icon: "←", text: "Ended swarms", action: { type: "history-open" } }],
+          },
+        ]
+      : []),
   ];
 }
 
@@ -936,7 +901,7 @@ export function buildCockpit(
   const line = stateLine(s, needs, opts.server);
   const items: Extract<Leaf, { kind: "actions" }>["items"] = [];
   if (s.report) items.push(openReport(s));
-  items.push(openRecord(s));
+  items.push(openRecord(s), openDetails(s));
   if (s.status === "running") items.push(stopAction(s, true));
   return [
     {
@@ -956,6 +921,7 @@ export function buildCockpit(
       items: [{ icon: "◉", text: line.text, ...(line.warn ? { glyph: "warn" as const } : {}) }],
     },
     ...(s.conclusion !== undefined ? outcome(s) : []),
+    ...requests(s, needs, opts.server, false),
     agentStrip(s),
     {
       kind: "stats",
@@ -963,7 +929,7 @@ export function buildCockpit(
       items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s)],
     },
     mapConversation(s, opts.selectedAgentId),
-    ...liveDetails(s, opts.selectedAgentId, COCKPIT_TASK_CHARS),
+    ...liveDetails(s, opts.selectedAgentId),
     { kind: "actions", wrap: true, items },
   ];
 }

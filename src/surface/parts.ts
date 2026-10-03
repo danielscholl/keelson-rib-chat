@@ -403,10 +403,16 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
         type: "open-run",
         label: verb,
         tone: "brand",
-        hint: "Opens the run beside the tab, where you answer its approval.",
         binding: { id: s.id, runId: run.runId },
       },
-      more: gate.threadId ? [replyAction(s, { runId: run.runId }, "the approval thread")] : [],
+      more: [
+        {
+          type: "select-gate",
+          label: "Read gate",
+          payload: { id: s.id, runId: run.runId, gateIdentity: gateIdentity(run) },
+        },
+        ...(gate.threadId ? [replyAction(s, { runId: run.runId }, "the approval thread")] : []),
+      ],
     };
   }
   if (need.kind === "question" && need.ask) {
@@ -418,11 +424,11 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
       pill: NEED_PILL.question,
       line: `in #${s.channelName} · a reply in its thread answers it; other questions stay open`,
       primary: {
-        type: "read-doc",
+        type: "select-ask",
         label: "Read question",
         tone: "brand",
         glyph: "▤",
-        payload: { id: s.id },
+        payload: { id: s.id, messageId: ask.messageId },
       },
       more: [
         replyAction(s, { threadRootId: ask.threadRootId, messageId: ask.messageId }, "the thread"),
@@ -529,7 +535,7 @@ export function replyAction(
       {
         name: "note",
         label: "Reply",
-        placeholder: `Posts in ${what} as you · does not approve; Answer opens the run · Enter sends`,
+        placeholder: `Posts in ${what} as you · does not approve · Enter sends`,
         required: true,
       },
     ],
