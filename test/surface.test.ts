@@ -15,7 +15,7 @@ import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
-import { day, dayHeading, gist, hhmm, shortRun } from "../src/surface/format.ts";
+import { day, dayHeading, gist, hhmm, messageLine, shortRun } from "../src/surface/format.ts";
 import {
   buildBadge,
   buildHistory,
@@ -428,6 +428,18 @@ describe("the shared state line", () => {
       payload: { id: fixtures.running!.id },
     });
     expect(selectSwarm(fixtures.running!).hint).toContain("medium:");
+  });
+});
+
+describe("message lines", () => {
+  test("shortens handles and strips only emphasis and code, leaving links and HTML literal", () => {
+    const text = "<img src=x onerror=alert(1)> [click](javascript:alert(1))";
+    expect(messageLine("s1", `${text} **bold** __under__ \`code\`\nsecond line`)).toBe(
+      `${text} bold under code`,
+    );
+    expect(messageLine("s1", "@s1-lead asked @s1-w")).toBe("@lead asked @w");
+    expect(messageLine("s1", "x".repeat(100))).toBe(`${"x".repeat(89)}…`);
+    expect(messageLine("s1", "x".repeat(20), 10)).toBe(`${"x".repeat(9)}…`);
   });
 });
 
