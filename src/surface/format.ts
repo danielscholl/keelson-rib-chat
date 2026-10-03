@@ -124,6 +124,11 @@ export function activityText(swarmId: string, text: string): string {
   return text.replaceAll(`@${swarmId}-`, "@");
 }
 
+// Field text renders as is: links and HTML stay literal, not clickable markup.
+export function messageLine(swarmId: string, text: string, max = 90): string {
+  return firstLine(plain(activityText(swarmId, text)), max);
+}
+
 // An activity line under its actor's chip: the handle or "you" it starts with
 // would say the name twice.
 export function actorText(swarmId: string, text: string, actor: string | undefined): string {

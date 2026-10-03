@@ -325,6 +325,20 @@ export interface ReportMeta {
   bytes: number;
 }
 
+export const MESSAGES_KEPT = 20;
+export const MESSAGE_CHARS = 200;
+
+export type MessageKind = "ask" | "run" | "conclusion";
+
+export interface RecentMessage {
+  id: string;
+  at: string;
+  author: string;
+  text: string;
+  threadRootId?: string;
+  kind?: MessageKind;
+}
+
 export interface SwarmSummary {
   id: string;
   task: string;
@@ -376,6 +390,10 @@ export interface SwarmSummary {
   usage?: TokenTally;
   // The swarm's latest events, oldest first.
   activity?: readonly ActivityEntry[];
+  // Every message the swarm saw, including posts not kept in recent.
+  messageCount?: number;
+  // The newest 20 messages, oldest first; omitted from status tools and the op record.
+  recent?: readonly RecentMessage[];
   // The lead's last conclusion that was refused, kept when no conclusion landed.
   draftConclusion?: string;
   error?: string;
@@ -383,8 +401,6 @@ export interface SwarmSummary {
   rerunOf?: string;
 }
 
-// A summary as the status tools and the op record carry it: the turn spans are
-// for drawing, and would triple a long swarm's output.
 // Whether a swarm already credits a pull request, to a run or to a writer.
 export function ownsPr(s: Pick<SwarmSummary, "runs" | "prs">, url: string): boolean {
   return (
@@ -392,8 +408,10 @@ export function ownsPr(s: Pick<SwarmSummary, "runs" | "prs">, url: string): bool
   );
 }
 
-export function publicSummary(s: SwarmSummary): Omit<SwarmSummary, "spans"> {
-  const { spans: _spans, ...rest } = s;
+// Status tools and the op record omit turn spans and the recent-message buffer,
+// which are for drawing and would inflate a long swarm's output.
+export function publicSummary(s: SwarmSummary): Omit<SwarmSummary, "spans" | "recent"> {
+  const { spans: _spans, recent: _recent, ...rest } = s;
   return rest;
 }
 

@@ -17,7 +17,11 @@ import { makeChatTools } from "../src/tools.ts";
 import {
   BODY_MAX,
   CONCLUSION_MAX,
+  MESSAGE_CHARS,
+  MESSAGES_KEPT,
   POWER_EFFORT,
+  publicSummary,
+  type RecentMessage,
   SIZE_PRESETS,
   SWARM_POWERS,
   type SwarmSummary,
@@ -364,6 +368,7 @@ describe("Swarm", () => {
     const summary = await (await start()).finished;
     expect(summary.agents.find((a) => a.handle === "s1-echo")?.status).toBe("capped");
     expect(server.messages.some((m) => m.body.includes("used all 2 of its turns"))).toBe(true);
+    expect(summary.recent?.some((m) => m.text.includes("used all 2 of its turns"))).toBe(false);
   });
 
   test("a human post mid-run reaches the lead, and steer does the same", async () => {
@@ -463,6 +468,9 @@ describe("Swarm resilience", () => {
       "**Conclusion (2/2)**",
     ]);
     expect(parts.every((b) => b.length <= BODY_MAX)).toBe(true);
+    expect(summary.recent?.filter((m) => m.kind === "conclusion").map((m) => m.text)).toEqual(
+      parts.map((body) => body.slice(0, MESSAGE_CHARS)),
+    );
   });
 
   test("a swarm that stalls on a refused conclusion says so and keeps the draft", async () => {
@@ -836,6 +844,11 @@ describe("Workflow dispatch", () => {
     expect(prompts[2]).toContain("is succeeded");
     expect(prompts[2]).toContain("verified");
     expect(summary.status).toBe("done");
+    const bookkeeping = summary.recent?.filter((m) =>
+      /^\*\*(?:Run started|Run update|Approval needed)\*\*/.test(m.text),
+    );
+    expect(bookkeeping?.length).toBeGreaterThan(0);
+    expect(bookkeeping?.every((m) => m.kind === "run")).toBe(true);
     expect(summary.runs?.[0]).toMatchObject({
       runId: "run_1",
       status: "succeeded",
@@ -923,6 +936,10 @@ describe("Workflow dispatch", () => {
     const summary = await swarmRef.finished;
     expect(server.messages.some((m) => m.body.startsWith("**Run started**"))).toBe(true);
     expect(summary.agents.find((a) => a.id === "s1-w")?.turns).toBe(1);
+    const runs = summary.recent?.filter((m) => m.text.startsWith("**Run"));
+    expect(runs?.length).toBeGreaterThan(0);
+    expect(runs?.every((m) => m.kind === "run" && m.author === "s1-lead")).toBe(true);
+    expect(summary.recent).toHaveLength(new Set(summary.recent?.map((m) => m.id)).size);
   });
 
   test("a worker reviews the gate's plan and the lead answers it for the operator", async () => {
@@ -1031,6 +1048,12 @@ describe("Workflow dispatch", () => {
     });
     const transcript = await callTool(tools, "chat_swarm_transcript", { swarm: summary.id });
     expect(transcript.content).toContain("**Approved** `approve-plan` on run `run_1`");
+    expect(summary.recent?.find((m) => m.id === gateThread)?.kind).toBe("run");
+    expect(summary.recent?.find((m) => m.text.startsWith("**Approved**"))).toMatchObject({
+      kind: "run",
+      author: "s1-lead",
+      threadRootId: gateThread,
+    });
   });
 
   test("changes need feedback, and an ungranted workflow goes back to the operator", async () => {
@@ -1372,6 +1395,22 @@ describe("changes and records", () => {
     }
   };
 
+  test("public summaries omit drawing buffers but keep the message count", async () => {
+    const summary = await (await harness(script).start()).finished;
+    const recent: RecentMessage[] = Array.from({ length: MESSAGES_KEPT }, (_, i) => ({
+      id: `m${i}`,
+      at: summary.startedAt,
+      author: "s1-lead",
+      text: "x".repeat(MESSAGE_CHARS),
+      kind: "run",
+    }));
+    const output = publicSummary({ ...summary, recent, spans: [], messageCount: 50 });
+    expect(output).not.toHaveProperty("recent");
+    expect(output).not.toHaveProperty("spans");
+    expect(output.messageCount).toBe(50);
+    expect(publicSummary(summary)).toMatchObject({ id: summary.id, status: summary.status });
+  });
+
   test("a swarm reports each change, ending with its end", async () => {
     const kinds: SwarmChange[] = [];
     const h = harness(script, {}, { onChange: (k) => kinds.push(k) });
@@ -1381,6 +1420,113 @@ describe("changes and records", () => {
     expect(kinds.filter((k) => k === "turn")).toHaveLength(6);
     expect(kinds).toContain("conclusion");
     expect(kinds.at(-1)).toBe("end");
+  });
+
+  test("recent messages keep authors, reply roots, asks, conclusions and operator steering", async () => {
+    const kinds: SwarmChange[] = [];
+    let swarmRef: Swarm | undefined;
+    const long = "The link step is slow. ".repeat(20);
+    const h = harness(
+      async ({ agentId, turn, prompt, call }) => {
+        if (agentId === "s1-lead" && turn === 1) {
+          await call("chat_spawn", { handle: "w", role: "worker", brief: "report back" });
+        } else if (agentId === "s1-w") {
+          await call("chat_reply", {
+            message_id: prompt.match(/top-level (msg_\d+)/)?.[1],
+            body: long,
+          });
+        } else if (turn === 2) {
+          await call("chat_post", { body: "@operator Shall I wrap up?" });
+          setTimeout(() => void swarmRef?.steer("Yes, wrap up."), 10);
+        } else {
+          await call("chat_done", { summary: "Linking is slow." });
+        }
+      },
+      {},
+      { onChange: (kind) => kinds.push(kind) },
+    );
+    swarmRef = await h.start();
+    const summary = await swarmRef.finished;
+    const recent = summary.recent ?? [];
+    const ingested = h.server.messages.filter((m) => !m.body.startsWith("Swarm s1 done."));
+    expect(recent.map((m) => m.id)).toEqual(ingested.map((m) => m.id));
+    expect(recent[0]?.author).toBe("operator");
+    expect(recent[0]?.text).toContain("Swarm");
+    const reply = recent.find((m) => m.author === "s1-w");
+    expect(reply).toMatchObject({
+      text: long.slice(0, MESSAGE_CHARS),
+      threadRootId: h.server.messages.find((m) => m.body.includes("report back"))?.id,
+    });
+    expect(recent.find((m) => m.text.startsWith("@operator"))?.kind).toBe("ask");
+    expect(recent.find((m) => m.text.includes("Yes, wrap up."))?.author).toBe("operator");
+    expect(recent.at(-1)).toMatchObject({ author: "s1-lead", kind: "conclusion" });
+    expect(recent.every((m) => m.text.length <= MESSAGE_CHARS)).toBe(true);
+    expect(summary.messageCount).toBe(ingested.length);
+    expect(kinds.filter((kind) => kind === "message")).toHaveLength(ingested.length);
+    const status = JSON.parse(
+      (await callTool(h.tools, "chat_swarm_status", { swarm: "s1" })).content,
+    );
+    expect(status).not.toHaveProperty("recent");
+    expect(status.messageCount).toBe(summary.messageCount);
+    expect(publicSummary(summary)).not.toHaveProperty("recent");
+    const waited = await callTool(h.tools, "chat_swarm_wait", { swarm: "s1" });
+    expect(waited.content).not.toContain('"recent"');
+    expect(waited.content).toContain(`"messageCount": ${summary.messageCount}`);
+  });
+
+  test("ask tags use the owner's addressed handle, not passing mentions", async () => {
+    let swarmRef: Swarm | undefined;
+    const h = harness(async ({ turn, call }) => {
+      if (turn === 1) {
+        await call("chat_post", { body: "I will present both options to @alice." });
+        await call("chat_post", { body: "@alice Which option should we use?" });
+        setTimeout(() => void swarmRef?.steer("Use the first option."), 10);
+      } else {
+        await call("chat_done", { summary: "Use the first option." });
+      }
+    });
+    h.server.owner.handle = "alice";
+    h.server.writeDelayMs = 5;
+    swarmRef = await h.start();
+    const summary = await swarmRef.finished;
+    expect(summary.recent?.find((m) => m.text.startsWith("I will"))?.kind).toBeUndefined();
+    expect(summary.recent?.find((m) => m.text.startsWith("@alice"))?.kind).toBe("ask");
+  });
+
+  test("50 messages in one second keep the newest 20 in arrival order", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = harness(async ({ turn, call }) => {
+      if (turn === 1) await held;
+      await call("chat_done", { summary: "ok" });
+    });
+    const swarm = await h.start();
+    try {
+      const start = Date.now();
+      const posts = Array.from({ length: 50 }, (_, i) =>
+        h.server.postAsOwner(swarm.summary().channelId, `message ${i}`),
+      );
+      expect(Date.now() - start).toBeLessThan(1_000);
+      for (let i = 0; i < 200 && swarm.summary().messageCount !== 51; i++) await Bun.sleep(5);
+      const summary = swarm.summary();
+      expect(summary.messageCount).toBe(51);
+      expect(summary.recent).toHaveLength(MESSAGES_KEPT);
+      expect(summary.recent?.map((m) => m.id)).toEqual(
+        posts.slice(-MESSAGES_KEPT).map((m) => m.id),
+      );
+      expect(summary.recent?.every((m) => m.author === "operator" && m.kind === undefined)).toBe(
+        true,
+      );
+      const first = summary.recent?.[0];
+      if (!first) throw new Error("expected a recent message");
+      first.text = "changed outside the engine";
+      expect(swarm.summary().recent?.[0]?.text).toBe("message 30");
+    } finally {
+      release();
+      await swarm.finished;
+    }
   });
 
   test("a throwing listener never breaks the swarm", async () => {
@@ -1578,6 +1724,11 @@ describe("health and needs", () => {
       (m) => m.body === "**Operator:** Keep the retry cap at 30 s.",
     );
     expect(posted?.thread_root_id).toBe(threadId ?? "");
+    expect(swarm.summary().recent?.find((m) => m.id === posted?.id)).toMatchObject({
+      author: "operator",
+      threadRootId: threadId,
+      text: "**Operator:** Keep the retry cap at 30 s.",
+    });
     expect(prompts.some((p) => p.includes("Keep the retry cap"))).toBe(true);
     expect((await reply("run_1", "late")).ok).toBe(false);
   });

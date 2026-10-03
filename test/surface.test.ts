@@ -15,7 +15,16 @@ import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
 import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildDoc } from "../src/surface/doc.ts";
-import { day, dayHeading, gist, hhmm, shortRun } from "../src/surface/format.ts";
+import {
+  channelHref,
+  day,
+  dayHeading,
+  gist,
+  hhmm,
+  messageLine,
+  shortRun,
+  threadHref,
+} from "../src/surface/format.ts";
 import {
   buildBadge,
   buildHistory,
@@ -60,12 +69,15 @@ import {
   buildGoneBoard,
   buildStartingBoard,
   buildSwarmBoard,
+  CONVERSATION_SHOWN,
   tokensTile,
 } from "../src/surface/swarm-board.ts";
 import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
 import type { StartSwarmInput } from "../src/tools.ts";
 import {
   type ChildRun,
+  MESSAGE_CHARS,
+  MESSAGES_KEPT,
   SIZE_PRESETS,
   type StartingSwarm,
   type SwarmAgent,
@@ -173,7 +185,19 @@ const starting: StartingSwarm = {
 };
 
 const fixtures: Record<string, SwarmSummary> = {
-  running: swarm("s9hjx"),
+  running: swarm("s9hjx", {
+    messageCount: 23,
+    recent: Array.from({ length: 10 }, (_, i) => ({
+      id: `msg_${i}`,
+      at: new Date(Date.parse(T0) + i * 60_000).toISOString(),
+      author: i === 9 ? "operator" : i === 8 ? "s9hjx-w1" : "s9hjx-lead",
+      text:
+        i === 7
+          ? "<img src=x onerror=alert(1)> [click](javascript:alert(1)) **bold**"
+          : `message ${i} for @s9hjx-lead`,
+      ...(i === 8 ? { threadRootId: "msg_1" } : {}),
+    })),
+  }),
   twoBusy: swarm("s2bsy", {
     agents: [
       agent("s2bsy", 0, { status: "busy" }),
@@ -431,6 +455,18 @@ describe("the shared state line", () => {
   });
 });
 
+describe("message lines", () => {
+  test("shortens handles and strips only emphasis and code, leaving links and HTML literal", () => {
+    const text = "<img src=x onerror=alert(1)> [click](javascript:alert(1))";
+    expect(messageLine("s1", `${text} **bold** __under__ \`code\`\nsecond line`)).toBe(
+      `${text} bold under code`,
+    );
+    expect(messageLine("s1", "@s1-lead asked @s1-w")).toBe("@lead asked @w");
+    expect(messageLine("s1", "x".repeat(100))).toBe(`${"x".repeat(89)}…`);
+    expect(messageLine("s1", "x".repeat(20), 10)).toBe(`${"x".repeat(9)}…`);
+  });
+});
+
 describe("the live cockpit", () => {
   const sections = (s: SwarmSummary) => {
     const sections = buildCockpit(s, needsYou(s), { titled: true });
@@ -438,7 +474,7 @@ describe("the live cockpit", () => {
     return sections;
   };
 
-  test("the head, state, agent strip and budget precede unchanged details and final verbs", () => {
+  test("the head, state, agent strip and budget precede conversation, composer, details and verbs", () => {
     const s = fixtures.running!;
     const cockpit = sections(s);
     expect(cockpit.map((x) => x.kind)).toEqual([
@@ -446,6 +482,8 @@ describe("the live cockpit", () => {
       "rows",
       "segments",
       "stats",
+      "rows",
+      "actions",
       "cards",
       "rows",
       "rows",
@@ -462,15 +500,11 @@ describe("the live cockpit", () => {
     expect(head).not.toHaveProperty("chip");
     expect(head?.footnote).toBeUndefined();
     expect(head?.fields?.[0]?.people).toHaveLength(2);
-    expect(cockpit.slice(4, -1)).toEqual(buildSwarmBoard(s).sections.slice(2));
+    expect(cockpit.slice(6, -1)).toEqual(buildSwarmBoard(s).sections.slice(3));
     expect(cockpit.at(-1)).toMatchObject({
       kind: "actions",
       wrap: true,
-      items: [
-        { type: "message-lead", expanded: true },
-        { type: "open-record" },
-        { type: "stop-swarm", inline: true, align: "end" },
-      ],
+      items: [{ type: "open-record" }, { type: "stop-swarm", inline: true, align: "end" }],
     });
     expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
   });
@@ -481,13 +515,102 @@ describe("the live cockpit", () => {
       const actions = sections(s).at(-1);
       return actions?.kind === "actions" ? actions.items.map((x) => x.type) : [];
     };
-    expect(types(s)).toEqual(["message-lead", "open-report", "open-record", "stop-swarm"]);
+    expect(types(s)).toEqual(["open-report", "open-record", "stop-swarm"]);
     expect(types({ ...s, conclusion: "Done" })).toEqual([
       "open-report",
       "open-record",
       "stop-swarm",
     ]);
     expect(types({ ...s, status: "stopping" })).toEqual(["open-report", "open-record"]);
+    const composer = (s: SwarmSummary) =>
+      sections(s).find((x) => x.kind === "actions" && x.items[0]?.type === "message-lead");
+    expect(composer(s)).toMatchObject({
+      kind: "actions",
+      wrap: true,
+      items: [{ type: "message-lead", expanded: true }],
+    });
+    expect(composer({ ...s, conclusion: "Done" })).toBeUndefined();
+    expect(composer({ ...s, status: "stopping" })).toBeUndefined();
+  });
+
+  test("Conversation shows the eight newest messages with authors, threads, times and transcript", () => {
+    const s = fixtures.running!;
+    const cockpit = sections(s);
+    const at = cockpit.findIndex((x) => x.title === "Conversation");
+    const conversation = cockpit[at];
+    if (conversation?.kind !== "rows") throw new Error("expected Conversation rows");
+    expect(conversation.items).toHaveLength(CONVERSATION_SHOWN + 1);
+    const messages = s.recent!.slice(-CONVERSATION_SHOWN).reverse();
+    for (const [i, m] of messages.entries()) {
+      expect(conversation.items[i]).toEqual({
+        chip:
+          m.author === "operator"
+            ? { label: "you", tone: "neutral" }
+            : m.author.endsWith("-w1")
+              ? { label: "w1", tone: "id-blue" }
+              : { label: "lead", tone: "brand" },
+        text: `${m.threadRootId ? "↳ " : ""}${messageLine(s.id, m.text)}`,
+        trailing: hhmm(m.at),
+        href: threadHref(s, m.threadRootId ?? m.id),
+      });
+    }
+    expect(conversation.items.at(-1)).toEqual({
+      icon: "▤",
+      text: "23 messages · transcript ↗",
+      href: channelHref(s),
+    });
+    expect(JSON.stringify(conversation)).not.toContain("ClickClack");
+    expect(cockpit[at + 1]).toMatchObject({
+      kind: "actions",
+      wrap: true,
+      items: [{ type: "message-lead", expanded: true }],
+    });
+    const markup = conversation.items[2]!;
+    expect(markup.text).toBe("<img src=x onerror=alert(1)> [click](javascript:alert(1)) bold");
+    expect(markup.href).toBe(threadHref(s, "msg_7"));
+    expect(markup.action).toBeUndefined();
+    const liveBoard = buildSwarmBoard(s);
+    board(swarmKey(s.id), liveBoard);
+    expect(liveBoard.sections.find((x) => x.title === "Conversation")).toEqual(conversation);
+  });
+
+  test("Conversation is absent without messages or after ending, but remains while stopping", () => {
+    const s = fixtures.running!;
+    for (const patch of [
+      { recent: undefined },
+      { recent: [] },
+      { status: "done" as const, endedAt: T0 },
+    ]) {
+      expect(sections({ ...s, ...patch }).some((x) => x.title === "Conversation")).toBe(false);
+      const view = buildSwarmBoard({ ...s, ...patch });
+      board(swarmKey(s.id), view);
+      expect(view.sections.some((x) => x.title === "Conversation")).toBe(false);
+    }
+    expect(sections({ ...s, status: "stopping" }).some((x) => x.title === "Conversation")).toBe(
+      true,
+    );
+    const ended = buildSwarmBoard({
+      ...s,
+      status: "done",
+      endedAt: T0,
+      activity: [{ at: T0, text: "completed", kind: "conclusion" }],
+    });
+    expect(ended.sections.some((x) => x.title === "Activity")).toBe(true);
+  });
+
+  test("Conversation omits unknown chips and absent links, falling back to its kept count", () => {
+    const s = {
+      ...fixtures.running!,
+      clickclack: undefined,
+      messageCount: undefined,
+      recent: [{ id: "msg_lone", at: T0, author: "unknown", text: "[link](https://other)" }],
+    };
+    const conversation = sections(s).find((x) => x.title === "Conversation");
+    if (conversation?.kind !== "rows") throw new Error("expected Conversation rows");
+    expect(conversation.items).toEqual([
+      { text: "[link](https://other)", trailing: hhmm(T0) },
+      { icon: "▤", text: "1 message · transcript ↗" },
+    ]);
   });
 
   test("a live conclusion is readable from the cockpit", () => {
@@ -1000,11 +1123,12 @@ describe("Swarms boards", () => {
     expect(JSON.stringify(out)).toContain('"title":"Out of turns at 40"');
   });
 
-  test("a live board runs requests, budget, the lead's line, the record and stop, then the details", () => {
-    const view = buildSwarmBoard(fixtures.review!);
+  test("a live board runs requests, budget, conversation, controls, then the details", () => {
+    const view = buildSwarmBoard({ ...fixtures.review!, recent: fixtures.running!.recent });
     expect(view.sections.map((x) => x.kind)).toEqual([
       "cards",
       "stats",
+      "rows",
       "actions",
       "cards",
       "rows",
@@ -1079,7 +1203,7 @@ describe("Swarms boards", () => {
   test("Runs appear only when the launch named workflows, and say so while none ran", () => {
     const titles = (s: SwarmSummary) =>
       buildSwarmBoard(s).sections.flatMap((x) => (x.kind === "rows" && x.title ? [x.title] : []));
-    expect(titles(fixtures.running!)).toEqual(["Task and context", "About"]);
+    expect(titles(fixtures.running!)).toEqual(["Conversation", "Task and context", "About"]);
     expect(titles(fixtures.dispatchIdle!)).toEqual(["Runs", "Task and context", "About"]);
     expect(JSON.stringify(buildSwarmBoard(fixtures.dispatchIdle!))).toContain(
       "The lead may start fix-issue, docs-check; none started yet.",
@@ -1152,6 +1276,17 @@ ${"detail ".repeat(1000)}`,
       runs,
       task: "t".repeat(8000),
       conclusion: "c".repeat(20_000),
+      messageCount: 500,
+      recent: Array.from({ length: MESSAGES_KEPT }, (_, i) => ({
+        id: `msg_${i}`,
+        at: T0,
+        author: agents[i % agents.length]?.id ?? "operator",
+        text: "<img src=x onerror=alert(1)> [click](javascript:alert(1)) **bold**".padEnd(
+          MESSAGE_CHARS,
+          "x",
+        ),
+        ...(i % 2 ? { threadRootId: "msg_0" } : {}),
+      })),
       activity: Array.from({ length: ACTIVITY_KEPT }, (_, i) => ({
         at: T0,
         text: "a".repeat(400),
@@ -1183,12 +1318,19 @@ ${"detail ".repeat(1000)}`,
     for (const selected of [undefined, live[5]!.id]) {
       const view = buildIndex(state({ live, ended: many, selected }));
       board(INDEX_KEY, view);
-      expect(JSON.stringify(view).length).toBeLessThan(48_000);
+      expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
+      console.info(
+        `Conversation index (six live, selected ${selected ?? "default"}): ${Buffer.byteLength(JSON.stringify(view))} bytes`,
+      );
     }
     const single = buildIndex(state({ live: [big], ended: many }));
     board(INDEX_KEY, single);
-    expect(JSON.stringify(single).length).toBeLessThan(48_000);
-    expect(JSON.stringify(buildSwarmBoard(big)).length).toBeLessThan(48_000);
+    const bytes = Buffer.byteLength(JSON.stringify(single));
+    expect(bytes).toBeLessThan(48_000);
+    console.info(`Conversation index (one live, 20 recent messages): ${bytes} bytes`);
+    const drawer = buildSwarmBoard(big);
+    board(swarmKey(big.id), drawer);
+    expect(Buffer.byteLength(JSON.stringify(drawer))).toBeLessThan(48_000);
     expect(buildDoc(big, big.id).length).toBeLessThan(128_000);
   });
 });
@@ -1533,6 +1675,43 @@ class FakeSnapshots implements SnapshotManager {
 }
 
 describe("publishing", () => {
+  test("a burst of messages is one index and one board frame, with no other churn", async () => {
+    const sm = new FakeSnapshots();
+    const live = [fixtures.running!, fixtures.waiting!];
+    const a = live[0]!;
+    const surface = createSwarmsSurface({
+      sm,
+      state: () => state({ live }),
+      find: (id) => ({ live: live.find((s) => s.id === id) }),
+      launch: () => ({ projects: [], live: live.length, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ live: live.length }),
+      readLog: async () => "log",
+      report: () => undefined,
+      views: [],
+      windowMs: 50,
+    });
+    try {
+      surface.track(live.map((s) => s.id));
+      for (let i = 0; i < 200 && sm.keys().some((key) => !sm.frames.has(key)); i++) {
+        await Bun.sleep(5);
+      }
+      expect(sm.keys().every((key) => sm.frames.has(key))).toBe(true);
+      const seeded = new Map([...sm.frames].map(([key, frames]) => [key, frames.length]));
+      for (let i = 0; i < 50; i++) surface.changed(a.id, "message");
+      await Bun.sleep(100);
+      for (const [key, count] of seeded) {
+        const delta = key === INDEX_KEY || key === swarmKey(a.id) ? 1 : 0;
+        expect(sm.frames.get(key)).toHaveLength(count + delta);
+      }
+      for (const key of [INDEX_KEY, ...live.map((s) => swarmKey(s.id))]) {
+        for (const frame of sm.frames.get(key) ?? []) expectView(key, "board")(frame);
+      }
+    } finally {
+      surface.dispose();
+    }
+  });
+
   test("selection republishes the shared index, preserves drawer keys, and clears on forget", async () => {
     const sm = new FakeSnapshots();
     const a = fixtures.running!;

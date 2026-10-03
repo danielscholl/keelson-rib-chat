@@ -6,8 +6,9 @@ sidebar:
 ---
 
 The rib adds a **Swarms** tab to Keelson. It shows every swarm at once. The
-conversation itself stays in ClickClack. About links its transcript, and the
-reading pane links question and approval threads.
+conversation stays in ClickClack, and the cockpit shows its newest eight
+lines. About links its transcript, and the reading pane links question and
+approval threads.
 
 ## The index
 
@@ -48,11 +49,38 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    **Time** as a ticking time-left clock, and fresh **Tokens** with cached
    tokens in the sub. Before a turn, Tokens says **none yet**; after turns
    without usage, it says **the provider reported none**.
-6. The agent bench, Spend, Runs, Task and context, Activity, and About, the
+6. **Conversation**: the eight newest channel messages, newest first, then
+   the message count and **transcript ↗** link.
+7. **Message the lead**, expanded directly under Conversation for a running
+   swarm that has not concluded.
+8. The agent bench, Spend, Runs, Task and context, Activity, and About, the
    same details as the per-swarm board below.
-7. **Message the lead**, expanded for a running swarm that has not concluded;
-   **Open the report** when one exists; **Open the record**; and
+9. **Open the report** when one exists; **Open the record**; and
    **Stop swarm…** last.
+
+### Conversation
+
+- **Conversation** shows at most eight rows, newest first. Each has the
+  author's short handle in its identity color, or neutral **you** for an
+  operator post; a reply starts with **↳**. Its **HH:MM** time sits at the
+  end, and the row links to its thread. The final row reads **23 messages ·
+  transcript ↗**, using the swarm's count and linking the channel.
+
+The rib keeps only the newest 20 messages, oldest first, and the first
+200 characters of each. A row shows its first line, at most 90 characters,
+as plain field text: emphasis and code marks come off, but HTML and markdown
+links stay literal. The status tools and the durable op record leave the
+recent-message buffer out; `messageCount` counts every ingested message.
+Read the full channel with `chat_swarm_transcript`.
+
+The optional message kind is `ask` for an agent addressing `@operator` or
+your handle, `run` for quiet run and gate bookkeeping posts, and `conclusion`
+for the lead's Conclusion posts. `MessageKind` is
+`"ask" | "run" | "conclusion"`. `report` is reserved for the lead's published
+report and omitted because `chat_report` never posts to the channel.
+
+The live board shows the same Conversation section before its controls.
+With no recent messages it is absent. Ended boards keep Activity instead.
 
 ### The state line
 
@@ -148,6 +176,8 @@ Live, the board runs in this order:
   minute (an ended board keeps the sparkline, spread over the whole run), the time left on a live clock, agents against the cap with how many are
   busy or waiting, and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
+- **Conversation**, the same newest eight messages and transcript link as
+  the cockpit
 - **Message the lead**, which posts in the channel as you and wakes the lead,
   with the placeholder **posts as you, wakes the lead**, then **Open the
   record**, and **Stop swarm…** at the far end of the row. The button reads

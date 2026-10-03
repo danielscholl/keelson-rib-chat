@@ -458,11 +458,28 @@ The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
 the task and id with a lifecycle or needs-you pill and people dots; a state
 line; once the lead has concluded, the Outcome card; an agent strip (busy, waiting, idle, capped, failed, with hatched open
 seats); three Budget tiles (Turns with its spark, Time as a ticking time-left
-clock, fresh Tokens with cached in the sub); the details described below; then
-Message the lead, Open the report when one exists, Open the record, and Stop
-swarm last. Message the lead is expanded while running, unless the lead has
-concluded. Tokens says none yet before any turn, or that the provider reported
-none when turns ran without usage.
+clock, fresh Tokens with cached in the sub); Conversation; Message the lead;
+the details described below; then Open the report when one exists, Open the
+record, and Stop swarm last. Message the lead is expanded directly under
+Conversation while running, unless the lead has concluded. Tokens says none yet
+before any turn, or that the provider reported none when turns ran without usage.
+
+Conversation shows the eight newest channel messages, newest first. Each row
+carries its author's short handle in an identity-colored chip (you for the
+operator), ↳ on a reply, its HH:MM time, and a link to its thread. A final count
+line links the transcript. The rib keeps only the newest 20 messages and their
+first 200 characters; the row shows the first line, at most 90 characters, as
+plain field text. Emphasis and code marks come off; HTML and markdown links stay
+literal. The status tools and the durable op record leave this recent-message
+buffer out, while messageCount counts every ingested message.
+\`chat_swarm_transcript\` reads the full channel. Conversation is absent when
+there are no recent messages and on ended boards, which keep Activity.
+
+The buffer's optional kind is ask for an agent addressing @operator or the
+owner's handle, run for the rib's quiet run and gate bookkeeping posts, and
+conclusion for the lead's Conclusion posts. MessageKind is
+\`"ask" | "run" | "conclusion"\`. report is reserved for the lead's published
+report and omitted: \`chat_report\` never posts to the channel.
 
 The state line names requests first, then busy agents with each turn number and
 start time, waiting agents with their queue counts, paused swarm-answerable
@@ -499,7 +516,8 @@ state line and counts as no request.
 An ended row opens its board in the drawer. The per-swarm board also still
 composes for MCP clients, live or ended. Live, it runs: the requests, the outcome once a
 report exists, a budget strip (turns with what is left, time, agents, fresh
-tokens with cached beside them), Message the lead, Open the record and Stop,
+tokens with cached beside them), the same Conversation section, Message the
+lead, Open the record and Stop,
 then the details. Ended, it runs: the outcome, the result strip, Run again and
 Open the record, then the details.
 The outcome is one card: under the report's title when the lead published one

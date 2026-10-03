@@ -26,6 +26,7 @@ import {
   day,
   firstLine,
   hhmm,
+  messageLine,
   minutes,
   plain,
   plural,
@@ -70,6 +71,7 @@ export const DETAIL_CHARS = 4_000;
 // does not ship eighty thousand characters in every frame.
 const CONTEXT_DETAIL_BUDGET = 24_000;
 export const RECENT_SHOWN = 12;
+export const CONVERSATION_SHOWN = 8;
 const BENCH_COLUMNS = 4;
 
 export const AGENT_PILL: Record<AgentStatus, NonNullable<Card["pill"]>> = {
@@ -533,6 +535,35 @@ function actorChip(s: SwarmSummary, actor: string | undefined): Row["chip"] {
   return a ? { label: shortHandle(a.handle, s.id), tone: a.tone } : undefined;
 }
 
+function conversation(s: SwarmSummary): Leaf[] {
+  if (!live(s) || !s.recent?.length) return [];
+  const entries = s.recent.slice(-CONVERSATION_SHOWN).reverse();
+  const href = channelHref(s);
+  return [
+    {
+      kind: "rows",
+      title: "Conversation",
+      items: [
+        ...entries.map((m): Row => {
+          const chip = actorChip(s, m.author);
+          const href = threadHref(s, m.threadRootId ?? m.id);
+          return {
+            ...(chip ? { chip } : {}),
+            text: `${m.threadRootId ? "↳ " : ""}${messageLine(s.id, m.text)}`,
+            trailing: hhmm(m.at),
+            ...(href ? { href } : {}),
+          };
+        }),
+        {
+          icon: "▤",
+          text: `${plural(s.messageCount ?? s.recent.length, "message")} · transcript ↗`,
+          ...(href ? { href } : {}),
+        },
+      ],
+    },
+  ];
+}
+
 function activity(s: SwarmSummary): Leaf[] {
   const all = s.activity ?? [];
   const entries = [...all].reverse().slice(0, RECENT_SHOWN);
@@ -735,9 +766,6 @@ export function buildCockpit(
   const people = s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone }));
   const line = stateLine(s, needs, opts.server);
   const items: Extract<Leaf, { kind: "actions" }>["items"] = [];
-  if (s.status === "running" && s.conclusion === undefined) {
-    items.push({ ...messageLead(s), expanded: true });
-  }
   if (s.report) items.push(openReport(s));
   items.push(openRecord(s));
   if (s.status === "running") items.push(stopAction(s, true));
@@ -761,6 +789,16 @@ export function buildCockpit(
     ...(s.conclusion !== undefined ? outcome(s) : []),
     agentStrip(s),
     { kind: "stats", title: "Budget", items: [turnsTile(s), timeTile(s), tokensTile(s)] },
+    ...conversation(s),
+    ...(s.status === "running" && s.conclusion === undefined
+      ? [
+          {
+            kind: "actions" as const,
+            wrap: true,
+            items: [{ ...messageLead(s), expanded: true }],
+          },
+        ]
+      : []),
     ...liveDetails(s),
     { kind: "actions", wrap: true, items },
   ];
@@ -790,7 +828,14 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
         : {}),
     },
     sections: isLiveNow
-      ? [...requests(s, needs, opts.server), ...outcome(s), stats(s), ...controls(s), ...details]
+      ? [
+          ...requests(s, needs, opts.server),
+          ...outcome(s),
+          stats(s),
+          ...conversation(s),
+          ...controls(s),
+          ...details,
+        ]
       : [...outcome(s), stats(s), ...verbs(s, opts.launch), ...details],
   };
 }
