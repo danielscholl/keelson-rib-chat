@@ -7,11 +7,21 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
+import { type ContextIndexEntry, EXCERPT_CHARS } from "../context.ts";
 import type { ChildRun, GateFileText, OperatorAsk, SwarmSummary } from "../types.ts";
-import { shortHandle, shortRun, threadHref } from "./format.ts";
-import { askText, dismissAskAction, gateIdentity, replyAction, sinceClock } from "./parts.ts";
+import { channelHref, shortHandle, shortRun, threadHref } from "./format.ts";
+import {
+  askText,
+  dismissAskAction,
+  gateIdentity,
+  healthRows,
+  replyAction,
+  setupRows,
+  sinceClock,
+} from "./parts.ts";
 
 type Card = Extract<CanvasBoardView["sections"][number], { kind: "cards" }>["items"][number];
+type Row = Extract<CanvasBoardView["sections"][number], { kind: "rows" }>["items"][number];
 
 function writable(s: SwarmSummary): boolean {
   return s.status === "running" && !s.endedAt && s.conclusion === undefined;
@@ -156,6 +166,91 @@ export function buildGateInspector(s: SwarmSummary, run: ChildRun): CanvasBoardV
       ...(actions.length
         ? [{ kind: "actions" as const, title: "Actions", wrap: true, items: actions }]
         : []),
+    ],
+  };
+}
+
+function taskRows(task: string): Row[] {
+  if (!task.length) return [{ text: "Task text not recorded." }];
+  const rows: Row[] = [];
+  const parts = Math.ceil(task.length / EXCERPT_CHARS);
+  for (let offset = 0; offset < task.length; offset += EXCERPT_CHARS) {
+    rows.push({
+      icon: "▤",
+      text: `Task · part ${rows.length + 1} of ${parts}`,
+      detail: task.slice(offset, offset + EXCERPT_CHARS),
+    });
+  }
+  return rows;
+}
+
+function contextRows(c: ContextIndexEntry): Row[] {
+  const excerpt = c.excerpt?.slice(0, EXCERPT_CHARS);
+  const shown = excerpt?.length ?? 0;
+  const count = c.chars.toLocaleString("en-US");
+  const retained = shown.toLocaleString("en-US");
+  const state =
+    excerpt === undefined
+      ? `${count} characters · excerpt not recorded (legacy summary)`
+      : shown < c.chars
+        ? `Excerpt truncated: retained ${retained} of ${count} characters; full source body is not retained here`
+        : `${count} characters · retained ${retained} characters${shown === 0 ? " (empty)" : ""}`;
+  return [
+    {
+      icon: "◇",
+      text: `${c.id} · ${c.kind}: ${c.title}`,
+      trailing: state,
+      ...(excerpt ? { detail: excerpt } : {}),
+    },
+    {
+      text: `Source: ${c.sourceUrl ?? "not recorded"}`,
+      ...(c.sourceUrl ? { href: c.sourceUrl } : {}),
+    },
+    {
+      text: `Retrieved: ${c.retrievedAt ?? "not recorded"} · Head SHA: ${c.headSha ?? "not recorded"} · Base SHA: ${c.baseSha ?? "not recorded"}`,
+    },
+  ];
+}
+
+export function buildDetailsInspector(s: SwarmSummary): CanvasBoardView {
+  const href = channelHref(s);
+  const health: Row[] = [
+    ...healthRows(s),
+    ...(s.health?.disconnectedAt
+      ? [{ text: `Disconnected since ${s.health.disconnectedAt}` }]
+      : []),
+    ...(s.health?.quietSince ? [{ text: `Quiet since ${s.health.quietSince}` }] : []),
+  ];
+  return {
+    view: "board",
+    title: `Details · ${s.id}`,
+    sections: [
+      {
+        kind: "rows",
+        title: "Task and context",
+        items: [
+          ...taskRows(s.task),
+          ...(s.context?.length
+            ? s.context.flatMap(contextRows)
+            : [{ text: "No task context recorded." }]),
+        ],
+      },
+      { kind: "rows", title: "Setup", items: setupRows(s, { detailed: true }) },
+      {
+        kind: "rows",
+        title: "Health",
+        items: health.length ? health : [{ text: "No health faults recorded." }],
+      },
+      {
+        kind: "rows",
+        title: "Transcript",
+        items: [
+          {
+            text: href ? "transcript ↗" : "Transcript link not recorded.",
+            ...(href ? { href } : {}),
+          },
+        ],
+      },
     ],
   };
 }

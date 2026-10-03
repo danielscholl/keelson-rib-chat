@@ -100,10 +100,51 @@ export function modelRow(s: SwarmSummary): string {
   return power ? `${power} on ${provider}${on}` : `${provider} · the provider's default model${on}`;
 }
 
-export function setupRows(s: SwarmSummary): Row[] {
+function detailedSetupRows(s: SwarmSummary): Row[] {
+  const l = s.limits;
+  const defaultModel = s.power
+    ? `${s.power} power; no explicit model recorded`
+    : "host default; no explicit model recorded";
   return [
-    { icon: "◫", text: sizeDetail(s) },
-    { icon: "◆", text: modelRow(s) },
+    { icon: "◫", text: `Size: ${sizeWord(s)}` },
+    {
+      text: `Effective limits: ${l.maxAgents} agents · ${l.maxTurns} total turns · ${l.maxTurnsPerAgent} turns per worker · ${l.maxConcurrent} concurrent turns`,
+    },
+    {
+      text: `Wall-clock limit: ${l.wallClockMs} ms · Turn timeout: ${l.turnTimeoutMs} ms · Idle nudge limit: ${l.maxNudges}`,
+    },
+    { text: `Requested provider: ${s.provider ?? "host default; no explicit provider recorded"}` },
+    { text: `Requested lead model: ${s.model ?? defaultModel}` },
+    {
+      text: `Requested worker model: ${s.workerModel ?? s.model ?? defaultModel}${s.workerModel ? " (worker role override)" : " (inherits lead setting)"}`,
+    },
+    { text: `Requested power: ${s.power ?? "not recorded"}` },
+    { text: `Recorded reasoning effort: ${s.effort ?? "not recorded"}` },
+    ...s.agents.flatMap((a): Row[] => {
+      const roleModel = a.lead ? s.model : (s.workerModel ?? s.model);
+      const override = a.model && roleModel && a.model !== roleModel;
+      const who = `@${shortHandle(a.handle, s.id)} (${a.lead ? "lead" : "worker"})`;
+      return [
+        {
+          text: `Requested model for ${who}: ${a.model ?? "no per-agent request recorded"}${override ? ` (overrides role setting ${roleModel})` : ""}`,
+        },
+        {
+          text: `Served model for ${who}: ${a.servedModel ?? "not reported"} · provider: ${a.providerId ?? "not reported"}`,
+        },
+      ];
+    }),
+    ...(s.agents.length ? [] : [{ text: "Served models and per-agent requests not recorded." }]),
+  ];
+}
+
+export function setupRows(s: SwarmSummary, options: { detailed?: boolean } = {}): Row[] {
+  return [
+    ...(options.detailed
+      ? detailedSetupRows(s)
+      : [
+          { icon: "◫", text: sizeDetail(s) },
+          { icon: "◆", text: modelRow(s) },
+        ]),
     ...(s.usage ? [{ icon: "∑", text: `${tokensText(s.usage)} tokens` }] : []),
   ];
 }

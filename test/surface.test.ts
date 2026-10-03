@@ -12,6 +12,7 @@ import {
   type SnapshotFrame,
   type SnapshotManager,
 } from "@keelson/shared";
+import { CONTEXT_BOUNDS, type ContextIndexEntry, EXCERPT_CHARS } from "../src/context.ts";
 import { applyStatus } from "../src/dispatch.ts";
 import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
@@ -37,7 +38,11 @@ import {
   endedRow,
   type SurfaceState,
 } from "../src/surface/index-board.ts";
-import { buildGateInspector, buildQuestionInspector } from "../src/surface/inspectors.ts";
+import {
+  buildDetailsInspector,
+  buildGateInspector,
+  buildQuestionInspector,
+} from "../src/surface/inspectors.ts";
 import {
   agentKey,
   askKey,
@@ -1097,6 +1102,271 @@ describe("the gate inspector", () => {
     expect(JSON.stringify(inspect(s, { ...selected, pendingApproval: undefined }))).toContain(
       "Gate prompt not recorded.",
     );
+  });
+});
+
+describe("the details inspector", () => {
+  const inspect = (s: SwarmSummary) => {
+    const view = buildDetailsInspector(s);
+    board(detailsKey(s.id), view);
+    return view;
+  };
+  const rows = (view: CanvasBoardView, title: string) => {
+    const section = view.sections.find((section) => section.title === title);
+    if (section?.kind !== "rows") throw new Error(`missing ${title} rows`);
+    return section.items;
+  };
+
+  test("reconstructs the full 8,000-character task with bounded numbered disclosures", () => {
+    for (const length of [1, 4000, 4001, 8000]) {
+      const task = ` \n${"t".repeat(3994)} \n\n  **Task**\n`.padEnd(8000, " ").slice(0, length);
+      const view = inspect(swarm("sfull", { task }));
+      const disclosures = rows(view, "Task and context").filter((row) => row.detail !== undefined);
+      expect(disclosures.map((row) => row.detail).join("")).toBe(task);
+      expect(disclosures).toHaveLength(Math.ceil(length / EXCERPT_CHARS));
+      expect(disclosures.every((row) => row.detail!.length <= 4000)).toBe(true);
+      expect(disclosures.map((row) => row.text)).toEqual(
+        disclosures.map((_, i) => `Task · part ${i + 1} of ${disclosures.length}`),
+      );
+    }
+  });
+
+  test("three distinct context disclosures retain their text and complete provenance", () => {
+    const context: ContextIndexEntry[] = [
+      {
+        id: "issue-27",
+        kind: "issue",
+        title: "Original issue",
+        chars: 4000,
+        excerpt: `Issue body\n${"i".repeat(3989)}`,
+        sourceUrl: "https://github.com/o/r/issues/27",
+        retrievedAt: T0,
+      },
+      {
+        id: "diff-27",
+        kind: "diff",
+        title: "Proposed diff",
+        chars: 5000,
+        excerpt: `Diff body\n${"d".repeat(3990)}`,
+        sourceUrl: "https://github.com/o/r/pull/27/files",
+        retrievedAt: "2026-09-22T14:10:00.000Z",
+        headSha: "abcdef1234567890abcdef1234567890abcdef12",
+        baseSha: "1234567890abcdef1234567890abcdef12345678",
+      },
+      {
+        id: "checks-27",
+        kind: "checks",
+        title: "CI checks",
+        chars: 8000,
+        excerpt: `Checks body\n${"c".repeat(3988)}`,
+        sourceUrl: "https://github.com/o/r/actions/runs/27",
+        retrievedAt: "2026-09-22T14:15:00.000Z",
+        headSha: "abcdef1234567890abcdef1234567890abcdef12",
+      },
+    ];
+    const view = inspect(swarm("sctx", { context }));
+    const entries = rows(view, "Task and context");
+    for (const c of context) {
+      expect(entries).toContainEqual(
+        expect.objectContaining({
+          text: `${c.id} · ${c.kind}: ${c.title}`,
+          detail: c.excerpt,
+        }),
+      );
+      expect(entries).toContainEqual({ text: `Source: ${c.sourceUrl}`, href: c.sourceUrl });
+      expect(entries).toContainEqual({
+        text: `Retrieved: ${c.retrievedAt} · Head SHA: ${c.headSha ?? "not recorded"} · Base SHA: ${c.baseSha ?? "not recorded"}`,
+      });
+      expect(entries.find((row) => row.detail === c.excerpt)?.trailing).toContain(
+        c.chars.toLocaleString("en-US"),
+      );
+    }
+    expect(entries.find((row) => row.detail === context[1]!.excerpt)?.trailing).toContain(
+      "Excerpt truncated",
+    );
+  });
+
+  test("keeps every context entry at the retained maximum without a shared preview budget", () => {
+    const context: ContextIndexEntry[] = Array.from(
+      { length: CONTEXT_BOUNDS.maxItems },
+      (_, i) => ({
+        id: `context-${i}`,
+        kind: "note",
+        title: `Context ${i}`,
+        chars: 12000,
+        excerpt: `${i}\n`.padEnd(EXCERPT_CHARS, String(i % 10)),
+      }),
+    );
+    const s = swarm("smax", { task: "t".repeat(8000), context });
+    const entries = rows(inspect(s), "Task and context");
+    const disclosures = entries.filter((row) => row.detail !== undefined);
+    expect(disclosures).toHaveLength(22);
+    expect(disclosures.reduce((total, row) => total + row.detail!.length, 0)).toBe(88000);
+    for (const c of context)
+      expect(entries.find((row) => row.text.startsWith(`${c.id} ·`))?.detail).toBe(c.excerpt);
+  });
+
+  test("names all custom limits, requested role settings, overrides, served models and effort", () => {
+    const s = swarm("ssetup", {
+      size: "custom",
+      sizeBase: "small",
+      limits: {
+        maxAgents: 7,
+        maxTurns: 31,
+        maxTurnsPerAgent: 9,
+        maxConcurrent: 2,
+        wallClockMs: 1234567,
+        turnTimeoutMs: 654321,
+        maxNudges: 4,
+      },
+      provider: "requested-provider",
+      model: "requested-lead",
+      workerModel: "requested-worker",
+      power: "deep",
+      effort: "xhigh",
+      usage: { input: 100, output: 20, cached: 0 },
+      agents: [
+        agent("ssetup", 0, {
+          model: "requested-lead",
+          servedModel: "served-lead",
+          providerId: "served-provider",
+        }),
+        agent("ssetup", 1, {
+          model: "individual-override",
+          servedModel: "served-worker",
+          providerId: "worker-provider",
+        }),
+      ],
+    });
+    const setup = rows(inspect(s), "Setup").map((row) => row.text);
+    expect(setup).toEqual([
+      "Size: small, adjusted",
+      "Effective limits: 7 agents · 31 total turns · 9 turns per worker · 2 concurrent turns",
+      "Wall-clock limit: 1234567 ms · Turn timeout: 654321 ms · Idle nudge limit: 4",
+      "Requested provider: requested-provider",
+      "Requested lead model: requested-lead",
+      "Requested worker model: requested-worker (worker role override)",
+      "Requested power: deep",
+      "Recorded reasoning effort: xhigh",
+      "Requested model for @lead (lead): requested-lead",
+      "Served model for @lead (lead): served-lead · provider: served-provider",
+      "Requested model for @w1 (worker): individual-override (overrides role setting requested-worker)",
+      "Served model for @w1 (worker): served-worker · provider: worker-provider",
+      "100 in · 20 out tokens",
+    ]);
+  });
+
+  test("legacy missing settings and power requests never masquerade as served evidence", () => {
+    const s = swarm("slegacy", {
+      provider: undefined,
+      model: undefined,
+      workerModel: undefined,
+      power: "fast",
+      effort: undefined,
+      agents: [
+        agent("slegacy", 0, { servedModel: "actual-model", providerId: "actual-provider" }),
+        agent("slegacy", 1),
+      ],
+    });
+    const setup = rows(inspect(s), "Setup").map((row) => row.text);
+    expect(setup).toContain("Requested provider: host default; no explicit provider recorded");
+    expect(setup).toContain("Requested lead model: fast power; no explicit model recorded");
+    expect(setup).toContain(
+      "Requested worker model: fast power; no explicit model recorded (inherits lead setting)",
+    );
+    expect(setup).toContain("Recorded reasoning effort: not recorded");
+    expect(setup).toContain(
+      "Served model for @lead (lead): actual-model · provider: actual-provider",
+    );
+    expect(setup).toContain("Served model for @w1 (worker): not reported · provider: not reported");
+    expect(setup.filter((text) => text.startsWith("Requested")).join(" ")).not.toContain(
+      "actual-model",
+    );
+    expect(setup.filter((text) => text.startsWith("Requested")).join(" ")).not.toContain(
+      "actual-provider",
+    );
+    expect(
+      rows(inspect({ ...s, power: undefined, agents: [] }), "Setup").map((row) => row.text),
+    ).toContain("Requested lead model: host default; no explicit model recorded");
+    expect(rows(inspect({ ...s, agents: [] }), "Setup").map((row) => row.text)).toContain(
+      "Served models and per-agent requests not recorded.",
+    );
+    const inherited = rows(inspect({ ...s, model: "explicit-lead" }), "Setup").map(
+      (row) => row.text,
+    );
+    expect(inherited).toContain("Requested worker model: explicit-lead (inherits lead setting)");
+  });
+
+  test("missing legacy excerpts, empty bodies and source truncation remain explicit", () => {
+    const s = swarm("smissing", {
+      task: "",
+      context: [
+        { id: "legacy", kind: "issue", title: "Legacy issue", chars: 6000 },
+        {
+          id: "partial",
+          kind: "note",
+          title: "Partial excerpt",
+          chars: 9000,
+          excerpt: "retained\nexcerpt",
+        },
+        { id: "empty", kind: "note", title: "Empty legacy body", chars: 0, excerpt: "" },
+      ],
+    });
+    const entries = rows(inspect(s), "Task and context");
+    expect(entries[0]!.text).toBe("Task text not recorded.");
+    expect(entries[1]!.trailing).toBe("6,000 characters · excerpt not recorded (legacy summary)");
+    expect(entries[1]!.detail).toBeUndefined();
+    expect(entries[2]!.text).toBe("Source: not recorded");
+    expect(entries[3]!.text).toBe(
+      "Retrieved: not recorded · Head SHA: not recorded · Base SHA: not recorded",
+    );
+    expect(entries[4]!.detail).toBe("retained\nexcerpt");
+    expect(entries[4]!.trailing).toContain("full source body is not retained here");
+    expect(entries[7]!.trailing).toBe("0 characters · retained 0 characters (empty)");
+    expect(entries[7]!.detail).toBeUndefined();
+  });
+
+  test("reuses health rows, provides exactly one transcript row and never offers a composer", () => {
+    const s = swarm("shealth", {
+      health: {
+        socketDrops: 3,
+        disconnectedAt: T0,
+        channelFault: "offline",
+        lastLeadFailure: "timeout",
+        nudges: 1,
+        refusedConclusions: 2,
+        cancelFault: "cancel failed",
+        quietSince: T0,
+      },
+    });
+    for (const snapshot of [
+      s,
+      { ...s, status: "stopping" as const },
+      { ...s, status: "done" as const, endedAt: T0, error: "ended" },
+    ]) {
+      const view = inspect(snapshot);
+      expect(view.sections.map((section) => section.title)).toEqual([
+        "Task and context",
+        "Setup",
+        "Health",
+        "Transcript",
+      ]);
+      expect(rows(view, "Health")).toEqual([
+        ...healthRows(snapshot),
+        { text: `Disconnected since ${T0}` },
+        { text: `Quiet since ${T0}` },
+      ]);
+      expect(rows(view, "Transcript")).toEqual([
+        { text: "transcript ↗", href: channelHref(snapshot) },
+      ]);
+      expect(view.sections.some((section) => section.kind === "actions")).toBe(false);
+      expect(JSON.stringify(view)).not.toContain('"fields"');
+      expect(JSON.stringify(view)).not.toContain('"clock"');
+    }
+    const legacy = inspect(swarm("snolink", { clickclack: undefined }));
+    expect(rows(legacy, "Transcript")).toEqual([{ text: "Transcript link not recorded." }]);
+    expect(rows(legacy, "Health")).toEqual([{ text: "No health faults recorded." }]);
+    expect(rows(legacy, "Task and context").at(-1)!.text).toBe("No task context recorded.");
   });
 });
 
