@@ -9,9 +9,18 @@
 import type { RibAction, RibActionResult } from "@keelson/shared";
 import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
-import { BODY_MAX, SWARM_POWERS, SWARM_SIZES, type SwarmPower, type SwarmSize } from "../types.ts";
+import {
+  agentMessageBody,
+  agentMessageRefusal,
+  BODY_MAX,
+  SWARM_POWERS,
+  SWARM_SIZES,
+  type SwarmPower,
+  type SwarmSize,
+} from "../types.ts";
 import { shortHandle } from "./format.ts";
 import {
+  agentKey,
   docKey,
   HISTORY_KEY,
   INDEX_KEY,
@@ -30,7 +39,20 @@ import type { SwarmRecord, SwarmsSurface } from "./surface.ts";
 export interface ActionDeps {
   surface: SwarmsSurface | undefined;
   find: (id: string) => SwarmRecord;
-  live: (id: string) => Swarm | undefined;
+  live: (
+    id: string,
+  ) =>
+    | Pick<
+        Swarm,
+        | "summary"
+        | "steer"
+        | "messageAgent"
+        | "replyToGate"
+        | "replyInThread"
+        | "dismissAsk"
+        | "stop"
+      >
+    | undefined;
   // Admits a start and boots it in the background; a refusal throws.
   begin: (input: StartSwarmInput, origin?: { rerunOf?: string }) => string;
   launchOf: (id: string) => StartSwarmInput | undefined;
@@ -217,6 +239,29 @@ export async function handleSwarmsAction(
       deps.surface?.select(id);
       return { ok: true };
     }
+    case "select-agent": {
+      const found = id ? deps.find(id) : {};
+      const summary = found.live ?? found.ended;
+      const agentId = typeof payload.agentId === "string" ? payload.agentId : "";
+      const agent = summary?.agents.find((a) => a.id === agentId);
+      if (!id || !agent)
+        return fail(`agent '${agentId}' does not belong to swarm '${String(raw)}'`);
+      if (!deps.surface) return fail("The agent inspector is unavailable; reopen the Swarms tab.");
+      try {
+        await deps.surface.selectAgent(id, agentId);
+      } catch (e) {
+        return fail(`Could not publish the agent inspector: ${errText(e)}. Retry the selection.`);
+      }
+      return {
+        ok: true,
+        data: {
+          effect: "open-canvas",
+          key: agentKey(id),
+          title: `Agent @${shortHandle(agent.handle, id)} · ${id}`,
+          placement: "side",
+        },
+      };
+    }
     case "swarm-open": {
       if (!id || !known(id)) return fail(`no swarm '${String(raw)}'`);
       deps.surface?.track([id]);
@@ -241,6 +286,24 @@ export async function handleSwarmsAction(
       if (note.length > BODY_MAX) return fail(`a message is at most ${BODY_MAX} characters`);
       await swarm.steer(note);
       return done(`Posted in #${swarm.summary().channelName} as you`);
+    }
+    case "message-agent": {
+      const swarm = id ? deps.live(id) : undefined;
+      if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
+      const summary = swarm.summary();
+      const agentId = typeof payload.agentId === "string" ? payload.agentId : "";
+      const agent = summary.agents.find((a) => a.id === agentId);
+      if (!agent) return fail(`agent '${agentId}' does not belong to swarm '${id}'`);
+      const refusal = agentMessageRefusal(summary, agent);
+      if (refusal) return fail(refusal);
+      const note = typeof payload.note === "string" ? payload.note.trim() : "";
+      try {
+        agentMessageBody(agent.handle, note);
+        await swarm.messageAgent(agentId, note);
+      } catch (e) {
+        return fail(`Could not message @${shortHandle(agent.handle, id)}: ${errText(e)}`);
+      }
+      return done(`Posted to @${shortHandle(agent.handle, id)} in #${summary.channelName} as you`);
     }
     case "reply": {
       const swarm = id ? deps.live(id) : undefined;

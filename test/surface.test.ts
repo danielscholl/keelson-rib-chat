@@ -3313,6 +3313,192 @@ const actionDeps = {
 describe("actions", () => {
   const deps = actionDeps;
 
+  test("select-agent composes before its side-open reply and accepts ended agents", async () => {
+    const sm = new FakeSnapshots();
+    const surface = createSwarmsSurface({
+      sm,
+      views: [],
+      state: () => state({ live: [fixtures.running!], ended: [fixtures.done!] }),
+      find: deps.find,
+      launch: () => ({ projects: [], live: 1, ended: 1 }),
+      launchOf: () => undefined,
+      server: () => ({ live: 1 }),
+      readLog: async () => "log",
+      report: () => undefined,
+      windowMs: 1,
+    });
+    let unblock!: () => void;
+    sm.gate = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    let replied = false;
+    const selection = handleSwarmsAction(
+      {
+        type: "select-agent",
+        payload: { id: "s9hjx", agentId: "s9hjx-w1" },
+      },
+      { ...deps, surface },
+    ).then((result) => {
+      replied = true;
+      return result;
+    });
+    try {
+      await Bun.sleep(5);
+      expect(replied).toBe(false);
+      expect(sm.frames.has(agentKey("s9hjx"))).toBe(false);
+      unblock();
+      sm.gate = undefined;
+      const result = await selection;
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          effect: "open-canvas",
+          key: agentKey("s9hjx"),
+          title: "Agent @w1 · s9hjx",
+          placement: "side",
+        },
+      });
+      expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toMatchObject({
+        placement: "side",
+      });
+      expect(sm.frames.get(agentKey("s9hjx"))?.at(-1)).toMatchObject({
+        title: "Agent @w1 · s9hjx",
+      });
+      const ended = await handleSwarmsAction(
+        {
+          type: "select-agent",
+          payload: { id: "s8pln", agentId: "s8pln-lead" },
+        },
+        { ...deps, surface },
+      );
+      expect(ended.ok).toBe(true);
+      expect(JSON.stringify(sm.frames.get(agentKey("s8pln"))?.at(-1))).not.toContain(
+        "message-agent",
+      );
+      sm.composers.set(agentKey("s9hjx"), {
+        compose: () => {
+          throw new Error("bad frame");
+        },
+      });
+      const failed = await handleSwarmsAction(
+        {
+          type: "select-agent",
+          payload: { id: "s9hjx", agentId: "s9hjx-lead" },
+        },
+        { ...deps, surface },
+      );
+      expect(failed).toEqual({
+        ok: false,
+        error: "Could not publish the agent inspector: bad frame. Retry the selection.",
+      });
+    } finally {
+      unblock();
+      sm.gate = undefined;
+      surface.dispose();
+    }
+  });
+
+  test("select-agent refuses malformed, cross-swarm, starting and HTML-origin selections without effects", async () => {
+    for (const payload of [
+      { id: "../bad", agentId: "s9hjx-w1" },
+      { id: "s9hjx", agentId: "s8pln-lead" },
+      { id: "s9hjx", agentId: "you" },
+      { id: "s9hjx", agentId: 7 },
+      { id: "s9hjx" },
+      { id: "s0000", agentId: "s0000-lead" },
+    ])
+      expect((await handleSwarmsAction({ type: "select-agent", payload }, deps)).ok).toBe(false);
+    const valid = { type: "select-agent", payload: { id: "s9hjx", agentId: "s9hjx-w1" } };
+    expect(await handleSwarmsAction(valid, deps)).toEqual({
+      ok: false,
+      error: "The agent inspector is unavailable; reopen the Swarms tab.",
+    });
+    expect((await handleSwarmsAction({ ...valid, origin: "canvas-html" }, deps)).ok).toBe(false);
+    expect(
+      (
+        await handleSwarmsAction(valid, {
+          ...deps,
+          find: () => ({ starting }),
+        })
+      ).ok,
+    ).toBe(false);
+  });
+
+  test("message-agent validates current eligibility, complete body and server posting failures", async () => {
+    let current = fixtures.running!;
+    const posted: [string, string][] = [];
+    const fake = {
+      ...liveSwarm,
+      summary: () => current,
+      stop: async () => current,
+      replyToGate: async () => {},
+      replyInThread: async () => {},
+      dismissAsk: () => false,
+      messageAgent: async (id: string, note: string) => {
+        if (note === "posting fails") throw new Error("ClickClack unavailable");
+        posted.push([id, note]);
+      },
+    };
+    const messageDeps = { ...deps, live: () => fake };
+    const send = (payload: Record<string, unknown>) =>
+      handleSwarmsAction(
+        {
+          type: "message-agent",
+          payload: { id: current.id, agentId: current.agents[1]!.id, ...payload },
+        },
+        messageDeps,
+      );
+    expect(await send({ note: "  check cache  " })).toMatchObject({
+      ok: true,
+      data: { message: "Posted to @w1 in #swarm-s9hjx as you" },
+    });
+    expect(posted).toEqual([["s9hjx-w1", "check cache"]]);
+    for (const payload of [
+      { note: undefined },
+      { note: 7 },
+      { note: " " },
+      { note: "x".repeat(8000) },
+      { agentId: "s8pln-lead", note: "wrong" },
+      { agentId: 7, note: "wrong" },
+      { note: "posting fails" },
+    ])
+      expect((await send(payload)).ok).toBe(false);
+    expect(posted).toHaveLength(1);
+    const prefix = `**Operator:** @${current.agents[1]!.handle} `;
+    expect((await send({ note: "x".repeat(8000 - prefix.length) })).ok).toBe(true);
+    expect((await send({ note: "x".repeat(8001 - prefix.length) })).ok).toBe(false);
+    for (const patch of [
+      { status: "stopping" as const },
+      { conclusion: "done" },
+      { turnsUsed: current.limits.maxTurns },
+      { agents: [current.agents[0]!, { ...current.agents[1]!, status: "capped" as const }] },
+      { agents: [current.agents[0]!, { ...current.agents[1]!, status: "failed" as const }] },
+      {
+        agents: [
+          current.agents[0]!,
+          { ...current.agents[1]!, turns: current.limits.maxTurnsPerAgent },
+        ],
+      },
+    ]) {
+      current = { ...fixtures.running!, ...patch };
+      expect((await send({ note: "stale" })).ok).toBe(false);
+    }
+    expect(posted).toHaveLength(2);
+    current = fixtures.running!;
+    expect(
+      (
+        await handleSwarmsAction(
+          {
+            type: "message-agent",
+            origin: "canvas-html",
+            payload: { id: current.id, agentId: current.agents[1]!.id, note: "no" },
+          },
+          messageDeps,
+        )
+      ).ok,
+    ).toBe(false);
+  });
+
   test("server-manage opens the side inspector immediately and probes once", async () => {
     let probes = 0;
     let release = () => {};
