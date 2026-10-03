@@ -108,8 +108,8 @@ const provider = scriptedProvider(tools, script);
 // Every change the tab would publish must compose a frame the host accepts.
 let frames = 0;
 let badFrame: string | undefined;
-// What the index said along the way: its head, the card's pill, and whether the
-// running card carried its named turn meter.
+// What the index said along the way: its head, the card's pill, and whether it
+// carried a turn-budget meter or the cockpit's Turns tile.
 const heads = new Set<string>();
 const pills = new Set<string>();
 let meters = 0;
@@ -125,6 +125,7 @@ const checkFrames = (s: SwarmSummary, live: boolean) => {
   ];
   if (index.header?.status) heads.add(index.header.status.label);
   for (const section of index.sections) {
+    if (section.kind === "stats") meters += section.items.filter((i) => i.label === "Turns").length;
     if (section.kind !== "cards") continue;
     for (const card of section.items) {
       if (card.pill) pills.add(card.pill.label);
