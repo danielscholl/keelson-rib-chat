@@ -45,10 +45,11 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    **Open the report** and **Read the conclusion**.
 4. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
    omitting zero counts. Open seats are hatched.
-5. Three **Budget** tiles: **Turns** used and remaining with a sparkline,
-   **Time** as a ticking time-left clock, and fresh **Tokens** with cached
-   tokens in the sub. Before a turn, Tokens says **none yet**; after turns
-   without usage, it says **the provider reported none**.
+5. Three **Budget** tiles: **Turns** used with a sparkline and a forecast
+   delta, with **pace over the last 5 min** in the sub; **Time** as a ticking
+   time-left clock; and fresh **Tokens** with cached tokens in the sub.
+   Before a turn, Tokens says **none yet**; after turns without usage, it
+   says **the provider reported none**.
 6. **Conversation**: the eight newest channel messages, newest first, then
    the message count and **transcript ↗** link.
 7. **Message the lead**, expanded directly under Conversation for a running
@@ -57,6 +58,36 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    same details as the per-swarm board below.
 9. **Open the report** when one exists; **Open the record**; and
    **Stop swarm…** last.
+
+### The budget forecast
+
+The Turns delta projects when the remaining turns run out against the wall
+clock. It reads turns per minute over the last five minutes, or since the
+start when the swarm is younger, with at least one minute as the rate's
+denominator. Before pace buckets are available, it uses turns so far.
+Fewer than one turn in the window reads **no pace**, not infinite time.
+
+| Reading | Delta text | Direction | Tone |
+|---|---|---|---|
+| runs-out-first | N left · at R a minute they run out about hh:mm, before the clock | down | warn |
+| clock-first | N left · at this pace about M unused when the clock ends at hh:mm | flat | caution |
+| fits | N left · pace fits the clock | flat | none |
+| no-pace | N left · no turn in 5 min | flat | none |
+| out-of-turns | none left · agents finish their turns | down | warn |
+
+N is turns left, R is turns a minute and M is projected unused turns. The
+rate shows one decimal without a trailing `.0`; times use the local clock.
+The host supplies the directional glyph, not the delta text.
+
+With positive pace, running out before the clock reads **runs-out-first**.
+Otherwise the forecast rounds the projected unused turns. It reads
+**clock-first** when at least a tenth of the total turn budget, rounded up,
+would be unused: 2 turns for small, 4 for medium, 8 for large. Less reads
+**fits**. At zero turns left, **out-of-turns** takes precedence over pace.
+
+The forecast is advisory. It is computed when the board composes, not
+stored or periodically refreshed. It changes nothing the engine does:
+no limits, nudges or stopping. An ended Turns tile has no forecast.
 
 ### Conversation
 
@@ -172,9 +203,12 @@ Live, the board runs in this order:
 
 - the requests, one card each, with **reviewing** approvals after them
 - the report, once the lead has published one
-- the budget strip: turns used with what is left and a sparkline of turns per
-  minute (an ended board keeps the sparkline, spread over the whole run), the time left on a live clock, agents against the cap with how many are
-  busy or waiting, and fresh tokens with cached tokens beside them; the two are
+- the budget strip: turns used with a sparkline of turns per minute and the
+  same forecast delta while live, with **pace over the last 5 min** in the
+  sub; an ended board keeps the sparkline, spread over the whole run, with
+  no delta and **of N** in the sub, where N is the total turn budget; time
+  left on a live clock; agents against the cap with how many are busy or
+  waiting; and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
 - **Conversation**, the same newest eight messages and transcript link as
   the cockpit
