@@ -34,7 +34,7 @@ import {
   swarmKey,
 } from "../src/surface/keys.ts";
 import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
-import { selectSwarm, stateLine } from "../src/surface/parts.ts";
+import { selectSwarm, serverAddress, serverState, stateLine } from "../src/surface/parts.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
 import { buildRecord } from "../src/surface/record.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
@@ -272,6 +272,28 @@ const state = (patch: Partial<SurfaceState> = {}): SurfaceState => ({
 
 const board = (key: string, view: unknown) =>
   expect(() => expectView(key, "board")(view)).not.toThrow();
+
+describe("the shared server text", () => {
+  test("state words distinguish managed processes from external reachability", () => {
+    expect(serverState({ mode: "managed", running: true })).toBe("running");
+    expect(serverState({ mode: "managed", running: false })).toBe("stopped");
+    expect(serverState({ mode: "external", running: true })).toBe("reachable");
+    expect(serverState({ mode: "external", running: false })).toBe("unreachable");
+    expect(serverState({ mode: "external", running: false, unreachableSince: T0 })).toBe(
+      `unreachable since ${hhmm(T0)}`,
+    );
+  });
+
+  test("addresses omit only the HTTP scheme and preserve unknown addresses", () => {
+    expect(serverAddress({ mode: "managed", running: true, url: "http://127.0.0.1:18080" })).toBe(
+      "127.0.0.1:18080",
+    );
+    expect(serverAddress({ mode: "external", running: false, url: "https://cc.example" })).toBe(
+      "cc.example",
+    );
+    expect(serverAddress({ mode: "managed", running: false })).toBeUndefined();
+  });
+});
 
 describe("the shared state line", () => {
   test("requests use the request title, its time, and the remaining count", () => {
@@ -676,17 +698,19 @@ describe("Swarms boards", () => {
     expect(row?.kind === "rows" ? row.items[0]?.text : "").toContain("@w2 waits with 1 message");
   });
 
-  test("a connection request starts a stopped managed server and links the channel", () => {
+  test("a connection request starts a stopped managed server and links the transcript", () => {
     const down = { mode: "managed" as const, running: false };
     const card = cardsOf(buildIndex(state({ live: [fixtures.gone!], server: down })))[0];
     expect(card?.pill).toEqual({ label: "connection", tone: "error" });
+    expect(card?.title).toBe("ClickClack stopped answering");
+    expect(card?.actions?.[0]?.label).toBe("Start ClickClack");
     expect(card?.fields?.[0]?.value).toContain("the managed server is not running");
     expect(card?.fields?.[1]).toEqual({
       label: "since",
       clock: { at: "2026-09-22T12:50:00.000Z", mode: "since" },
     });
     expect(card?.fields?.[2]).toEqual({
-      value: "#swarm-s4n4x in ClickClack",
+      value: "transcript ↗",
       href: "http://127.0.0.1:18080/app/ws_1/ch_s4n4x",
     });
     expect(card?.actions?.map((a) => a.type)).toEqual(["server-start", "select-swarm"]);
@@ -713,10 +737,6 @@ describe("Swarms boards", () => {
           "fix-issue r20000-1 paused at approve-plan · only you can approve fix-issue on this host",
       },
       { label: "opened", clock: { at: "2026-09-22T14:31:00.000Z", mode: "since" } },
-      {
-        value: "the approval thread in ClickClack",
-        href: "http://127.0.0.1:18080/app/ws_1/msg_0042",
-      },
     ]);
     expect(card?.footnote).toBe("Fix issue #27: README undercounts frontend-mix nodes · s7k1p");
     expect(card?.reason).toBeUndefined();
@@ -733,6 +753,8 @@ describe("Swarms boards", () => {
     const question = cards[0];
     expect(question?.title).toBe("@w1 asked: which retry cap, 30 s or 60 s?");
     expect(question?.pill).toEqual({ label: "question", tone: "caution" });
+    expect(question?.fields?.some((field) => field.href)).toBe(false);
+    expect(JSON.stringify(question)).not.toContain("in ClickClack");
     expect(question?.actions?.[0]).toMatchObject({ type: "read-doc", label: "Read question" });
     expect(cards[1]?.title).toBe(
       "Review the plan for Fix issue #27: README undercounts frontend-mix nodes",
@@ -931,6 +953,7 @@ describe("Swarms boards", () => {
     const items = actions[0]?.kind === "actions" ? actions[0].items : [];
     expect(items.map((i) => i.type)).toEqual(["message-lead", "open-record", "stop-swarm"]);
     expect(items[0]).toMatchObject({ label: "Message the lead", expanded: true });
+    expect(items[0]?.fields?.[0]?.placeholder).toBe("posts as you, wakes the lead");
     expect(items[1]).toMatchObject({ label: "Open the record", payload: { id: "s9hjy" } });
     expect(items[2]).toMatchObject({ inline: true, align: "end" });
     const review = view.sections[0];
