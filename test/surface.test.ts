@@ -657,7 +657,7 @@ describe("Swarms boards", () => {
     }
     const single = buildIndex(state({ live: [live[0]!] }));
     board(INDEX_KEY, single);
-    expect(single.sections).toEqual(buildCockpit(live[0]!, [], { titled: true }));
+    expect(single.sections.slice(0, -1)).toEqual(buildCockpit(live[0]!, [], { titled: true }));
   });
 
   test("Needs you combines all request kinds, one card per request with task and id", () => {
@@ -818,7 +818,23 @@ describe("Swarms boards", () => {
 
   test("an empty tab shows the journey, not a placeholder row", () => {
     const view = buildIndex(state());
-    expect(view.sections.map((x) => x.kind)).toEqual(["journey"]);
+    board(INDEX_KEY, view);
+    expect(view.sections.map((x) => x.kind)).toEqual(["journey", "rows"]);
+    const journey = view.sections[0];
+    expect(journey?.kind === "journey" ? journey.items[1] : undefined).toEqual({
+      title: "Agents work it out",
+      text: "The lead spawns workers, and they talk it through in #swarm-<id>.",
+    });
+    expect(view.sections.at(-1)).toEqual({
+      kind: "rows",
+      items: [
+        {
+          text: "Server · ClickClack checking…",
+          trailing: "Manage ›",
+          action: { type: "server-manage" },
+        },
+      ],
+    });
     expect(view.header).toBeUndefined();
   });
 
@@ -833,7 +849,7 @@ describe("Swarms boards", () => {
       }),
     );
     const view = buildIndex(state({ ended }), now);
-    const days = view.sections.filter((x) => x.kind === "rows");
+    const days = view.sections.filter((x) => x.kind === "rows" && x.title);
     expect(days.map((x) => x.title)).toEqual(["Today", "Yesterday", dayHeading(ago(7), now)]);
     const today = days[0]?.kind === "rows" ? days[0].items : [];
     expect(today).toHaveLength(3);
@@ -2319,6 +2335,47 @@ describe("the server line and inspector", () => {
     buildServerPanel(st)
       .sections.filter((x) => x.kind === "actions")
       .flatMap((x) => (x.kind === "actions" ? x.items : []));
+
+  test("the index always ends with one plain server line and a Manage action", () => {
+    const cases = [
+      {
+        server: serverFixtures.managedRunning,
+        live: [fixtures.running!],
+        text: "Server · ClickClack running on 127.0.0.1:18080 · managed · 1 swarm",
+      },
+      {
+        server: serverFixtures.managedStopped,
+        live: [],
+        text: "Server · ClickClack stopped on 127.0.0.1:18080 · managed",
+      },
+      {
+        server: serverFixtures.externalDown,
+        live: [],
+        text: `Server · ClickClack unreachable since ${hhmm(serverFixtures.externalDown.unreachableSince)} on cc.example · external`,
+      },
+    ];
+    for (const { server, live, text } of cases) {
+      const view = buildIndex(state({ server, live, ended: [fixtures.done!] }));
+      board(INDEX_KEY, view);
+      expect(view.sections.at(-1)).toEqual({
+        kind: "rows",
+        items: [{ text, trailing: "Manage ›", action: { type: "server-manage" } }],
+      });
+      expect(JSON.stringify(view)).not.toContain('"collapsed"');
+    }
+    const startingView = buildIndex(
+      state({
+        server: serverFixtures.managedRunning,
+        live: [fixtures.running!],
+        starting: [starting],
+      }),
+    );
+    board(INDEX_KEY, startingView);
+    expect(JSON.stringify(startingView.sections.at(-1))).toContain("managed · 2 swarms");
+    const unknownView = buildIndex(state({ starting: [starting] }));
+    board(INDEX_KEY, unknownView);
+    expect(JSON.stringify(unknownView.sections.at(-1))).toContain("ClickClack checking… · 1 swarm");
+  });
 
   test("server inspectors box the managed process facts or the external probe", () => {
     const managed = buildServerPanel({ server: running, live: 0 });

@@ -19,6 +19,8 @@ import {
   requestOf,
   type ServerLine,
   selectSwarm,
+  serverAddress,
+  serverState,
   sinceClock,
   sizeWord,
   stateLine,
@@ -184,6 +186,21 @@ export function buildBadge(state: SurfaceState): RibSurfaceBadge {
     : { count };
 }
 
+function serverRow(server: ServerLine | undefined, live: number): Row {
+  const address = server ? serverAddress(server) : undefined;
+  return {
+    text: [
+      server
+        ? `Server · ClickClack ${serverState(server)}${address ? ` on ${address}` : ""}`
+        : "Server · ClickClack checking…",
+      ...(server ? [server.mode] : []),
+      ...(live > 0 ? [plural(live, "swarm")] : []),
+    ].join(" · "),
+    trailing: "Manage ›",
+    action: { type: "server-manage" },
+  };
+}
+
 export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardView {
   const live = state.live.map((s) => ({ s, needs: needsYou(s) }));
   const needing = live
@@ -286,8 +303,8 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
               items: [
                 { title: "Start a swarm", text: "Name the task above and pick a size." },
                 {
-                  title: "Agents talk in #swarm-<id>",
-                  text: "The lead spawns workers and they work it out in ClickClack.",
+                  title: "Agents work it out",
+                  text: "The lead spawns workers, and they talk it through in #swarm-<id>.",
                 },
                 {
                   title: "The lead concludes here",
@@ -297,6 +314,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
             },
           ]
         : []),
+      { kind: "rows", items: [serverRow(state.server, liveCount)] },
     ],
   };
 }
