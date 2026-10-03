@@ -2007,6 +2007,7 @@ export class Swarm {
       ...(this.opts.power && !this.opts.model ? { power: this.opts.power } : {}),
       ...(effort ? { effort } : {}),
       ...(this.opts.project ? { project: this.opts.project } : {}),
+      ...(this.opts.write ? { writeEnabled: true } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
       ...(health ? { health } : {}),
@@ -2021,7 +2022,9 @@ export class Swarm {
       ...(this.opts.dispatch ? { workflows: this.opts.dispatch.grants.map((g) => g.name) } : {}),
       ...(this.opts.leadTools?.length ? { leadTools: [...this.opts.leadTools] } : {}),
       ...(this.runs.size > 0 ? { runs: this.runLedger() } : {}),
-      ...(this.prs.length > 0 ? { prs: this.prs.map((p) => ({ ...p })) } : {}),
+      ...(this.prs.length > 0
+        ? { prs: this.prs.map((p) => ({ ...p, ...(p.ci ? { ci: { ...p.ci } } : {}) })) }
+        : {}),
       ...(this.keptWorktrees.length > 0
         ? { worktrees: this.keptWorktrees.map((w) => ({ ...w })) }
         : {}),

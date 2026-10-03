@@ -54,6 +54,38 @@ const toolNames = (r: { tools?: readonly { name: string }[] }) =>
   (r.tools ?? []).map((t) => t.name);
 
 describe("write mode", () => {
+  test("launch capability is explicit before a writer exists and absent on read/chat launches", async () => {
+    for (const extra of [{}, { write: undefined }, { write: undefined, workTools: undefined }]) {
+      const h = harness(async () => {}, { quiesceMs: 60_000, ...extra });
+      const swarm = await h.start();
+      const summary = swarm.summary();
+      expect(summary.writeEnabled).toBe(
+        extra.write === undefined && "write" in extra ? undefined : true,
+      );
+      expect(summary.prs).toBeUndefined();
+      expect(summary.agents.some((a) => a.worktree)).toBe(false);
+      await swarm.stop();
+    }
+  });
+
+  test("writer CI is optional and summary observations are defensive copies", async () => {
+    const h = harness(async () => {}, { quiesceMs: 60_000 });
+    const swarm = await h.start();
+    const pr = {
+      agent: "s1-coder",
+      url: "https://github.com/o/r/pull/101",
+      branch: "coder",
+      at: swarm.startedAt,
+    };
+    swarm["prs"].push(pr);
+    expect(swarm.summary().prs?.[0]?.ci).toBeUndefined();
+    swarm["prs"][0]!.ci = { verdict: "running", detail: "build queued" };
+    const snapshot = swarm.summary();
+    snapshot.prs![0]!.ci!.detail = "changed by caller";
+    expect(swarm.summary().prs?.[0]?.ci).toEqual({ verdict: "running", detail: "build queued" });
+    await swarm.stop();
+  });
+
   test("a spawn with writes is refused in a swarm that only reads", async () => {
     let refusal = "";
     const h = harness(

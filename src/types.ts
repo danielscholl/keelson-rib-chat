@@ -147,6 +147,7 @@ export interface WriterPr {
   url: string;
   branch: string;
   at: string;
+  ci?: { verdict: CiVerdict | "running"; detail?: string };
 }
 
 export interface AgentWorktree {
@@ -360,6 +361,7 @@ export interface SwarmSummary {
   // What every turn asks for: the power's effort, unless the start named one.
   effort?: ReasoningEffortLevel;
   project?: SwarmProject;
+  writeEnabled?: boolean;
   // The durable op the swarm reports to.
   opId?: string;
   clickclack?: { url: string; workspaceId: string };
