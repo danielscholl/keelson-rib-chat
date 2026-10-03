@@ -254,6 +254,22 @@ function stats(s: SwarmSummary, now: Date): Leaf {
       tone: n === runs.length ? "ok" : "warn",
     });
   }
+  if (!isLiveNow) {
+    const prs = new Map<string, boolean>();
+    const record = (url: string, passing: boolean) =>
+      prs.set(url, (prs.get(url) ?? true) && passing);
+    for (const run of s.runs ?? []) {
+      for (const url of run.prUrls) record(url, run.ci?.verdict === "pass");
+    }
+    for (const pr of s.prs ?? []) record(pr.url, pr.ci?.verdict === "pass");
+    if (prs.size > 0) {
+      items.push({
+        label: "Pull requests",
+        value: prs.size,
+        sub: `${[...prs.values()].filter(Boolean).length} with CI passing`,
+      });
+    }
+  }
   return { kind: "stats", title: isLiveNow ? "Budget" : "Result", items };
 }
 

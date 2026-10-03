@@ -1224,6 +1224,72 @@ describe("Swarms boards", () => {
     );
   });
 
+  test("ended PR totals count distinct URLs and require every owner to explicitly pass", () => {
+    const id = "s8cnt";
+    const url = (n: number) => `https://github.com/o/r/pull/${n}`;
+    const writerPr = (n: number, ci?: NonNullable<SwarmSummary["prs"]>[number]["ci"]) => ({
+      agent: `${id}-w1`,
+      branch: `writer/${n}`,
+      at: T0,
+      url: url(n),
+      ...(ci ? { ci } : {}),
+    });
+    const tile = (s: SwarmSummary) => {
+      const view = buildSwarmBoard(s);
+      board(swarmKey(id), view);
+      return view.sections
+        .flatMap((section) => (section.kind === "stats" ? section.items : []))
+        .find((item) => item.label === "Pull requests");
+    };
+    const base = swarm(id, { status: "done", endedAt: T0 });
+    const writers = [
+      writerPr(1, { verdict: "pass" }),
+      writerPr(2, { verdict: "fail" }),
+      writerPr(3, { verdict: "unknown" }),
+      writerPr(4, { verdict: "running" }),
+      writerPr(5),
+    ];
+    expect(tile({ ...base, prs: writers })).toEqual({
+      label: "Pull requests",
+      value: 5,
+      sub: "1 with CI passing",
+    });
+    expect(tile({ ...base, prs: [writerPr(1)] })).toEqual({
+      label: "Pull requests",
+      value: 1,
+      sub: "0 with CI passing",
+    });
+    const runs = [
+      run("ra", { prUrls: [url(1), url(6), url(7)], ci: { verdict: "pass" }, verified: false }),
+      run("rb", { prUrls: [url(8)], verified: true }),
+    ];
+    expect(tile({ ...base, runs })).toEqual({
+      label: "Pull requests",
+      value: 4,
+      sub: "3 with CI passing",
+    });
+    expect(tile({ ...base, runs, prs: writers })).toEqual({
+      label: "Pull requests",
+      value: 8,
+      sub: "3 with CI passing",
+    });
+    expect(tile({ ...base, runs, prs: [writerPr(1), writerPr(6, { verdict: "pass" })] })).toEqual({
+      label: "Pull requests",
+      value: 4,
+      sub: "2 with CI passing",
+    });
+    expect(
+      tile({
+        ...base,
+        runs: [...runs, run("rc", { prUrls: [url(7), url(7)], ci: { verdict: "fail" } })],
+      }),
+    ).toEqual({ label: "Pull requests", value: 4, sub: "2 with CI passing" });
+    for (const status of ["running", "stopping"] as const) {
+      expect(tile({ ...base, status, runs, prs: writers })).toBeUndefined();
+    }
+    expect(tile(base)).toBeUndefined();
+  });
+
   test("a custom size says which preset it was adjusted from", () => {
     const view = buildSwarmBoard(
       swarm("s2cus", { size: "custom", limits: { ...SIZE_PRESETS.medium, maxTurns: 60 } }),
