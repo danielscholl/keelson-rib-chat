@@ -6,6 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
+import { createHash } from "node:crypto";
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
 import { modelLabel, servedModels, sizeText, tokensText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
@@ -352,11 +353,15 @@ export function gateVerb(nodeId: string): string {
 export function gateIdentity(run: Pick<ChildRun, "runId" | "pendingApproval">): string | undefined {
   const gate = run.pendingApproval;
   if (!gate) return undefined;
-  return JSON.stringify(
-    gate.pauseId
-      ? [run.runId, "pause", gate.pauseId]
-      : [run.runId, "legacy", gate.nodeId, gate.openedAt ?? null, gate.threadId ?? null],
-  );
+  const identity = gate.pauseId
+    ? [run.runId, "pause", gate.pauseId]
+    : [run.runId, "legacy", gate.nodeId, gate.openedAt ?? null, gate.threadId ?? null];
+  // Keep repeated gate bindings compact without weakening stale-action matching.
+  return createHash("sha256")
+    .update(JSON.stringify(identity))
+    .digest()
+    .subarray(0, 16)
+    .toString("base64url");
 }
 
 export const NEED_PILL: Record<NeedKind, Pill> = {
