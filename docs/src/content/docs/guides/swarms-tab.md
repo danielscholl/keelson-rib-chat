@@ -522,9 +522,20 @@ their turns were not kept.
 
 ## Starting a swarm
 
-The **Start a swarm** header above the index is a themed launcher with a task
-box and a project picker. It opens expanded, including with retained swarms.
-You can fold it by hand; starting a swarm does not fold it automatically.
+The **Start a swarm** header above the index is a themed HTML launcher. With a
+live or retained ended swarm, it starts as one compact **New swarm** line.
+Type in **What should the swarm work out?** The **Working session** chip sits
+beside **5 agents · 30 min**.
+
+Compact Start uses chat mode with no project: nothing on disk is read or
+changed. It sends no size, power, model, provider, workflow or lead-tool
+overrides. **More options** or the **Working session** chip expands the
+launcher in place without losing the task. Expansion alone does not change
+the default plan.
+
+With no live or retained ended swarms, the launcher opens expanded with
+**Task**, **Project** and **Start swarm**. Starting-only entries do not compact
+it.
 
 Describe the question in **Task**, or paste the issue or PR body. Agents
 cannot open links: a task naming a URL or `#123` is refused before a channel
@@ -605,16 +616,21 @@ power. For advanced inputs, use
 size, and calls `chat_swarm_start`. Use it when the swarm needs evidence it
 can't fetch.
 
-**Start swarm** shows **Starting…** and disables the button for about two
-seconds as a duplicate-click guard, not a completion signal. Your task stays
-in the box. A successful start opens the swarm on the index. Its card shows
-starting while it boots; a later failure becomes an ended row with the reason.
-An outright refusal, such as an unknown project or a provider that cannot
-run agents, appears in a host toast. After the guard clears you can retry.
+Compact **Start** and expanded **Start swarm** show **Starting…** and disable
+the button for about two seconds as a duplicate-click guard, not a completion
+signal. Your task stays in the box. Expanding during the guard keeps it active.
+A successful start opens the swarm on the index. Its card shows starting
+while it boots; a later failure becomes an ended row with the reason. An
+outright refusal, such as an unknown project or a provider that cannot run
+agents, appears in a host toast. After the guard clears you can retry.
 
-Ordinary refreshes preserve an unsent task, switches and chips. A project-list,
-provider, capability, dispatch or remembered-refusal configuration change can
-replace the launcher page and discard it.
+Ordinary refreshes preserve local expansion, the draft, plan and model
+choices, switches and chips while swarm presence stays unchanged. Additional
+swarms and live-to-ended transitions keep the same launcher page. Crossing
+between no live or retained ended swarms and at least one can replace the
+page and discard it. A project-list, provider, capability, dispatch or
+remembered-refusal configuration change can also replace the page. Reloading
+or replacing the page does not restore local edits.
 
 A swarm started any other way, over MCP or from the `chat-swarm` workflow,
 appears in the same live area.

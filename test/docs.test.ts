@@ -46,7 +46,8 @@ describe("contributed docs", () => {
       "Untouched Working session sends no size, power or model overrides",
       "host toast",
       "about two seconds",
-      "fold it by hand",
+      "compact New swarm line",
+      "More options",
       "discard it",
       "Prepare in chat",
       "ALSO ALLOW",
@@ -61,8 +62,54 @@ describe("contributed docs", () => {
       "capability, dispatch",
     ])
       expect(launcher).toContain(copy);
-    for (const old of ["Setup starts", "Agents may field", "adjust shows", "folded once"]) {
+    for (const old of [
+      "Setup starts",
+      "Agents may field",
+      "adjust shows",
+      "folded once",
+      "fold it by hand",
+    ]) {
       expect(launcher).not.toContain(old);
+    }
+  });
+
+  test("packaged and site launcher docs agree on compact defaults and draft preservation boundaries", () => {
+    const swarms = topics(content).find((topic) => topic.title === "Swarms tab")!.body;
+    const guide = readFileSync(
+      new URL("../docs/src/content/docs/guides/swarms-tab.md", import.meta.url),
+      "utf8",
+    );
+    const normalize = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
+    const l = SIZE_PRESETS.medium;
+    for (const text of [swarms, guide].map(normalize)) {
+      for (const phrase of [
+        "With a live or retained ended swarm, it starts as one compact New swarm line",
+        "What should the swarm work out?",
+        "Working session chip",
+        `${l.maxAgents} agents · ${l.wallClockMs / 60_000} min`,
+        "Compact Start uses chat mode with no project",
+        "nothing on disk is read or changed",
+        "no size, power, model, provider, workflow or lead-tool overrides",
+        "More options or the Working session chip expands the launcher in place without losing the task",
+        "Expansion alone does not change the default plan",
+        "With no live or retained ended swarms, the launcher opens expanded",
+        "Starting-only entries do not compact it",
+        "Ordinary refreshes preserve local expansion, the draft, plan and model choices, switches and chips while swarm presence stays unchanged",
+        "Additional swarms and live-to-ended transitions keep the same launcher page",
+        "Crossing between no live or retained ended swarms and at least one can replace the page and discard it",
+        "project-list, provider, capability, dispatch or remembered-refusal configuration change",
+        "Reloading or replacing the page does not restore local edits",
+      ]) {
+        expect(text).toContain(phrase);
+      }
+      for (const obsolete of [
+        "fold it by hand",
+        "opens expanded, including with retained swarms",
+        "starting a swarm does not fold it automatically",
+        "collapse back",
+      ]) {
+        expect(text).not.toContain(obsolete);
+      }
     }
   });
 
