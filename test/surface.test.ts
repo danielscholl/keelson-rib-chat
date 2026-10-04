@@ -6743,12 +6743,12 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("HTML launches ignore crafted access, workflows and setup", async () => {
+  test("HTML launches admit access and workflows but ignore model and setup overrides", async () => {
     const h = launcherHarness({ projects });
     try {
       await Bun.sleep(5);
       begun.length = 0;
-      for (const project of ["p1", "", undefined]) {
+      for (const project of ["p1"]) {
         for (const setup of [undefined, "defaults", "adjust"]) {
           expect(
             (
@@ -6775,12 +6775,31 @@ describe("launching from the tab", () => {
           ).toBe(true);
           expect(begun.at(-1)).toEqual({
             task: "Fix issue",
-            workTools: project ? "read" : "none",
-            ...(project ? { project } : {}),
+            workTools: "write",
+            project,
+            workflows: [{ name: "fix-issue", isolated: true }],
           });
         }
       }
-      expect(begun).toHaveLength(9);
+      expect(begun).toHaveLength(3);
+      for (const extra of [
+        { tools: "write" },
+        { workflows: "fix-issue" },
+        { lead_tools: ["beads_ready"] },
+      ]) {
+        expect(
+          (
+            await handleSwarmsAction(
+              {
+                type: "start-swarm",
+                origin: "canvas-html",
+                payload: { nonce: h.nonce(), task: "Fix issue", ...extra },
+              },
+              { ...actionDeps, surface: h.surface },
+            )
+          ).ok,
+        ).toBe(false);
+      }
     } finally {
       h.surface.dispose();
     }
@@ -7272,6 +7291,76 @@ describe("power and the served model", () => {
 describe("start and run again", () => {
   const act = (type: string, payload: Record<string, unknown>) =>
     handleSwarmsAction({ type, payload }, actionDeps);
+
+  test("lead tools validate before deduplication and use fresh reachability for starts and reruns", async () => {
+    begun.length = 0;
+    let allowed = ["beads_ready", "beads_close"];
+    const deps: ActionDeps = {
+      ...actionDeps,
+      getToolReachability: (names) => [
+        ...names.map((name) => ({
+          name,
+          status: allowed.includes(name) ? ("reachable" as const) : ("cross-rib-denied" as const),
+        })),
+        { name: "beads_unrequested", status: "reachable" },
+      ],
+      launchOf: () => ({ ...oldLaunch, leadTools: ["beads_ready", "beads_close"] }),
+    };
+    const start = (lead_tools: unknown) =>
+      handleSwarmsAction(
+        { type: "start-swarm", payload: { task: "Investigate", lead_tools } },
+        deps,
+      );
+    expect((await start(["beads_ready", "beads_show", "beads_close", "beads_ready"])).ok).toBe(
+      true,
+    );
+    expect(begun.at(-1)?.leadTools).toEqual(["beads_ready", "beads_close"]);
+    for (const value of [
+      null,
+      "beads_ready",
+      {},
+      ["chat_read"],
+      [1],
+      ["a"],
+      ["Beads_ready"],
+      ["../beads"],
+      ["a".repeat(65)],
+      Array(START_BOUNDS.maxLeadTools + 1).fill("beads_ready"),
+    ]) {
+      expect((await start(value)).ok).toBe(false);
+    }
+    expect(begun).toHaveLength(1);
+    allowed = ["beads_close"];
+    expect(
+      (await handleSwarmsAction({ type: "run-again", payload: { id: "s8pln" } }, deps)).ok,
+    ).toBe(true);
+    expect(begun.at(-1)?.leadTools).toEqual(["beads_close"]);
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "run-again", payload: { id: "s8pln" } },
+          { ...deps, getToolReachability: undefined },
+        )
+      ).ok,
+    ).toBe(true);
+    expect(begun.at(-1)?.leadTools).toBeUndefined();
+    const failing = {
+      ...deps,
+      getToolReachability: () => {
+        throw new Error("host offline");
+      },
+    };
+    for (const action of [
+      { type: "start-swarm", payload: { task: "Investigate", lead_tools: ["beads_ready"] } },
+      { type: "run-again", payload: { id: "s8pln" } },
+    ]) {
+      expect(await handleSwarmsAction(action, failing)).toEqual({
+        ok: false,
+        error: "Could not check lead tool reachability: host offline",
+      });
+    }
+    expect(begun).toHaveLength(3);
+  });
 
   test("a form with no workflows starts an investigating swarm and opens the index", async () => {
     begun.length = 0;
