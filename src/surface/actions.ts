@@ -475,11 +475,11 @@ export async function handleSwarmsAction(
       return done(`Stopping swarm ${id}: cancelling its runs and revoking its bots`);
     }
     case "start-swarm": {
-      const input = startInput(
-        action.origin === "canvas-html"
-          ? { task: payload.task, project: payload.project, setup: "defaults" }
-          : payload,
-      );
+      const html = action.origin === "canvas-html";
+      const project = html ? text(payload, "project") : "";
+      if (project && !deps.surface?.offersLaunchProject(project))
+        return fail(`the launcher doesn't offer project '${project}'`);
+      const input = startInput(html ? { task: payload.task, project, setup: "defaults" } : payload);
       return typeof input === "string" ? fail(input) : started(deps, input, "index");
     }
     case "run-again": {

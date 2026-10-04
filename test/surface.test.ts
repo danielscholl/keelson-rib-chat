@@ -5669,6 +5669,7 @@ describe("actions", () => {
     const calls: unknown[][] = [];
     const surface: SwarmsSurface = {
       acceptsLaunchNonce: () => false,
+      offersLaunchProject: () => false,
       track: () => {},
       select: () => {},
       selectAgent: async () => {},
@@ -6365,6 +6366,7 @@ describe("actions", () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
       acceptsLaunchNonce: () => false,
+      offersLaunchProject: () => false,
       selectAgent: async () => {},
       selectAsk: async () => {},
       selectGate: async () => {},
@@ -6784,6 +6786,39 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("HTML launches take only a project the launcher lists", async () => {
+    const h = launcherHarness({
+      projects: [
+        ...projects,
+        { id: "hidden-project", name: DEFAULT_PROJECT_NAME, rootPath: "/hidden-root" },
+      ],
+    });
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const act = (project: string) =>
+        handleSwarmsAction(
+          {
+            type: "start-swarm",
+            origin: "canvas-html",
+            payload: { nonce: h.nonce(), task: "Fix issue", project },
+          },
+          { ...actionDeps, surface: h.surface },
+        );
+      for (const project of ["hidden-project", DEFAULT_PROJECT_NAME, "keelson-sample", "p9"]) {
+        expect(await act(project)).toEqual({
+          ok: false,
+          error: `the launcher doesn't offer project '${project}'`,
+        });
+      }
+      h.inputs.projects = [];
+      expect((await act("p1")).ok).toBe(false);
+      expect(begun).toHaveLength(0);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
   test("HTML launches retain task and link validation before admission", async () => {
     const h = launcherHarness({ projects });
     try {
@@ -6894,11 +6929,6 @@ describe("launching from the tab", () => {
       await Bun.sleep(5);
       expect(h.page()).not.toBe(previous);
       previous = h.page();
-      h.inputs.refused = ["fix-issue"];
-      h.inputs.dispatchBlocked = "unavailable";
-      h.surface.refresh();
-      await Bun.sleep(5);
-      expect(h.page()).toBe(previous);
       expect(h.nonce()).toBe(nonce);
     } finally {
       h.surface.dispose();
@@ -7056,11 +7086,7 @@ describe("launching from the tab", () => {
   });
 
   test("the launcher is a themed HTML form with only task and project controls", () => {
-    for (const st of [
-      { projects },
-      { projects: [] },
-      { projects, refused: ["fix-issue"], dispatchBlocked: "unavailable" },
-    ]) {
+    for (const st of [{ projects }, { projects: [] }]) {
       const page = buildLaunch(st, "nonce");
       for (const copy of [
         "Start a swarm",
@@ -7835,7 +7861,7 @@ describe("the rib's surface", () => {
           },
           { getExec: () => ({}) as never },
         ),
-      ).toEqual({ ok: false, error: "no registered project 'missing-project'" });
+      ).toEqual({ ok: false, error: "the launcher doesn't offer project 'missing-project'" });
       delete process.env.KEELSON_WORKFLOW_PROVIDER;
       const hostDefaultPage = String(await sm.composers.get(LAUNCH_KEY)!.compose());
       expect(hostDefaultPage).toContain("claude: b");

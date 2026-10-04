@@ -540,7 +540,7 @@ The footer shows **5 agents · up to 40 turns · about 30 min · balanced models
 with the lead and worker models below it. These are the fixed medium limits
 and the effective provider's balanced models, not launcher controls. The
 launcher sends no size, power or model overrides. For advanced inputs, use
-[`chat_swarm_start`](../../reference/tools/#chat_swarm_start).
+[`chat_swarm_start`](../../reference/tools-and-commands/#chat_swarm_start).
 
 **Prepare in chat · attach an issue or PR** opens a chat that gathers the issue or PR context, picks a
 size, and calls `chat_swarm_start`. Use it when the swarm needs evidence it

@@ -354,7 +354,6 @@ function launchState(): LaunchState {
     .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
     .map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath }));
   const provider = servingProvider(undefined);
-  const canDispatch = Boolean(startWorkflow && getRunStatus && cancelRun);
   const classes = (getProviders?.() ?? []).flatMap((p) =>
     p.modelClasses && !NOT_AGENT_PROVIDERS.has(p.id)
       ? [{ provider: p.id, classes: p.modelClasses }]
@@ -363,11 +362,7 @@ function launchState(): LaunchState {
   return {
     projects,
     ...(provider ? { provider } : {}),
-    refused: [...refusedApprovals],
     ...(classes.length > 0 ? { classes } : {}),
-    ...(canDispatch
-      ? {}
-      : { dispatchBlocked: "This Keelson host can't start workflows for a rib." }),
   };
 }
 

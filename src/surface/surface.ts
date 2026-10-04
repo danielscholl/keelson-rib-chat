@@ -73,6 +73,7 @@ export interface SurfaceDeps {
 
 export interface SwarmsSurface {
   acceptsLaunchNonce(nonce: string): boolean;
+  offersLaunchProject(id: string): boolean;
   track(ids: readonly string[]): void;
   select(id: string): void;
   selectAgent(id: string, agentId: string): Promise<void>;
@@ -192,8 +193,6 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
               },
             ]
           : [],
-      refused: [...(state.refused ?? [])],
-      dispatchBlocked: state.dispatchBlocked,
     };
   }
   const launch = createKeyPublisher<string>(
@@ -452,6 +451,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
 
   return {
     acceptsLaunchNonce: (nonce) => !disposed && nonce === launchNonce,
+    offersLaunchProject: (id) => !disposed && launchState().projects.some((p) => p.id === id),
     track,
     select(id) {
       selected = id;
