@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import {
   type CanvasBoardView,
+  DEFAULT_PROJECT_NAME,
+  DESIGN_TOKENS,
   expectView,
   type RibViewDescriptor,
   ribClientEffectSchema,
@@ -11,6 +14,7 @@ import {
   ribSurfaceDescriptorSchema,
   type SnapshotFrame,
   type SnapshotManager,
+  wcagContrast,
 } from "@keelson/shared";
 import { CONTEXT_BOUNDS, type ContextIndexEntry, EXCERPT_CHARS } from "../src/context.ts";
 import { applyStatus } from "../src/dispatch.ts";
@@ -53,11 +57,18 @@ import {
   INDEX_KEY,
   LAUNCH_KEY,
   recordKey,
+  reportKey,
   SERVER_KEY,
   SERVER_LOG_KEY,
   swarmKey,
 } from "../src/surface/keys.ts";
-import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
+import {
+  buildLaunch,
+  type LaunchState,
+  launchByline,
+  powerField,
+  TASK_PLACEHOLDER,
+} from "../src/surface/launch-board.ts";
 import {
   askText,
   dismissAskAction,
@@ -98,8 +109,9 @@ import {
   tokensTile,
 } from "../src/surface/swarm-board.ts";
 import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
-import type { StartSwarmInput } from "../src/tools.ts";
+import { START_BOUNDS, type StartSwarmInput } from "../src/tools.ts";
 import {
+  BODY_MAX,
   type ChildRun,
   MESSAGE_CHARS,
   MESSAGES_KEPT,
@@ -4311,7 +4323,7 @@ describe("publishing", () => {
             ? { live: s }
             : { ended: s };
       },
-      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
       readLog: async () => "log",
@@ -4896,7 +4908,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ live }),
       find: (id) => ({ live: live.find((s) => s.id === id) }),
-      launch: () => ({ projects: [], live: live.length, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: live.length }),
       readLog: async () => "log",
@@ -4934,7 +4946,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ live }),
       find: (id) => ({ live: live.find((s) => s.id === id) }),
-      launch: () => ({ projects: [], live: live.length, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: live.length }),
       readLog: async () => "log",
@@ -5013,7 +5025,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ ended: [...ended.values()] }),
       find: (id): SwarmRecord => (ended.has(id) ? { ended: ended.get(id) as SwarmSummary } : {}),
-      launch: () => ({ projects: [], live: 0, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
       readLog: async () => "log",
@@ -5028,11 +5040,15 @@ describe("publishing", () => {
     }
     surface.track([...ended.keys()]);
     expect(refreshes).toBe(1);
-    expect(views[0]).toEqual({ key: SERVER_LOG_KEY, canvasKind: "log", title: "ClickClack log" });
+    expect(views.find((v) => v.key === SERVER_LOG_KEY)).toEqual({
+      key: SERVER_LOG_KEY,
+      canvasKind: "log",
+      title: "ClickClack log",
+    });
     expect(views.filter((v) => v.canvasKind === "markdown")).toHaveLength(MAX_SWARM_KEYS);
-    expect(views.filter((v) => v.canvasKind === "html")).toHaveLength(MAX_SWARM_KEYS);
+    expect(views.filter((v) => v.canvasKind === "html")).toHaveLength(MAX_SWARM_KEYS + 1);
     expect(sm.keys()).not.toContain(recordKey("s0000"));
-    expect(views[1]).toEqual({
+    expect(views.find((v) => v.key === docKey("s0005"))).toEqual({
       key: docKey("s0005"),
       canvasKind: "markdown",
       title: "Swarm s0005",
@@ -5152,7 +5168,7 @@ describe("the record page", () => {
         sm,
         state: () => state({ live: [live] }),
         find: () => ({ live }),
-        launch: () => ({ projects: [], live: 1, ended: 0 }),
+        launch: () => ({ projects: [] }),
         launchOf: () => undefined,
         server: () => ({ live: 1 }),
         readLog: async () => "",
@@ -5452,7 +5468,7 @@ describe("the record page", () => {
       state: () => state({ live: [live], ended: [done] }),
       find: (id): SwarmRecord =>
         id === live.id ? { live } : id === done.id ? { ended: done } : {},
-      launch: () => ({ projects: [], live: 1, ended: 1 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
       readLog: async () => "log",
@@ -5571,7 +5587,7 @@ describe("actions", () => {
       views: [],
       state: () => state({ live: [current] }),
       find,
-      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
       readLog: async () => "log",
@@ -5652,6 +5668,8 @@ describe("actions", () => {
     const s = inspectorSummary();
     const calls: unknown[][] = [];
     const surface: SwarmsSurface = {
+      acceptsLaunchNonce: () => false,
+      offersLaunchProject: () => false,
       track: () => {},
       select: () => {},
       selectAgent: async () => {},
@@ -6117,7 +6135,7 @@ describe("actions", () => {
       views: [],
       state: () => state({ live: [fixtures.running!], ended: [fixtures.done!] }),
       find: deps.find,
-      launch: () => ({ projects: [], live: 1, ended: 1 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
       readLog: async () => "log",
@@ -6347,6 +6365,8 @@ describe("actions", () => {
   test("select-swarm selects a live swarm without opening a drawer or showing a toast", async () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
+      acceptsLaunchNonce: () => false,
+      offersLaunchProject: () => false,
       selectAgent: async () => {},
       selectAsk: async () => {},
       selectGate: async () => {},
@@ -6465,135 +6485,708 @@ describe("actions", () => {
 });
 
 describe("launching from the tab", () => {
-  const projects = [{ id: "p1", name: "keelson-sample" }];
+  const projects = [{ id: "p1", name: "keelson-sample", rootPath: "/tmp/keelson-sample" }];
+  const launcherHarness = (inputs: LaunchState = { projects: [] }) => {
+    const sm = new FakeSnapshots();
+    const views: RibViewDescriptor[] = [];
+    const surface = createSwarmsSurface({
+      sm,
+      views,
+      launch: () => inputs,
+      state: () => state({ live: [fixtures.running!] }),
+      find: actionDeps.find,
+      launchOf: () => oldLaunch,
+      server: () => ({ live: 1 }),
+      readLog: async () => "",
+      report: (id) =>
+        id === fixtures.done!.id
+          ? { title: "Findings", html: "<main>Findings only</main>", at: T0 }
+          : undefined,
+      windowMs: 1,
+    });
+    const page = () => String(sm.frames.get(LAUNCH_KEY)?.at(-1));
+    const nonce = () => page().match(/data-nonce="([^"]+)"/)![1]!;
+    return { sm, views, surface, inputs, page, nonce };
+  };
 
-  test("the Launch header is one form beside Prepare in chat, folded once the tab has a swarm", () => {
-    for (const st of [
-      { projects, live: 0, ended: 0 },
-      { projects: [], live: 0, ended: 0 },
-      { projects, live: 2, ended: 3, dispatchBlocked: "no workflows", refused: ["fix-issue"] },
-    ]) {
-      board(LAUNCH_KEY, buildLaunch(st));
-    }
-    const items = (st: Parameters<typeof buildLaunch>[0]) => {
-      const section = buildLaunch(st).sections[0];
-      return section?.kind === "actions" ? section.items : [];
+  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
+    const page = buildLaunch({ projects }, "instance-nonce");
+    const script = page.match(/<script>([\s\S]*?)<\/script>/)![1]!;
+    const makeElement = (textContent = "") => ({
+      textContent,
+      value: "",
+      disabled: false,
+      dataset: { nonce: "instance-nonce" },
+      selectedOptions: [{ dataset: { name: "A <name>", path: "~/A <path>" } }],
+      attributes: new Map<string, string>(),
+      classes: new Set<string>(),
+      listeners: new Map<
+        string,
+        (event: {
+          preventDefault(): void;
+          key?: string;
+          metaKey?: boolean;
+          ctrlKey?: boolean;
+        }) => void
+      >(),
+      addEventListener(type: string, listener: (event: { preventDefault(): void }) => void) {
+        this.listeners.set(type, listener);
+      },
+      setAttribute(name: string, value: string) {
+        this.attributes.set(name, value);
+      },
+      removeAttribute(name: string) {
+        this.attributes.delete(name);
+      },
+      get classList() {
+        return {
+          toggle: (name: string, enabled: boolean) =>
+            enabled ? this.classes.add(name) : this.classes.delete(name),
+        };
+      },
+    });
+    const elements = {
+      "launch-form": makeElement(),
+      "launch-task": makeElement(),
+      "launch-project": makeElement(),
+      "launch-start": makeElement("Start swarm"),
+      "launch-prepare": makeElement(),
+      "project-note": makeElement("Chat mode note"),
+      "project-row": makeElement(),
+      "launch-mode": makeElement("Chat mode · nothing on disk"),
     };
-    expect(items({ projects, live: 0, ended: 0 }).map((i) => i.label)).toEqual([
-      "Start a swarm",
-      "Prepare in chat · attach an issue or PR",
-    ]);
-    expect(items({ projects, live: 1, ended: 0 })[0]?.expanded).toBe(true);
-    expect(buildLaunch({ projects, live: 0, ended: 0 }).header).toEqual({
-      defaultCollapsed: false,
+    const calls: { type: string; payload: Record<string, unknown> }[] = [];
+    const timers: { callback: () => void; delay: number }[] = [];
+    runInNewContext(script, {
+      document: { getElementById: (id: keyof typeof elements) => elements[id] },
+      keelson: {
+        action: (type: string, payload: Record<string, unknown>) => {
+          calls.push({ type, payload });
+        },
+      },
+      setTimeout: (callback: () => void, delay: number) => {
+        timers.push({ callback, delay });
+      },
     });
-    expect(buildLaunch({ projects, live: 0, ended: 1 }).header).toEqual({
-      defaultCollapsed: true,
-    });
-    expect(buildLaunch({ projects, live: 1, ended: 0 }).header).toEqual({
-      defaultCollapsed: true,
-    });
-    expect(items({ projects, live: 0, ended: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
-      "task",
-      "project",
-      "setup",
-      "tools",
-      "workflows",
-      "size",
-      "power",
-      "model",
+    let prevented = 0;
+    const event = {
+      preventDefault: () => {
+        prevented++;
+      },
+    };
+    const task = elements["launch-task"];
+    const start = elements["launch-start"];
+    const project = elements["launch-project"];
+    // The host sandbox has no allow-forms, so Start is a click, never a submit.
+    expect(elements["launch-form"].listeners.has("submit")).toBe(false);
+    const submit = () => start.listeners.get("click")!(event);
+    task.value = "Keep my typed draft";
+    submit();
+    submit();
+    expect(prevented).toBe(0);
+    expect(calls).toEqual([
+      {
+        type: "start-swarm",
+        payload: { nonce: "instance-nonce", task: task.value, project: "", tools: "none" },
+      },
     ]);
-    expect(items({ projects: [], live: 0, ended: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
-      "task",
-      "setup",
-      "workflows",
-      "size",
-      "power",
-      "model",
-    ]);
-    const adjusting = { field: "setup", equals: "adjust" };
-    const fieldsOf = items({ projects, live: 0, ended: 0 })[0]?.fields ?? [];
-    for (const name of ["size", "power", "model"]) {
-      expect(fieldsOf.find((f) => f.name === name)?.showWhen).toEqual(adjusting);
+    expect(start.disabled).toBe(true);
+    expect(start.textContent).toBe("Starting…");
+    expect(start.attributes.get("aria-busy")).toBe("true");
+    expect(timers).toHaveLength(1);
+    expect(timers[0]!.delay).toBe(2000);
+    timers[0]!.callback();
+    expect(start.disabled).toBe(false);
+    expect(start.textContent).toBe("Start swarm");
+    expect(start.attributes.has("aria-busy")).toBe(false);
+    expect(task.value).toBe("Keep my typed draft");
+
+    project.value = "p1";
+    project.listeners.get("change")!(event);
+    expect(elements["project-note"].textContent).toBe(
+      "Agents read ~/A <path> and run read-only commands there. Nothing changes unless you allow more.",
+    );
+    expect(elements["launch-mode"].textContent).toBe("Reads A <name> · no workflows");
+    expect(elements["project-row"].classes.has("has-project")).toBe(true);
+    expect(calls).toHaveLength(1);
+    submit();
+    expect(calls[1]).toEqual({
+      type: "start-swarm",
+      payload: { nonce: "instance-nonce", task: task.value, project: "p1", tools: "read" },
+    });
+    timers[1]!.callback();
+    elements["launch-prepare"].listeners.get("click")!(event);
+    expect(calls[2]).toEqual({ type: "start-in-chat", payload: { nonce: "instance-nonce" } });
+    task.listeners.get("keydown")!({ ...event, key: "Enter", metaKey: true });
+    expect(calls[3]?.type).toBe("start-swarm");
+    timers[2]!.callback();
+    task.listeners.get("keydown")!({ ...event, key: "Enter" });
+    expect(calls).toHaveLength(4);
+    expect(task.value).toBe("Keep my typed draft");
+    project.value = "";
+    project.listeners.get("change")!(event);
+    expect(elements["project-note"].textContent).toBe("Chat mode note");
+    expect(elements["launch-mode"].textContent).toBe("Chat mode · nothing on disk");
+    expect(elements["project-row"].classes.has("has-project")).toBe(false);
+    expect(page).not.toContain("fetch(");
+    expect(page).not.toContain("innerHTML");
+    expect(page).not.toContain("await keelson.action");
+    expect(page).not.toContain("localStorage");
+    expect(page).not.toContain("sessionStorage");
+  });
+
+  test("publishing declares HTML, validates strings and owns a nonce per surface instance", async () => {
+    const h = launcherHarness();
+    await Bun.sleep(5);
+    expect(h.views).toContainEqual({ key: LAUNCH_KEY, canvasKind: "html", title: "Start a swarm" });
+    const validate = h.sm.composers.get(LAUNCH_KEY)!.validate!;
+    expect(validate(h.page())).toBe(h.page());
+    for (const invalid of ["", null, {}, 123]) {
+      expect(() => validate(invalid)).toThrow("expects a non-empty html page");
     }
-    expect(fieldsOf.find((f) => f.name === "setup")).toMatchObject({
-      defaultValue: "defaults",
-      options: [
-        { value: "defaults", label: "defaults · medium · balanced" },
-        { value: "adjust", label: "adjust" },
+    const nonce = h.nonce();
+    expect(nonce).toMatch(/^[a-f0-9-]{36}$/);
+    expect(h.surface.acceptsLaunchNonce(nonce)).toBe(true);
+    await h.sm.recompose(LAUNCH_KEY);
+    expect(h.nonce()).toBe(nonce);
+    h.surface.dispose();
+    expect(h.surface.acceptsLaunchNonce(nonce)).toBe(false);
+    expect(h.views).toEqual([]);
+    const next = launcherHarness();
+    try {
+      await Bun.sleep(5);
+      expect(next.nonce()).not.toBe(nonce);
+      expect(next.surface.acceptsLaunchNonce(nonce)).toBe(false);
+    } finally {
+      next.surface.dispose();
+    }
+  });
+
+  test("only the two launcher HTML verbs accept the composed instance nonce", async () => {
+    const h = launcherHarness({ projects });
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const nonce = h.nonce();
+      const deps = { ...actionDeps, surface: h.surface };
+      for (const project of ["", "p1"]) {
+        const result = await handleSwarmsAction(
+          {
+            type: "start-swarm",
+            origin: "canvas-html",
+            payload: {
+              nonce,
+              task: "  Investigate the build  ",
+              project,
+              tools: project ? "read" : "none",
+            },
+          },
+          deps,
+        );
+        expect(result).toEqual({
+          ok: true,
+          data: { effect: "open-surface", surfaceId: "surface:chat:swarms", regionKey: INDEX_KEY },
+        });
+      }
+      expect(begun).toEqual([
+        { task: "Investigate the build", workTools: "none" },
+        { task: "Investigate the build", project: "p1", workTools: "read" },
+      ]);
+      const chat = await handleSwarmsAction(
+        { type: "start-in-chat", origin: "canvas-html", payload: { nonce } },
+        deps,
+      );
+      expect(chat).toMatchObject({
+        ok: true,
+        data: { effect: "open-chat", seed: { name: "Start a swarm" } },
+      });
+      expect(begun).toHaveLength(2);
+
+      for (const type of ["start-swarm", "start-in-chat"]) {
+        for (const badNonce of [undefined, "", 7, null, {}, [], ` ${nonce}`, "old-instance"]) {
+          expect(
+            await handleSwarmsAction(
+              { type, origin: "canvas-html", payload: { nonce: badNonce, task: "t" } },
+              deps,
+            ),
+          ).toEqual({
+            ok: false,
+            error: "the Swarms tab takes actions from its boards only",
+          });
+        }
+        for (const payload of [undefined, null, "nonce", []]) {
+          expect(
+            (await handleSwarmsAction({ type, origin: "canvas-html", payload }, deps)).ok,
+          ).toBe(false);
+        }
+        expect(
+          (
+            await handleSwarmsAction(
+              { type, origin: "canvas-html", payload: { nonce, task: "t" } },
+              { ...deps, surface: undefined },
+            )
+          ).ok,
+        ).toBe(false);
+      }
+      expect(begun).toHaveLength(2);
+      h.surface.dispose();
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "start-swarm", origin: "canvas-html", payload: { nonce, task: "t" } },
+            deps,
+          )
+        ).ok,
+      ).toBe(false);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("HTML launches ignore crafted access, workflows and setup", async () => {
+    const h = launcherHarness({ projects });
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      for (const project of ["p1", "", undefined]) {
+        for (const setup of [undefined, "defaults", "adjust"]) {
+          expect(
+            (
+              await handleSwarmsAction(
+                {
+                  type: "start-swarm",
+                  origin: "canvas-html",
+                  payload: {
+                    nonce: h.nonce(),
+                    task: "Fix issue",
+                    project,
+                    tools: "write",
+                    workflows: "fix-issue",
+                    setup,
+                    size: "large",
+                    power: "deep",
+                    model: "gpt-6-astra",
+                    provider: "copilot",
+                  },
+                },
+                { ...actionDeps, surface: h.surface },
+              )
+            ).ok,
+          ).toBe(true);
+          expect(begun.at(-1)).toEqual({
+            task: "Fix issue",
+            workTools: project ? "read" : "none",
+            ...(project ? { project } : {}),
+          });
+        }
+      }
+      expect(begun).toHaveLength(9);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("HTML launches take only a project the launcher lists", async () => {
+    const h = launcherHarness({
+      projects: [
+        ...projects,
+        { id: "hidden-project", name: DEFAULT_PROJECT_NAME, rootPath: "/hidden-root" },
       ],
     });
-    expect(launchByline()).toBe(
-      "Start runs medium · 5 agents · 40 turns · 30 min · balanced power",
-    );
-    const field = (st: Parameters<typeof buildLaunch>[0], name: string) =>
-      items(st)[0]?.fields?.find((f) => f.name === name);
-    expect(field({ projects: [], live: 0, ended: 0 }, "workflows")?.placeholder).toBe(
-      "needs a registered project",
-    );
-    expect(
-      field({ projects, live: 0, ended: 0, refused: ["fix-issue"] }, "workflows")?.placeholder,
-    ).toBe(
-      "none: the swarm investigates · e.g. fix-issue · fix-issue approvals: you answer them in Workflows",
-    );
-    expect(field({ projects, live: 0, ended: 0 }, "size")?.options?.map((o) => o.label)).toEqual([
-      "small · 3 agents · 20 turns",
-      "medium · 5 agents · 40 turns",
-      "large · 8 agents · 80 turns",
-    ]);
-    expect(field({ projects, live: 0, ended: 0 }, "project")?.placeholder).toBe("no project");
-    expect(field({ projects, live: 0, ended: 0 }, "workflows")?.showWhen).toEqual({
-      field: "project",
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const act = (project: string) =>
+        handleSwarmsAction(
+          {
+            type: "start-swarm",
+            origin: "canvas-html",
+            payload: { nonce: h.nonce(), task: "Fix issue", project },
+          },
+          { ...actionDeps, surface: h.surface },
+        );
+      for (const project of ["hidden-project", DEFAULT_PROJECT_NAME, "keelson-sample", "p9"]) {
+        expect(await act(project)).toEqual({
+          ok: false,
+          error: `the launcher doesn't offer project '${project}'`,
+        });
+      }
+      h.inputs.projects = [];
+      expect((await act("p1")).ok).toBe(false);
+      expect(begun).toHaveLength(0);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("HTML launches retain task and link validation before admission", async () => {
+    const h = launcherHarness({ projects });
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const act = (payload: Record<string, unknown>) =>
+        handleSwarmsAction(
+          {
+            type: "start-swarm",
+            origin: "canvas-html",
+            payload: { nonce: h.nonce(), ...payload },
+          },
+          { ...actionDeps, surface: h.surface },
+        );
+      for (const task of ["", " \n ", undefined, 123]) {
+        expect(await act({ task })).toEqual({ ok: false, error: "a swarm needs a task" });
+      }
+      expect(await act({ task: "x".repeat(BODY_MAX + 1) })).toEqual({
+        ok: false,
+        error: `a task is at most ${BODY_MAX} characters`,
+      });
+      for (const task of [
+        "See https://example.com/issue",
+        "See http://example.com/pr",
+        "Review #42",
+        "Review (#42)",
+      ]) {
+        expect(await act({ task })).toEqual({ ok: false, error: LINK_REFUSAL });
+      }
+      expect(begun).toHaveLength(0);
+      expect((await act({ task: `  ${"x".repeat(BODY_MAX)}  ` })).ok).toBe(true);
+      expect(begun).toEqual([{ task: "x".repeat(BODY_MAX), workTools: "none" }]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("record and report publications never carry the launcher nonce", async () => {
+    const h = launcherHarness();
+    try {
+      h.surface.track([fixtures.done!.id, fixtures.running!.id]);
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      for (const key of [
+        recordKey(fixtures.done!.id),
+        recordKey(fixtures.running!.id),
+        reportKey(fixtures.done!.id),
+      ]) {
+        const page = h.sm.frames.get(key)?.at(-1);
+        expect(typeof page).toBe("string");
+        expect(String(page)).not.toContain(nonce);
+        expect(String(page)).not.toContain("data-nonce");
+      }
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("an old frame nonce is refused by a recreated surface", async () => {
+    const old = launcherHarness();
+    await Bun.sleep(5);
+    const nonce = old.nonce();
+    old.surface.dispose();
+    const next = launcherHarness();
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      for (const type of ["start-swarm", "start-in-chat"]) {
+        expect(
+          await handleSwarmsAction(
+            { type, origin: "canvas-html", payload: { nonce, task: "t" } },
+            { ...actionDeps, surface: next.surface },
+          ),
+        ).toEqual({ ok: false, error: "the Swarms tab takes actions from its boards only" });
+      }
+      expect(begun).toHaveLength(0);
+    } finally {
+      next.surface.dispose();
+    }
+  });
+
+  test("only project/provider configuration changes replace the launcher document", async () => {
+    const h = launcherHarness({
+      projects,
+      provider: "claude",
+      classes: [{ provider: "claude", classes: { fast: "a", balanced: "b", deep: "c" } }],
     });
-    expect(field({ projects, live: 0, ended: 0 }, "tools")?.showWhen).toEqual({ field: "project" });
-    expect(field({ projects, live: 0, ended: 0 }, "tools")?.options).toEqual([
-      { value: "none", label: "chat only" },
-      { value: "read", label: "read the project" },
-      { value: "write", label: "write the project" },
+    try {
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      let previous = h.page();
+      for (const project of [
+        { ...projects[0]!, id: "p2" },
+        { ...projects[0]!, rootPath: "/another/root" },
+        { ...projects[0]!, name: "Another name" },
+      ]) {
+        h.inputs.projects = [project];
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.page()).not.toBe(previous);
+        expect(h.nonce()).toBe(nonce);
+        previous = h.page();
+      }
+      h.inputs.classes = [
+        { provider: "claude", classes: { fast: "a", balanced: "changed-model", deep: "c" } },
+      ];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.page()).not.toBe(previous);
+      previous = h.page();
+      expect(h.nonce()).toBe(nonce);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+  test("all other HTML verbs refuse even a valid nonce before side effects", async () => {
+    const h = launcherHarness();
+    try {
+      await Bun.sleep(5);
+      const unexpected = () => {
+        throw new Error("HTML gate allowed a side effect");
+      };
+      const deps: ActionDeps = {
+        ...actionDeps,
+        surface: h.surface,
+        find: unexpected,
+        live: unexpected,
+        begin: unexpected,
+        launchOf: unexpected,
+        probe: unexpected,
+        hasReport: unexpected,
+      };
+      for (const type of [
+        "select-swarm",
+        "select-agent",
+        "select-ask",
+        "select-gate",
+        "open-details",
+        "swarm-open",
+        "history-open",
+        "read-doc",
+        "message-lead",
+        "steer",
+        "message-agent",
+        "reply",
+        "reply-ask",
+        "dismiss-ask",
+        "stop-swarm",
+        "run-again",
+        "copy-conclusion",
+        "open-record",
+        "open-report",
+        "open-run",
+        "server-manage",
+        "server-start",
+        "server-stop",
+        "server-reset",
+        "server-probe",
+        "server-log",
+        "unknown",
+      ]) {
+        expect(
+          await handleSwarmsAction(
+            { type, origin: "canvas-html", payload: { nonce: h.nonce(), id: "s9hjx", task: "t" } },
+            deps,
+          ),
+        ).toEqual({
+          ok: false,
+          error: "the Swarms tab takes actions from its boards only",
+        });
+      }
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("omitted access defaults to chat-only without a project and read with one", async () => {
+    begun.length = 0;
+    for (const payload of [
+      { task: "t" },
+      { task: "t", project: "p1" },
+      { task: "t", tools: "read" },
+      { task: "t", project: "p1", tools: "none" },
+    ]) {
+      expect((await handleSwarmsAction({ type: "start-swarm", payload }, actionDeps)).ok).toBe(
+        true,
+      );
+    }
+    expect(begun).toEqual([
+      { task: "t", workTools: "none" },
+      { task: "t", project: "p1", workTools: "read" },
+      { task: "t", workTools: "read" },
+      { task: "t", project: "p1", workTools: "none" },
     ]);
-    expect(field({ projects: [], live: 0, ended: 0 }, "workflows")?.showWhen).toBeUndefined();
-    expect(
-      field({ projects, live: 0, ended: 0, dispatchBlocked: "no workflows" }, "workflows")
-        ?.showWhen,
-    ).toBeUndefined();
-    expect(items({ projects, live: 0, ended: 0 })[0]?.pendingLabel).toBe("Starting…");
+  });
+
+  test("ordinary refreshes and swarm changes leave the launcher unchanged", async () => {
+    const h = launcherHarness({ projects, provider: "copilot" });
+    try {
+      await Bun.sleep(5);
+      const page = h.page();
+      for (const kind of ["message", "start", "end", "gate", "turn"] as const) {
+        h.surface.changed(fixtures.running!.id, kind);
+        h.surface.refresh();
+      }
+      h.surface.select(fixtures.running!.id);
+      h.surface.forget([fixtures.done!.id]);
+      await Bun.sleep(10);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
+      const frame = await h.sm.recompose(LAUNCH_KEY);
+      expect(frame?.data).toBe(page);
+      h.inputs.classes = [{ provider: "other", classes: { fast: "x", balanced: "y", deep: "z" } }];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(2);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("relevant launcher changes coalesce and survive in-flight updates and failed composition", async () => {
+    const h = launcherHarness({ projects: [...projects], provider: "copilot" });
+    try {
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      h.inputs.projects = [{ ...projects[0]!, name: "New name" }];
+      for (let i = 0; i < 10; i++) h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(2);
+      expect(h.page()).toContain("New name");
+      expect(h.nonce()).toBe(nonce);
+
+      let unblock!: () => void;
+      h.sm.gate = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      h.inputs.provider = "claude";
+      h.surface.refresh();
+      await Bun.sleep(5);
+      h.inputs.classes = [
+        { provider: "claude", classes: { fast: "a", balanced: "latest-model", deep: "c" } },
+      ];
+      h.surface.refresh();
+      unblock();
+      h.sm.gate = undefined;
+      await Bun.sleep(10);
+      expect(h.page()).toContain("claude: latest-model");
+      expect(h.nonce()).toBe(nonce);
+
+      const prior = h.page();
+      h.sm.failures.set(LAUNCH_KEY, new Error("compose failed"));
+      h.inputs.projects = [];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.page()).toBe(prior);
+      expect(h.surface.acceptsLaunchNonce(nonce)).toBe(true);
+      h.sm.failures.clear();
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.page()).not.toContain("New name");
+      expect(h.nonce()).toBe(nonce);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("the launcher is a themed HTML form with only task and project controls", () => {
+    for (const st of [{ projects }, { projects: [] }]) {
+      const page = buildLaunch(st, "nonce");
+      for (const copy of [
+        "Start a swarm",
+        "Describe the problem. Agents investigate, debate, and bring back a conclusion.",
+        "Prepare in chat · attach an issue or PR",
+        "TASK",
+        "PROJECT",
+        TASK_PLACEHOLDER,
+        "Agents can't open links. Paste the text, or use Prepare in chat to attach the issue or PR.",
+        "Picking one lets agents read it. Anything more is a switch.",
+        "Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.",
+        "5 agents · up to 40 turns · about 30 min · balanced models",
+        "Chat mode · nothing on disk",
+      ])
+        expect(page).toContain(copy);
+      expect(page).toContain('rows="4" required aria-describedby="task-hint"');
+      expect(page).toContain("resize: vertical");
+      expect(page).toContain('for="launch-task"');
+      expect(page).toContain('for="launch-project"');
+      expect(page).toContain('<option value="" selected>No project · chat only</option>');
+      expect(page).toContain(':root[data-theme="light"]');
+      expect(page).toContain(":focus-visible");
+      for (const name of ["setup", "tools", "workflows", "size", "power", "model", "provider"]) {
+        expect(page).not.toContain(`name="${name}"`);
+      }
+      expect(page).not.toContain("--brand");
+    }
+  });
+
+  test("project labels shorten only the home directory and escape every attribute", () => {
+    const page = buildLaunch(
+      {
+        projects: [
+          { id: "home", name: "Home", rootPath: homedir() },
+          { id: "child", name: "Child", rootPath: `${homedir()}/code` },
+          { id: "sibling", name: "Sibling", rootPath: `${homedir()}-other/code` },
+          { id: '"><script>', name: "A & 'B'", rootPath: '/tmp/<repo>"' },
+          { id: "hidden-project", name: DEFAULT_PROJECT_NAME, rootPath: "/hidden-root" },
+        ],
+      },
+      'nonce"',
+    );
+    expect(page).toContain("Home · ~</option>");
+    expect(page).toContain("Child · ~/code</option>");
+    expect(page).toContain(`Sibling · ${homedir()}-other/code</option>`);
+    expect(page).toContain('value="&quot;&gt;&lt;script&gt;"');
+    expect(page).toContain('data-name="A &amp; &#39;B&#39;"');
+    expect(page).toContain('data-path="/tmp/&lt;repo&gt;&quot;"');
+    expect(page).toContain('data-nonce="nonce&quot;"');
+    expect(page).not.toContain("hidden-project");
+    expect(page).not.toContain("/hidden-root");
+    expect(page.match(/<script>/g)).toHaveLength(1);
+  });
+
+  test("footer models use the serving provider rather than class-list order", () => {
+    const classes = [
+      { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
+      { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
+    ];
+    expect(buildLaunch({ projects, provider: "copilot", classes }, "nonce")).toContain(
+      "lead claude-sonnet-5 · workers claude-sonnet-5.5",
+    );
+    const fallback = buildLaunch(
+      { projects, provider: "claude", classes: [...classes].reverse() },
+      "nonce",
+    );
+    expect(fallback).toContain("claude: sonnet-9");
+    expect(fallback).not.toContain("gpt-6");
+  });
+
+  test("all launcher text pairings meet 4.5:1 in both themes", () => {
+    for (const theme of ["dark", "light"] as const) {
+      const t = DESIGN_TOKENS[theme];
+      for (const bg of [t.bg, t.card, t.card2]) {
+        for (const fg of [t.fg, t.fgStrong, t.muted]) {
+          expect(wcagContrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      expect(wcagContrast(t.accent, t.card2)).toBeGreaterThanOrEqual(4.5);
+      expect(wcagContrast(theme === "dark" ? t.bg : t.card, t.accent)).toBeGreaterThanOrEqual(4.5);
+    }
+    const page = buildLaunch({ projects }, "nonce");
+    expect(page).toContain("--button-ink: var(--bg)");
+    expect(page).toContain("--button-ink: var(--card)");
   });
 
   test("each power's hover names the model every provider runs at it", () => {
-    const section = buildLaunch({
-      projects,
-      live: 0,
-      ended: 0,
-      classes: [
-        { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
-        { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
-      ],
-    }).sections[0];
-    const power = (section?.kind === "actions" ? section.items[0]?.fields : [])?.find(
-      (f) => f.name === "power",
-    );
+    const power = powerField("balanced", [
+      { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
+      { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
+    ]);
     expect(power?.defaultValue).toBe("balanced");
     expect(power?.options?.find((o) => o.value === "deep")?.hint).toBe(
       "claude: opus-9 · copilot: lead claude-opus-5.5 · workers claude-sonnet-5",
     );
-    const flat = buildLaunch({
-      projects,
-      live: 0,
-      ended: 0,
-      classes: [{ provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } }],
-    }).sections[0];
-    const flatPower = (flat?.kind === "actions" ? flat.items[0]?.fields : [])?.find(
-      (f) => f.name === "power",
-    );
+    const flatPower = powerField("balanced", [
+      { provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } },
+    ]);
     expect(flatPower?.options?.find((o) => o.value === "fast")?.hint).toBe(
       "claude: auto (every power)",
-    );
-    expect(
-      buildLaunch({ projects, live: 0, ended: 0 }).sections.flatMap((x) =>
-        x.kind === "actions" ? (x.items[0]?.fields ?? []) : [],
-      ),
-    ).toContainEqual(
-      expect.objectContaining({ name: "model", placeholder: "use the power's model" }),
     );
   });
 
@@ -6712,8 +7305,8 @@ describe("start and run again", () => {
     });
     await act("start-swarm", { task: "Why is the build slow?", setup: "adjust", size: "small" });
     expect(begun).toEqual([
-      { task: "Why is the build slow?", workTools: "read" },
-      { task: "Why is the build slow?", workTools: "read", size: "small" },
+      { task: "Why is the build slow?", workTools: "none" },
+      { task: "Why is the build slow?", workTools: "none", size: "small" },
     ]);
   });
 
@@ -6835,7 +7428,7 @@ describe("the server line and inspector", () => {
       sm,
       state: () => state({ server }),
       find: () => ({}),
-      launch: () => ({ projects: [], live: 0, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ server, live: 0, ...(op ? { op } : {}) }),
       readLog: async () => "log",
@@ -7217,11 +7810,82 @@ describe("the launch store", () => {
 });
 
 describe("the rib's surface", () => {
+  test("launch state filters the fallback project and keeps provider configuration", async () => {
+    const sm = new FakeSnapshots();
+    const saved = process.env.KEELSON_WORKFLOW_PROVIDER;
+    process.env.KEELSON_WORKFLOW_PROVIDER = "copilot";
+    try {
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        runAgentTurn: () => {
+          throw new Error("no agent turn should run");
+        },
+        getSnapshotManager: () => sm,
+        getProjects: () => [
+          {
+            id: "fallback",
+            name: DEFAULT_PROJECT_NAME,
+            rootPath: "/tmp/fallback",
+            createdAt: "2026-10-04T00:00:00Z",
+          },
+          { id: "p1", name: "sample", rootPath: "/tmp/sample", createdAt: "2026-10-04T00:00:00Z" },
+        ],
+        getProviders: () => [
+          {
+            id: "claude",
+            displayName: "Claude",
+            modelClasses: { fast: "a", balanced: "b", deep: "c" },
+          },
+          {
+            id: "copilot",
+            displayName: "Copilot",
+            modelClasses: { fast: "x", balanced: "y", deep: "z" },
+          },
+        ],
+      });
+      const page = await sm.composers.get(LAUNCH_KEY)!.compose();
+      const json = JSON.stringify(page);
+      expect(json).toContain("sample");
+      expect(json).not.toContain("fallback");
+      expect(json).not.toContain(`"label":"${DEFAULT_PROJECT_NAME}"`);
+      expect(json).toContain("/tmp/sample");
+      expect(json).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
+      expect(json).not.toContain("claude: b");
+      const nonce = String(page).match(/data-nonce="([^"]+)"/)![1]!;
+      expect(
+        await rib.onAction?.(
+          {
+            type: "start-swarm",
+            origin: "canvas-html",
+            payload: { nonce, task: "Investigate", project: "missing-project", tools: "read" },
+          },
+          { getExec: () => ({}) as never },
+        ),
+      ).toEqual({ ok: false, error: "the launcher doesn't offer project 'missing-project'" });
+      delete process.env.KEELSON_WORKFLOW_PROVIDER;
+      const hostDefaultPage = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+      expect(hostDefaultPage).toContain("claude: b");
+      expect(hostDefaultPage).not.toContain("lead claude-sonnet-5");
+    } finally {
+      if (saved === undefined) delete process.env.KEELSON_WORKFLOW_PROVIDER;
+      else process.env.KEELSON_WORKFLOW_PROVIDER = saved;
+      await rib.dispose?.();
+    }
+  });
+
   test("declares one valid Swarms tab over the live index", () => {
     expect(rib.surfaces).toHaveLength(1);
     const surface = ribSurfaceDescriptorSchema.parse(rib.surfaces?.[0]);
     expect(surface).toMatchObject({ id: "swarms", title: "Swarms", hideRegionActions: true });
     expect(JSON.stringify(surface.layout)).toContain(INDEX_KEY);
+    expect(surface.layout.header).toEqual({
+      key: LAUNCH_KEY,
+      title: "Start a swarm",
+      collapsible: true,
+      byline: "Agents investigate, debate, and bring back a conclusion.",
+    });
+    expect(launchByline()).toBe("Agents investigate, debate, and bring back a conclusion.");
+    expect(surface.layout.header?.collapsed).toBeUndefined();
     expect(surface.layout.footer).toBeUndefined();
     expect(JSON.stringify(surface.layout)).not.toContain(SERVER_KEY);
   });

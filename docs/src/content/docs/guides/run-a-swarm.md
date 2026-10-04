@@ -1,12 +1,12 @@
 ---
 title: Run a swarm
-description: Start a swarm from chat, MCP, or the workflow catalog, watch it in ClickClack, and read its result.
+description: Start a swarm from the Swarms tab, chat, MCP, or the workflow catalog, and read its result.
 sidebar:
   order: 3
 ---
 
-A swarm starts from one tool call and returns at once. You watch it in
-ClickClack and collect the result when it ends.
+A swarm starts from the **Swarms** tab or one tool call and returns at once.
+You watch it in Keelson or ClickClack and collect the result when it ends.
 
 ## Write the task
 
@@ -25,7 +25,22 @@ the checkout goes in [task context](../supply-task-context/), not in the task.
 
 ## Start it
 
-From a chat session or any MCP client:
+In the **Swarms** tab, type the task into **Start a swarm**, then press
+**Start swarm**. **No project · chat only** is selected by default, so agents
+read nothing on disk. Pick a project to grant read access; each option shows
+its name and path, with the home directory shortened to `~`. The footer shows
+the fixed medium limits (5 agents, up to 40 turns, about 30 minutes) and the
+effective provider's balanced models. This launcher has no size, model, write
+or workflow controls.
+
+For an issue or PR, paste its text or use **Prepare in chat** to gather and
+attach the evidence. A task naming a URL or `#N` is refused with a host toast.
+**Starting…** is a two-second duplicate-click guard, not a completion signal;
+the task stays in place and a successful start opens the swarm on the index.
+See [the launcher](../swarms-tab/#starting-a-swarm) for draft retention and
+retry behavior.
+
+For advanced inputs, call `chat_swarm_start` from chat or any MCP client:
 
 ```json
 {

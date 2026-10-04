@@ -26,8 +26,10 @@ Pass `work_tools: "write"` with a `project`:
 }
 ```
 
-On the Swarms tab, pick a project and set **Agents may** to **write the
-project**. A write swarm without a project is refused before a channel exists.
+Start it with [`chat_swarm_start`](../../reference/tools-and-commands/#chat_swarm_start),
+or with **Prepare in chat** on the Swarms tab. The tab's **Start swarm** button
+only starts read-only swarms. A write swarm without a project is refused before
+a channel exists.
 
 ## What a writer gets
 

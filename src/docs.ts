@@ -751,16 +751,20 @@ applicable conclusion or refused draft and the full task, not questions, gates,
 context, runs or activity. The conclusion's copy button copies all of it, not
 the board preview.
 
-The Start a swarm header is one form, open on an empty tab and folded once
-the tab has a swarm; its folded head names the default launch. Setup starts on
-defaults (medium, balanced power, the power's model), and adjust shows size,
-power and model override; a launch on defaults sends none of them, so Run again
-repeats a choice and not a default. The Agents may field offers chat only, read the
-project, and write the project (a write swarm; see Write mode), and appears
-once a project is picked. Workflows named means the lead may
-dispatch them; none named means the swarm investigates. A task that names a
-URL or #N with no context is refused, since agents cannot open links; Prepare
-in chat opens a chat that gathers the evidence and calls \`chat_swarm_start\`.
+The Start a swarm header is a themed HTML launcher with Task, Project and
+Start swarm. It opens expanded and you can fold it by hand. No project · chat only
+is the default: nothing on disk is read or changed. Projects list as name · path,
+with the home directory shortened to ~; picking one gives agents read access,
+not write access or workflows. The footer shows the fixed medium limits
+(5 agents, up to 40 turns, about 30 minutes) and the effective provider's balanced
+models. The launcher sends no size, power or model overrides.
+A task that names a URL or #N is refused, since agents cannot open links;
+Prepare in chat opens a chat that gathers the evidence and calls \`chat_swarm_start\`.
+Start shows Starting… for about two seconds to guard against duplicate clicks,
+not to track completion, and leaves the typed task in place. A refusal appears
+as a host toast; a successful start opens the swarm on the index. Ordinary
+refreshes preserve the draft, but a project-list or provider configuration
+change can replace the page and discard it.
 An ended swarm's board offers Run again, whose hint names what it reuses.
 
 One muted server line ends the index, even on an empty tab:

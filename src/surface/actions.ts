@@ -115,7 +115,8 @@ function startInput(payload: Record<string, unknown>): StartSwarmInput | string 
   const power = adjusted ? powerOf(payload) : undefined;
   const input: StartSwarmInput = {
     task,
-    workTools: tools === "none" || tools === "write" ? tools : "read",
+    workTools:
+      tools === "none" || tools === "read" || tools === "write" ? tools : project ? "read" : "none",
     ...(size ? { size } : {}),
     ...(power ? { power } : {}),
     ...(project ? { project } : {}),
@@ -240,9 +241,16 @@ export async function handleSwarmsAction(
   action: RibAction,
   deps: ActionDeps,
 ): Promise<RibActionResult> {
-  if (action.origin === "canvas-html")
-    return fail("the Swarms tab takes actions from its boards only");
   const payload = payloadOf(action);
+  if (
+    action.origin === "canvas-html" &&
+    ((action.type !== "start-swarm" && action.type !== "start-in-chat") ||
+      typeof payload.nonce !== "string" ||
+      payload.nonce.length === 0 ||
+      !deps.surface?.acceptsLaunchNonce(payload.nonce))
+  ) {
+    return fail("the Swarms tab takes actions from its boards only");
+  }
   const raw = payload.id;
   const id = typeof raw === "string" && ID.test(raw) ? raw : undefined;
   const known = (swarmId: string) => {
@@ -467,7 +475,11 @@ export async function handleSwarmsAction(
       return done(`Stopping swarm ${id}: cancelling its runs and revoking its bots`);
     }
     case "start-swarm": {
-      const input = startInput(payload);
+      const html = action.origin === "canvas-html";
+      const project = html ? text(payload, "project") : "";
+      if (project && !deps.surface?.offersLaunchProject(project))
+        return fail(`the launcher doesn't offer project '${project}'`);
+      const input = startInput(html ? { task: payload.task, project, setup: "defaults" } : payload);
       return typeof input === "string" ? fail(input) : started(deps, input, "index");
     }
     case "run-again": {

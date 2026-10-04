@@ -6,7 +6,13 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { Rib, RibAuthStatus, RibContext, RibViewDescriptor } from "@keelson/shared";
+import {
+  DEFAULT_PROJECT_NAME,
+  type Rib,
+  type RibAuthStatus,
+  type RibContext,
+  type RibViewDescriptor,
+} from "@keelson/shared";
 import { ClickClackClient, ClickClackError } from "./clickclack.ts";
 import { serialStarts, type WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
@@ -344,8 +350,10 @@ function pruneLaunches(): void {
 }
 
 function launchState(): LaunchState {
-  const projects = (getProjects?.() ?? []).map((p) => ({ id: p.id, name: p.name }));
-  const canDispatch = Boolean(startWorkflow && getRunStatus && cancelRun);
+  const projects = (getProjects?.() ?? [])
+    .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
+    .map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath }));
+  const provider = servingProvider(undefined);
   const classes = (getProviders?.() ?? []).flatMap((p) =>
     p.modelClasses && !NOT_AGENT_PROVIDERS.has(p.id)
       ? [{ provider: p.id, classes: p.modelClasses }]
@@ -353,13 +361,8 @@ function launchState(): LaunchState {
   );
   return {
     projects,
-    live: swarms.size + starting.size,
-    ended: ended.size,
-    refused: [...refusedApprovals],
+    ...(provider ? { provider } : {}),
     ...(classes.length > 0 ? { classes } : {}),
-    ...(canDispatch
-      ? {}
-      : { dispatchBlocked: "This Keelson host can't start workflows for a rib." }),
   };
 }
 
@@ -697,7 +700,12 @@ const rib: Rib = {
       hideRegionActions: true,
       badgeKey: BADGE_KEY,
       layout: {
-        header: { key: LAUNCH_KEY, collapsible: true, byline: launchByline() },
+        header: {
+          key: LAUNCH_KEY,
+          title: "Start a swarm",
+          collapsible: true,
+          byline: launchByline(),
+        },
         rows: [{ columns: [{ key: INDEX_KEY, live: true }] }],
       },
     },
