@@ -6509,56 +6509,138 @@ describe("launching from the tab", () => {
     return { sm, views, surface, inputs, page, nonce };
   };
 
-  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
-    const page = buildLaunch({ projects }, "instance-nonce");
-    const script = page.match(/<script>([\s\S]*?)<\/script>/)![1]!;
-    const makeElement = (textContent = "") => ({
-      textContent,
-      value: "",
-      disabled: false,
-      dataset: { nonce: "instance-nonce" },
-      selectedOptions: [{ dataset: { name: "A <name>", path: "~/A <path>" } }],
-      attributes: new Map<string, string>(),
-      classes: new Set<string>(),
-      listeners: new Map<
-        string,
-        (event: {
-          preventDefault(): void;
-          key?: string;
-          metaKey?: boolean;
-          ctrlKey?: boolean;
-        }) => void
-      >(),
-      addEventListener(type: string, listener: (event: { preventDefault(): void }) => void) {
+  const frameHarness = (page: string) => {
+    type Event = {
+      preventDefault(): void;
+      key?: string;
+      metaKey?: boolean;
+      ctrlKey?: boolean;
+      clipboardData?: { getData(type: string): string };
+    };
+    class Element {
+      value = "";
+      disabled = false;
+      hidden = false;
+      type = "";
+      selectionStart = 0;
+      selectionEnd = 0;
+      dataset: Record<string, string> = {};
+      selectedOptions = [{ dataset: { name: "A <name>", path: "~/A <path>" } }];
+      attributes = new Map<string, string>();
+      classes = new Set<string>();
+      listeners = new Map<string, (event: Event) => void>();
+      children: Element[] = [];
+      private contentText = "";
+      constructor(
+        readonly tag = "div",
+        text = "",
+      ) {
+        this.contentText = text;
+      }
+      get textContent(): string {
+        return this.contentText + this.children.map((child) => child.textContent).join("");
+      }
+      set textContent(text: string) {
+        this.contentText = text;
+        this.children = [];
+      }
+      set className(value: string) {
+        this.classes = new Set(value.split(" "));
+      }
+      addEventListener(type: string, listener: (event: Event) => void) {
         this.listeners.set(type, listener);
-      },
+      }
       setAttribute(name: string, value: string) {
         this.attributes.set(name, value);
-      },
+        if (name === "disabled") this.disabled = true;
+        if (name === "hidden") this.hidden = true;
+        if (name === "class") this.className = value;
+        if (name.startsWith("data-")) {
+          this.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] =
+            value;
+        }
+      }
       removeAttribute(name: string) {
         this.attributes.delete(name);
-      },
+      }
+      append(...nodes: Element[]) {
+        for (const node of nodes)
+          this.children.push(...(node.tag === "fragment" ? node.children : [node]));
+      }
+      replaceChildren(...nodes: Element[]) {
+        this.children = [];
+        this.append(...nodes);
+      }
+      all(): Element[] {
+        return this.children.flatMap((child) => [child, ...child.all()]);
+      }
+      querySelectorAll(selector: string) {
+        if (selector !== '[data-tool][data-reachable="true"]')
+          throw new Error(`unsupported selector ${selector}`);
+        return this.all().filter((node) => node.dataset.tool && node.dataset.reachable === "true");
+      }
       get classList() {
         return {
           toggle: (name: string, enabled: boolean) =>
             enabled ? this.classes.add(name) : this.classes.delete(name),
         };
-      },
-    });
-    const elements = {
-      "launch-form": makeElement(),
-      "launch-task": makeElement(),
-      "launch-project": makeElement(),
-      "launch-start": makeElement("Start swarm"),
-      "launch-prepare": makeElement(),
-      "project-note": makeElement("Chat mode note"),
-      "project-row": makeElement(),
-      "launch-mode": makeElement("Chat mode · nothing on disk"),
+      }
+    }
+    const decode = (text: string) =>
+      text.replace(
+        /&(amp|lt|gt|quot|#39);/g,
+        (_, entity: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" })[entity]!,
+      );
+    const templateText = page.match(/<template id="access-template">([\s\S]*?)<\/template>/)?.[1];
+    const parseTemplate = () => {
+      const root = new Element("fragment");
+      const stack = [root];
+      for (const token of templateText!.match(/<[^>]+>|[^<]+/g)!) {
+        if (token.startsWith("</")) {
+          stack.pop();
+          continue;
+        }
+        if (token.startsWith("<")) {
+          const tag = token.match(/^<(\w+)/)![1]!;
+          const node = new Element(tag);
+          for (const attr of token.matchAll(/([\w-]+)(?:="([^"]*)")?/g)) {
+            if (attr[1] !== tag) node.setAttribute(attr[1]!, decode(attr[2] ?? ""));
+          }
+          stack.at(-1)!.append(node);
+          if (tag !== "input") stack.push(node);
+        } else {
+          stack.at(-1)!.append(new Element("text", decode(token)));
+        }
+      }
+      return root;
     };
+    const elements: Record<string, Element> = {
+      "launch-form": new Element(),
+      "launch-task": new Element(),
+      "launch-project": new Element(),
+      "launch-start": new Element("button", "Start swarm"),
+      "launch-prepare": new Element(),
+      "project-note": new Element("p", "Chat mode note"),
+      "project-row": new Element(),
+      "launch-mode": new Element("p", "Chat mode · nothing on disk"),
+      "launch-access": new Element(),
+    };
+    elements["launch-form"]!.dataset.nonce = page.match(/data-nonce="([^"]+)"/)![1]!;
+    const get = (id: string) =>
+      elements[id] ??
+      elements["launch-access"]!.all().find((node) => node.attributes.get("id") === id);
     const calls: { type: string; payload: Record<string, unknown> }[] = [];
     const timers: { callback: () => void; delay: number }[] = [];
-    runInNewContext(script, {
-      document: { getElementById: (id: keyof typeof elements) => elements[id] },
+    runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)![1]!, {
+      document: {
+        getElementById: (id: string) =>
+          id === "access-template"
+            ? templateText
+              ? { content: { cloneNode: parseTemplate } }
+              : null
+            : get(id),
+        createElement: (tag: string) => new Element(tag),
+      },
       keelson: {
         action: (type: string, payload: Record<string, unknown>) => {
           calls.push({ type, payload });
@@ -6568,17 +6650,38 @@ describe("launching from the tab", () => {
         timers.push({ callback, delay });
       },
     });
+    const fire = (id: string, type: string, extra: Partial<Event> = {}) => {
+      let prevented = false;
+      get(id)!.listeners.get(type)!({
+        preventDefault: () => {
+          prevented = true;
+        },
+        ...extra,
+      });
+      return prevented;
+    };
+    const select = (value: string, name = "keelson-sample") => {
+      elements["launch-project"]!.value = value;
+      elements["launch-project"]!.selectedOptions = [{ dataset: { name, path: "~/sample" } }];
+      fire("launch-project", "change");
+    };
+    return { elements, get, fire, select, calls, timers };
+  };
+
+  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
+    const page = buildLaunch({ projects }, "instance-nonce");
+    const { elements, calls, timers } = frameHarness(page);
     let prevented = 0;
     const event = {
       preventDefault: () => {
         prevented++;
       },
     };
-    const task = elements["launch-task"];
-    const start = elements["launch-start"];
-    const project = elements["launch-project"];
+    const task = elements["launch-task"]!;
+    const start = elements["launch-start"]!;
+    const project = elements["launch-project"]!;
     // The host sandbox has no allow-forms, so Start is a click, never a submit.
-    expect(elements["launch-form"].listeners.has("submit")).toBe(false);
+    expect(elements["launch-form"]!.listeners.has("submit")).toBe(false);
     const submit = () => start.listeners.get("click")!(event);
     task.value = "Keep my typed draft";
     submit();
@@ -6603,11 +6706,11 @@ describe("launching from the tab", () => {
 
     project.value = "p1";
     project.listeners.get("change")!(event);
-    expect(elements["project-note"].textContent).toBe(
+    expect(elements["project-note"]!.textContent).toBe(
       "Agents read ~/A <path> and run read-only commands there. Nothing changes unless you allow more.",
     );
-    expect(elements["launch-mode"].textContent).toBe("Reads A <name> · no workflows");
-    expect(elements["project-row"].classes.has("has-project")).toBe(true);
+    expect(elements["launch-mode"]!.textContent).toBe("Reads A <name> · no workflows");
+    expect(elements["project-row"]!.classes.has("has-project")).toBe(true);
     expect(calls).toHaveLength(1);
     submit();
     expect(calls[1]).toEqual({
@@ -6615,7 +6718,7 @@ describe("launching from the tab", () => {
       payload: { nonce: "instance-nonce", task: task.value, project: "p1", tools: "read" },
     });
     timers[1]!.callback();
-    elements["launch-prepare"].listeners.get("click")!(event);
+    elements["launch-prepare"]!.listeners.get("click")!(event);
     expect(calls[2]).toEqual({ type: "start-in-chat", payload: { nonce: "instance-nonce" } });
     task.listeners.get("keydown")!({ ...event, key: "Enter", metaKey: true });
     expect(calls[3]?.type).toBe("start-swarm");
@@ -6625,14 +6728,88 @@ describe("launching from the tab", () => {
     expect(task.value).toBe("Keep my typed draft");
     project.value = "";
     project.listeners.get("change")!(event);
-    expect(elements["project-note"].textContent).toBe("Chat mode note");
-    expect(elements["launch-mode"].textContent).toBe("Chat mode · nothing on disk");
-    expect(elements["project-row"].classes.has("has-project")).toBe(false);
+    expect(elements["project-note"]!.textContent).toBe("Chat mode note");
+    expect(elements["launch-mode"]!.textContent).toBe("Chat mode · nothing on disk");
+    expect(elements["project-row"]!.classes.has("has-project")).toBe(false);
     expect(page).not.toContain("fetch(");
     expect(page).not.toContain("innerHTML");
     expect(page).not.toContain("await keelson.action");
     expect(page).not.toContain("localStorage");
     expect(page).not.toContain("sessionStorage");
+  });
+
+  test("project-gated switches edit the scope and produce an exact all-switches launch", async () => {
+    const h = launcherHarness({
+      projects,
+      toolReachability: [
+        { name: "beads_ready", status: "reachable" },
+        { name: "beads_close", status: "reachable" },
+      ],
+    });
+    try {
+      await Bun.sleep(5);
+      const frame = frameHarness(h.page());
+      expect(frame.get("allow-write")).toBeUndefined();
+      frame.elements["launch-task"]!.value = "Fix the flaky test";
+      frame.select("p1");
+      for (const key of ["write", "workflows", "tracker"]) {
+        expect(frame.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+        frame.fire(`allow-${key}`, "click");
+      }
+      frame.get("workflow-entry")!.value = "fix-issue";
+      expect(frame.fire("workflow-entry", "keydown", { key: "Enter" })).toBe(true);
+      expect(frame.get("launch-mode")!.textContent).toBe(
+        "Reads keelson-sample · writes on a branch · fix-issue · beads",
+      );
+      frame.fire("launch-start", "click");
+      expect(frame.calls).toEqual([
+        {
+          type: "start-swarm",
+          payload: {
+            nonce: h.nonce(),
+            task: "Fix the flaky test",
+            project: "p1",
+            tools: "write",
+            workflows: "fix-issue",
+            lead_tools: ["beads_ready", "beads_close"],
+          },
+        },
+      ]);
+      begun.length = 0;
+      expect(
+        (
+          await handleSwarmsAction(
+            {
+              ...frame.calls[0]!,
+              origin: "canvas-html",
+            },
+            {
+              ...actionDeps,
+              surface: h.surface,
+              getToolReachability: () => [
+                { name: "beads_ready", status: "reachable" },
+                { name: "beads_close", status: "reachable" },
+              ],
+            },
+          )
+        ).ok,
+      ).toBe(true);
+      expect(begun).toEqual([
+        {
+          task: "Fix the flaky test",
+          project: "p1",
+          workTools: "write",
+          workflows: [{ name: "fix-issue", isolated: true }],
+          leadTools: ["beads_ready", "beads_close"],
+        },
+      ]);
+      frame.select("");
+      expect(frame.get("allow-write")).toBeUndefined();
+      expect(frame.get("launch-mode")!.textContent).toBe("Chat mode · nothing on disk");
+      expect(frame.get("launch-task")!.value).toBe("Fix the flaky test");
+    } finally {
+      h.surface.dispose();
+    }
   });
 
   test("publishing declares HTML, validates strings and owns a nonce per surface instance", async () => {
@@ -7104,7 +7281,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("the launcher is a themed HTML form with only task and project controls", () => {
+  test("the themed launcher keeps model defaults and offers access only in a project template", () => {
     for (const st of [{ projects }, { projects: [] }]) {
       const page = buildLaunch(st, "nonce");
       for (const copy of [
@@ -7132,6 +7309,17 @@ describe("launching from the tab", () => {
         expect(page).not.toContain(`name="${name}"`);
       }
       expect(page).not.toContain("--brand");
+      if (st.projects.length) {
+        expect(page).toContain('<template id="access-template">');
+        for (const name of ["Write", "Run workflows", "Use the tracker"]) {
+          expect(page).toContain(`role="switch" aria-label="${name}"`);
+        }
+        expect(page).toContain("width: 44px; height: 26px");
+      } else {
+        for (const name of ["ALSO ALLOW", "Write", "Run workflows", "Use the tracker"]) {
+          expect(page).not.toContain(name);
+        }
+      }
     }
   });
 
