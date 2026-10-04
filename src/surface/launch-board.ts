@@ -163,6 +163,52 @@ button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2p
 }
 `;
 
+const PAGE_SCRIPT = `
+(() => {
+  const form = document.getElementById("launch-form");
+  const task = document.getElementById("launch-task");
+  const project = document.getElementById("launch-project");
+  const start = document.getElementById("launch-start");
+  const note = document.getElementById("project-note");
+  const row = document.getElementById("project-row");
+  const mode = document.getElementById("launch-mode");
+  const chatNote = note.textContent;
+  const chatMode = mode.textContent;
+  document.getElementById("launch-prepare").addEventListener("click", () => {
+    keelson.action("start-in-chat", { nonce: form.dataset.nonce });
+  });
+  project.addEventListener("change", () => {
+    const selected = project.selectedOptions[0];
+    const hasProject = Boolean(project.value);
+    row.classList.toggle("has-project", hasProject);
+    note.textContent = hasProject
+      ? "Agents read " + selected.dataset.path + " and run read-only commands there. Nothing changes unless you allow more."
+      : chatNote;
+    mode.textContent = hasProject
+      ? "Reads " + selected.dataset.name + " · no workflows"
+      : chatMode;
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (start.disabled) return;
+    keelson.action("start-swarm", {
+      nonce: form.dataset.nonce,
+      task: task.value,
+      project: project.value,
+      tools: project.value ? "read" : "none"
+    });
+    start.disabled = true;
+    start.textContent = "Starting…";
+    start.setAttribute("aria-busy", "true");
+    setTimeout(() => {
+      start.disabled = false;
+      start.textContent = "Start swarm";
+      start.removeAttribute("aria-busy");
+    }, 2000);
+  });
+})();
+`;
+
 function projectPath(rootPath: string): string {
   const home = homedir();
   return rootPath === home || rootPath.startsWith(`${home}/`)
@@ -215,7 +261,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
       <p class="mode" id="launch-mode">Chat mode · nothing on disk</p>
     </footer>
   </form>
-</main>`;
+</main><script>${PAGE_SCRIPT}</script>`;
 }
 
 // Run again reads the old swarm's size, power and model as its defaults, and

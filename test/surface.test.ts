@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import {
   type CanvasBoardView,
   DEFAULT_PROJECT_NAME,
@@ -6500,6 +6501,117 @@ describe("launching from the tab", () => {
     return { sm, views, surface, inputs, page, nonce };
   };
 
+  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
+    const page = buildLaunch({ projects }, "instance-nonce");
+    const script = page.match(/<script>([\s\S]*?)<\/script>/)![1]!;
+    const makeElement = (textContent = "") => ({
+      textContent,
+      value: "",
+      disabled: false,
+      dataset: { nonce: "instance-nonce" },
+      selectedOptions: [{ dataset: { name: "A <name>", path: "~/A <path>" } }],
+      attributes: new Map<string, string>(),
+      classes: new Set<string>(),
+      listeners: new Map<string, (event: { preventDefault(): void }) => void>(),
+      addEventListener(type: string, listener: (event: { preventDefault(): void }) => void) {
+        this.listeners.set(type, listener);
+      },
+      setAttribute(name: string, value: string) {
+        this.attributes.set(name, value);
+      },
+      removeAttribute(name: string) {
+        this.attributes.delete(name);
+      },
+      get classList() {
+        return {
+          toggle: (name: string, enabled: boolean) =>
+            enabled ? this.classes.add(name) : this.classes.delete(name),
+        };
+      },
+    });
+    const elements = {
+      "launch-form": makeElement(),
+      "launch-task": makeElement(),
+      "launch-project": makeElement(),
+      "launch-start": makeElement("Start swarm"),
+      "launch-prepare": makeElement(),
+      "project-note": makeElement("Chat mode note"),
+      "project-row": makeElement(),
+      "launch-mode": makeElement("Chat mode · nothing on disk"),
+    };
+    const calls: { type: string; payload: Record<string, unknown> }[] = [];
+    const timers: { callback: () => void; delay: number }[] = [];
+    runInNewContext(script, {
+      document: { getElementById: (id: keyof typeof elements) => elements[id] },
+      keelson: {
+        action: (type: string, payload: Record<string, unknown>) => {
+          calls.push({ type, payload });
+        },
+      },
+      setTimeout: (callback: () => void, delay: number) => {
+        timers.push({ callback, delay });
+      },
+    });
+    let prevented = 0;
+    const event = {
+      preventDefault: () => {
+        prevented++;
+      },
+    };
+    const task = elements["launch-task"];
+    const start = elements["launch-start"];
+    const project = elements["launch-project"];
+    const submit = () => elements["launch-form"].listeners.get("submit")!(event);
+    task.value = "Keep my typed draft";
+    submit();
+    submit();
+    expect(prevented).toBe(2);
+    expect(calls).toEqual([
+      {
+        type: "start-swarm",
+        payload: { nonce: "instance-nonce", task: task.value, project: "", tools: "none" },
+      },
+    ]);
+    expect(start.disabled).toBe(true);
+    expect(start.textContent).toBe("Starting…");
+    expect(start.attributes.get("aria-busy")).toBe("true");
+    expect(timers).toHaveLength(1);
+    expect(timers[0]!.delay).toBe(2000);
+    timers[0]!.callback();
+    expect(start.disabled).toBe(false);
+    expect(start.textContent).toBe("Start swarm");
+    expect(start.attributes.has("aria-busy")).toBe(false);
+    expect(task.value).toBe("Keep my typed draft");
+
+    project.value = "p1";
+    project.listeners.get("change")!(event);
+    expect(elements["project-note"].textContent).toBe(
+      "Agents read ~/A <path> and run read-only commands there. Nothing changes unless you allow more.",
+    );
+    expect(elements["launch-mode"].textContent).toBe("Reads A <name> · no workflows");
+    expect(elements["project-row"].classes.has("has-project")).toBe(true);
+    expect(calls).toHaveLength(1);
+    submit();
+    expect(calls[1]).toEqual({
+      type: "start-swarm",
+      payload: { nonce: "instance-nonce", task: task.value, project: "p1", tools: "read" },
+    });
+    timers[1]!.callback();
+    elements["launch-prepare"].listeners.get("click")!(event);
+    expect(calls[2]).toEqual({ type: "start-in-chat", payload: { nonce: "instance-nonce" } });
+    expect(task.value).toBe("Keep my typed draft");
+    project.value = "";
+    project.listeners.get("change")!(event);
+    expect(elements["project-note"].textContent).toBe("Chat mode note");
+    expect(elements["launch-mode"].textContent).toBe("Chat mode · nothing on disk");
+    expect(elements["project-row"].classes.has("has-project")).toBe(false);
+    expect(page).not.toContain("fetch(");
+    expect(page).not.toContain("innerHTML");
+    expect(page).not.toContain("await keelson.action");
+    expect(page).not.toContain("localStorage");
+    expect(page).not.toContain("sessionStorage");
+  });
+
   test("publishing declares HTML, validates strings and owns a nonce per surface instance", async () => {
     const h = launcherHarness();
     await Bun.sleep(5);
@@ -6813,7 +6925,7 @@ describe("launching from the tab", () => {
     expect(page).toContain('data-nonce="nonce&quot;"');
     expect(page).not.toContain("hidden-project");
     expect(page).not.toContain("/hidden-root");
-    expect(page).not.toContain("<script>");
+    expect(page.match(/<script>/g)).toHaveLength(1);
   });
 
   test("footer models use the serving provider rather than class-list order", () => {
