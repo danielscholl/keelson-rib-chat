@@ -7711,7 +7711,7 @@ describe("start and run again", () => {
     expect(html).toContain('if (power !== "balanced") payload.power = power;');
   });
 
-  test("Run again exposes the saved power field for explicit model choices", () => {
+  test("Run again omits the saved power field for explicit model choices", () => {
     const item = runAgainItem(fixtures.done!, {
       task: "Investigate",
       workTools: "none",
@@ -7719,8 +7719,8 @@ describe("start and run again", () => {
       provider: "copilot",
       power: "deep",
     });
-    expect(item.fields?.map((field) => field.name)).toEqual(["size", "power", "model"]);
-    expect(item.fields?.find((field) => field.name === "power")?.defaultValue).toBe("deep");
+    expect(item.fields?.map((field) => field.name)).toEqual(["size", "model"]);
+    expect(item.fields?.find((field) => field.name === "power")).toBeUndefined();
   });
 
   test("workflows named grant them to the lead, and refusals come back to the form", async () => {
