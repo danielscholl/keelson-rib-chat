@@ -83,6 +83,27 @@ export const POWER_EFFORT: Record<SwarmPower, ReasoningEffortLevel> = {
   balanced: "medium",
   deep: "high",
 };
+// The lead and worker model each power pins on a provider whose pairs the rib
+// has measured. A named model, or an unlisted provider, leaves the host's
+// model class in charge.
+export interface PowerModels {
+  lead: string;
+  worker: string;
+}
+export const POWER_MODELS: Readonly<Record<string, Readonly<Record<SwarmPower, PowerModels>>>> = {
+  copilot: {
+    fast: { lead: "claude-sonnet-5.5", worker: "claude-sonnet-5.5" },
+    balanced: { lead: "claude-sonnet-5", worker: "claude-sonnet-5.5" },
+    deep: { lead: "claude-opus-5.5", worker: "claude-sonnet-5" },
+  },
+};
+export function pinnedModels(
+  provider: string | undefined,
+  power: SwarmPower,
+): PowerModels | undefined {
+  return provider ? POWER_MODELS[provider]?.[power] : undefined;
+}
+
 export const SWARM_EFFORTS = [
   "none",
   "low",

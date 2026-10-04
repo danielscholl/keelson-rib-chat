@@ -4,6 +4,7 @@ import type { Swarm } from "../src/swarm.ts";
 import { makeChatTools, type StartSwarmInput } from "../src/tools.ts";
 import {
   DEFAULT_LIMITS,
+  pinnedModels,
   SIZE_PRESETS,
   SWARM_SIZES,
   type SwarmSummary,
@@ -129,5 +130,22 @@ describe("chat_swarm_start inputs", () => {
     expect((await start({ task: "t", effort: "xhigh" }))?.effort).toBe("xhigh");
     expect((await start({ task: "t" }))?.effort).toBeUndefined();
     expect(await start({ task: "t", effort: "max" })).toBeUndefined();
+  });
+});
+
+describe("pinnedModels", () => {
+  test("copilot pins a lead and a worker model per power; other providers pin nothing", () => {
+    expect(pinnedModels("copilot", "balanced")).toEqual({
+      lead: "claude-sonnet-5",
+      worker: "claude-sonnet-5.5",
+    });
+    expect(pinnedModels("copilot", "deep")).toEqual({
+      lead: "claude-opus-5.5",
+      worker: "claude-sonnet-5",
+    });
+    const fast = pinnedModels("copilot", "fast");
+    expect(fast?.lead).toBe(fast?.worker);
+    expect(pinnedModels("claude", "balanced")).toBeUndefined();
+    expect(pinnedModels(undefined, "balanced")).toBeUndefined();
   });
 });

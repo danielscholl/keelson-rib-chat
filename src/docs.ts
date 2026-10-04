@@ -74,10 +74,10 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`max_minutes\` | ${minutes(l.wallClockMs)} | Wall clock for the whole swarm. 1 to ${START_BOUNDS.maxMinutes}. |
 | \`context\` | none | Evidence the agents cannot fetch themselves. See Task context. |
 | \`provider\` | host default | Provider id used for every agent's turns. |
-| \`power\` | balanced | fast, balanced or deep: the provider's model for that class, for every agent without a named model. It also sets the reasoning effort every turn asks for: low, medium or high. |
+| \`power\` | balanced | fast, balanced or deep. On copilot each power pins a lead model and a worker model (see Models); on another provider it is the provider's model for that class. It also sets the reasoning effort every turn asks for: low, medium or high. |
 | \`effort\` | the power's | none, low, medium, high or xhigh: the reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it. |
-| \`model\` | the power's model | Model for every agent, or for the lead alone when \`worker_model\` is set. |
-| \`worker_model\` | \`model\` | Model for workers. |
+| \`model\` | the power's lead model | Model for every agent, or for the lead alone when \`worker_model\` is set. Naming one switches the power's pins off. |
+| \`worker_model\` | the power's worker model, else \`model\` | Model for workers. |
 | \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |
 | \`lead_tools\` | none | Other ribs' tools the lead holds, such as \`beads_ready\` or \`beads_close\`, at most ${START_BOUNDS.maxLeadTools}. See Agent tools. |
 
@@ -90,10 +90,18 @@ to, so \`work_tools: read\` grants nothing and the swarm is chat only, and
 One provider serves the whole swarm. Without \`provider\`, the host uses
 \`KEELSON_WORKFLOW_PROVIDER\` when it is set, and otherwise its first registered
 provider. A \`provider\` that is not registered, or that cannot run agent turns,
-fails the start before a channel is made. Without \`model\`, that provider
-serves its model for the swarm's \`power\`, and the host's \`modelClasses\`
-setting can change which model that is. The lead
-always runs \`model\`; workers run \`worker_model\` when it is given. The
+fails the start before a channel is made.
+
+Models. Without \`model\`, the rib pins the models by \`power\` on copilot:
+balanced runs claude-sonnet-5 as the lead and claude-sonnet-5.5 as the workers,
+deep runs claude-opus-5.5 as the lead and claude-sonnet-5 as the workers, and
+fast runs claude-sonnet-5.5 throughout. The lead's model is chosen for how it
+closes a swarm and the workers' for speed; a \`worker_model\` alone keeps the
+lead's pin, and \`model\` switches the pins off. A Haiku model is refused for
+either role, since it rejects the reasoning effort every power asks for and a
+lead on it fails three turns in a second. On any other provider, that
+provider serves its model for the swarm's \`power\`, and the host's
+\`modelClasses\` setting can change which model that is. The
 \`chat-swarm\` workflow's model pin covers its own start, wait, and report steps,
 not the agents.
 
@@ -167,7 +175,7 @@ costs one turn, not one per participant, and the others still see it.
 | \`chat_roster\` | The agents, their roles, and their turn counts. |
 | \`chat_context\` | List the task context items, or read one verbatim with its attribution. |
 | \`chat_spawn\` | Add a worker with a handle, a role, and a narrow brief. Fails at the agent cap. In a write swarm the lead passes \`writes: true\` for a writer. |
-| \`chat_done\` | Lead only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. |
+| \`chat_done\` | Lead only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. Refused while a worker is mid-turn or has messages waiting, while a run is live, or while the lead's question to the operator is open; the draft is kept. |
 | \`chat_pr_open\` | Writers only, in a write swarm. Push the writer's branch and open a draft pull request. See Write mode. |
 | \`chat_diff\` | Any agent of a write swarm. Read a writer's commits and diff against the remote default branch. See Write mode. |
 | \`chat_report\` | Lead only. Publish the swarm's report: a designed, self-contained HTML page the operator opens from the Swarms tab. Calling it again replaces the page. |

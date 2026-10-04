@@ -20,6 +20,8 @@ import {
 
 export interface TeamMember {
   handle: string;
+  role: string;
+  lead: boolean;
   status: AgentStatus;
   turns: number;
 }
@@ -62,13 +64,15 @@ export function systemPrompt(opts: {
   const duty = agent.lead
     ? [
         "You are the LEAD. You own the outcome. Plan the work, split it into pieces that can run in parallel, delegate with @mentions or chat_spawn, integrate what comes back, and call chat_done with the final answer. Do a piece yourself when delegating it would cost more than it saves.",
+        "When two pieces must fit together, say so in both briefs: name the peer who owns the other half and the seam between them, and tell them to agree on it directly. You check the fit when they report; you do not carry messages between them or schedule their exchange.",
         "Before you accept a worker's report, check its evidence against the task context items (chat_context) or the files it cites. A claim with no evidence goes back: reply in the worker's thread naming the claim and what would show it, and leave it out of the answer until it comes back with evidence.",
-        "Before chat_done, check that every worker you delegated to has reported or is out of turns. Each of your turns lists who is still working.",
+        "Before chat_done, check that every worker you delegated to has reported and is idle, or is out of turns. A busy or waiting worker may still correct its report, and a report that names an unsettled point is not final: wait for it. Each of your turns lists the team with each agent's status.",
         'Before chat_done, publish the swarm\'s report with chat_report: a designed page the operator reads instead of the channel. Read canvas_design_guide sections "page" and "anti-patterns" first. Lead with the answer, then the evidence behind it: who found what, the runs and their pull requests, what is still open. Use a table, chart, or diagram where it shows a finding better than prose. Skip the report only when the whole answer is one or two sentences.',
         `The conclusion is at most ${CONCLUSION_MAX} characters: the answer in brief, since the report carries the detail. Calling chat_done ends the swarm.`,
       ].join("\n")
     : [
-        "You are a WORKER. Own the piece you were given. Report once, to whoever asked, in their thread, with evidence. Then stop.",
+        "You are a WORKER. Own the piece you were given. Where it meets a peer's piece (a shared name, a contract, a boundary), settle that with the peer directly, in one seam thread: if the peer already opened one with you, reply there; otherwise chat_post top-level and @mention them with the exact point and your proposal. Keep the lead out of it; every reply in the lead's thread wakes the lead, and that thread is for your one report. Each turn lists the team and who owns what.",
+        "Report once, to whoever asked, in their thread, with evidence and what you settled with whom, and only when every seam you own is settled. If a settled point changes after you reported, reply in your report's thread with the correction and @mention whoever asked. Then stop.",
         "If your piece splits into parts worth running in parallel, you may chat_spawn a helper with a narrow brief. If you find work nobody owns, tell the lead rather than taking over the task.",
       ].join("\n");
   const wt = opts.worktree;
@@ -189,7 +193,7 @@ export interface TurnInput {
   // Thread replies that did not wake this agent.
   background?: readonly ChatMessage[];
   budget: { turnsUsed: number; maxTurns: number; agentTurns: number; maxTurnsPerAgent?: number };
-  // The lead's view of its workers.
+  // The rest of the swarm, as this agent sees it.
   team?: readonly TeamMember[];
   // Workflow run updates since the lead's last turn.
   events?: readonly string[];
@@ -236,9 +240,10 @@ export function renderTurn(input: TurnInput): string {
   }
   if (team && team.length > 0) {
     const members = team.map(
-      (m) => `@${m.handle} ${m.status === "busy" ? "working" : m.status} (${m.turns} turns)`,
+      (m) =>
+        `@${m.handle} (${m.lead ? "lead" : m.role}) ${m.status === "busy" ? "working" : m.status} (${m.turns} turns)`,
     );
-    sections.push(`Workers: ${members.join(", ")}.`);
+    sections.push(`Team: ${members.join("; ")}.`);
   }
   if (runs.length > 0) sections.push(["Runs:", ...runs.map((r) => `- ${r}`)].join("\n"));
   if (prs.length > 0) {

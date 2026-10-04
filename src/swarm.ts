@@ -371,6 +371,8 @@ export class Swarm {
   private lastWaiting = "";
   // Every turn, for the pace the Turns tile draws and the record's timeline.
   private readonly spans: TurnSpan[] = [];
+  // Agents that have posted at least once: a busy worker that never has cannot have reported.
+  private readonly posted = new Set<string>();
   private readonly unrevoked: string[] = [];
   // Handles a spawn has claimed while its worktree is being made.
   private readonly reserved = new Set<string>();
@@ -638,6 +640,7 @@ export class Swarm {
   private remember(message: ChatMessage, author: SwarmAgent | undefined, isRoot: boolean): void {
     this.messageCount++;
     if (!author && message.authorKind !== "human") return;
+    if (author) this.posted.add(author.id);
     if (this.ownPosts.has(message.id) && message.id !== this.kickoffId) return;
     const kind: MessageKind | undefined = this.quietPosts.has(message.id)
       ? "run"
@@ -682,6 +685,14 @@ export class Swarm {
     if (!asked || gate.reviewer === asked.handle) return;
     gate.reviewer = asked.handle;
     this.changed("gate");
+  }
+
+  private openTurn(agentId: string): TurnSpan | undefined {
+    for (let i = this.spans.length - 1; i >= 0; i--) {
+      const turn = this.spans[i];
+      if (turn?.agentId === agentId) return turn.endedAt ? undefined : turn;
+    }
+    return undefined;
   }
 
   private canWork(agentId: string): boolean {
@@ -796,10 +807,16 @@ export class Swarm {
     return "the swarm went idle without a conclusion";
   }
 
-  private team(): TeamMember[] {
+  private team(except: string): TeamMember[] {
     return [...this.agents.values()]
-      .filter((a) => !a.lead)
-      .map((a) => ({ handle: a.handle, status: a.status, turns: a.turns }));
+      .filter((a) => a.id !== except)
+      .map((a) => ({
+        handle: a.handle,
+        role: a.role,
+        lead: a.lead,
+        status: a.status,
+        turns: a.turns,
+      }));
   }
 
   // Who a turn answers: each message's author, and the run notes or nudge beside them.
@@ -846,7 +863,7 @@ export class Swarm {
       messages,
       background,
       budget,
-      ...(agent.lead ? { team: this.team() } : {}),
+      team: this.team(agent.id),
       ...(events.length > 0 ? { events } : {}),
       ...(agent.lead && this.runs.size > 0
         ? { runs: [...this.runs.values()].map(describeRun) }
@@ -1961,6 +1978,31 @@ export class Swarm {
   async conclude(agentId: string, summary: string): Promise<string | undefined> {
     const { agent, client } = this.as(agentId);
     if (!agent.lead) throw new Error("only the lead may conclude the swarm");
+    // A worker may still change its report when it has messages waiting, when it
+    // began a turn after the lead woke, or when it is mid-turn and has never posted.
+    // A worker still winding down the turn that woke the lead is not held against it.
+    const leadTurn = this.openTurn(agent.id);
+    const working = [...this.agents.values()].filter((a) => {
+      if (a.lead || !this.canWork(a.id)) return false;
+      if ((this.inboxes.get(a.id)?.length ?? 0) > 0) return true;
+      if (a.status !== "busy") return false;
+      const turn = this.openTurn(a.id);
+      const sinceLeadWoke = turn && leadTurn ? turn.startedAt > leadTurn.startedAt : false;
+      return sinceLeadWoke || !this.posted.has(a.id);
+    });
+    if (working.length > 0) {
+      this.draftConclusion = summary;
+      this.changed("conclusion");
+      const names = working
+        .map((a) => {
+          const queued = this.inboxes.get(a.id)?.length ?? 0;
+          return `@${a.handle} (${queued > 0 ? `${queued} waiting` : "working"})`;
+        })
+        .join(", ");
+      throw new Error(
+        `${working.length} worker(s) may still change their report: ${names}. Wait until each is idle, then conclude.`,
+      );
+    }
     const live = this.liveRuns();
     if (live.length > 0) {
       this.draftConclusion = summary;

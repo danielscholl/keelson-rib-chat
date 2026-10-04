@@ -40,10 +40,10 @@ describe("rib contract", () => {
         ],
       }) ?? [];
     const start = tools.find((t) => t.name === "chat_swarm_start");
-    const run = async (provider: string) => {
+    const run = async (provider: string, model?: string) => {
       let out = "";
       await start?.execute(
-        { task: "t", provider },
+        { task: "t", provider, ...(model ? { model } : {}) },
         {
           cwd: "/tmp",
           abortSignal: new AbortController().signal,
@@ -58,6 +58,9 @@ describe("rib contract", () => {
       expect(await run("claude")).toContain("no registered provider 'claude'; registered: copilot");
       expect(await run("workflow")).toContain("provider 'workflow' cannot run agent turns");
       expect(await run("stub")).toContain("provider 'stub' cannot run agent turns");
+      expect(await run("copilot", "claude-haiku-4.5")).toContain(
+        "model 'claude-haiku-4.5' is not used for swarm agents",
+      );
     } finally {
       await rib.dispose?.();
     }
