@@ -113,7 +113,7 @@ function startInput(payload: Record<string, unknown>): StartSwarmInput | string 
   const adjusted = text(payload, "setup") !== "defaults";
   const size = adjusted ? sizeOf(payload) : undefined;
   const models = adjusted ? modelOf(payload) : {};
-  const power = adjusted && !models.model ? powerOf(payload) : undefined;
+  const power = adjusted ? powerOf(payload) : undefined;
   const input: StartSwarmInput = {
     task,
     workTools:
@@ -161,7 +161,7 @@ function againInput(
   return {
     ...rest,
     ...(nextSize ? { size: nextSize } : {}),
-    ...(!models.model && power ? { power } : {}),
+    ...(power ? { power } : {}),
     ...models,
   };
 }

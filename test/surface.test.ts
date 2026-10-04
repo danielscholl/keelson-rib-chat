@@ -6960,6 +6960,7 @@ describe("launching from the tab", () => {
           expect(begun.at(-1)).toEqual({
             task: "Fix issue",
             size: "large",
+            power: "deep",
             model: "gpt-6-astra",
             provider: "copilot",
             workTools: project ? "read" : "none",
@@ -7674,6 +7675,29 @@ describe("start and run again", () => {
     expect(begun).toHaveLength(1);
   });
 
+  test("a named model preserves explicit power for new starts", async () => {
+    begun.length = 0;
+    const result = await act("start-swarm", {
+      task: "Fix the README node count",
+      project: "p1",
+      tools: "read",
+      power: "deep",
+      model: "gpt-6-astra",
+      provider: "copilot",
+    });
+    expect(result.ok).toBe(true);
+    expect(begun).toEqual([
+      {
+        task: "Fix the README node count",
+        project: "p1",
+        workTools: "read",
+        power: "deep",
+        model: "gpt-6-astra",
+        provider: "copilot",
+      },
+    ]);
+  });
+
   test("workflows named grant them to the lead, and refusals come back to the form", async () => {
     begun.length = 0;
     const ok = await act("start-swarm", {
@@ -7692,6 +7716,7 @@ describe("start and run again", () => {
       workTools: "read",
       size: "large",
       project: "p1",
+      power: "deep",
       model: "gpt-6-astra",
       provider: "copilot",
       workflows: [
@@ -7805,6 +7830,7 @@ describe("start and run again", () => {
         task: old.task,
         workTools: old.workTools,
         size: "large",
+        ...(power ? { power } : {}),
         model: "named-model",
         provider: "copilot",
       });
@@ -7819,7 +7845,28 @@ describe("start and run again", () => {
     }
   });
 
-  test("Run again preserves deliberate model pairs but drops workers and power for changed or cleared models", async () => {
+  test("a named model preserves explicit power from a saved launch", async () => {
+    const old: StartSwarmInput = {
+      task: "Investigate",
+      workTools: "none",
+      model: "gpt-6-astra",
+      provider: "copilot",
+      power: "deep",
+    };
+    const ended = { ...fixtures.done!, model: old.model, provider: old.provider };
+    begun.length = 0;
+    const result = await handleSwarmsAction(
+      {
+        type: "run-again",
+        payload: { id: ended.id, model: old.model, provider: old.provider },
+      },
+      { ...actionDeps, launchOf: () => old, find: () => ({ ended }) },
+    );
+    expect(result.ok).toBe(true);
+    expect(begun).toEqual([old]);
+  });
+
+  test("Run again preserves deliberate model pairs and power but drops workers for changed or cleared models", async () => {
     const old: StartSwarmInput = { ...oldLaunch, power: "deep" };
     const ended = { ...fixtures.done!, model: old.model, provider: old.provider };
     const deps = { ...actionDeps, launchOf: () => old, find: () => ({ ended }) };
@@ -7847,6 +7894,7 @@ describe("start and run again", () => {
     expect(begun.at(-1)).toEqual({
       ...rest,
       size: "large",
+      power: "deep",
       model: old.model,
       provider: old.provider,
       workerModel: old.workerModel,
@@ -7861,6 +7909,7 @@ describe("start and run again", () => {
     expect(begun.at(-1)).toEqual({
       ...rest,
       size: "small",
+      power: "deep",
       model: "new-model",
       provider: "second",
     });
