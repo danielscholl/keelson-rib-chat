@@ -6528,8 +6528,18 @@ describe("launching from the tab", () => {
       ctrlKey?: boolean;
       clipboardData?: { getData(type: string): string };
     };
+    let focused: Element | undefined;
     class Element {
-      value = "";
+      private rawValue = "";
+      get value(): string {
+        return this.rawValue;
+      }
+      set value(text: string) {
+        this.rawValue = this.tag === "input" ? text.replace(/[\r\n]/g, "") : text;
+      }
+      focus() {
+        focused = this;
+      }
       disabled = false;
       hidden = false;
       type = "";
@@ -6676,7 +6686,7 @@ describe("launching from the tab", () => {
       elements["launch-project"]!.selectedOptions = [{ dataset: { name, path: "~/sample" } }];
       fire("launch-project", "change");
     };
-    return { elements, get, fire, select, calls, timers };
+    return { elements, get, fire, select, calls, timers, focused: () => focused };
   };
 
   test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
@@ -6951,6 +6961,35 @@ describe("launching from the tab", () => {
     expect(entry.attributes.get("aria-invalid")).toBe("false");
     expect(frame.get("workflow-error")!.hidden).toBe(true);
     expect(entry.value).toBe("");
+  });
+
+  test("a newline-separated workflow paste adds each name, since a text input drops line breaks", () => {
+    const frame = frameHarness(buildLaunch({ projects }, "nonce"));
+    frame.select("p1");
+    frame.fire("allow-workflows", "click");
+    frame.fire("workflow-entry", "paste", {
+      clipboardData: { getData: () => "fix-issue\r\ndocs-check\nrelease" },
+    });
+    expect(
+      frame.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
+    ).toEqual(["fix-issue", "docs-check", "release"]);
+  });
+
+  test("removing a workflow chip keeps focus in the editor", () => {
+    const frame = frameHarness(buildLaunch({ projects }, "nonce"));
+    frame.select("p1");
+    frame.fire("allow-workflows", "click");
+    const entry = frame.get("workflow-entry")!;
+    entry.value = "fix-issue docs-check release";
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    const removeAt = (index: number) => frame.get("workflow-chips")!.children[index]!.children[1]!;
+    removeAt(1).listeners.get("click")!({ preventDefault() {} });
+    expect(frame.focused()).toBe(removeAt(1));
+    expect(frame.focused()!.attributes.get("aria-label")).toBe("Remove release");
+    removeAt(1).listeners.get("click")!({ preventDefault() {} });
+    expect(frame.focused()!.attributes.get("aria-label")).toBe("Remove fix-issue");
+    removeAt(0).listeners.get("click")!({ preventDefault() {} });
+    expect(frame.focused()).toBe(entry);
   });
 
   test("workflow bounds reject a whole addition, preserve the input and recover after removal", () => {

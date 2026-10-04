@@ -224,9 +224,11 @@ const PAGE_SCRIPT = `
     controls.error.hidden = !message;
     controls.entry.setAttribute("aria-invalid", message ? "true" : "false");
   };
+  let removeButtons = [];
   const renderWorkflows = () => {
     controls.chips.replaceChildren();
-    workflows.forEach((name) => {
+    removeButtons = [];
+    workflows.forEach((name, index) => {
       const chip = document.createElement("span");
       chip.className = "chip";
       const label = document.createElement("span");
@@ -238,7 +240,9 @@ const PAGE_SCRIPT = `
       remove.addEventListener("click", () => {
         workflows = workflows.filter((value) => value !== name);
         renderWorkflows();
+        (removeButtons[Math.min(index, removeButtons.length - 1)] ?? controls.entry).focus();
       });
+      removeButtons.push(remove);
       chip.append(label, remove);
       controls.chips.append(chip);
     });
@@ -304,7 +308,7 @@ const PAGE_SCRIPT = `
       });
       controls.entry.addEventListener("paste", (event) => {
         event.preventDefault();
-        const text = event.clipboardData.getData("text");
+        const text = event.clipboardData.getData("text").replace(/[\\r\\n]+/g, " ");
         const from = controls.entry.selectionStart;
         const to = controls.entry.selectionEnd;
         controls.entry.value = controls.entry.value.slice(0, from) + text + controls.entry.value.slice(to);
