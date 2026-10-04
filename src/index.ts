@@ -36,6 +36,7 @@ import {
   type ChatMessage,
   ownsPr,
   POWER_EFFORT,
+  pinnedModels,
   publicSummary,
   SIZE_PRESETS,
   type StartingSwarm,
@@ -187,6 +188,25 @@ function checkProvider(provider: string | undefined): void {
       `no registered provider '${provider}'; registered: ${known.map((p) => p.id).join(", ") || "none"}`,
     );
   }
+}
+
+// The provider that will serve a start, by the host's own rule: the named one,
+// else KEELSON_WORKFLOW_PROVIDER, else the first registered agent provider.
+function servingProvider(named: string | undefined): string | undefined {
+  if (named) return named;
+  const env = process.env.KEELSON_WORKFLOW_PROVIDER;
+  if (env) return env;
+  return getProviders?.().find((p) => !NOT_AGENT_PROVIDERS.has(p.id))?.id;
+}
+
+// A named model switches the pins off entirely; a worker_model alone keeps the lead's pin.
+function modelsFor(input: StartSwarmInput): { model?: string; workerModel?: string } {
+  const pins = input.model
+    ? undefined
+    : pinnedModels(servingProvider(input.provider), input.power ?? "balanced");
+  const model = input.model ?? pins?.lead;
+  const workerModel = input.workerModel ?? (input.model ? undefined : pins?.worker);
+  return { ...(model ? { model } : {}), ...(workerModel ? { workerModel } : {}) };
 }
 
 // Unique across live, starting, and remembered swarms, since the id names the
@@ -440,9 +460,22 @@ interface Launch {
 
 // Everything that can refuse a start before it has an id: a refusal here is an
 // answer to the caller, not a swarm that failed.
+// Haiku rejects the reasoning effort every power asks for, and a lead on it fails
+// its three turns inside a second.
+function checkModels(input: StartSwarmInput): void {
+  for (const model of [input.model, input.workerModel]) {
+    if (model && /haiku/i.test(model)) {
+      throw new Error(
+        `model '${model}' is not used for swarm agents: it rejects reasoning effort. Pick claude-sonnet-5.5 for a fast swarm.`,
+      );
+    }
+  }
+}
+
 function prepare(input: StartSwarmInput): Launch {
   if (!runAgentTurn) throw new Error("this keelson host cannot run agent turns for a rib");
   checkProvider(input.provider);
+  checkModels(input);
   let cwd: string | undefined;
   let project: SwarmProject | undefined;
   if (input.workTools === "write" && !input.project) {
@@ -520,8 +553,7 @@ function beginSwarm(
     limits: { ...SIZE_PRESETS[sizeBase], ...overrides(input) },
     sizeBase,
     ...(input.provider ? { provider: input.provider } : {}),
-    ...(input.model ? { model: input.model } : {}),
-    ...(input.workerModel ? { workerModel: input.workerModel } : {}),
+    ...modelsFor(input),
     power: input.power ?? "balanced",
     effort: input.effort ?? POWER_EFFORT[input.power ?? "balanced"],
     ...(launch.project ? { project: launch.project } : {}),
@@ -597,8 +629,8 @@ async function launchSwarm(
       approvalRefusals,
       ...(input.context ? { context: input.context } : {}),
       ...(input.provider ? { provider: input.provider } : {}),
-      ...(input.model ? { model: input.model } : {}),
-      ...(input.workerModel ? { workerModel: input.workerModel } : {}),
+      ...(record.model ? { model: record.model } : {}),
+      ...(record.workerModel ? { workerModel: record.workerModel } : {}),
       ...(record.power ? { power: record.power } : {}),
       ...(record.effort ? { effort: record.effort } : {}),
       ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),

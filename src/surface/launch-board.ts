@@ -9,6 +9,7 @@
 import type { CanvasBoardView, ModelClassMap } from "@keelson/shared";
 import type { StartSwarmInput } from "../tools.ts";
 import {
+  pinnedModels,
   SIZE_PRESETS,
   SWARM_POWERS,
   SWARM_SIZES,
@@ -84,6 +85,12 @@ export function powerField(
     options: SWARM_POWERS.map((k) => {
       const hint = classes
         .map((c) => {
+          const pin = pinnedModels(c.provider, k);
+          if (pin) {
+            return pin.lead === pin.worker
+              ? `${c.provider}: ${pin.lead}`
+              : `${c.provider}: lead ${pin.lead} · workers ${pin.worker}`;
+          }
           const same =
             c.classes.fast === c.classes.balanced && c.classes.balanced === c.classes.deep;
           return `${c.provider}: ${c.classes[k]}${same ? " (every power)" : ""}`;

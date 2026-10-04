@@ -449,6 +449,26 @@ describe("Swarm", () => {
     expect(refused).toBe(true);
     expect(summary.conclusion).toBe("lead's");
   });
+
+  test("the lead cannot conclude while a worker is working or has messages waiting", async () => {
+    let early: { content: string; isError: boolean } | undefined;
+    const { start } = harness(async ({ agentId, turn, prompt, call }) => {
+      if (agentId === "s1-lead" && turn === 1) {
+        await call("chat_spawn", { handle: "w", role: "r", brief: "report back" });
+        early = await call("chat_done", { summary: "Placeholder" });
+      } else if (agentId === "s1-w") {
+        const briefId = prompt.match(/top-level (msg_\d+)/)?.[1];
+        await call("chat_reply", { message_id: briefId, body: "found it" });
+      } else {
+        await call("chat_done", { summary: "settled" });
+      }
+    });
+    const summary = await (await start()).finished;
+    expect(early?.isError).toBe(true);
+    expect(early?.content).toContain("@s1-w");
+    expect(summary.conclusion).toBe("settled");
+    expect(summary.turnsUsed).toBe(3);
+  });
 });
 
 describe("Swarm resilience", () => {
@@ -608,7 +628,9 @@ describe("Swarm resilience", () => {
     expect(prompts.get("s1-b")?.length).toBe(1);
     expect(prompts.get("s1-b")?.[0]).toContain("Background");
     expect(prompts.get("s1-b")?.[0]).toContain("a found it");
-    expect(prompts.get("s1-lead")?.[1]).toMatch(/Workers: @s1-a (idle|working) \(1 turns\)/);
+    expect(prompts.get("s1-lead")?.[1]).toMatch(/Team: @s1-a \(.*\) (idle|working) \(1 turns\)/);
+    // Workers see the lead and each other too.
+    expect(prompts.get("s1-a")?.[0]).toMatch(/Team: .*@s1-lead \(lead\)/);
     // The lead runs the swarm's model; workers run the worker model.
     const models = new Map(provider.requests.map((r) => [r.turnContext?.agentId, r.model]));
     expect(models.get("s1-lead")).toBe("big");
