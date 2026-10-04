@@ -66,7 +66,6 @@ import {
 import {
   buildLaunch,
   type LaunchState,
-  launchByline,
   runAgainItem,
   TASK_PLACEHOLDER,
   TRACKER_TOOLS,
@@ -9598,11 +9597,12 @@ describe("the rib's surface", () => {
     expect(surface.layout.header).toEqual({
       key: LAUNCH_KEY,
       title: "Start a swarm",
-      collapsible: true,
-      byline: "Agents investigate, debate, and bring back a conclusion.",
     });
-    expect(launchByline()).toBe("Agents investigate, debate, and bring back a conclusion.");
-    expect(surface.layout.header?.collapsed).toBeUndefined();
+    const header = rib.surfaces?.[0]?.layout.header;
+    for (const property of ["byline", "collapsible", "collapsed", "defaultCollapsed"]) {
+      expect(header).not.toHaveProperty(property);
+    }
+    expect(buildLaunch({ projects: [] }, "nonce")).not.toContain("defaultCollapsed");
     expect(surface.layout.footer).toBeUndefined();
     expect(JSON.stringify(surface.layout)).not.toContain(SERVER_KEY);
   });

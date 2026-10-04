@@ -56,10 +56,6 @@ export const TRACKER_TOOLS = [
 export const TASK_PLACEHOLDER =
   "What should the swarm work out? Describe the issue or PR in words. A question works; so does a paste of the issue body.";
 
-export function launchByline(): string {
-  return "Agents investigate, debate, and bring back a conclusion.";
-}
-
 // Each segment carries what the size costs, since the word alone does not.
 export function sizeField(defaultValue: SwarmSize = "medium"): Field {
   return {
