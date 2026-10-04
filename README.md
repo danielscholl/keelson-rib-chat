@@ -52,12 +52,20 @@ turns, about 30 minutes), or **Deep dig**. **Customize** opens **Effort** (size
 budgets, not reasoning effort) and **Model**, grouped by provider with **Other…**
 for a typed name. The live footer follows the choice. The plan's pair stays
 unless a model is named for all agents. **Run again** has Effort and Model
-only and reuses saved plan power unless a model is named. This launcher has
-no write or workflow controls. Paste issue or PR text instead of a URL
+only and reuses saved plan power unless a model is named. Selecting a project
+reveals **Write**, **Run workflows** and **Use the tracker**, all off. Write
+permits branch-isolated writers. Run workflows adds up to 10 removable
+workflow-name chips with Enter, comma or paste, still subject to
+`ribWorkflowGrants`. Use the tracker sends only host-reported reachable beads
+tools, still subject to `crossRibGrants`; a host without a reachability hook
+disables it. The scope footer reflects the selected access. Changing or
+clearing the project resets the switches and chips, not the task.
+Paste issue or PR text instead of a URL
 or `#N`, or use **Prepare in chat** to attach the evidence. Refusals appear as
 host toasts. **Starting…** guards duplicate clicks for about two seconds and
-leaves the task intact. Ordinary refreshes preserve drafts; project-list or
-provider configuration changes can discard them.
+leaves the task intact. Ordinary refreshes preserve drafts, switches and chips;
+project-list, provider, capability, dispatch or remembered-refusal configuration
+changes can discard them.
 
 From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swarm-<id>` channel in ClickClack to watch. Post in the channel to redirect it: an unaddressed message from a human goes to the lead.
 
@@ -84,13 +92,25 @@ Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_context`
 
 ## Workflow dispatch
 
+Select a project and enable **Run workflows** in the launcher to name the
+workflows for this launch. The switch does not create host grants. Answer
+approvals in Workflows when the host has not granted automatic responses;
+remembered approval refusals appear beside the switch.
+
 Unless a swarm is started with `work_tools: "write"` (see below), its agents never edit files themselves. A swarm started with a `project` and `workflows` lets its lead start those Keelson workflows on the project, such as `fix-issue`, through `chat_workflow_start`, `chat_workflow_status`, and `chat_workflow_cancel`. Each run edits, commits, and opens its pull request in its own worktree, and a run the rib finds in the live checkout is cancelled. Run updates wake the lead. When a run pauses at an approval gate, the rib posts the gate's prompt and plan in a thread, another agent reviews it, and the lead answers it for the operator with `chat_workflow_respond`, citing that review. The summary's `runs` records each run's branch, pull requests, CI verdict, the gates the swarm answered, and whether it is verified. Keelson must also grant the rib each workflow under `ribWorkflowGrants` in `config.json`, and each workflow whose gates the swarm may answer under `ribApprovalGrants`; without that, approvals wait for the operator.
 
 ## Write mode
 
+Select a project and enable **Write** in the launcher for this mode.
+
 A swarm started with a `project` and `work_tools: "write"` changes code itself. Its lead spawns writers with `chat_spawn` and `writes: true`; every other agent stays read-only on the project root. Each writer gets its own git worktree at `<project>/.worktrees/swarm-<id>-<name>` on branch `keelson/swarm/<id>/<name>`, cut from the remote default branch after a `git fetch`, and its turns hold `Read`, `Grep`, `Glob`, `Edit`, `Write`, and `Bash` there. `Bash` is not sandboxed: it can reach anything the operator's user can. A writer opens a draft pull request with `chat_pr_open`, which refuses commits carrying AI attribution; any agent reads a writer's diff with `chat_diff`. Nothing in the swarm merges. When the swarm ends, clean worktrees with everything pushed are removed and the rest are listed in the summary's `worktrees`.
 
 ## Other ribs' tools
+
+The launcher's **Use the tracker** switch requests `beads_ready`, `beads_show`,
+`beads_create`, `beads_update`, `beads_close` and `beads_dep`. Unreachable chips
+are muted and say `needs your grant: crossRibGrants`. The rib rechecks lead tools
+at Start and Run again, so revoked grants are dropped.
 
 `lead_tools` hands the lead tools that other ribs register, such as the beads rib's `beads_ready`, `beads_show`, and `beads_close`, so a swarm that works a backlog can read the live queue and close a bead once its pull request merges. Keelson projects a tool onto the lead's turns only when `config.json` grants it to the chat rib under `crossRibGrants` (`"chat": { "beads": ["beads_ready", "beads_close"] }`). Workers never hold them.
 

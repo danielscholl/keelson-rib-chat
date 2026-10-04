@@ -28,8 +28,7 @@ the checkout goes in [task context](../supply-task-context/), not in the task.
 In the **Swarms** tab, type the task into **Start a swarm**, then press
 **Start swarm**. **No project · chat only** is selected by default, so agents
 read nothing on disk. Pick a project to grant read access; each option shows
-its name and path, with the home directory shortened to `~`. The launcher
-does not grant write access or workflows.
+its name and path, with the home directory shortened to `~`.
 
 Choose a plan under **How hard it works**. **Working session is selected by
 default**. Each card shows its agents, turns, minutes and the effective
@@ -59,6 +58,40 @@ The models line below shows the pair, or the named model for lead and workers.
 Untouched Working session sends no size, power or model overrides. Opening
 Customize alone does not change that. Quick look records small/fast; Deep dig
 records large/deep. A named model records size, model and provider, with no power.
+
+With no project selected, the **ALSO ALLOW** group is absent. Selecting a
+project reveals **Write**, **Run workflows** and **Use the tracker**, all off.
+
+**Write** permits code changes. The lead spawns writers, and only those writers
+receive their own worktrees and branches. Turning it off restores read access.
+
+**Run workflows** shows removable workflow chips. Enter or comma adds names;
+paste whitespace/comma-separated names to add a batch. Duplicates are ignored.
+Remove a chip with its remove button. The limit is **10** distinct workflows.
+Valid pending text is added on Start; invalid or over-limit text stays in the
+input and blocks Start. Names become `{ name, isolated: true }` grants and still
+need the operator's `ribWorkflowGrants`. A host without workflow dispatch
+support disables the switch and explains why. Answer approvals in Workflows
+when the host has not granted automatic responses; remembered approval
+refusals append a note to that row. The separate `ribApprovalGrants` policy
+still applies to lead responses.
+
+**Use the tracker** lists `beads_ready`, `beads_show`, `beads_create`,
+`beads_update`, `beads_close` and `beads_dep`, in that order. Only host-reported
+reachable tools are sent. Muted chips say **needs your grant: crossRibGrants**.
+The switch does not create host grants. Without a reachability hook it is
+disabled: **This host does not say which tools a lead may hold.** A supported
+host reporting no reachable tools leaves it usable, with all chips muted.
+The rib rechecks lead-tool reachability on Start and Run again.
+
+Turning switches off omits their grants; workflow chips stay for that project.
+Changing or clearing the project resets all switches and chips, not the task.
+The scope footer follows your choices: **Reads \<name\>**, optionally
+**· writes on a branch**, workflow names or **· no workflows**, then optionally
+**· beads**. The beads suffix records switch intent, not a promise that every
+tracker tool was granted. Ordinary refreshes preserve your draft, switches and
+chips. Project-list, provider, capability, dispatch or remembered-refusal
+configuration changes can replace the page and discard it.
 
 For an issue or PR, paste its text or use **Prepare in chat** to gather and
 attach the evidence. A task naming a URL or `#N` is refused with a host toast.

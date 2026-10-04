@@ -38,7 +38,7 @@ import {
   SERVER_LOG_KEY,
   swarmKey,
 } from "./keys.ts";
-import { buildLaunch, type LaunchState } from "./launch-board.ts";
+import { buildLaunch, type LaunchState, TRACKER_TOOLS } from "./launch-board.ts";
 import { gateIdentity } from "./parts.ts";
 import { createKeyPublisher, type KeyPublisher } from "./publisher.ts";
 import { buildGoneRecord, buildRecord } from "./record.ts";
@@ -59,6 +59,7 @@ export interface SurfaceDeps {
   sm: SnapshotManager;
   state: () => SurfaceState;
   find: (id: string) => SwarmRecord;
+  projects: () => LaunchState["projects"];
   launch: () => LaunchState;
   server: () => ServerPanelState;
   readLog: () => Promise<string>;
@@ -179,6 +180,21 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
         .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
         .map(({ id, name, rootPath }) => ({ id, name, rootPath })),
       provider: state.provider,
+      ...(state.toolReachability
+        ? {
+            toolReachability: TRACKER_TOOLS.map((name) => ({
+              name,
+              status:
+                state.toolReachability?.find((tool) => tool.name === name)?.status ??
+                "unregistered",
+            })),
+          }
+        : {}),
+      ...(state.toolReachabilityError
+        ? { toolReachabilityError: state.toolReachabilityError }
+        : {}),
+      refused: [...new Set(state.refused ?? [])].sort(),
+      ...(state.dispatchBlocked ? { dispatchBlocked: state.dispatchBlocked } : {}),
       classes: (state.classes ?? []).map(({ provider, defaultModel, classes }) => ({
         provider,
         ...(defaultModel ? { defaultModel } : {}),
@@ -444,7 +460,8 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
 
   return {
     acceptsLaunchNonce: (nonce) => !disposed && nonce === launchNonce,
-    offersLaunchProject: (id) => !disposed && launchState().projects.some((p) => p.id === id),
+    offersLaunchProject: (id) =>
+      !disposed && deps.projects().some((p) => p.id === id && p.name !== DEFAULT_PROJECT_NAME),
     track,
     select(id) {
       selected = id;

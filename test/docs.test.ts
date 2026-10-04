@@ -49,11 +49,74 @@ describe("contributed docs", () => {
       "fold it by hand",
       "discard it",
       "Prepare in chat",
+      "ALSO ALLOW",
+      "Write, Run workflows and Use the tracker",
+      "all off",
+      "isolated: true",
+      "ribWorkflowGrants",
+      "ribApprovalGrants",
+      "crossRibGrants",
+      "This host does not say which tools a lead may hold.",
+      "switches and chips",
+      "capability, dispatch",
     ])
       expect(launcher).toContain(copy);
     for (const old of ["Setup starts", "Agents may field", "adjust shows", "folded once"]) {
       expect(launcher).not.toContain(old);
     }
+  });
+
+  test("packaged and site launcher docs agree on switches, chips, grants and fallbacks", () => {
+    const swarms = topics(content).find((topic) => topic.title === "Swarms tab")!.body;
+    const normalize = (text: string) => text.replace(/[`*\\]/g, "").replace(/\s+/g, " ");
+    const pages = ["swarms-tab", "run-a-swarm"].map((name) =>
+      readFileSync(new URL(`../docs/src/content/docs/guides/${name}.md`, import.meta.url), "utf8"),
+    );
+    for (const text of [swarms, ...pages].map(normalize)) {
+      for (const phrase of [
+        "With no project selected, the ALSO ALLOW group is absent",
+        "Write",
+        "Run workflows",
+        "Use the tracker",
+        "all off",
+        "only",
+        "Enter or comma adds names",
+        "workflow chips",
+        "10",
+        "isolated: true",
+        "invalid or over-limit text stays in the input and blocks Start",
+        "ribWorkflowGrants",
+        "ribApprovalGrants",
+        "remembered approval",
+        "beads_ready",
+        "beads_show",
+        "beads_create",
+        "beads_update",
+        "beads_close",
+        "beads_dep",
+        "needs your grant: crossRibGrants",
+        "does not create host grants",
+        "This host does not say which tools a lead may hold.",
+        "rechecks lead-tool reachability on Start and Run again",
+        "Changing or clearing the project resets all switches and chips, not the task",
+        "writes on a branch",
+        "no workflows",
+        "beads suffix",
+        "dispatch or remembered-refusal",
+      ])
+        expect(text).toContain(phrase);
+    }
+    expect(topics(content).find((topic) => topic.title === "Write mode")!.body).toContain(
+      "turn on Write",
+    );
+    expect(topics(content).find((topic) => topic.title === "Workflow dispatch")!.body).toContain(
+      "Run workflows",
+    );
+    expect(content).toContain("Use the tracker to request");
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    expect(normalize(readme)).not.toContain("no size, model, write or workflow controls");
+    for (const name of ["Write", "Run workflows", "Use the tracker"])
+      expect(normalize(readme)).toContain(name);
   });
 
   test("packaged and both guides agree on plans, Customize, sparse defaults and Run again", () => {

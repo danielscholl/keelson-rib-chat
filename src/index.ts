@@ -24,7 +24,7 @@ import { createSwarmFileStore } from "./store.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
 import type { SurfaceState } from "./surface/index-board.ts";
 import { BADGE_KEY, INDEX_KEY, LAUNCH_KEY, SURFACE_ID } from "./surface/keys.ts";
-import { type LaunchState, launchByline } from "./surface/launch-board.ts";
+import { type LaunchState, launchByline, TRACKER_TOOLS } from "./surface/launch-board.ts";
 import type { ServerLine } from "./surface/parts.ts";
 import { createServerOps } from "./surface/server-ops.ts";
 import { LOG_LINES, type ServerPanelState } from "./surface/server-panel.ts";
@@ -65,6 +65,7 @@ let getProjects: RibContext["getProjects"];
 let getCredential: RibContext["getCredential"];
 let getDataDir: RibContext["getDataDir"];
 let getProviders: RibContext["getProviders"];
+let getToolReachability: RibContext["getToolReachability"];
 let startWorkflow: RibContext["startWorkflow"];
 let getRunStatus: RibContext["getRunStatus"];
 let cancelRun: RibContext["cancelRun"];
@@ -349,10 +350,13 @@ function pruneLaunches(): void {
   reports.keepOnly(known);
 }
 
-function launchState(): LaunchState {
-  const projects = (getProjects?.() ?? [])
+function launchProjects(): LaunchState["projects"] {
+  return (getProjects?.() ?? [])
     .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
     .map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath }));
+}
+
+function launchState(): LaunchState {
   const provider = servingProvider(undefined);
   const classes = (getProviders?.() ?? [])
     .filter((p) => !NOT_AGENT_PROVIDERS.has(p.id))
@@ -361,10 +365,23 @@ function launchState(): LaunchState {
       ...(p.defaultModel ? { defaultModel: p.defaultModel } : {}),
       ...(p.modelClasses ? { classes: p.modelClasses } : {}),
     }));
+  let toolReachability: LaunchState["toolReachability"];
+  let toolReachabilityError: string | undefined;
+  try {
+    toolReachability = getToolReachability?.(TRACKER_TOOLS);
+  } catch (e) {
+    toolReachabilityError = `Could not check tracker tool reachability: ${errText(e)}`;
+  }
   return {
-    projects,
+    projects: launchProjects(),
     ...(provider ? { provider } : {}),
     ...(classes.length > 0 ? { classes } : {}),
+    ...(toolReachability ? { toolReachability } : {}),
+    ...(toolReachabilityError ? { toolReachabilityError } : {}),
+    refused: [...refusedApprovals].sort(),
+    ...(!startWorkflow || !getRunStatus || !cancelRun
+      ? { dispatchBlocked: "This Keelson host can't start workflows for a rib." }
+      : {}),
   };
 }
 
@@ -727,6 +744,7 @@ const rib: Rib = {
       server: serverOps,
       hasReport: (id) => reports.has(id),
       probe: refreshServer,
+      getToolReachability,
     }),
 
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
@@ -741,6 +759,7 @@ const rib: Rib = {
     getCredential = ctx.getCredential;
     getDataDir = ctx.getDataDir;
     getProviders = ctx.getProviders;
+    getToolReachability = ctx.getToolReachability;
     startWorkflow = ctx.startWorkflow;
     getRunStatus = ctx.getRunStatus;
     cancelRun = ctx.cancelRun;
@@ -760,6 +779,7 @@ const rib: Rib = {
         sm,
         state: surfaceState,
         find: findSwarm,
+        projects: launchProjects,
         launch: launchState,
         launchOf: (id) => (ended.has(id) ? launches.load(id) : undefined),
         server: serverPanel,
@@ -847,6 +867,7 @@ const rib: Rib = {
     getCredential = undefined;
     getDataDir = undefined;
     getProviders = undefined;
+    getToolReachability = undefined;
     getExec = undefined;
   },
 };

@@ -206,6 +206,13 @@ request merges. Keelson projects each one onto the lead's turns only when
 A tool the operator has not granted is dropped from the turn, and the lead is
 told to say so rather than work around it. Workers never hold them.
 
+In the launcher, select a project and turn on Use the tracker to request the
+six beads tools. Solid chips are host-reported reachable tools; muted chips say
+\`needs your grant: crossRibGrants\`. Only reachable tools are sent, and the rib
+rechecks reachability at Start and Run again, dropping revoked grants.
+The switch does not create host grants. Without a reachability hook, it is
+disabled: This host does not say which tools a lead may hold.
+
 The report follows the same contract as Keelson's \`canvas_publish\`: inline CSS
 and script only, the system font stack, colors as CSS custom properties with a
 light override, and any categorical palette declared on \`<body>\` and checked
@@ -221,6 +228,13 @@ or two.
 Start a swarm with a \`project\` and \`workflows\`, a list of catalog workflow
 names. Its lead then holds these tools. Workers never do.
 
+In the launcher, selecting a project reveals Run workflows. Turn it on and add
+workflow names with Enter or comma, or paste names separated by whitespace or
+commas. Remove a chip with its remove button. Up to ${START_BOUNDS.maxWorkflows}
+distinct names become isolated grants for this launch. Pending valid text is
+added on Start; invalid text blocks Start and stays editable. The switch is
+disabled when the host cannot start workflows for a rib.
+
 | Tool | For |
 | --- | --- |
 | \`chat_workflow_start\` | Start a granted workflow with a one-line \`purpose\` and its \`inputs\`. Returns the run id. |
@@ -234,6 +248,11 @@ Keelson's \`config.json\` must also name each workflow for the \`chat\` rib unde
 Keelson's policy as a \`workflow_run\` call. For the swarm to answer a
 workflow's approval gates, \`config.json\` must also name it under
 \`ribApprovalGrants\`.
+
+Run workflows does not create either host grant. Answer approvals in Workflows
+when the host has not granted the swarm permission to answer them. The launcher
+appends remembered approval refusals to that row; existing \`ribApprovalGrants\`
+can still let the lead answer reviewed gates as described below.
 
 Every entry is isolated unless it says \`isolated: false\`. An isolated run must
 establish its own worktree. Once a run's first node has finished, the rib checks
@@ -298,7 +317,8 @@ run whose workflow could not read the checks is not verified.
 
 > How a lead has agents change code themselves, each in its own worktree, and what confines them.
 
-Start a swarm with a \`project\` and \`work_tools: write\`. Without a project the
+Select a project and turn on Write in the launcher, or start a swarm with a
+\`project\` and \`work_tools: write\`. Without a project the
 start is refused. The lead and every other agent read the project root as in
 \`read\`. To have code changed, the lead calls \`chat_spawn\` with
 \`writes: true\`; a worker's spawn with \`writes\`, or any spawn with \`writes\`
@@ -785,13 +805,39 @@ Untouched Working session sends no size, power or model overrides. Opening
 Customize alone does not change that. Quick look records small/fast; Deep dig
 records large/deep. A named model records size, model and provider, with no power.
 
+With no project selected, the ALSO ALLOW group is absent. Selecting a project
+reveals Write, Run workflows and Use the tracker, all off. Write permits changes;
+only writers spawned by the lead receive their own worktrees and branches.
+Run workflows shows removable workflow chips: Enter or comma adds names,
+whitespace/comma-separated paste adds a batch, duplicates are ignored, and the
+limit is ${START_BOUNDS.maxWorkflows}. Valid pending text is added on Start;
+invalid or over-limit text stays in the input and blocks Start.
+Workflow names become \`{ name, isolated: true }\` grants, and still need
+\`ribWorkflowGrants\`. A dispatch-blocked host disables the switch and explains
+why. A note about remembered approval refusals says you answer them in Workflows;
+the separate \`ribApprovalGrants\` policy is unchanged.
+Use the tracker lists \`beads_ready\`, \`beads_show\`, \`beads_create\`,
+\`beads_update\`, \`beads_close\` and \`beads_dep\`, in that order. Only
+host-reported reachable tools are sent; muted chips say
+\`needs your grant: crossRibGrants\`. This switch does not create host grants.
+Without a reachability hook it is disabled with
+This host does not say which tools a lead may hold.
+Supported-but-empty results leave it usable, with every chip muted.
+The rib rechecks lead-tool reachability on Start and Run again.
+Turning switches off omits their grants; workflow chips stay for that project.
+Changing or clearing the project resets all switches and chips, not the task.
+The footer follows your choices: Reads <name>, optionally · writes on a branch,
+workflow names or · no workflows, then optionally · beads. The beads suffix
+records switch intent, not a promise that every tracker tool was granted.
+
 A task that names a URL or #N is refused, since agents cannot open links;
 Prepare in chat opens a chat that gathers the evidence and calls \`chat_swarm_start\`.
 Start shows Starting… for about two seconds to guard against duplicate clicks,
 not to track completion, and leaves the typed task in place. A refusal appears
 as a host toast; a successful start opens the swarm on the index. Ordinary
-refreshes preserve the draft, but a project-list or provider configuration
-change can replace the page and discard it.
+refreshes preserve the draft, switches and chips. A project-list, provider,
+capability, dispatch or remembered-refusal configuration change can replace the
+page and discard it.
 An ended swarm's board offers Run again with Effort and Model only. It reuses
 the same task, project, workflows and context. Its hint names the evidence and
 when it was captured; context is not refreshed. Run again reuses saved plan

@@ -536,6 +536,38 @@ list as **name · path**, shortening the home directory to `~` and leaving
 other paths absolute. Picking one gives agents read access to its checkout.
 It does not grant write access or workflows.
 
+With no project selected, the **ALSO ALLOW** group is absent. Selecting a
+project reveals **Write**, **Run workflows** and **Use the tracker**, all off.
+
+**Write** permits code changes. The lead spawns writers, and only those writers
+receive their own worktrees and branches. Turning it off restores read access.
+
+**Run workflows** shows removable workflow chips. Enter or comma adds names;
+paste whitespace/comma-separated names to add a batch. Duplicates are ignored.
+Remove a chip with its remove button. The limit is **10** distinct workflows.
+Valid pending text is added on Start; invalid or over-limit text stays in the
+input and blocks Start. Names become `{ name, isolated: true }` grants and still
+need the operator's `ribWorkflowGrants`. A host without workflow dispatch
+support disables the switch and explains why. Answer approvals in Workflows
+when the host has not granted automatic responses; remembered approval
+refusals append a note to that row. The separate `ribApprovalGrants` policy
+still applies to lead responses.
+
+**Use the tracker** lists `beads_ready`, `beads_show`, `beads_create`,
+`beads_update`, `beads_close` and `beads_dep`, in that order. Only host-reported
+reachable tools are sent. Muted chips say **needs your grant: crossRibGrants**.
+The switch does not create host grants. Without a reachability hook it is
+disabled: **This host does not say which tools a lead may hold.** A supported
+host reporting no reachable tools leaves it usable, with all chips muted.
+The rib rechecks lead-tool reachability on Start and Run again.
+
+Turning switches off omits their grants; workflow chips stay for that project.
+Changing or clearing the project resets all switches and chips, not the task.
+The scope footer follows your choices: **Reads \<name\>**, optionally
+**· writes on a branch**, workflow names or **· no workflows**, then optionally
+**· beads**. The beads suffix records switch intent, not a promise that every
+tracker tool was granted.
+
 **How hard it works** offers three plans. **Working session is selected by
 default**. Each card shows its agents, turns, minutes and the effective
 provider's models. Matching lead and worker models read as one model for lead
@@ -580,8 +612,9 @@ starting while it boots; a later failure becomes an ended row with the reason.
 An outright refusal, such as an unknown project or a provider that cannot
 run agents, appears in a host toast. After the guard clears you can retry.
 
-Ordinary refreshes preserve an unsent task. A change to the registered project
-list or provider configuration can replace the launcher page and discard it.
+Ordinary refreshes preserve an unsent task, switches and chips. A project-list,
+provider, capability, dispatch or remembered-refusal configuration change can
+replace the launcher page and discard it.
 
 A swarm started any other way, over MCP or from the `chat-swarm` workflow,
 appears in the same live area.
@@ -600,6 +633,8 @@ for everyone. Deliberately saved model/worker overrides are retained unchanged.
 Choosing another model drops the old worker override; clearing the model
 restores saved power or its omitted default. The rib keeps each launch in its
 data directory next to the history, and a server reset forgets them with it.
+Run again rechecks retained lead tools against the host's current
+reachability, so revoked grants are dropped.
 
 ## The server line
 
