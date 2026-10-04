@@ -105,11 +105,31 @@ function limitDuration(ms: number): string {
   return ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`;
 }
 
+function roleModelRow(s: SwarmSummary, lead: boolean): Row {
+  const model = lead ? s.model : (s.workerModel ?? s.model);
+  const power = `${s.power ?? "balanced"} power`;
+  const role = lead ? "Lead" : "Worker";
+  const inheritance = lead
+    ? ""
+    : s.workerModel
+      ? " (worker role override)"
+      : " (inherits lead setting)";
+  const agents = s.agents.filter((a) => a.lead === lead);
+  return {
+    text: `${role} model: requested ${model ?? power}, ${s.provider ?? "host default"}${inheritance}${model && s.power ? ` · ${power}` : ""}`,
+    detail: agents.length
+      ? agents
+          .map(
+            (a) =>
+              `@${shortHandle(a.handle, s.id)}: served model: ${a.servedModel ?? "not reported"} · served provider: ${a.providerId ?? "not reported"}${a.model ? ` · requested model: ${a.model}${a.model !== model ? " (agent override)" : ""}` : ""}`,
+          )
+          .join("\n")
+      : `No ${lead ? "lead" : "worker"} agents recorded; served models and per-agent requests not recorded.`,
+  };
+}
+
 function detailedSetupRows(s: SwarmSummary): Row[] {
   const l = s.limits;
-  const defaultModel = s.power
-    ? `${s.power} power; no explicit model recorded`
-    : "host default; no explicit model recorded";
   return [
     { icon: "◫", text: `Size: ${sizeWord(s)}` },
     {
@@ -118,27 +138,9 @@ function detailedSetupRows(s: SwarmSummary): Row[] {
     {
       text: `Wall-clock limit: ${limitDuration(l.wallClockMs)} · Turn timeout: ${limitDuration(l.turnTimeoutMs)} · Idle nudge limit: ${l.maxNudges}`,
     },
-    { text: `Requested provider: ${s.provider ?? "host default; no explicit provider recorded"}` },
-    { text: `Requested lead model: ${s.model ?? defaultModel}` },
-    {
-      text: `Requested worker model: ${s.workerModel ?? s.model ?? defaultModel}${s.workerModel ? " (worker role override)" : " (inherits lead setting)"}`,
-    },
-    { text: `Requested power: ${s.power ?? "not recorded"}` },
+    roleModelRow(s, true),
+    roleModelRow(s, false),
     { text: `Recorded reasoning effort: ${s.effort ?? "not recorded"}` },
-    ...s.agents.flatMap((a): Row[] => {
-      const roleModel = a.lead ? s.model : (s.workerModel ?? s.model);
-      const override = a.model && roleModel && a.model !== roleModel;
-      const who = `@${shortHandle(a.handle, s.id)} (${a.lead ? "lead" : "worker"})`;
-      return [
-        {
-          text: `Requested model for ${who}: ${a.model ?? "no per-agent request recorded"}${override ? ` (overrides role setting ${roleModel})` : ""}`,
-        },
-        {
-          text: `Served model for ${who}: ${a.servedModel ?? "not reported"} · provider: ${a.providerId ?? "not reported"}`,
-        },
-      ];
-    }),
-    ...(s.agents.length ? [] : [{ text: "Served models and per-agent requests not recorded." }]),
   ];
 }
 

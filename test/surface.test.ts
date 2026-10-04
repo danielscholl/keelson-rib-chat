@@ -1300,22 +1300,22 @@ describe("the details inspector", () => {
         }),
       ],
     });
-    const setup = rows(inspect(s), "Setup").map((row) => row.text);
-    expect(setup).toEqual([
+    const setup = rows(inspect(s), "Setup");
+    expect(setup.map((row) => row.text)).toEqual([
       "Size: small, adjusted",
       "Effective limits: 7 agents · 31 total turns · 9 turns per worker · 2 concurrent turns",
       "Wall-clock limit: 1234.567 s · Turn timeout: 654.321 s · Idle nudge limit: 4",
-      "Requested provider: requested-provider",
-      "Requested lead model: requested-lead",
-      "Requested worker model: requested-worker (worker role override)",
-      "Requested power: deep",
+      "Lead model: requested requested-lead, requested-provider · deep power",
+      "Worker model: requested requested-worker, requested-provider (worker role override) · deep power",
       "Recorded reasoning effort: xhigh",
-      "Requested model for @lead (lead): requested-lead",
-      "Served model for @lead (lead): served-lead · provider: served-provider",
-      "Requested model for @w1 (worker): individual-override (overrides role setting requested-worker)",
-      "Served model for @w1 (worker): served-worker · provider: worker-provider",
       "100 in · 20 out tokens",
     ]);
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.detail).toBe(
+      "@lead: served model: served-lead · served provider: served-provider · requested model: requested-lead",
+    );
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.detail).toBe(
+      "@w1: served model: served-worker · served provider: worker-provider · requested model: individual-override (agent override)",
+    );
   });
 
   test("formats default Details durations as minutes without changing compact setup", () => {
@@ -1359,33 +1359,93 @@ describe("the details inspector", () => {
         agent("slegacy", 1),
       ],
     });
-    const setup = rows(inspect(s), "Setup").map((row) => row.text);
-    expect(setup).toContain("Requested provider: host default; no explicit provider recorded");
-    expect(setup).toContain("Requested lead model: fast power; no explicit model recorded");
-    expect(setup).toContain(
-      "Requested worker model: fast power; no explicit model recorded (inherits lead setting)",
+    const setup = rows(inspect(s), "Setup");
+    const settings = setup.map((row) => row.text);
+    expect(settings).toContain("Lead model: requested fast power, host default");
+    expect(settings).toContain(
+      "Worker model: requested fast power, host default (inherits lead setting)",
     );
-    expect(setup).toContain("Recorded reasoning effort: not recorded");
-    expect(setup).toContain(
-      "Served model for @lead (lead): actual-model · provider: actual-provider",
+    expect(settings).toContain("Recorded reasoning effort: not recorded");
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.detail).toBe(
+      "@lead: served model: actual-model · served provider: actual-provider",
     );
-    expect(setup).toContain("Served model for @w1 (worker): not reported · provider: not reported");
-    expect(setup.filter((text) => text.startsWith("Requested")).join(" ")).not.toContain(
-      "actual-model",
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.detail).toBe(
+      "@w1: served model: not reported · served provider: not reported",
     );
-    expect(setup.filter((text) => text.startsWith("Requested")).join(" ")).not.toContain(
-      "actual-provider",
+    expect(settings.join("\n")).not.toContain("actual-model");
+    expect(settings.join("\n")).not.toContain("actual-provider");
+    const missing = rows(inspect({ ...s, power: undefined, agents: [] }), "Setup");
+    expect(missing).toContainEqual({
+      text: "Lead model: requested balanced power, host default",
+      detail: "No lead agents recorded; served models and per-agent requests not recorded.",
+    });
+    expect(missing).toContainEqual({
+      text: "Worker model: requested balanced power, host default (inherits lead setting)",
+      detail: "No worker agents recorded; served models and per-agent requests not recorded.",
+    });
+    const inherited = rows(inspect({ ...s, model: "explicit-lead" }), "Setup");
+    expect(inherited.map((row) => row.text)).toContain(
+      "Worker model: requested explicit-lead, host default (inherits lead setting) · fast power",
     );
-    expect(
-      rows(inspect({ ...s, power: undefined, agents: [] }), "Setup").map((row) => row.text),
-    ).toContain("Requested lead model: host default; no explicit model recorded");
-    expect(rows(inspect({ ...s, agents: [] }), "Setup").map((row) => row.text)).toContain(
-      "Served models and per-agent requests not recorded.",
+  });
+
+  test.each([undefined, "fast", "balanced", "deep"] as const)(
+    "groups a twelve-agent roster by role with %s power and retains every served model",
+    (power) => {
+      const agents = Array.from({ length: 12 }, (_, i) =>
+        agent("smodels", i, {
+          model: i === 1 ? "agent-override" : undefined,
+          servedModel: `served-${i}`,
+          providerId: `provider-${i}`,
+        }),
+      );
+      const setup = rows(
+        inspect(swarm("smodels", { power, agents, model: undefined, provider: undefined })),
+        "Setup",
+      );
+      const models = setup.filter((row) => /^(Lead|Worker) model:/.test(row.text));
+      expect(models).toHaveLength(2);
+      expect(models[0]?.text).toBe(
+        `Lead model: requested ${power ?? "balanced"} power, host default`,
+      );
+      expect(models[1]?.text).toBe(
+        `Worker model: requested ${power ?? "balanced"} power, host default (inherits lead setting)`,
+      );
+      expect(models[0]?.detail?.split("\n")).toHaveLength(1);
+      expect(models[1]?.detail?.split("\n")).toHaveLength(11);
+      expect(models[1]?.detail).toContain("requested model: agent-override (agent override)");
+      for (const [i, a] of agents.entries()) {
+        expect(models[i === 0 ? 0 : 1]?.detail).toContain(
+          `served model: ${a.servedModel} · served provider: ${a.providerId}`,
+        );
+      }
+    },
+  );
+
+  test("role and per-agent overrides never fill missing served model or provider evidence", () => {
+    const s = swarm("soverrides", {
+      provider: "requested-provider",
+      model: "requested-lead",
+      workerModel: "requested-worker",
+      agents: [
+        agent("soverrides", 0, { model: "lead-override", servedModel: "served-lead" }),
+        agent("soverrides", 1, { model: "requested-worker", providerId: "served-provider" }),
+      ],
+    });
+    const setup = rows(inspect(s), "Setup");
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.detail).toBe(
+      "@lead: served model: served-lead · served provider: not reported · requested model: lead-override (agent override)",
     );
-    const inherited = rows(inspect({ ...s, model: "explicit-lead" }), "Setup").map(
-      (row) => row.text,
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.detail).toBe(
+      "@w1: served model: not reported · served provider: served-provider · requested model: requested-worker",
     );
-    expect(inherited).toContain("Requested worker model: explicit-lead (inherits lead setting)");
+    const workerOnly = rows(inspect({ ...s, model: undefined }), "Setup");
+    expect(workerOnly.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
+      "Lead model: requested balanced power, requested-provider",
+    );
+    expect(workerOnly.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
+      "Worker model: requested requested-worker, requested-provider (worker role override)",
+    );
   });
 
   test("missing legacy excerpts, empty bodies and source truncation remain explicit", () => {
@@ -2628,8 +2688,8 @@ describe("Swarms boards", () => {
     expect(details).toContain(
       "Effective limits: 5 agents · 40 total turns · 12 turns per worker · 3 concurrent turns",
     );
-    expect(details).toContain("Requested lead model: gpt-6-astra");
-    expect(details).toContain("Requested worker model: gpt-5.6-sol");
+    expect(details).toContain("Lead model: requested gpt-6-astra, copilot");
+    expect(details).toContain("Worker model: requested gpt-5.6-sol, copilot");
     expect(text).not.toContain('"type":"steer"');
     expect(text).toContain('"label":"Runs verified","value":"1 of 1","tone":"ok"');
     expect(JSON.stringify(buildIndex(state({ ended: [fixtures.done!] })))).toContain(
@@ -3324,7 +3384,7 @@ describe("ended board contract", () => {
       "Full task destination sentinel.",
       "Context destination sentinel.",
       "Effective limits:",
-      "Requested lead model:",
+      "Lead model: requested",
     ])
       expect(frame).not.toContain(removed);
     const details = buildDetailsInspector(s);
@@ -3340,7 +3400,7 @@ describe("ended board contract", () => {
       "Full task destination sentinel.",
       "Context destination sentinel.",
       "Effective limits:",
-      "Requested lead model:",
+      "Lead model: requested",
     ])
       expect(detailText).toContain(retained);
   });
@@ -6414,9 +6474,11 @@ describe("power and the served model", () => {
       agents: done.agents.map((a) => ({ ...a, model: undefined, servedModel: "gpt-6-pro" })),
     };
     const details = JSON.stringify(buildDetailsInspector(s));
-    expect(details).toContain("Requested power: deep");
-    expect(details).toContain("Requested provider: copilot");
-    expect(details).toContain("Served model for @lead (lead): gpt-6-pro");
+    expect(details).toContain("Lead model: requested deep power, copilot");
+    expect(details).toContain(
+      "Worker model: requested deep power, copilot (inherits lead setting)",
+    );
+    expect(details).toContain("@lead: served model: gpt-6-pro");
     board(swarmKey(s.id), buildSwarmBoard(s));
   });
 });
