@@ -115,7 +115,7 @@ function planModels(state: LaunchState, power: SwarmPower): string {
 
 function effortDetail(size: SwarmSize): string {
   const l = SIZE_PRESETS[size];
-  return `${l.maxAgents} agents, ${l.maxConcurrent} at once · ${l.maxTurns} turns in all, ${l.maxTurnsPerAgent} per agent · stops after ${l.wallClockMs / 60_000} min`;
+  return `${l.maxAgents} agents, ${l.maxConcurrent} at once · ${l.maxTurns} turns in all, ${l.maxTurnsPerAgent} per worker · stops after ${l.wallClockMs / 60_000} min`;
 }
 
 function budgetSummary(size: SwarmSize): string {

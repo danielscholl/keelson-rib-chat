@@ -6693,7 +6693,7 @@ describe("launching from the tab", () => {
       "8 agents · up to 80 turns · about 60 min · strongest models",
     );
     expect(e["effort-detail"]!.textContent).toBe(
-      "8 agents, 4 at once · 80 turns in all, 16 per agent · stops after 60 min",
+      "8 agents, 4 at once · 80 turns in all, 16 per worker · stops after 60 min",
     );
     capture({ size: "large", power: "deep" });
     e["launch-model"]!.value = JSON.stringify({ model: "claude-opus-5.5", provider: "copilot" });
