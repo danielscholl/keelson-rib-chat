@@ -7810,6 +7810,48 @@ describe("the launch store", () => {
 });
 
 describe("the rib's surface", () => {
+  test("queries tracker capabilities and cannot reuse a previous host after re-registration", async () => {
+    const queries: string[][] = [];
+    const sm = new FakeSnapshots();
+    try {
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getSnapshotManager: () => sm,
+        getToolReachability: (names) => {
+          queries.push([...names]);
+          return [];
+        },
+      });
+      await sm.composers.get(LAUNCH_KEY)!.compose();
+      expect(queries.length).toBeGreaterThan(0);
+      expect(
+        queries.every(
+          (names) =>
+            JSON.stringify(names) ===
+            JSON.stringify([
+              "beads_ready",
+              "beads_show",
+              "beads_create",
+              "beads_update",
+              "beads_close",
+              "beads_dep",
+            ]),
+        ),
+      ).toBe(true);
+      await rib.dispose?.();
+      const count = queries.length;
+      const next = new FakeSnapshots();
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getSnapshotManager: () => next,
+      });
+      await next.composers.get(LAUNCH_KEY)!.compose();
+      expect(queries).toHaveLength(count);
+    } finally {
+      await rib.dispose?.();
+    }
+  });
+
   test("launch state filters the fallback project and keeps provider configuration", async () => {
     const sm = new FakeSnapshots();
     const saved = process.env.KEELSON_WORKFLOW_PROVIDER;

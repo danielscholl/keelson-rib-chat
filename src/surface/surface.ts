@@ -38,7 +38,7 @@ import {
   SERVER_LOG_KEY,
   swarmKey,
 } from "./keys.ts";
-import { buildLaunch, type LaunchState } from "./launch-board.ts";
+import { buildLaunch, type LaunchState, TRACKER_TOOLS } from "./launch-board.ts";
 import { gateIdentity } from "./parts.ts";
 import { createKeyPublisher, type KeyPublisher } from "./publisher.ts";
 import { buildGoneRecord, buildRecord } from "./record.ts";
@@ -180,6 +180,18 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
         .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
         .map(({ id, name, rootPath }) => ({ id, name, rootPath })),
       provider: state.provider,
+      ...(state.toolReachability
+        ? {
+            toolReachability: TRACKER_TOOLS.map((name) => ({
+              name,
+              status:
+                state.toolReachability?.find((tool) => tool.name === name)?.status ??
+                "unregistered",
+            })),
+          }
+        : {}),
+      refused: [...new Set(state.refused ?? [])].sort(),
+      ...(state.dispatchBlocked ? { dispatchBlocked: state.dispatchBlocked } : {}),
       classes:
         state.provider && classes
           ? [

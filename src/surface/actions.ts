@@ -6,7 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { RibAction, RibActionResult } from "@keelson/shared";
+import type { RibAction, RibActionResult, RibContext } from "@keelson/shared";
 import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
@@ -64,6 +64,7 @@ export interface ActionDeps {
   hasReport?: (id: string) => boolean;
   // Probes the ClickClack server again and refreshes the server line and inspector.
   probe?: () => Promise<void>;
+  getToolReachability?: RibContext["getToolReachability"];
 }
 
 const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;

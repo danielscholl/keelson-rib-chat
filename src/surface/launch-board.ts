@@ -12,6 +12,7 @@ import {
   DEFAULT_PROJECT_NAME,
   designTokenCssBlock,
   type ModelClassMap,
+  type ToolReachability,
 } from "@keelson/shared";
 import type { StartSwarmInput } from "../tools.ts";
 import {
@@ -35,7 +36,19 @@ export interface LaunchState {
   provider?: string;
   // Each provider's class map, for the hover on each power.
   classes?: readonly { provider: string; classes: ModelClassMap }[];
+  toolReachability?: readonly ToolReachability[];
+  refused?: readonly string[];
+  dispatchBlocked?: string;
 }
+
+export const TRACKER_TOOLS = [
+  "beads_ready",
+  "beads_show",
+  "beads_create",
+  "beads_update",
+  "beads_close",
+  "beads_dep",
+] as const;
 
 export const TASK_PLACEHOLDER =
   "What should the swarm work out? Describe the issue or PR in words. A question works; so does a paste of the issue body.";
