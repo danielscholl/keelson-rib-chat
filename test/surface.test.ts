@@ -57,6 +57,7 @@ import {
   INDEX_KEY,
   LAUNCH_KEY,
   recordKey,
+  reportKey,
   SERVER_KEY,
   SERVER_LOG_KEY,
   swarmKey,
@@ -108,8 +109,9 @@ import {
   tokensTile,
 } from "../src/surface/swarm-board.ts";
 import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
-import type { StartSwarmInput } from "../src/tools.ts";
+import { START_BOUNDS, type StartSwarmInput } from "../src/tools.ts";
 import {
+  BODY_MAX,
   type ChildRun,
   MESSAGE_CHARS,
   MESSAGES_KEPT,
@@ -6494,7 +6496,10 @@ describe("launching from the tab", () => {
       launchOf: () => oldLaunch,
       server: () => ({ live: 1 }),
       readLog: async () => "",
-      report: () => undefined,
+      report: (id) =>
+        id === fixtures.done!.id
+          ? { title: "Findings", html: "<main>Findings only</main>", at: T0 }
+          : undefined,
       windowMs: 1,
     });
     const page = () => String(sm.frames.get(LAUNCH_KEY)?.at(-1));
@@ -6721,6 +6726,140 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("HTML launches retain task, link, access and workflow validation before admission", async () => {
+    const h = launcherHarness({ projects });
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const act = (payload: Record<string, unknown>) =>
+        handleSwarmsAction(
+          {
+            type: "start-swarm",
+            origin: "canvas-html",
+            payload: { nonce: h.nonce(), ...payload },
+          },
+          { ...actionDeps, surface: h.surface },
+        );
+      for (const task of ["", " \n ", undefined, 123]) {
+        expect(await act({ task })).toEqual({ ok: false, error: "a swarm needs a task" });
+      }
+      expect(await act({ task: "x".repeat(BODY_MAX + 1) })).toEqual({
+        ok: false,
+        error: `a task is at most ${BODY_MAX} characters`,
+      });
+      for (const task of [
+        "See https://example.com/issue",
+        "See http://example.com/pr",
+        "Review #42",
+        "Review (#42)",
+      ]) {
+        expect(await act({ task })).toEqual({ ok: false, error: LINK_REFUSAL });
+      }
+      for (const payload of [
+        { task: "t", tools: "write" },
+        { task: "t", workflows: "fix-issue" },
+        { task: "t", project: "p1", workflows: "../bad" },
+        { task: "t", project: "p1", workflows: "a".repeat(101) },
+        {
+          task: "t",
+          project: "p1",
+          workflows: Array.from({ length: START_BOUNDS.maxWorkflows + 1 }, (_, n) => `w${n}`).join(
+            ",",
+          ),
+        },
+      ])
+        expect((await act(payload)).ok).toBe(false);
+      expect(begun).toHaveLength(0);
+      expect((await act({ task: `  ${"x".repeat(BODY_MAX)}  ` })).ok).toBe(true);
+      expect(begun).toEqual([{ task: "x".repeat(BODY_MAX), workTools: "none" }]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("record and report publications never carry the launcher nonce", async () => {
+    const h = launcherHarness();
+    try {
+      h.surface.track([fixtures.done!.id, fixtures.running!.id]);
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      for (const key of [
+        recordKey(fixtures.done!.id),
+        recordKey(fixtures.running!.id),
+        reportKey(fixtures.done!.id),
+      ]) {
+        const page = h.sm.frames.get(key)?.at(-1);
+        expect(typeof page).toBe("string");
+        expect(String(page)).not.toContain(nonce);
+        expect(String(page)).not.toContain("data-nonce");
+      }
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("an old frame nonce is refused by a recreated surface", async () => {
+    const old = launcherHarness();
+    await Bun.sleep(5);
+    const nonce = old.nonce();
+    old.surface.dispose();
+    const next = launcherHarness();
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      for (const type of ["start-swarm", "start-in-chat"]) {
+        expect(
+          await handleSwarmsAction(
+            { type, origin: "canvas-html", payload: { nonce, task: "t" } },
+            { ...actionDeps, surface: next.surface },
+          ),
+        ).toEqual({ ok: false, error: "the Swarms tab takes actions from its boards only" });
+      }
+      expect(begun).toHaveLength(0);
+    } finally {
+      next.surface.dispose();
+    }
+  });
+
+  test("only project/provider configuration changes replace the launcher document", async () => {
+    const h = launcherHarness({
+      projects,
+      provider: "claude",
+      classes: [{ provider: "claude", classes: { fast: "a", balanced: "b", deep: "c" } }],
+    });
+    try {
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      let previous = h.page();
+      for (const project of [
+        { ...projects[0]!, id: "p2" },
+        { ...projects[0]!, rootPath: "/another/root" },
+        { ...projects[0]!, name: "Another name" },
+      ]) {
+        h.inputs.projects = [project];
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.page()).not.toBe(previous);
+        expect(h.nonce()).toBe(nonce);
+        previous = h.page();
+      }
+      h.inputs.classes = [
+        { provider: "claude", classes: { fast: "a", balanced: "changed-model", deep: "c" } },
+      ];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.page()).not.toBe(previous);
+      previous = h.page();
+      h.inputs.refused = ["fix-issue"];
+      h.inputs.dispatchBlocked = "unavailable";
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.page()).toBe(previous);
+      expect(h.nonce()).toBe(nonce);
+    } finally {
+      h.surface.dispose();
+    }
+  });
   test("all other HTML verbs refuse even a valid nonce before side effects", async () => {
     const h = launcherHarness();
     try {
@@ -6745,10 +6884,13 @@ describe("launching from the tab", () => {
         "select-gate",
         "open-details",
         "swarm-open",
+        "history-open",
+        "read-doc",
+        "message-lead",
         "steer",
         "message-agent",
-        "reply-in-thread",
-        "reply-to-gate",
+        "reply",
+        "reply-ask",
         "dismiss-ask",
         "stop-swarm",
         "run-again",
@@ -7605,6 +7747,9 @@ describe("the rib's surface", () => {
     try {
       rib.registerTools?.({
         getExec: () => ({}) as never,
+        runAgentTurn: () => {
+          throw new Error("no agent turn should run");
+        },
         getSnapshotManager: () => sm,
         getProjects: () => [
           {
@@ -7636,6 +7781,21 @@ describe("the rib's surface", () => {
       expect(json).toContain("/tmp/sample");
       expect(json).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
       expect(json).not.toContain("claude: b");
+      const nonce = String(page).match(/data-nonce="([^"]+)"/)![1]!;
+      expect(
+        await rib.onAction?.(
+          {
+            type: "start-swarm",
+            origin: "canvas-html",
+            payload: { nonce, task: "Investigate", project: "missing-project", tools: "read" },
+          },
+          { getExec: () => ({}) as never },
+        ),
+      ).toEqual({ ok: false, error: "no registered project 'missing-project'" });
+      delete process.env.KEELSON_WORKFLOW_PROVIDER;
+      const hostDefaultPage = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+      expect(hostDefaultPage).toContain("claude: b");
+      expect(hostDefaultPage).not.toContain("lead claude-sonnet-5");
     } finally {
       if (saved === undefined) delete process.env.KEELSON_WORKFLOW_PROVIDER;
       else process.env.KEELSON_WORKFLOW_PROVIDER = saved;
