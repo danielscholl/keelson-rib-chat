@@ -3407,22 +3407,43 @@ describe("the reading pane", () => {
     expect(buildDoc(md, "s8mdn")).toContain("**Show all 12.** Drop `RECENT_SHOWN`.");
   });
 
-  test("the conclusion's copy button reveals the whole conclusion", async () => {
-    const done = fixtures.done!;
-    const drawer = JSON.stringify(buildSwarmBoard(done));
-    expect(drawer).toContain('"copyAction":{"type":"copy-conclusion","payload":{"id":"s8pln"}}');
-    const deps = {
-      surface: undefined,
-      find: (id: string) => (id === "s8pln" ? { ended: done } : {}),
-      live: () => undefined,
-      begin: () => "s0",
-      launchOf: () => undefined,
-    };
-    const copy = (id: string) =>
-      handleSwarmsAction({ type: "copy-conclusion", payload: { id } }, deps);
-    expect(await copy("s8pln")).toEqual({ ok: true, data: done.conclusion });
-    expect((await copy("s0non")).ok).toBe(false);
-  });
+  test.each([true, false])(
+    "the conclusion's copy button reveals the whole conclusion (report: %s)",
+    async (withReport) => {
+      const conclusion = `# Complete result\n\n${"- **Evidence** with `code`.\n".repeat(500)}\nFinal conclusion sentinel.\n`;
+      const task = `${"Full task details.\n".repeat(400)}Final task sentinel.`;
+      const done = {
+        ...fixtures.done!,
+        task,
+        conclusion,
+        report: withReport ? { title: "Report", at: T0, bytes: 4096 } : undefined,
+      };
+      const doc = buildDoc(done, done.id);
+      expect(doc).toContain(`\n\n${conclusion}\n\n## Task\n\n${task}\n`);
+      const drawer = JSON.stringify(buildSwarmBoard(done));
+      expect(drawer).toContain('"copyAction":{"type":"copy-conclusion","payload":{"id":"s8pln"}}');
+      expect(drawer).not.toContain("Final conclusion sentinel.");
+      const deps = {
+        surface: undefined,
+        find: (id: string) => (id === "s8pln" ? { ended: done } : {}),
+        live: () => undefined,
+        begin: () => "s0",
+        launchOf: () => undefined,
+      };
+      const copy = (id: string) =>
+        handleSwarmsAction({ type: "copy-conclusion", payload: { id } }, deps);
+      expect(await copy("s8pln")).toEqual({ ok: true, data: done.conclusion });
+      expect((await copy("s0non")).ok).toBe(false);
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "copy-conclusion", payload: { id: done.id } },
+            { ...deps, find: () => ({ ended: { ...done, conclusion: undefined } }) },
+          )
+        ).ok,
+      ).toBe(false);
+    },
+  );
 
   test("shows the whole conclusion or refused draft, but not gate prompts", () => {
     expect(buildDoc(fixtures.done, "s8pln")).toContain("x".repeat(3000));
@@ -4310,51 +4331,92 @@ describe("the record page", () => {
   const activitySection = (html: string) =>
     html.match(/<section><h2>Activity<\/h2>.*?<\/section>/)?.[0] ?? "";
 
-  test("activity retains exactly the latest 200 events, newest first, including empty histories", () => {
-    for (const count of [0, 1, 200, 201]) {
-      const activity = Array.from({ length: count }, (_, i) => ({
-        at: new Date(Date.parse(T0) + i * 60_000).toISOString(),
-        text: `retained event ${i}`,
-      }));
-      const s = swarm("slog", { activity });
-      const html = buildRecord(s, new Date(T0));
-      const section = activitySection(html);
-      expect(section).toContain("not a complete transcript");
-      expect(html.indexOf(section)).toBeLessThan(html.indexOf("<footer>"));
-      const rows = section.split(/<tr id=e\d+><td>/).slice(1);
-      expect(rows).toHaveLength(Math.min(count, 200));
-      expect(rows.map((row) => Number(row.match(/retained event (\d+)/)?.[1]))).toEqual(
-        activity
-          .slice(-200)
-          .reverse()
-          .map((event) => Number(event.text.split(" ").at(-1))),
-      );
-      if (count === 0) expect(section).toContain("No retained events.");
-      if (count === 201) expect(section).not.toContain("<td>retained event 0");
-    }
-  });
+  test.each(["running", "done", "stopped"] as const)(
+    "activity retains exactly the latest 200 events, newest first, including empty histories (%s)",
+    (status) => {
+      for (const count of [0, 1, 200, 201]) {
+        const activity = Array.from({ length: count }, (_, i) => ({
+          at: new Date(Date.parse(T0) + i * 60_000).toISOString(),
+          text: `retained event ${i}`,
+        }));
+        const original = structuredClone(activity);
+        const s = swarm("slog", {
+          status,
+          endedAt: status === "running" ? undefined : T0,
+          activity,
+        });
+        const html = buildRecord(s, new Date(T0));
+        const section = activitySection(html);
+        expect(section).toContain("not a complete transcript");
+        expect(html.indexOf(section)).toBeLessThan(html.indexOf("<footer>"));
+        const rows = section.split(/<tr id=e\d+><td>/).slice(1);
+        expect(rows).toHaveLength(Math.min(count, 200));
+        expect(rows.map((row) => Number(row.match(/retained event (\d+)/)?.[1]))).toEqual(
+          activity
+            .slice(-200)
+            .reverse()
+            .map((event) => Number(event.text.split(" ").at(-1))),
+        );
+        if (count === 0) expect(section).toContain("No retained events.");
+        if (count === 201) expect(section).not.toContain("<td>retained event 0");
+        expect(activity).toEqual(original);
+      }
+    },
+  );
 
-  test("activity identifies actors and timestamps, counts repeats and escapes bounded event gists", () => {
-    const s = swarm("slog", {
-      activity: [
-        { at: T0, text: "rib event" },
-        { at: T0, text: "operator note", actor: "operator", count: 3 },
-        { at: T0, text: "@slog-w1 turn finished", actor: "slog-w1", count: 1 },
-        { at: T0, text: "<script> & ' \" <img>", actor: "<unknown>" },
-        { at: T0, text: "x".repeat(400), actor: "unknown-agent" },
+  test.each(["running", "done", "stopped"] as const)(
+    "activity identifies actors and timestamps, counts repeats and escapes bounded event gists (%s)",
+    (status) => {
+      const s = swarm("slog", {
+        status,
+        endedAt: status === "running" ? undefined : T0,
+        activity: [
+          { at: T0, text: "rib event" },
+          { at: T0, text: "operator note", actor: "operator", count: 3 },
+          { at: T0, text: "@slog-w1 turn finished", actor: "slog-w1", count: 1 },
+          { at: T0, text: "<script> & ' \" <img>", actor: "<unknown>" },
+          { at: T0, text: "x".repeat(400), actor: "unknown-agent" },
+        ],
+      });
+      const section = activitySection(buildRecord(s, new Date(T0)));
+      expect(section).toContain(`<td>${day(T0)} ${hhmm(T0)} · rib<td>rib event`);
+      expect(section).toContain(" · you<td>operator note ×3");
+      expect(section).toContain(" · @w1<td>@w1 turn finished");
+      expect(section).not.toContain("×1");
+      expect(section).toContain(
+        " · &lt;unknown&gt;<td>&lt;script&gt; &amp; &#39; &quot; &lt;img&gt;",
+      );
+      expect(section).not.toContain("<script>");
+      expect(section).toContain(` · unknown-agent<td>${"x".repeat(99)}…`);
+      expect(section).not.toContain("x".repeat(100));
+    },
+  );
+
+  test("ended Spend by agent retains fresh and cached usage without inventing missing usage", () => {
+    const s = swarm("sspend", {
+      status: "done",
+      endedAt: T0,
+      agents: [
+        agent("sspend", 0, { usage: { input: 200, output: 50, cached: 100 } }),
+        agent("sspend", 1, { usage: { input: 80, output: 20, cached: 30 } }),
+        agent("sspend", 2, { usage: { input: 0, output: 0, cached: 60 } }),
+        agent("sspend", 3),
       ],
     });
-    const section = activitySection(buildRecord(s, new Date(T0)));
-    expect(section).toContain(`<td>${day(T0)} ${hhmm(T0)} · rib<td>rib event`);
-    expect(section).toContain(" · you<td>operator note ×3");
-    expect(section).toContain(" · @w1<td>@w1 turn finished");
-    expect(section).not.toContain("×1");
-    expect(section).toContain(
-      " · &lt;unknown&gt;<td>&lt;script&gt; &amp; &#39; &quot; &lt;img&gt;",
+    const section = buildRecord(s, new Date(T0)).match(
+      /<section><h2>Spend by agent<\/h2>.*?<\/section>/,
+    )?.[0];
+    expect(section).toBeDefined();
+    expect(section).toContain("@lead</span>");
+    expect(section).toContain("250 fresh · 100 cached");
+    expect(section).toContain("@w1</span>");
+    expect(section).toContain("100 fresh · 30 cached");
+    expect(section).toContain("@w2</span>");
+    expect(section).toContain("0 fresh · 60 cached");
+    expect(section).not.toContain("@w3");
+    expect(buildRecord({ ...s, agents: [agent(s.id, 0)] }, new Date(T0))).not.toContain(
+      "Spend by agent",
     );
-    expect(section).not.toContain("<script>");
-    expect(section).toContain(` · unknown-agent<td>${"x".repeat(99)}…`);
-    expect(section).not.toContain("x".repeat(100));
   });
 
   test.each(["activity", "health"] as const)(
