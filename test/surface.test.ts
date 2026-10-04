@@ -6527,6 +6527,165 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("only the two launcher HTML verbs accept the composed instance nonce", async () => {
+    const h = launcherHarness({ projects });
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const nonce = h.nonce();
+      const deps = { ...actionDeps, surface: h.surface };
+      for (const project of ["", "p1"]) {
+        const result = await handleSwarmsAction(
+          {
+            type: "start-swarm",
+            origin: "canvas-html",
+            payload: {
+              nonce,
+              task: "  Investigate the build  ",
+              project,
+              tools: project ? "read" : "none",
+            },
+          },
+          deps,
+        );
+        expect(result).toEqual({
+          ok: true,
+          data: { effect: "open-surface", surfaceId: "surface:chat:swarms", regionKey: INDEX_KEY },
+        });
+      }
+      expect(begun).toEqual([
+        { task: "Investigate the build", workTools: "none" },
+        { task: "Investigate the build", project: "p1", workTools: "read" },
+      ]);
+      const chat = await handleSwarmsAction(
+        { type: "start-in-chat", origin: "canvas-html", payload: { nonce } },
+        deps,
+      );
+      expect(chat).toMatchObject({
+        ok: true,
+        data: { effect: "open-chat", seed: { name: "Start a swarm" } },
+      });
+      expect(begun).toHaveLength(2);
+
+      for (const type of ["start-swarm", "start-in-chat"]) {
+        for (const badNonce of [undefined, "", 7, null, {}, [], ` ${nonce}`, "old-instance"]) {
+          expect(
+            await handleSwarmsAction(
+              { type, origin: "canvas-html", payload: { nonce: badNonce, task: "t" } },
+              deps,
+            ),
+          ).toEqual({
+            ok: false,
+            error: "the Swarms tab takes actions from its boards only",
+          });
+        }
+        for (const payload of [undefined, null, "nonce", []]) {
+          expect(
+            (await handleSwarmsAction({ type, origin: "canvas-html", payload }, deps)).ok,
+          ).toBe(false);
+        }
+        expect(
+          (
+            await handleSwarmsAction(
+              { type, origin: "canvas-html", payload: { nonce, task: "t" } },
+              { ...deps, surface: undefined },
+            )
+          ).ok,
+        ).toBe(false);
+      }
+      expect(begun).toHaveLength(2);
+      h.surface.dispose();
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "start-swarm", origin: "canvas-html", payload: { nonce, task: "t" } },
+            deps,
+          )
+        ).ok,
+      ).toBe(false);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("all other HTML verbs refuse even a valid nonce before side effects", async () => {
+    const h = launcherHarness();
+    try {
+      await Bun.sleep(5);
+      const unexpected = () => {
+        throw new Error("HTML gate allowed a side effect");
+      };
+      const deps: ActionDeps = {
+        ...actionDeps,
+        surface: h.surface,
+        find: unexpected,
+        live: unexpected,
+        begin: unexpected,
+        launchOf: unexpected,
+        probe: unexpected,
+        hasReport: unexpected,
+      };
+      for (const type of [
+        "select-swarm",
+        "select-agent",
+        "select-ask",
+        "select-gate",
+        "open-details",
+        "swarm-open",
+        "steer",
+        "message-agent",
+        "reply-in-thread",
+        "reply-to-gate",
+        "dismiss-ask",
+        "stop-swarm",
+        "run-again",
+        "copy-conclusion",
+        "open-record",
+        "open-report",
+        "open-run",
+        "server-manage",
+        "server-start",
+        "server-stop",
+        "server-reset",
+        "server-probe",
+        "server-log",
+        "unknown",
+      ]) {
+        expect(
+          await handleSwarmsAction(
+            { type, origin: "canvas-html", payload: { nonce: h.nonce(), id: "s9hjx", task: "t" } },
+            deps,
+          ),
+        ).toEqual({
+          ok: false,
+          error: "the Swarms tab takes actions from its boards only",
+        });
+      }
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("omitted access defaults to chat-only without a project and read with one", async () => {
+    begun.length = 0;
+    for (const payload of [
+      { task: "t" },
+      { task: "t", project: "p1" },
+      { task: "t", tools: "read" },
+      { task: "t", project: "p1", tools: "none" },
+    ]) {
+      expect((await handleSwarmsAction({ type: "start-swarm", payload }, actionDeps)).ok).toBe(
+        true,
+      );
+    }
+    expect(begun).toEqual([
+      { task: "t", workTools: "none" },
+      { task: "t", project: "p1", workTools: "read" },
+      { task: "t", workTools: "read" },
+      { task: "t", project: "p1", workTools: "none" },
+    ]);
+  });
+
   test("ordinary refreshes and swarm changes leave the launcher unchanged", async () => {
     const h = launcherHarness({ projects, provider: "copilot" });
     try {
@@ -6821,8 +6980,8 @@ describe("start and run again", () => {
     });
     await act("start-swarm", { task: "Why is the build slow?", setup: "adjust", size: "small" });
     expect(begun).toEqual([
-      { task: "Why is the build slow?", workTools: "read" },
-      { task: "Why is the build slow?", workTools: "read", size: "small" },
+      { task: "Why is the build slow?", workTools: "none" },
+      { task: "Why is the build slow?", workTools: "none", size: "small" },
     ]);
   });
 
