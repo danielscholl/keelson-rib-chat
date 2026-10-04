@@ -3083,6 +3083,42 @@ ${"detail ".repeat(1000)}`,
 
 describe("ended board contract", () => {
   const now = new Date("2026-09-22T14:30:00.000Z");
+  test.each(["done", "stalled", "exhausted", "stopped", "error", "running", "stopping"] as const)(
+    "a run-only legacy summary keeps result tiles ended-only for %s",
+    (status) => {
+      for (const workflows of [undefined, []]) {
+        const s = {
+          ...endedFixtures.conclusionOnly,
+          status,
+          workflows,
+          writeEnabled: false,
+          prs: [],
+          runs: [run("legacy", { status: "cancelled" })],
+        };
+        const view = buildSwarmBoard(s, { now });
+        board(swarmKey(s.id), view);
+        const result = view.sections.find((section) => section.kind === "stats");
+        if (result?.kind !== "stats") throw new Error("missing stats");
+        const pr = result.items.find((tile) => tile.label === "Pull requests");
+        const verified = result.items.find((tile) => tile.label === "Runs verified");
+        if (status === "running" || status === "stopping") {
+          expect(pr).toBeUndefined();
+          expect(verified).toBeUndefined();
+        } else {
+          expect(result.items.map((tile) => tile.label)).toEqual([
+            "Turns",
+            "Time",
+            "Tokens",
+            "Pull requests",
+            "Runs verified",
+          ]);
+          expect(pr).toEqual({ label: "Pull requests", value: 0, sub: "0 with CI passing" });
+          expect(verified).toEqual({ label: "Runs verified", value: "0 of 1", tone: "warn" });
+        }
+      }
+    },
+  );
+
   test.each(Object.entries(endedFixtures))("%s composes the complete ended layout", (_name, s) => {
     const view = buildSwarmBoard(s, { now, launch: { ...oldLaunch, task: s.task } });
     board(swarmKey(s.id), view);

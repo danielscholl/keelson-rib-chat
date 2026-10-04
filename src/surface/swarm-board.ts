@@ -240,7 +240,13 @@ function stats(s: SwarmSummary, now: Date): Leaf {
       }
     }
     for (const pr of s.prs ?? []) record(pr.url, pr.ci?.verdict === "pass");
-    if (s.workflows?.length || s.writeEnabled || s.agents.some((a) => a.worktree) || prs.size > 0) {
+    if (
+      s.workflows?.length ||
+      s.runs?.length ||
+      s.writeEnabled ||
+      s.agents.some((a) => a.worktree) ||
+      prs.size > 0
+    ) {
       items.push({
         label: "Pull requests",
         value: prs.size,
