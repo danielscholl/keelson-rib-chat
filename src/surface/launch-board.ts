@@ -239,6 +239,71 @@ const PAGE_SCRIPT = `
   const mode = document.getElementById("launch-mode");
   const chatNote = note.textContent;
   const chatMode = mode.textContent;
+  const sizes = ["small", "medium", "large"];
+  const cards = sizes.map((size) => document.getElementById("plan-" + size));
+  const efforts = sizes.map((size) => document.getElementById("effort-" + size));
+  const drawer = document.getElementById("launch-drawer");
+  const customize = document.getElementById("launch-customize");
+  const modelSelect = document.getElementById("launch-model");
+  const otherModel = document.getElementById("launch-other-model");
+  const models = JSON.parse(form.dataset.models);
+  const details = JSON.parse(form.dataset.details);
+  const budgets = JSON.parse(form.dataset.budgets);
+  const categories = { fast: "quick models", balanced: "balanced models", deep: "strongest models" };
+  let size = "medium";
+  let power = "balanced";
+  let model = "";
+  let provider = "";
+  const updateChoice = () => {
+    let matches = false;
+    cards.forEach((card) => {
+      const selected = !model && size === card.dataset.size && power === card.dataset.power;
+      card.setAttribute("aria-pressed", String(selected));
+      matches ||= selected;
+    });
+    efforts.forEach((effort) => effort.setAttribute("aria-pressed", String(size === effort.dataset.size)));
+    document.getElementById("working-chip").textContent =
+      !model && size === "medium" && power === "balanced" ? "selected" : "default";
+    document.getElementById("custom-chip").hidden = matches;
+    document.getElementById("effort-detail").textContent = details[size];
+    document.getElementById("model-detail").textContent = model
+      ? "Every agent runs " + model + ", lead and workers alike."
+      : "Keeps the plan's pair: " + models[power] + ".";
+    document.getElementById("launch-summary").textContent =
+      budgets[size] + " · " + (model ? "one model" : categories[power]);
+    document.getElementById("launch-models").textContent =
+      model ? model + " · lead and workers" : models[power];
+    document.getElementById("other-model-row").hidden = modelSelect.value !== "other";
+  };
+  cards.forEach((card) => card.addEventListener("click", () => {
+    size = card.dataset.size;
+    power = card.dataset.power;
+    model = "";
+    provider = "";
+    modelSelect.value = "";
+    otherModel.value = "";
+    updateChoice();
+  }));
+  efforts.forEach((effort) => effort.addEventListener("click", () => {
+    size = effort.dataset.size;
+    updateChoice();
+  }));
+  const updateModel = () => {
+    const choice = modelSelect.value === "other"
+      ? { model: otherModel.value.trim(), provider: form.dataset.provider }
+      : modelSelect.value ? JSON.parse(modelSelect.value) : { model: "", provider: "" };
+    model = choice.model;
+    provider = model ? choice.provider : "";
+    updateChoice();
+  };
+  modelSelect.addEventListener("change", updateModel);
+  otherModel.addEventListener("input", updateModel);
+  customize.addEventListener("click", () => {
+    drawer.hidden = !drawer.hidden;
+    customize.setAttribute("aria-expanded", String(!drawer.hidden));
+    document.getElementById("customize-label").textContent = drawer.hidden ? "Customize" : "Hide";
+  });
+  updateChoice();
   document.getElementById("launch-prepare").addEventListener("click", () => {
     keelson.action("start-in-chat", { nonce: form.dataset.nonce });
   });
@@ -257,12 +322,21 @@ const PAGE_SCRIPT = `
   // form never fires submit here; Start is a plain click.
   const startSwarm = () => {
     if (start.disabled) return;
-    keelson.action("start-swarm", {
+    const payload = {
       nonce: form.dataset.nonce,
       task: task.value,
       project: project.value,
       tools: project.value ? "read" : "none"
-    });
+    };
+    if (model) {
+      payload.size = size;
+      payload.model = model;
+      if (provider) payload.provider = provider;
+    } else if (size !== "medium" || power !== "balanced") {
+      payload.size = size;
+      if (power !== "balanced") payload.power = power;
+    }
+    keelson.action("start-swarm", payload);
     start.disabled = true;
     start.textContent = "Starting…";
     start.setAttribute("aria-busy", "true");

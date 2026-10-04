@@ -6508,14 +6508,20 @@ describe("launching from the tab", () => {
     return { sm, views, surface, inputs, page, nonce };
   };
 
-  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
-    const page = buildLaunch({ projects }, "instance-nonce");
+  const frameHarness = (inputs: LaunchState = { projects, provider: "copilot" }) => {
+    const page = buildLaunch(inputs, "instance-nonce");
     const script = page.match(/<script>([\s\S]*?)<\/script>/)![1]!;
+    const decode = (value: string) =>
+      value.replace(
+        /&(quot|#39|lt|gt|amp);/g,
+        (_, entity: string) => ({ quot: '"', "#39": "'", lt: "<", gt: ">", amp: "&" })[entity]!,
+      );
     const makeElement = (textContent = "") => ({
       textContent,
       value: "",
       disabled: false,
-      dataset: { nonce: "instance-nonce" },
+      hidden: false,
+      dataset: {} as Record<string, string>,
       selectedOptions: [{ dataset: { name: "A <name>", path: "~/A <path>" } }],
       attributes: new Map<string, string>(),
       classes: new Set<string>(),
@@ -6544,20 +6550,21 @@ describe("launching from the tab", () => {
         };
       },
     });
-    const elements = {
-      "launch-form": makeElement(),
-      "launch-task": makeElement(),
-      "launch-project": makeElement(),
-      "launch-start": makeElement("Start swarm"),
-      "launch-prepare": makeElement(),
-      "project-note": makeElement("Chat mode note"),
-      "project-row": makeElement(),
-      "launch-mode": makeElement("Chat mode · nothing on disk"),
-    };
+    const elements: Record<string, ReturnType<typeof makeElement>> = {};
+    for (const match of page.matchAll(/<[a-z]+\b([^>]*\bid="([^"]+)"[^>]*)>([^<]*)/g)) {
+      const [, attrs, id, text] = match;
+      const element = makeElement(decode(text!));
+      element.hidden = /\bhidden\b/.test(attrs!);
+      for (const attr of attrs!.matchAll(/([\w-]+)="([^"]*)"/g)) {
+        element.attributes.set(attr[1]!, decode(attr[2]!));
+        if (attr[1]!.startsWith("data-")) element.dataset[attr[1]!.slice(5)] = decode(attr[2]!);
+      }
+      elements[id!] = element;
+    }
     const calls: { type: string; payload: Record<string, unknown> }[] = [];
     const timers: { callback: () => void; delay: number }[] = [];
     runInNewContext(script, {
-      document: { getElementById: (id: keyof typeof elements) => elements[id] },
+      document: { getElementById: (id: string) => elements[id] },
       keelson: {
         action: (type: string, payload: Record<string, unknown>) => {
           calls.push({ type, payload });
@@ -6573,16 +6580,23 @@ describe("launching from the tab", () => {
         prevented++;
       },
     };
-    const task = elements["launch-task"];
-    const start = elements["launch-start"];
-    const project = elements["launch-project"];
+    const trigger = (id: string, type = "click") => elements[id]!.listeners.get(type)!(event);
+    const release = () => timers.at(-1)!.callback();
+    return { page, elements, calls, timers, event, trigger, release, prevented: () => prevented };
+  };
+
+  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
+    const { page, elements, calls, timers, event, prevented } = frameHarness();
+    const task = elements["launch-task"]!;
+    const start = elements["launch-start"]!;
+    const project = elements["launch-project"]!;
     // The host sandbox has no allow-forms, so Start is a click, never a submit.
-    expect(elements["launch-form"].listeners.has("submit")).toBe(false);
+    expect(elements["launch-form"]!.listeners.has("submit")).toBe(false);
     const submit = () => start.listeners.get("click")!(event);
     task.value = "Keep my typed draft";
     submit();
     submit();
-    expect(prevented).toBe(0);
+    expect(prevented()).toBe(0);
     expect(calls).toEqual([
       {
         type: "start-swarm",
@@ -6602,11 +6616,11 @@ describe("launching from the tab", () => {
 
     project.value = "p1";
     project.listeners.get("change")!(event);
-    expect(elements["project-note"].textContent).toBe(
+    expect(elements["project-note"]!.textContent).toBe(
       "Agents read ~/A <path> and run read-only commands there. Nothing changes unless you allow more.",
     );
-    expect(elements["launch-mode"].textContent).toBe("Reads A <name> · no workflows");
-    expect(elements["project-row"].classes.has("has-project")).toBe(true);
+    expect(elements["launch-mode"]!.textContent).toBe("Reads A <name> · no workflows");
+    expect(elements["project-row"]!.classes.has("has-project")).toBe(true);
     expect(calls).toHaveLength(1);
     submit();
     expect(calls[1]).toEqual({
@@ -6614,7 +6628,7 @@ describe("launching from the tab", () => {
       payload: { nonce: "instance-nonce", task: task.value, project: "p1", tools: "read" },
     });
     timers[1]!.callback();
-    elements["launch-prepare"].listeners.get("click")!(event);
+    elements["launch-prepare"]!.listeners.get("click")!(event);
     expect(calls[2]).toEqual({ type: "start-in-chat", payload: { nonce: "instance-nonce" } });
     task.listeners.get("keydown")!({ ...event, key: "Enter", metaKey: true });
     expect(calls[3]?.type).toBe("start-swarm");
@@ -6624,14 +6638,175 @@ describe("launching from the tab", () => {
     expect(task.value).toBe("Keep my typed draft");
     project.value = "";
     project.listeners.get("change")!(event);
-    expect(elements["project-note"].textContent).toBe("Chat mode note");
-    expect(elements["launch-mode"].textContent).toBe("Chat mode · nothing on disk");
-    expect(elements["project-row"].classes.has("has-project")).toBe(false);
+    expect(elements["project-note"]!.textContent).toBe(
+      "Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.",
+    );
+    expect(elements["launch-mode"]!.textContent).toBe("Chat mode · nothing on disk");
+    expect(elements["project-row"]!.classes.has("has-project")).toBe(false);
     expect(page).not.toContain("fetch(");
     expect(page).not.toContain("innerHTML");
     expect(page).not.toContain("await keelson.action");
     expect(page).not.toContain("localStorage");
     expect(page).not.toContain("sessionStorage");
+  });
+
+  test("frame plan transitions capture sparse payloads and restore Working session without losing drafts", () => {
+    const h = frameHarness();
+    const { elements: e, trigger, release, calls } = h;
+    e["launch-task"]!.value = "Investigate the build";
+    const common = {
+      nonce: "instance-nonce",
+      task: "Investigate the build",
+      project: "",
+      tools: "none",
+    };
+    const capture = (extra: Record<string, unknown>) => {
+      trigger("launch-start");
+      expect(calls.at(-1)).toEqual({ type: "start-swarm", payload: { ...common, ...extra } });
+      release();
+    };
+    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["custom-chip"]!.hidden).toBe(true);
+    expect(e["launch-drawer"]!.hidden).toBe(true);
+    capture({});
+    trigger("launch-customize");
+    expect(e["launch-drawer"]!.hidden).toBe(false);
+    expect(e["launch-customize"]!.attributes.get("aria-expanded")).toBe("true");
+    expect(e["customize-label"]!.textContent).toBe("Hide");
+    capture({});
+    trigger("plan-small");
+    expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["working-chip"]!.textContent).toBe("default");
+    expect(e["launch-summary"]!.textContent).toBe(
+      "3 agents · up to 20 turns · about 15 min · quick models",
+    );
+    expect(e["launch-models"]!.textContent).toBe("claude-sonnet-5.5 · lead and workers");
+    capture({ size: "small", power: "fast" });
+    trigger("plan-large");
+    expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["launch-summary"]!.textContent).toBe(
+      "8 agents · up to 80 turns · about 60 min · strongest models",
+    );
+    expect(e["effort-detail"]!.textContent).toBe(
+      "8 agents, 4 at once · 80 turns in all, 16 per agent · stops after 60 min",
+    );
+    capture({ size: "large", power: "deep" });
+    e["launch-model"]!.value = JSON.stringify({ model: "claude-opus-5.5", provider: "copilot" });
+    trigger("launch-model", "change");
+    expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("false");
+    expect(e["custom-chip"]!.hidden).toBe(false);
+    expect(e["model-detail"]!.textContent).toBe(
+      "Every agent runs claude-opus-5.5, lead and workers alike.",
+    );
+    expect(e["launch-models"]!.textContent).toBe("claude-opus-5.5 · lead and workers");
+    expect(e["launch-summary"]!.textContent).toEndWith(" · one model");
+    capture({ size: "large", model: "claude-opus-5.5", provider: "copilot" });
+    trigger("launch-customize");
+    expect(e["launch-drawer"]!.hidden).toBe(true);
+    expect(e["customize-label"]!.textContent).toBe("Customize");
+    capture({ size: "large", model: "claude-opus-5.5", provider: "copilot" });
+    trigger("plan-medium");
+    expect(e["custom-chip"]!.hidden).toBe(true);
+    expect(e["working-chip"]!.textContent).toBe("selected");
+    expect(e["launch-model"]!.value).toBe("");
+    capture({});
+    e["launch-project"]!.value = "p1";
+    trigger("launch-project", "change");
+    trigger("effort-large");
+    expect(e["custom-chip"]!.hidden).toBe(false);
+    expect(e["effort-large"]!.attributes.get("aria-pressed")).toBe("true");
+    trigger("launch-start");
+    expect(calls.at(-1)?.payload).toEqual({
+      ...common,
+      project: "p1",
+      tools: "read",
+      size: "large",
+    });
+    release();
+    trigger("effort-medium");
+    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["launch-task"]!.value).toBe("Investigate the build");
+    expect(e["launch-project"]!.value).toBe("p1");
+  });
+
+  test("frame effort changes retain plan power and Model clearing restores the pair", () => {
+    const { elements: e, trigger, release, calls } = frameHarness();
+    trigger("plan-small");
+    trigger("effort-large");
+    expect(e["custom-chip"]!.hidden).toBe(false);
+    expect(e["launch-summary"]!.textContent).toEndWith(" · quick models");
+    trigger("launch-start");
+    expect(calls.at(-1)?.payload).toMatchObject({ size: "large", power: "fast" });
+    release();
+    e["launch-model"]!.value = JSON.stringify({ model: "same-name", provider: "second-provider" });
+    trigger("launch-model", "change");
+    trigger("launch-start");
+    expect(calls.at(-1)?.payload).toMatchObject({
+      size: "large",
+      model: "same-name",
+      provider: "second-provider",
+    });
+    expect(calls.at(-1)?.payload).not.toHaveProperty("power");
+    release();
+    e["launch-model"]!.value = "";
+    trigger("launch-model", "change");
+    expect(e["model-detail"]!.textContent).toBe(
+      "Keeps the plan's pair: claude-sonnet-5.5 · lead and workers.",
+    );
+    trigger("effort-small");
+    expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
+    trigger("effort-medium");
+    trigger("launch-start");
+    expect(calls.at(-1)?.payload).toMatchObject({ size: "medium", power: "fast" });
+    expect(calls.at(-1)?.payload).not.toHaveProperty("model");
+  });
+
+  test("frame Other trims input, uses only the serving provider, and resets on card selection", () => {
+    for (const provider of ["copilot", undefined]) {
+      const {
+        elements: e,
+        trigger,
+        release,
+        calls,
+      } = frameHarness({ projects, ...(provider ? { provider } : {}) });
+      e["launch-model"]!.value = "other";
+      trigger("launch-model", "change");
+      expect(e["other-model-row"]!.hidden).toBe(false);
+      expect(e["custom-chip"]!.hidden).toBe(true);
+      e["launch-other-model"]!.value = "  other-vendor/model <name>  ";
+      trigger("launch-other-model", "input");
+      expect(e["model-detail"]!.textContent).toBe(
+        "Every agent runs other-vendor/model <name>, lead and workers alike.",
+      );
+      trigger("launch-start");
+      expect(calls.at(-1)?.payload).toEqual({
+        nonce: "instance-nonce",
+        task: "",
+        project: "",
+        tools: "none",
+        size: "medium",
+        model: "other-vendor/model <name>",
+        ...(provider ? { provider } : {}),
+      });
+      release();
+      e["launch-other-model"]!.value = "   ";
+      trigger("launch-other-model", "input");
+      trigger("launch-start");
+      expect(calls.at(-1)?.payload).toEqual({
+        nonce: "instance-nonce",
+        task: "",
+        project: "",
+        tools: "none",
+      });
+      release();
+      e["launch-other-model"]!.value = "old-name";
+      trigger("launch-other-model", "input");
+      trigger("plan-large");
+      expect(e["launch-other-model"]!.value).toBe("");
+      expect(e["launch-model"]!.value).toBe("");
+      expect(e["other-model-row"]!.hidden).toBe(true);
+      expect(e["custom-chip"]!.hidden).toBe(true);
+    }
   });
 
   test("publishing declares HTML, validates strings and owns a nonce per surface instance", async () => {
