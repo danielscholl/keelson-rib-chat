@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.14.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.13.0...v0.14.0) (2026-10-04)
+
+
+### Added
+
+* **surface:** compose the live swarm's cockpit on the Swarms page ([#86](https://github.com/danielscholl/keelson-rib-chat/issues/86)) ([1f1fe7e](https://github.com/danielscholl/keelson-rib-chat/commit/1f1fe7ef25c53399b8291dd1b20cb9f59bedaa03))
+* **surface:** forecast the turn budget against the clock ([c489f07](https://github.com/danielscholl/keelson-rib-chat/commit/c489f07eb743cc37d6d048ab85df9f77b16bb2a8))
+* **surface:** list what a swarm has produced, with writers' CI ([94968b1](https://github.com/danielscholl/keelson-rib-chat/commit/94968b12503b5186d1dbbdee6d357133ee5852d5))
+* **surface:** make ClickClack plumbing: a server line and inspector ([#87](https://github.com/danielscholl/keelson-rib-chat/issues/87)) ([151d7ff](https://github.com/danielscholl/keelson-rib-chat/commit/151d7ff2452af4288fe5e6abe5612a503da7722e))
+* **surface:** map the swarm's agents and inspect one at the side ([81f894f](https://github.com/danielscholl/keelson-rib-chat/commit/81f894f2aac822a83c77d80e2760a960bafabdee))
+* **surface:** open questions, gates and swarm details as side inspectors ([3f93d15](https://github.com/danielscholl/keelson-rib-chat/commit/3f93d15dba9b0fb19df7f28eaeefd5bb044b17e8))
+* **surface:** show the conversation on the cockpit ([#88](https://github.com/danielscholl/keelson-rib-chat/issues/88)) ([4d19299](https://github.com/danielscholl/keelson-rib-chat/commit/4d192991f9b6d63063f7aea90e7eb780f27e5d9b))
+* **surface:** trim the ended swarm board to what the record does not draw ([d0d6e43](https://github.com/danielscholl/keelson-rib-chat/commit/d0d6e439e458d6956bae760cb2b4426c3dfafcb7))
+* **swarm:** set reasoning effort from power and validate worker evidence ([#83](https://github.com/danielscholl/keelson-rib-chat/issues/83)) ([36e7367](https://github.com/danielscholl/keelson-rib-chat/commit/36e73672987af355d7c33751a018b25c4fa96a9d))
+
+
+### Fixed
+
+* **surface:** give the map a full-width row and tidy the cockpit's tiles and Details ([0490036](https://github.com/danielscholl/keelson-rib-chat/commit/0490036c6fba64acb50924d1a7207349e7c4f069))
+
+
+### Documentation
+
+* **design:** add the fourth Swarms tab iteration ([#85](https://github.com/danielscholl/keelson-rib-chat/issues/85)) ([bcdd8a5](https://github.com/danielscholl/keelson-rib-chat/commit/bcdd8a5654a915d29dd3202ad6c74e371bf85f18))
+
 ## [0.13.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.12.0...v0.13.0) (2026-09-24)
 
 
