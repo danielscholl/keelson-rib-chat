@@ -24,7 +24,7 @@ import { createSwarmFileStore } from "./store.ts";
 import { handleSwarmsAction } from "./surface/actions.ts";
 import type { SurfaceState } from "./surface/index-board.ts";
 import { BADGE_KEY, INDEX_KEY, LAUNCH_KEY, SURFACE_ID } from "./surface/keys.ts";
-import { type LaunchState, launchByline, TRACKER_TOOLS } from "./surface/launch-board.ts";
+import { type LaunchState, TRACKER_TOOLS } from "./surface/launch-board.ts";
 import type { ServerLine } from "./surface/parts.ts";
 import { createServerOps } from "./surface/server-ops.ts";
 import { LOG_LINES, type ServerPanelState } from "./surface/server-panel.ts";
@@ -722,8 +722,6 @@ const rib: Rib = {
         header: {
           key: LAUNCH_KEY,
           title: "Start a swarm",
-          collapsible: true,
-          byline: launchByline(),
         },
         rows: [{ columns: [{ key: INDEX_KEY, live: true }] }],
       },

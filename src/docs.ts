@@ -771,11 +771,20 @@ applicable conclusion or refused draft and the full task, not questions, gates,
 context, runs or activity. The conclusion's copy button copies all of it, not
 the board preview.
 
-The Start a swarm header is a themed HTML launcher with Task, Project and
-Start swarm. It opens expanded and you can fold it by hand. No project · chat only
-is the default: nothing on disk is read or changed. Projects list as name · path,
-with the home directory shortened to ~; picking one gives agents read access,
-not write access or workflows.
+The Start a swarm header is a themed HTML launcher. With a live or retained
+ended swarm, it starts as one compact New swarm line. Type in
+What should the swarm work out? The Working session chip sits beside
+${SIZE_PRESETS.medium.maxAgents} agents · ${minutes(SIZE_PRESETS.medium.wallClockMs)} min.
+Compact Start uses chat mode with no project: nothing on disk is read or changed.
+It sends no size, power, model, provider, workflow or lead-tool overrides.
+More options or the Working session chip expands the launcher in place without
+losing the task. Expansion alone does not change the default plan.
+
+With no live or retained ended swarms, the launcher opens expanded with Task,
+Project and Start swarm. Starting-only entries do not compact it.
+No project · chat only is the default. Projects list as name · path, with the
+home directory shortened to ~; picking one gives agents read access, not write
+access or workflows.
 
 How hard it works offers three plans. Working session is selected by default.
 Each card shows its agents, turns, minutes and the effective provider's models.
@@ -835,9 +844,12 @@ Prepare in chat opens a chat that gathers the evidence and calls \`chat_swarm_st
 Start shows Starting… for about two seconds to guard against duplicate clicks,
 not to track completion, and leaves the typed task in place. A refusal appears
 as a host toast; a successful start opens the swarm on the index. Ordinary
-refreshes preserve the draft, switches and chips. A project-list, provider,
-capability, dispatch or remembered-refusal configuration change can replace the
-page and discard it.
+refreshes preserve local expansion, the draft, plan and model choices, switches
+and chips while swarm presence stays unchanged. Additional swarms and live-to-ended
+transitions keep the same launcher page. Crossing between no live or retained
+ended swarms and at least one can replace the page and discard it. A project-list,
+provider, capability, dispatch or remembered-refusal configuration change can
+also replace the page. Reloading or replacing the page does not restore local edits.
 An ended swarm's board offers Run again with Effort and Model only. It reuses
 the same task, project, workflows and context. Its hint names the evidence and
 when it was captured; context is not refreshed. Run again reuses saved plan

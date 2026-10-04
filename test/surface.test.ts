@@ -66,7 +66,6 @@ import {
 import {
   buildLaunch,
   type LaunchState,
-  launchByline,
   runAgainItem,
   TASK_PLACEHOLDER,
   TRACKER_TOOLS,
@@ -6497,7 +6496,10 @@ describe("actions", () => {
 
 describe("launching from the tab", () => {
   const projects = [{ id: "p1", name: "keelson-sample", rootPath: "/tmp/keelson-sample" }];
-  const launcherHarness = (inputs: LaunchState = { projects: [] }) => {
+  const launcherHarness = (
+    inputs: LaunchState = { projects: [] },
+    swarms: SurfaceState = state({ live: [], ended: [] }),
+  ) => {
     const sm = new FakeSnapshots();
     const views: RibViewDescriptor[] = [];
     const surface = createSwarmsSurface({
@@ -6505,7 +6507,7 @@ describe("launching from the tab", () => {
       views,
       projects: () => inputs.projects,
       launch: () => inputs,
-      state: () => state({ live: [fixtures.running!] }),
+      state: () => swarms,
       find: actionDeps.find,
       launchOf: () => oldLaunch,
       server: () => ({ live: 1 }),
@@ -6518,8 +6520,48 @@ describe("launching from the tab", () => {
     });
     const page = () => String(sm.frames.get(LAUNCH_KEY)?.at(-1));
     const nonce = () => page().match(/data-nonce="([^"]+)"/)![1]!;
-    return { sm, views, surface, inputs, page, nonce };
+    return { sm, views, surface, inputs, swarms, page, nonce };
   };
+
+  test("launcher presence normalizes empty, starting-only, live, ended and mixed states", async () => {
+    for (const initial of [
+      state({ live: [], ended: [] }),
+      state({ live: [], ended: [], starting: [starting] }),
+      state({ live: [fixtures.running!], ended: [] }),
+      state({ live: [], ended: [fixtures.done!] }),
+      state({ live: [fixtures.running!], ended: [fixtures.done!] }),
+    ]) {
+      const present = initial.live.length > 0 || initial.ended.length > 0;
+      const h = launcherHarness({ projects, hasSwarms: !present }, initial);
+      try {
+        await Bun.sleep(5);
+        const page = h.page();
+        expect(page.includes('<template id="launch-expanded">')).toBe(present);
+        const nonce = h.nonce();
+        h.swarms.starting = [starting];
+        if (present) {
+          h.swarms.live = [
+            { ...fixtures.running!, task: "changed", turnsUsed: 9, startedAt: T0 },
+            fixtures.waiting!,
+          ];
+          h.swarms.ended = [fixtures.done!, fixtures.stopping!];
+        }
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
+        expect((await h.sm.recompose(LAUNCH_KEY))?.data).toBe(page);
+        h.swarms.live = present ? [] : [fixtures.running!];
+        h.swarms.ended = [];
+        const frames = h.sm.frames.get(LAUNCH_KEY)!.length;
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 1);
+        expect(h.nonce()).toBe(nonce);
+      } finally {
+        h.surface.dispose();
+      }
+    }
+  });
 
   const frameHarness = (
     source: LaunchState | string = { projects, provider: "copilot" },
@@ -6531,6 +6573,8 @@ describe("launching from the tab", () => {
       key?: string;
       metaKey?: boolean;
       ctrlKey?: boolean;
+      isComposing?: boolean;
+      keyCode?: number;
       clipboardData?: { getData(type: string): string };
     };
     let focused: Element | undefined;
@@ -6555,6 +6599,7 @@ describe("launching from the tab", () => {
       attributes = new Map<string, string>();
       classes = new Set<string>();
       listeners = new Map<string, (event: Event) => void>();
+      listenerCounts = new Map<string, number>();
       children: Element[] = [];
       private contentText = "";
       constructor(
@@ -6574,6 +6619,7 @@ describe("launching from the tab", () => {
         this.classes = new Set(value.split(" "));
       }
       addEventListener(type: string, listener: (event: Event) => void) {
+        this.listenerCounts.set(type, (this.listenerCounts.get(type) ?? 0) + 1);
         this.listeners.set(type, listener);
       }
       setAttribute(name: string, value: string) {
@@ -6617,11 +6663,16 @@ describe("launching from the tab", () => {
         /&(amp|lt|gt|quot|#39);/g,
         (_, entity: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" })[entity]!,
       );
-    const templateText = page.match(/<template id="access-template">([\s\S]*?)<\/template>/)?.[1];
-    const parseTemplate = () => {
+    const templates = new Map(
+      [...page.matchAll(/<template id="([^"]+)">([\s\S]*?)<\/template>/g)].map((match) => [
+        match[1]!,
+        match[2]!,
+      ]),
+    );
+    const parseMarkup = (markup: string) => {
       const root = new Element("fragment");
       const stack = [root];
-      for (const token of templateText!.match(/<[^>]+>|[^<]+/g)!) {
+      for (const token of markup.match(/<[^>]+>|[^<]+/g) ?? []) {
         if (token.startsWith("</")) {
           stack.pop();
           continue;
@@ -6633,36 +6684,32 @@ describe("launching from the tab", () => {
             if (attr[1] !== tag) node.setAttribute(attr[1]!, decode(attr[2] ?? ""));
           }
           stack.at(-1)!.append(node);
-          if (tag !== "input") stack.push(node);
+          if (!["input", "br", "hr"].includes(tag)) stack.push(node);
         } else {
           stack.at(-1)!.append(new Element("text", decode(token)));
         }
       }
       return root;
     };
-    const outside = page.replace(/<template id="access-template">[\s\S]*?<\/template>/, "");
-    const elements: Record<string, Element> = {};
-    for (const match of outside.matchAll(/<([a-z]+)\b([^>]*\bid="([^"]+)"[^>]*)>([^<]*)/g)) {
-      const [, tag, attrs, id, text] = match;
-      const element = new Element(tag, decode(text!));
-      element.hidden = /(^|\s)hidden(\s|=|$)/.test(attrs!);
-      for (const attr of attrs!.matchAll(/([\w-]+)="([^"]*)"/g)) {
-        if (attr[1] !== "hidden") element.setAttribute(attr[1]!, decode(attr[2]!));
-      }
-      elements[id!] = element;
-    }
-    const get = (id: string) =>
-      elements[id] ??
-      elements["launch-access"]!.all().find((node) => node.attributes.get("id") === id);
+    const outside = page
+      .replace(/<template\b[^>]*>[\s\S]*?<\/template>/g, "")
+      .replace(/<(style|script)>[\s\S]*?<\/\1>/g, "");
+    const root = parseMarkup(outside);
+    const elements = (): Record<string, Element> =>
+      Object.fromEntries(
+        root
+          .all()
+          .filter((node) => node.attributes.has("id"))
+          .map((node) => [node.attributes.get("id")!, node]),
+      );
+    const get = (id: string) => elements()[id];
     const calls: { type: string; payload: Record<string, unknown> }[] = [];
     const timers: { callback: () => void; delay: number }[] = [];
     runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)![1]!, {
       document: {
         getElementById: (id: string) =>
-          id === "access-template"
-            ? templateText
-              ? { content: { cloneNode: parseTemplate } }
-              : null
+          templates.has(id)
+            ? { content: { cloneNode: () => parseMarkup(templates.get(id)!) } }
             : get(id),
         createElement: (tag: string) => new Element(tag),
       },
@@ -6686,8 +6733,8 @@ describe("launching from the tab", () => {
       return prevented;
     };
     const select = (value: string, name = "keelson-sample") => {
-      elements["launch-project"]!.value = value;
-      elements["launch-project"]!.selectedOptions = [{ dataset: { name, path: "~/sample" } }];
+      get("launch-project")!.value = value;
+      get("launch-project")!.selectedOptions = [{ dataset: { name, path: "~/sample" } }];
       fire("launch-project", "change");
     };
     let prevented = 0;
@@ -6700,7 +6747,9 @@ describe("launching from the tab", () => {
     const release = () => timers.at(-1)!.callback();
     return {
       page,
-      elements,
+      get elements() {
+        return elements();
+      },
       get,
       fire,
       select,
@@ -6711,8 +6760,246 @@ describe("launching from the tab", () => {
       release,
       prevented: () => prevented,
       focused: () => focused,
+      mounted: () => root.all(),
     };
   };
+
+  test("compact initial markup renders only a one-line launcher outside inert templates", () => {
+    const page = buildLaunch({ projects, hasSwarms: true }, "nonce");
+    const initial = page
+      .replace(/<template\b[^>]*>[\s\S]*?<\/template>/g, "")
+      .replace(/<(style|script)>[\s\S]*?<\/\1>/g, "");
+    for (const copy of [
+      "New swarm",
+      "Working session",
+      `${SIZE_PRESETS.medium.maxAgents} agents · ${SIZE_PRESETS.medium.wallClockMs / 60_000} min`,
+      "More options",
+      ">Start</button>",
+      'type="text" aria-label="Swarm task" placeholder="What should the swarm work out?"',
+    ]) {
+      expect(initial).toContain(copy);
+    }
+    for (const copy of [
+      "TASK",
+      "HOW HARD IT WORKS",
+      "EFFORT",
+      "MODEL",
+      "PROJECT",
+      "ALSO ALLOW",
+      "<textarea",
+      "<select",
+      "<form",
+    ]) {
+      expect(initial).not.toContain(copy);
+    }
+    expect(page).toContain('<template id="launch-expanded">');
+    expect(page).toContain("template.content.cloneNode(true)");
+    expect(page).not.toContain("innerHTML");
+    expect(page).toContain(".compact input { flex: 1; min-width: 0; width: auto; }");
+    expect(page).toContain("@media (max-width: 900px)");
+    expect(page).toContain(":focus-visible");
+    const frame = frameHarness(page);
+    expect(frame.get("launch-task")).toBeUndefined();
+    expect(frame.get("plan-medium")).toBeUndefined();
+    expect(frame.get("allow-write")).toBeUndefined();
+    for (const id of ["compact-plan", "compact-more"]) {
+      expect(frame.get(id)!.attributes.get("type")).toBe("button");
+      expect(frame.get(id)!.attributes.get("aria-expanded")).toBe("false");
+      expect(frame.get(id)!.attributes.get("aria-controls")).toBe("launch-root");
+    }
+    for (const hasSwarms of [false, undefined]) {
+      const expanded = buildLaunch({ projects, hasSwarms }, "nonce");
+      expect(expanded).not.toContain('<template id="launch-expanded">');
+      expect(expanded).toContain('<textarea id="launch-task"');
+      expect(frameHarness(expanded).get("compact-task")).toBeUndefined();
+    }
+  });
+
+  test("both compact expansion triggers preserve the exact task and default plan without host actions", () => {
+    for (const id of ["compact-more", "compact-plan"]) {
+      const frame = frameHarness({ projects, provider: "copilot", hasSwarms: true });
+      const draft = '  Decide "A" & <B> / #42; keep punctuation and spaces  ';
+      frame.get("compact-task")!.value = draft;
+      const trigger = frame.get(id)!;
+      frame.fire(id, "click");
+      expect(frame.get("compact-task")).toBeUndefined();
+      expect(frame.get("launch-task")!.value).toBe(draft);
+      expect(frame.focused()).toBe(frame.get("launch-task"));
+      expect(frame.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
+      expect(frame.get("launch-drawer")!.hidden).toBe(true);
+      expect(frame.get("launch-project")!.value).toBe("");
+      expect(frame.get("allow-write")).toBeUndefined();
+      expect(frame.calls).toEqual([]);
+      const textarea = frame.get("launch-task");
+      trigger.listeners.get("click")!(frame.event);
+      expect(frame.get("launch-task")).toBe(textarea);
+      frame.fire("launch-start", "click");
+      expect(frame.calls).toEqual([
+        {
+          type: "start-swarm",
+          payload: { nonce: "instance-nonce", task: draft, project: "", tools: "none" },
+        },
+      ]);
+    }
+  });
+
+  test("compact Start and Enter send sparse chat defaults with one guard across expansion", () => {
+    for (const keyboard of [undefined, {}, { ctrlKey: true }, { metaKey: true }]) {
+      const frame = frameHarness({ projects, hasSwarms: true });
+      frame.get("compact-task")!.value = "Keep this draft";
+      if (keyboard) {
+        expect(frame.fire("compact-task", "keydown", { key: "Enter", ...keyboard })).toBe(true);
+      } else {
+        frame.fire("compact-start", "click");
+      }
+      frame.fire("compact-start", "click");
+      expect(frame.calls).toEqual([
+        {
+          type: "start-swarm",
+          payload: {
+            nonce: "instance-nonce",
+            task: "Keep this draft",
+            project: "",
+            tools: "none",
+          },
+        },
+      ]);
+      expect(frame.get("compact-start")!.disabled).toBe(true);
+      expect(frame.get("compact-start")!.textContent).toBe("Starting…");
+      expect(frame.get("compact-start")!.attributes.get("aria-busy")).toBe("true");
+      expect(frame.timers.map((timer) => timer.delay)).toEqual([2000]);
+      frame.fire("compact-more", "click");
+      expect(frame.get("launch-start")!.disabled).toBe(true);
+      expect(frame.get("launch-start")!.textContent).toBe("Starting…");
+      frame.fire("launch-start", "click");
+      expect(frame.fire("launch-task", "keydown", { key: "Enter", metaKey: true })).toBe(true);
+      expect(frame.calls).toHaveLength(1);
+      expect(frame.timers).toHaveLength(1);
+      frame.release();
+      expect(frame.get("launch-start")!.disabled).toBe(false);
+      expect(frame.get("launch-start")!.textContent).toBe("Start swarm");
+      expect(frame.get("launch-start")!.attributes.has("aria-busy")).toBe(false);
+      expect(frame.get("launch-task")!.value).toBe("Keep this draft");
+      frame.fire("launch-start", "click");
+      expect(frame.calls).toHaveLength(2);
+    }
+    const compact = frameHarness({ projects: [], hasSwarms: true });
+    expect(compact.fire("compact-task", "keydown", { key: "Escape" })).toBe(false);
+    expect(compact.calls).toEqual([]);
+    compact.fire("compact-start", "click");
+    compact.release();
+    expect(compact.get("compact-start")!.textContent).toBe("Start");
+    expect(compact.get("compact-start")!.disabled).toBe(false);
+    expect(compact.get("compact-start")!.attributes.has("aria-busy")).toBe(false);
+  });
+
+  test("compact Enter confirms IME candidates without starting a swarm", () => {
+    for (const keyboard of [
+      { isComposing: true, keyCode: 13 },
+      { isComposing: false, keyCode: 229 },
+      { isComposing: true, keyCode: 229 },
+    ]) {
+      const frame = frameHarness({ projects, hasSwarms: true });
+      frame.get("compact-task")!.value = "Keep this draft";
+      expect(frame.fire("compact-task", "keydown", { key: "Enter", ...keyboard })).toBe(false);
+      expect(frame.calls).toEqual([]);
+      expect(frame.timers).toEqual([]);
+      expect(frame.get("compact-start")!.disabled).toBe(false);
+      expect(frame.get("compact-task")!.value).toBe("Keep this draft");
+
+      expect(
+        frame.fire("compact-task", "keydown", {
+          key: "Enter",
+          isComposing: false,
+          keyCode: 13,
+        }),
+      ).toBe(true);
+      expect(frame.calls).toEqual([
+        {
+          type: "start-swarm",
+          payload: {
+            nonce: "instance-nonce",
+            task: "Keep this draft",
+            project: "",
+            tools: "none",
+          },
+        },
+      ]);
+    }
+  });
+
+  test("compact payload is admitted through the existing HTML action route without overrides", async () => {
+    const h = launcherHarness({ projects }, state({ live: [fixtures.running!], ended: [] }));
+    try {
+      await Bun.sleep(5);
+      const frame = frameHarness(h.page());
+      frame.get("compact-task")!.value = "  Investigate the build  ";
+      frame.fire("compact-start", "click");
+      begun.length = 0;
+      const result = await handleSwarmsAction(
+        { ...frame.calls[0]!, origin: "canvas-html" },
+        { ...actionDeps, surface: h.surface },
+      );
+      expect(result).toMatchObject({ ok: true, data: { effect: "open-surface" } });
+      expect(begun).toEqual([{ task: "Investigate the build", workTools: "none" }]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("deferred expanded controls retain plans, model choices, project resets and access dispatch", () => {
+    const frame = frameHarness({
+      projects,
+      provider: "copilot",
+      hasSwarms: true,
+      toolReachability: [{ name: "beads_ready", status: "reachable" }],
+    });
+    frame.get("compact-task")!.value = "Fix the flaky test";
+    frame.fire("compact-plan", "click");
+    frame.fire("plan-large", "click");
+    frame.fire("launch-start", "click");
+    expect(frame.calls.at(-1)?.payload).toMatchObject({ size: "large", power: "deep" });
+    frame.release();
+    frame.fire("launch-customize", "click");
+    expect(frame.get("launch-drawer")!.hidden).toBe(false);
+    frame.get("launch-model")!.value = "other";
+    frame.fire("launch-model", "change");
+    frame.get("launch-other-model")!.value = "gpt-6-astra";
+    frame.fire("launch-other-model", "input");
+    frame.fire("effort-small", "click");
+    frame.select("p1");
+    for (const permission of ["write", "workflows", "tracker"]) {
+      frame.fire(`allow-${permission}`, "click");
+    }
+    frame.get("workflow-entry")!.value = "fix-issue, check";
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    frame.fire("launch-start", "click");
+    expect(frame.calls.at(-1)?.payload).toEqual({
+      nonce: "instance-nonce",
+      task: "Fix the flaky test",
+      project: "p1",
+      tools: "write",
+      workflows: "fix-issue, check",
+      lead_tools: ["beads_ready"],
+      size: "small",
+      model: "gpt-6-astra",
+      provider: "copilot",
+    });
+    frame.release();
+    frame.select("");
+    expect(frame.get("allow-write")).toBeUndefined();
+    frame.select("p1");
+    for (const permission of ["write", "workflows", "tracker"]) {
+      expect(frame.get(`allow-${permission}`)!.attributes.get("aria-checked")).toBe("false");
+    }
+    expect(frame.get("workflow-chips")!.children).toEqual([]);
+    expect(frame.get("launch-task")!.value).toBe("Fix the flaky test");
+    frame.fire("launch-prepare", "click");
+    expect(frame.calls.at(-1)).toEqual({
+      type: "start-in-chat",
+      payload: { nonce: "instance-nonce" },
+    });
+  });
 
   test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
     const { page, elements, calls, timers, event, prevented } = frameHarness();
@@ -7907,20 +8194,108 @@ describe("launching from the tab", () => {
   });
 
   test("ordinary refreshes and swarm changes leave the launcher unchanged", async () => {
-    const h = launcherHarness({ projects, provider: "copilot" });
+    const h = launcherHarness(
+      {
+        projects,
+        provider: "copilot",
+        toolReachability: [{ name: "beads_ready", status: "reachable" }],
+      },
+      state({ live: [fixtures.running!], ended: [fixtures.done!] }),
+    );
     try {
       await Bun.sleep(5);
       const page = h.page();
-      for (const kind of ["message", "start", "end", "gate", "turn"] as const) {
-        h.surface.changed(fixtures.running!.id, kind);
-        h.surface.refresh();
+      const nonce = h.nonce();
+      const local = frameHarness(page);
+      local.get("compact-task")!.value = "A locally expanded draft";
+      local.fire("compact-more", "click");
+      local.fire("plan-large", "click");
+      local.fire("launch-customize", "click");
+      local.get("launch-model")!.value = "other";
+      local.fire("launch-model", "change");
+      local.get("launch-other-model")!.value = "custom/model";
+      local.fire("launch-other-model", "input");
+      local.select("p1");
+      for (const permission of ["write", "workflows", "tracker"]) {
+        local.fire(`allow-${permission}`, "click");
       }
-      h.surface.select(fixtures.running!.id);
-      h.surface.forget([fixtures.done!.id]);
-      await Bun.sleep(10);
-      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
-      const frame = await h.sm.recompose(LAUNCH_KEY);
-      expect(frame?.data).toBe(page);
+      local.get("workflow-entry")!.value = "fix-issue";
+      local.fire("workflow-entry", "keydown", { key: "Enter" });
+      const summary = local.get("launch-summary")!.textContent;
+      const mutations = [
+        () => {
+          h.swarms.live = [...h.swarms.live, fixtures.waiting!];
+          h.surface.changed(fixtures.waiting!.id, "start");
+        },
+        () => {
+          h.swarms.ended = [...h.swarms.ended, fixtures.concluded!];
+          h.surface.changed(fixtures.concluded!.id, "end");
+        },
+        () => {
+          h.swarms.live = h.swarms.live.map((s) => ({
+            ...s,
+            task: "Updated task",
+            channelName: "renamed-channel",
+            startedAt: "2026-10-04T12:00:00.000Z",
+            turnsUsed: 11,
+            status: "stopping",
+            agents: s.agents.map((a) => ({ ...a, turns: 4, status: "busy" })),
+          }));
+          for (const kind of ["message", "gate", "turn"] as const) {
+            h.surface.changed(fixtures.running!.id, kind);
+          }
+        },
+        () => {
+          h.surface.select(fixtures.running!.id);
+        },
+        () => {
+          h.swarms.ended = [
+            ...h.swarms.ended,
+            ...h.swarms.live.map((s) => ({ ...s, status: "done" as const, endedAt: T0 })),
+          ];
+          h.swarms.live = [];
+          h.surface.changed(fixtures.running!.id, "end");
+        },
+        () => {
+          h.swarms.ended = h.swarms.ended.filter((s) => s.id !== fixtures.done!.id);
+          h.surface.forget([fixtures.done!.id]);
+        },
+      ];
+      for (const mutate of mutations) {
+        const publications = h.sm.frames.get(LAUNCH_KEY)!.length;
+        mutate();
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(publications);
+        expect((await h.sm.recompose(LAUNCH_KEY))?.data).toBe(page);
+        expect(h.nonce()).toBe(nonce);
+        expect(local.get("compact-task")).toBeUndefined();
+        expect(local.get("launch-task")!.value).toBe("A locally expanded draft");
+        expect(local.get("launch-drawer")!.hidden).toBe(false);
+        expect(local.get("effort-large")!.attributes.get("aria-pressed")).toBe("true");
+        expect(local.get("launch-other-model")!.value).toBe("custom/model");
+        expect(local.get("launch-model")!.value).toBe("other");
+        expect(local.get("launch-summary")!.textContent).toBe(summary);
+        expect(local.get("launch-project")!.value).toBe("p1");
+        for (const permission of ["write", "workflows", "tracker"]) {
+          expect(local.get(`allow-${permission}`)!.attributes.get("aria-checked")).toBe("true");
+        }
+        expect(local.get("workflow-chips")!.children[0]!.children[0]!.textContent).toBe(
+          "fix-issue",
+        );
+      }
+      local.fire("launch-start", "click");
+      expect(local.calls.at(-1)?.payload).toEqual({
+        nonce,
+        task: "A locally expanded draft",
+        project: "p1",
+        tools: "write",
+        size: "large",
+        model: "custom/model",
+        provider: "copilot",
+        workflows: "fix-issue",
+        lead_tools: ["beads_ready"],
+      });
       const frames = h.sm.frames.get(LAUNCH_KEY)!.length;
       h.inputs.classes = [{ provider: "other", classes: { fast: "x", balanced: "y", deep: "z" } }];
       h.surface.refresh();
@@ -7947,6 +8322,110 @@ describe("launching from the tab", () => {
     } finally {
       h.surface.dispose();
     }
+  });
+
+  test("crossing zero retained swarms replaces the page while starting-only entries do not", async () => {
+    for (const first of ["live", "ended"] as const) {
+      const h = launcherHarness({ projects });
+      try {
+        await Bun.sleep(5);
+        const emptyPage = h.page();
+        const nonce = h.nonce();
+        const draft = frameHarness(emptyPage);
+        draft.get("launch-task")!.value = "Lost when presence changes";
+        h.swarms.starting = [starting];
+        h.surface.changed(starting.id, "start");
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
+        expect(h.page()).toBe(emptyPage);
+        if (first === "live") h.swarms.live = [fixtures.running!];
+        else h.swarms.ended = [fixtures.done!];
+        h.surface.changed(
+          first === "live" ? fixtures.running!.id : fixtures.done!.id,
+          first === "live" ? "start" : "end",
+        );
+        await Bun.sleep(5);
+        const compactPage = h.page();
+        expect(compactPage).not.toBe(emptyPage);
+        expect(frameHarness(compactPage).get("compact-task")!.value).toBe("");
+        expect(h.nonce()).toBe(nonce);
+        if (first === "live") {
+          h.swarms.live = [];
+          h.swarms.ended = [{ ...fixtures.running!, status: "done", endedAt: T0 }];
+          h.surface.changed(fixtures.running!.id, "end");
+          await Bun.sleep(5);
+          expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(2);
+          expect(h.page()).toBe(compactPage);
+        }
+        const final = h.swarms.ended[0]!;
+        h.swarms.ended = [];
+        h.surface.forget([final.id]);
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(3);
+        expect(h.page()).toBe(emptyPage);
+        expect(frameHarness(h.page()).get("launch-task")!.value).toBe("");
+        expect(h.nonce()).toBe(nonce);
+        h.swarms.live = [fixtures.running!];
+        h.swarms.ended = [fixtures.done!];
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.page()).toBe(compactPage);
+        h.swarms.live = [];
+        h.swarms.ended = [];
+        h.swarms.starting = [];
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.page()).toBe(emptyPage);
+        expect(h.nonce()).toBe(nonce);
+      } finally {
+        h.surface.dispose();
+      }
+    }
+  });
+
+  test("deferred templates escape delimiters and mount controls without duplicate IDs or listeners", () => {
+    const malicious = "</template></script><script>alert(\"markup\")</script> & 'text'";
+    const page = buildLaunch(
+      {
+        hasSwarms: true,
+        projects: [{ id: malicious, name: malicious, rootPath: `/tmp/${malicious}` }],
+        provider: malicious,
+        classes: [{ provider: malicious, defaultModel: malicious }],
+        refused: [malicious],
+      },
+      'nonce"',
+    );
+    expect(page.match(/<script>/g)).toHaveLength(1);
+    expect(page.match(/<\/script>/g)).toHaveLength(1);
+    expect(page.match(/<\/template>/g)).toHaveLength(2);
+    expect(page).not.toContain(malicious);
+    expect(page).not.toContain("innerHTML");
+    const frame = frameHarness(page);
+    const expand = frame.get("compact-more")!;
+    frame.fire("compact-more", "click");
+    expand.listeners.get("click")!(frame.event);
+    expect(frame.get("launch-form")!.dataset.provider).toBe(malicious);
+    const option = frame
+      .get("launch-project")!
+      .all()
+      .find((node) => node.attributes.get("value") === malicious);
+    expect(option?.dataset.name).toBe(malicious);
+    expect(option?.dataset.path).toBe(`/tmp/${malicious}`);
+    expect(frame.get("launch-model")!.textContent).toContain(malicious);
+    frame.select(malicious);
+    frame.select("");
+    frame.select(malicious);
+    const ids = frame
+      .mounted()
+      .flatMap((node) => (node.attributes.has("id") ? [node.attributes.get("id")!] : []));
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const node of frame.mounted()) {
+      for (const count of node.listenerCounts.values()) expect(count).toBe(1);
+    }
+    frame.get("launch-task")!.value = "A safe draft";
+    frame.fire("launch-start", "click");
+    expect(frame.calls).toHaveLength(1);
   });
 
   test("relevant launcher changes coalesce and survive in-flight updates and failed composition", async () => {
@@ -8122,9 +8601,13 @@ describe("launching from the tab", () => {
       expect(wcagContrast(t.accent, t.card2)).toBeGreaterThanOrEqual(4.5);
       expect(wcagContrast(theme === "dark" ? t.bg : t.card, t.accent)).toBeGreaterThanOrEqual(4.5);
     }
-    const page = buildLaunch({ projects }, "nonce");
-    expect(page).toContain("--button-ink: var(--bg)");
-    expect(page).toContain("--button-ink: var(--card)");
+    for (const hasSwarms of [false, true]) {
+      const page = buildLaunch({ projects, hasSwarms }, "nonce");
+      expect(page).toContain("--button-ink: var(--bg)");
+      expect(page).toContain("--button-ink: var(--card)");
+      expect(page).toContain(".compact-plan { background: var(--card-2); color: var(--fg);");
+      expect(page).toContain(".compact-budget { font: 12px var(--mono); color: var(--muted); }");
+    }
   });
 
   test("plan lines use equal or split pins and provider class/default fallbacks", () => {
@@ -9350,11 +9833,12 @@ describe("the rib's surface", () => {
     expect(surface.layout.header).toEqual({
       key: LAUNCH_KEY,
       title: "Start a swarm",
-      collapsible: true,
-      byline: "Agents investigate, debate, and bring back a conclusion.",
     });
-    expect(launchByline()).toBe("Agents investigate, debate, and bring back a conclusion.");
-    expect(surface.layout.header?.collapsed).toBeUndefined();
+    const header = rib.surfaces?.[0]?.layout.header;
+    for (const property of ["byline", "collapsible", "collapsed", "defaultCollapsed"]) {
+      expect(header).not.toHaveProperty(property);
+    }
+    expect(buildLaunch({ projects: [] }, "nonce")).not.toContain("defaultCollapsed");
     expect(surface.layout.footer).toBeUndefined();
     expect(JSON.stringify(surface.layout)).not.toContain(SERVER_KEY);
   });

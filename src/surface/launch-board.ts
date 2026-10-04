@@ -35,6 +35,7 @@ type Field = NonNullable<Item["fields"]>[number];
 
 export interface LaunchState {
   projects: readonly { id: string; name: string; rootPath: string }[];
+  hasSwarms?: boolean;
   provider?: string;
   classes?: readonly { provider: string; defaultModel?: string; classes?: ModelClassMap }[];
   toolReachability?: readonly ToolReachability[];
@@ -54,10 +55,6 @@ export const TRACKER_TOOLS = [
 
 export const TASK_PLACEHOLDER =
   "What should the swarm work out? Describe the issue or PR in words. A question works; so does a paste of the issue body.";
-
-export function launchByline(): string {
-  return "Agents investigate, debate, and bring back a conclusion.";
-}
 
 // Each segment carries what the size costs, since the word alone does not.
 export function sizeField(defaultValue: SwarmSize = "medium"): Field {
@@ -148,6 +145,14 @@ main { margin: 0 auto; max-width: 1120px; border: 1px solid var(--border);
 header { display: flex; align-items: center; gap: 14px; padding: 24px; flex-wrap: wrap; }
 .glyph { display: grid; place-items: center; width: 44px; height: 44px; flex: none;
   border-radius: 12px; background: var(--card-2); color: var(--accent); }
+.compact { display: flex; align-items: center; gap: 12px; padding: 16px; }
+.compact h1 { margin: 0; font-size: 16px; white-space: nowrap; }
+.compact input { flex: 1; min-width: 0; width: auto; }
+.compact input::placeholder { color: var(--muted); opacity: 1; }
+.compact-plan { background: var(--card-2); color: var(--fg); border-radius: 999px; }
+.compact-budget { font: 12px var(--mono); color: var(--muted); }
+.compact-plan, .compact-budget, .compact .start, .more { flex: none; white-space: nowrap; }
+.more { padding: 6px 0; border: 0; background: transparent; color: var(--fg); }
 .intro { flex: 1; min-width: 220px; }
 h1 { font-size: 22px; line-height: 1.3; margin: 0 0 5px; color: var(--fg-strong); }
 p { margin: 0; }
@@ -225,6 +230,10 @@ footer { display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
 .mode { margin-left: auto; color: var(--fg); }
 button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 [hidden] { display: none !important; }
+@media (max-width: 900px) {
+  .compact { flex-wrap: wrap; }
+  .compact input { flex-basis: calc(100% - 180px); }
+}
 @media (max-width: 640px) {
   header, footer { padding: 18px; }
   .fields { padding: 0 18px 18px; }
@@ -240,10 +249,33 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-
 
 const PAGE_SCRIPT = `
 (() => {
+  let busy = false;
+  let activeStart;
+  let startLabel;
+  const updateStart = () => {
+    activeStart.disabled = busy;
+    activeStart.textContent = busy ? "Starting…" : startLabel;
+    if (busy) activeStart.setAttribute("aria-busy", "true");
+    else activeStart.removeAttribute("aria-busy");
+  };
+  const dispatch = (payload) => {
+    if (busy) return;
+    keelson.action("start-swarm", payload);
+    busy = true;
+    updateStart();
+    setTimeout(() => {
+      busy = false;
+      updateStart();
+    }, 2000);
+  };
+  const initializeExpanded = () => {
   const form = document.getElementById("launch-form");
   const task = document.getElementById("launch-task");
   const project = document.getElementById("launch-project");
   const start = document.getElementById("launch-start");
+  activeStart = start;
+  startLabel = "Start swarm";
+  updateStart();
   const note = document.getElementById("project-note");
   const row = document.getElementById("project-row");
   const mode = document.getElementById("launch-mode");
@@ -429,7 +461,7 @@ const PAGE_SCRIPT = `
   // The host's frame sandbox grants allow-scripts only, never allow-forms, so a
   // form never fires submit here; Start is a plain click.
   const startSwarm = () => {
-    if (start.disabled) return;
+    if (busy) return;
     if (permissions.workflows && !addWorkflows()) return;
     const payload = {
       nonce: form.dataset.nonce,
@@ -451,20 +483,52 @@ const PAGE_SCRIPT = `
       payload.size = size;
       if (power !== "balanced") payload.power = power;
     }
-    keelson.action("start-swarm", payload);
-    start.disabled = true;
-    start.textContent = "Starting…";
-    start.setAttribute("aria-busy", "true");
-    setTimeout(() => {
-      start.disabled = false;
-      start.textContent = "Start swarm";
-      start.removeAttribute("aria-busy");
-    }, 2000);
+    dispatch(payload);
   };
   start.addEventListener("click", startSwarm);
   task.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) startSwarm();
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      startSwarm();
+    }
   });
+  };
+  const compact = document.getElementById("launch-compact");
+  if (!compact) {
+    initializeExpanded();
+    return;
+  }
+  const task = document.getElementById("compact-task");
+  activeStart = document.getElementById("compact-start");
+  startLabel = "Start";
+  updateStart();
+  const startCompact = () => dispatch({
+    nonce: compact.dataset.nonce,
+    task: task.value,
+    project: "",
+    tools: "none"
+  });
+  activeStart.addEventListener("click", startCompact);
+  task.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
+      event.preventDefault();
+      startCompact();
+    }
+  });
+  let expanded = false;
+  const expand = () => {
+    if (expanded) return;
+    expanded = true;
+    const draft = task.value;
+    const template = document.getElementById("launch-expanded");
+    document.getElementById("launch-root").replaceChildren(template.content.cloneNode(true));
+    initializeExpanded();
+    const textarea = document.getElementById("launch-task");
+    textarea.value = draft;
+    textarea.focus();
+  };
+  document.getElementById("compact-plan").addEventListener("click", expand);
+  document.getElementById("compact-more").addEventListener("click", expand);
 })();
 `;
 
@@ -569,8 +633,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
       return `<option value="${esc(p.id)}" data-name="${esc(p.name)}" data-path="${esc(path)}">${esc(`${p.name} · ${path}`)}</option>`;
     })
     .join("");
-  return `<style>${designTokenCssBlock()}\n${PAGE_CSS}</style>
-<main>
+  const expanded = `
   <header>
     <span class="glyph" aria-hidden="true">▶</span>
     <div class="intro"><h1>Start a swarm</h1><p class="hint">Describe the problem. Agents investigate, debate, and bring back a conclusion.</p></div>
@@ -599,7 +662,6 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
           <p class="project-note" id="project-note">Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.</p>
         </div>
         <div id="launch-access"></div>
-        ${projects.length ? accessTemplate(state) : ""}
       </div>
     </div>
     <footer>
@@ -607,8 +669,20 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
       <div aria-live="polite"><p id="launch-summary">${budgets.medium} · balanced models</p><p class="models" id="launch-models">${esc(models.balanced!)}</p></div>
       <p class="mode" id="launch-mode">Chat mode · nothing on disk</p>
     </footer>
-  </form>
-</main><script>${PAGE_SCRIPT}</script>`;
+  </form>`;
+  const l = SIZE_PRESETS.medium;
+  const compact = `<div class="compact" id="launch-compact" data-nonce="${esc(nonce)}">
+    <span class="glyph" aria-hidden="true">▶</span><h1>New swarm</h1>
+    <input id="compact-task" type="text" aria-label="Swarm task" placeholder="What should the swarm work out?">
+    <button class="compact-plan" id="compact-plan" type="button" aria-expanded="false" aria-controls="launch-root">${PLANS[1].name}</button>
+    <span class="compact-budget">${l.maxAgents} agents · ${l.wallClockMs / 60_000} min</span>
+    <button class="start" id="compact-start" type="button">Start</button>
+    <button class="more" id="compact-more" type="button" aria-expanded="false" aria-controls="launch-root">More options</button>
+  </div>`;
+  return `<style>${designTokenCssBlock()}\n${PAGE_CSS}</style>
+<main id="launch-root">${state.hasSwarms ? compact : expanded}</main>
+${state.hasSwarms ? `<template id="launch-expanded">${expanded}</template>` : ""}
+${projects.length ? accessTemplate(state) : ""}<script>${PAGE_SCRIPT}</script>`;
 }
 
 // Run again reads the old swarm's size and model as its defaults, and its hint
