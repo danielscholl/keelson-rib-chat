@@ -161,7 +161,7 @@ function againInput(
   return {
     ...rest,
     ...(nextSize ? { size: nextSize } : {}),
-    ...(power ? { power } : {}),
+    ...(power && (same || !picked.model) ? { power } : {}),
     ...models,
   };
 }

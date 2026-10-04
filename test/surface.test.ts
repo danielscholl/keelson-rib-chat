@@ -7855,7 +7855,6 @@ describe("start and run again", () => {
         task: old.task,
         workTools: old.workTools,
         size: "large",
-        ...(power ? { power } : {}),
         model: "named-model",
         provider: "copilot",
       });
@@ -7891,7 +7890,7 @@ describe("start and run again", () => {
     expect(begun).toEqual([old]);
   });
 
-  test("Run again preserves deliberate model pairs and power but drops workers for changed or cleared models", async () => {
+  test("Run again preserves deliberate model pairs and power, and drops workers and power for a newly named model", async () => {
     const old: StartSwarmInput = { ...oldLaunch, power: "deep" };
     const ended = { ...fixtures.done!, model: old.model, provider: old.provider };
     const deps = { ...actionDeps, launchOf: () => old, find: () => ({ ended }) };
@@ -7934,7 +7933,6 @@ describe("start and run again", () => {
     expect(begun.at(-1)).toEqual({
       ...rest,
       size: "small",
-      power: "deep",
       model: "new-model",
       provider: "second",
     });
