@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.15.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.14.0...v0.15.0) (2026-10-04)
+
+
+### Added
+
+* **launcher:** add plans and Customize choices ([#100](https://github.com/danielscholl/keelson-rib-chat/issues/100)) ([a21c602](https://github.com/danielscholl/keelson-rib-chat/commit/a21c602ccc3437d95ea2c0608b05c8cece713ea7))
+* **launcher:** add project access switches ([#99](https://github.com/danielscholl/keelson-rib-chat/issues/99)) ([db229ce](https://github.com/danielscholl/keelson-rib-chat/commit/db229ce85760ccaf3f16191474252bdfcd6cd043))
+* **surface:** render a task-and-project HTML launcher ([#98](https://github.com/danielscholl/keelson-rib-chat/issues/98)) ([352d4a2](https://github.com/danielscholl/keelson-rib-chat/commit/352d4a2b469131d03521e5332c5f23783c8b1f9f))
+* **swarm:** pin lead and worker models per power on copilot ([#96](https://github.com/danielscholl/keelson-rib-chat/issues/96)) ([93f8afa](https://github.com/danielscholl/keelson-rib-chat/commit/93f8afa76d14dd3e05ef9e95b1f4928ffffd3e03))
+* **swarms:** Add a compact template-backed launcher ([#101](https://github.com/danielscholl/keelson-rib-chat/issues/101)) ([d05bfc2](https://github.com/danielscholl/keelson-rib-chat/commit/d05bfc2de635819f805a50615c9213b23c7f769e))
+
 ## [0.14.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.13.0...v0.14.0) (2026-10-04)
 
 
