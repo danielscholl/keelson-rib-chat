@@ -35,6 +35,7 @@ type Field = NonNullable<Item["fields"]>[number];
 
 export interface LaunchState {
   projects: readonly { id: string; name: string; rootPath: string }[];
+  hasSwarms?: boolean;
   provider?: string;
   classes?: readonly { provider: string; defaultModel?: string; classes?: ModelClassMap }[];
   toolReachability?: readonly ToolReachability[];

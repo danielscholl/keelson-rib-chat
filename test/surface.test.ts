@@ -6497,7 +6497,10 @@ describe("actions", () => {
 
 describe("launching from the tab", () => {
   const projects = [{ id: "p1", name: "keelson-sample", rootPath: "/tmp/keelson-sample" }];
-  const launcherHarness = (inputs: LaunchState = { projects: [] }) => {
+  const launcherHarness = (
+    inputs: LaunchState = { projects: [] },
+    swarms: SurfaceState = state({ live: [], ended: [] }),
+  ) => {
     const sm = new FakeSnapshots();
     const views: RibViewDescriptor[] = [];
     const surface = createSwarmsSurface({
@@ -6505,7 +6508,7 @@ describe("launching from the tab", () => {
       views,
       projects: () => inputs.projects,
       launch: () => inputs,
-      state: () => state({ live: [fixtures.running!] }),
+      state: () => swarms,
       find: actionDeps.find,
       launchOf: () => oldLaunch,
       server: () => ({ live: 1 }),
@@ -6518,8 +6521,47 @@ describe("launching from the tab", () => {
     });
     const page = () => String(sm.frames.get(LAUNCH_KEY)?.at(-1));
     const nonce = () => page().match(/data-nonce="([^"]+)"/)![1]!;
-    return { sm, views, surface, inputs, page, nonce };
+    return { sm, views, surface, inputs, swarms, page, nonce };
   };
+
+  test("launcher presence normalizes empty, starting-only, live, ended and mixed states", async () => {
+    for (const initial of [
+      state({ live: [], ended: [] }),
+      state({ live: [], ended: [], starting: [starting] }),
+      state({ live: [fixtures.running!], ended: [] }),
+      state({ live: [], ended: [fixtures.done!] }),
+      state({ live: [fixtures.running!], ended: [fixtures.done!] }),
+    ]) {
+      const present = initial.live.length > 0 || initial.ended.length > 0;
+      const h = launcherHarness({ projects, hasSwarms: !present }, initial);
+      try {
+        await Bun.sleep(5);
+        const page = h.page();
+        const nonce = h.nonce();
+        h.swarms.starting = [starting];
+        if (present) {
+          h.swarms.live = [
+            { ...fixtures.running!, task: "changed", turnsUsed: 9, startedAt: T0 },
+            fixtures.waiting!,
+          ];
+          h.swarms.ended = [fixtures.done!, fixtures.stopping!];
+        }
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
+        expect((await h.sm.recompose(LAUNCH_KEY))?.data).toBe(page);
+        h.swarms.live = present ? [] : [fixtures.running!];
+        h.swarms.ended = [];
+        const frames = h.sm.frames.get(LAUNCH_KEY)!.length;
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 1);
+        expect(h.nonce()).toBe(nonce);
+      } finally {
+        h.surface.dispose();
+      }
+    }
+  });
 
   const frameHarness = (
     source: LaunchState | string = { projects, provider: "copilot" },

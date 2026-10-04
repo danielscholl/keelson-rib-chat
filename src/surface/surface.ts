@@ -175,7 +175,9 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   let launchInputs: string | undefined;
   function launchState(): LaunchState {
     const state = deps.launch();
+    const swarms = deps.state();
     return {
+      hasSwarms: swarms.live.length > 0 || swarms.ended.length > 0,
       projects: state.projects
         .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
         .map(({ id, name, rootPath }) => ({ id, name, rootPath })),
