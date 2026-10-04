@@ -425,6 +425,67 @@ const producedFixtures = (() => {
   } satisfies Record<string, SwarmSummary>;
 })();
 
+const endedFixtures = (() => {
+  const id = "sended";
+  const common = swarm(id, {
+    status: "done",
+    endedAt: "2026-09-22T14:20:00.000Z",
+    task: "Review the ended board\n\nFull task destination sentinel.",
+    context: [
+      {
+        id: "evidence",
+        kind: "note",
+        title: "Context destination",
+        chars: 29,
+        excerpt: "Context destination sentinel.",
+      },
+    ],
+    conclusion: `## Result\n\n${"Complete markdown evidence.\n".repeat(80)}Final conclusion sentinel.`,
+    usage: { input: 400, output: 100, cached: 200 },
+    agents: [
+      agent(id, 0, { usage: { input: 300, output: 50, cached: 150 } }),
+      agent(id, 1, { usage: { input: 100, output: 50, cached: 50 } }),
+    ],
+  });
+  const activity = Array.from({ length: 15 }, (_, i) => ({
+    at: new Date(Date.parse(T0) + i * 60_000).toISOString(),
+    text: `@${id}-w1 retained event ${i}`,
+    actor: `${id}-w1`,
+    ...(i === 14 ? { count: 2 } : {}),
+  }));
+  const chat = { ...common };
+  const mixed = producedFixtures.mixed;
+  return {
+    reportAndConclusion: {
+      ...common,
+      writeEnabled: true,
+      report: { title: "Ended report", at: T0, bytes: 4096 },
+      activity,
+      health: { socketDrops: 2 },
+    },
+    conclusionOnly: chat,
+    conclusionWithoutUsage: { ...chat, usage: undefined },
+    dispatchWithoutPRs: { ...common, workflows: ["fix-issue"], runs: [] },
+    stoppedWithArtifacts: {
+      ...mixed,
+      task: common.task,
+      context: common.context,
+      status: "stopped",
+      conclusion: undefined,
+      report: undefined,
+      error: "stopped from the Swarms tab",
+      draftConclusion: "## Refused draft\n\nDraft sentinel.",
+      activity: activity.map((event) => ({ ...event, actor: mixed.agents[1]!.id })),
+      runs: mixed.runs!.map((r) => ({
+        ...r,
+        status: r.verified ? "succeeded" : "cancelled",
+        error: undefined,
+        ...(r.verified ? { ci: { verdict: "pass", prUrl: r.prUrls[0] } } : {}),
+      })),
+    },
+  } satisfies Record<string, SwarmSummary>;
+})();
+
 const state = (patch: Partial<SurfaceState> = {}): SurfaceState => ({
   live: [],
   starting: [],
@@ -3009,6 +3070,180 @@ ${"detail ".repeat(1000)}`,
     );
     expect(produced?.kind === "rows" ? produced.items.length : 0).toBe(14);
     expect(buildDoc(big, big.id).length).toBeLessThan(128_000);
+    const ended = buildSwarmBoard(
+      { ...artifacts, status: "done", endedAt: now.toISOString() },
+      { now, launch: oldLaunch },
+    );
+    board(swarmKey(big.id), ended);
+    expect(Buffer.byteLength(JSON.stringify(ended))).toBeLessThan(48_000);
+    const endedActivity = ended.sections.find((section) => section.title === "Activity");
+    expect(endedActivity?.kind === "rows" ? endedActivity.items : []).toHaveLength(12);
+  });
+});
+
+describe("ended board contract", () => {
+  const now = new Date("2026-09-22T14:30:00.000Z");
+  test.each(Object.entries(endedFixtures))("%s composes the complete ended layout", (_name, s) => {
+    const view = buildSwarmBoard(s, { now, launch: { ...oldLaunch, task: s.task } });
+    board(swarmKey(s.id), view);
+    const produced = view.sections.find((section) => section.title === "Produced so far");
+    const activity = view.sections.find((section) => section.title === "Activity");
+    expect(view.sections.map((section) => section.title ?? section.kind)).toEqual([
+      "Outcome",
+      "Result",
+      "actions",
+      `Agents · ${s.agents.length} of ${s.limits.maxAgents}`,
+      ...(s.report || s.writeEnabled || s.workflows?.length ? ["Produced so far"] : []),
+      ...(s.activity?.length ? ["Activity"] : []),
+      "About",
+      "rows",
+    ]);
+    const outcome = view.sections[0];
+    if (outcome?.kind !== "cards") throw new Error("missing Outcome");
+    expect(outcome.items).toHaveLength(1);
+    expect(JSON.stringify(outcome)).not.toContain(s.channelId);
+    expect(JSON.stringify(outcome)).not.toContain(s.channelName);
+    if (s.conclusion) {
+      expect(outcome.items[0]?.title).toBe(s.report?.title ?? "Conclusion");
+      expect(outcome.items[0]?.fields?.[0]?.copyAction).toEqual({
+        type: "copy-conclusion",
+        payload: { id: s.id },
+      });
+      expect(outcome.items[0]?.actions?.map((action) => action.type)).toEqual([
+        ...(s.report ? ["open-report"] : []),
+        "read-doc",
+      ]);
+      expect(buildDoc(s, s.id)).toContain(s.conclusion);
+    } else {
+      expect(outcome.items[0]?.title).toBe(`Stopped by you at ${hhmm(s.endedAt)}`);
+      expect(outcome.items[0]?.fields).toEqual([{ value: s.error }]);
+      expect(outcome.items[0]?.actions?.[0]?.label).toBe("Read the draft");
+      expect(buildDoc(s, s.id)).toContain(s.draftConclusion!);
+    }
+    const result = view.sections[1];
+    if (result?.kind !== "stats") throw new Error("missing Result");
+    expect(result.items.map((tile) => tile.label)).toEqual([
+      "Turns",
+      "Time",
+      "Tokens",
+      ...(s.writeEnabled || s.workflows?.length ? ["Pull requests"] : []),
+      ...(s.runs?.length ? ["Runs verified"] : []),
+    ]);
+    expect(result.items[0]?.value).toBe(s.turnsUsed);
+    expect(result.items[0]?.delta).toBeUndefined();
+    expect(result.items[2]).toEqual(tokensTile(s));
+    const pr = result.items.find((tile) => tile.label === "Pull requests");
+    if (s.runs?.length) {
+      expect(pr).toEqual({ label: "Pull requests", value: 2, sub: "1 with CI passing" });
+      expect(result.items.at(-1)).toEqual({
+        label: "Runs verified",
+        value: "1 of 2",
+        tone: "warn",
+      });
+    } else if (s.writeEnabled || s.workflows?.length) {
+      expect(pr).toEqual({ label: "Pull requests", value: 0, sub: "0 with CI passing" });
+    } else expect(pr).toBeUndefined();
+    const verbs = view.sections[2];
+    if (verbs?.kind !== "actions") throw new Error("missing actions");
+    expect(verbs.items.map((action) => action.label)).toEqual([
+      "Run again",
+      "Open the record",
+      "Details",
+    ]);
+    const bench = view.sections[3];
+    if (bench?.kind !== "cards") throw new Error("missing Agents");
+    expect(bench.columns).toBe(4);
+    expect(bench.items).toHaveLength(s.agents.length);
+    for (const [i, card] of bench.items.entries()) {
+      const a = s.agents[i]!;
+      expect(card.titleTone).toBe(a.tone);
+      expect(card.action).toEqual({ type: "select-agent", payload: { id: s.id, agentId: a.id } });
+      for (const property of ["mono", "stacked", "ghost", "pill"])
+        expect(card).not.toHaveProperty(property);
+      for (const field of card.fields ?? []) expect(field).not.toHaveProperty("mono");
+      const inspector = buildAgentInspector(s, a);
+      board(agentKey(s.id), inspector);
+      expect(JSON.stringify(inspector)).not.toContain("message-agent");
+    }
+    if (s.activity?.length) {
+      if (activity?.kind !== "rows") throw new Error("missing Activity");
+      expect(activity.items).toHaveLength(12);
+      expect(activity.items[0]?.trailing).toBe(hhmm(s.activity.at(-1)?.at));
+      expect(activity.items[0]?.text).toEndWith("retained event 14 ×2");
+      expect(activity.items[0]?.chip?.label).toBe("w1");
+      expect(activity.items.every((row) => !row.action)).toBe(true);
+    }
+    if (s.report) expect(JSON.stringify(produced)).toContain('"type":"open-report"');
+    if (s.runs?.length) {
+      if (produced?.kind !== "rows") throw new Error("missing Produced so far");
+      expect(produced.items).toHaveLength(5);
+      const runs = produced.items.filter((row) => row.action?.type === "open-run");
+      expect(runs).toHaveLength(2);
+      expect(runs[0]?.trailing).toContain("verified");
+      expect(runs[1]?.trailing).toContain("cancelled");
+      expect(runs.every((row) => row.bar && "segments" in row.bar)).toBe(true);
+      expect(JSON.stringify(produced)).toContain("approve-plan approved on @w1's review");
+      expect(produced.items.filter((row) => row.trailing?.startsWith("draft PR"))).toHaveLength(1);
+      expect(produced.items.at(-1)).toMatchObject({
+        text: s.worktrees![0]!.path,
+        trailing: s.worktrees![0]!.reason,
+      });
+    }
+    const about = view.sections.at(-2);
+    if (about?.kind !== "rows") throw new Error("missing About");
+    expect(about.title).toBe("About");
+    expect(about.items.slice(1, -1)).toEqual(healthRows(s));
+    expect(about.items.at(-1)).toEqual({ text: "transcript ↗", href: channelHref(s) });
+    expect(view.sections.at(-1)).toEqual({
+      kind: "rows",
+      items: [{ icon: "←", text: "Ended swarms", action: { type: "history-open" } }],
+    });
+    const frame = JSON.stringify(view);
+    for (const removed of [
+      '"title":"Spend"',
+      "Read the full log",
+      "Full task destination sentinel.",
+      "Context destination sentinel.",
+      "Effective limits:",
+      "Requested lead model:",
+    ])
+      expect(frame).not.toContain(removed);
+    const details = buildDetailsInspector(s);
+    board(detailsKey(s.id), details);
+    expect(details.sections.map((section) => section.title)).toEqual([
+      "Task and context",
+      "Setup",
+      "Health",
+      "Transcript",
+    ]);
+    const detailText = JSON.stringify(details);
+    for (const retained of [
+      "Full task destination sentinel.",
+      "Context destination sentinel.",
+      "Effective limits:",
+      "Requested lead model:",
+    ])
+      expect(detailText).toContain(retained);
+  });
+
+  test("legacy records omit unavailable launch and transcript without inventing data", () => {
+    const s = { ...endedFixtures.conclusionOnly, clickclack: undefined };
+    const view = buildSwarmBoard(s, { now });
+    board(swarmKey(s.id), view);
+    const verbs = view.sections[2];
+    expect(verbs?.kind === "actions" ? verbs.items.map((action) => action.label) : []).toEqual([
+      "Open the record",
+      "Details",
+    ]);
+    expect(JSON.stringify(view)).not.toContain("transcript ↗");
+    const details = buildDetailsInspector(s);
+    board(detailsKey(s.id), details);
+    expect(JSON.stringify(details)).toContain("Transcript link not recorded.");
+    const empty = buildSwarmBoard({ ...s, agents: [] }, { now });
+    board(swarmKey(s.id), empty);
+    expect(empty.sections[3]?.kind === "cards" ? empty.sections[3].items : []).toEqual([
+      { title: "No agents recorded" },
+    ]);
   });
 });
 
@@ -5554,14 +5789,25 @@ describe("actions", () => {
       expect(sm.frames.get(agentKey("s9hjx"))?.at(-1)).toMatchObject({
         title: "Agent @w1 · s9hjx",
       });
-      const ended = await handleSwarmsAction(
-        {
-          type: "select-agent",
-          payload: { id: "s8pln", agentId: "s8pln-lead" },
-        },
-        { ...deps, surface },
+      const endedBench = buildSwarmBoard(fixtures.done!).sections.find(
+        (section) => section.kind === "cards" && section.title?.startsWith("Agents"),
       );
-      expect(ended.ok).toBe(true);
+      const cardAction = endedBench?.kind === "cards" ? endedBench.items[0]?.action : undefined;
+      if (!cardAction) throw new Error("missing ended card action");
+      const ended = await handleSwarmsAction(cardAction, { ...deps, surface });
+      expect(ended).toEqual({
+        ok: true,
+        data: {
+          effect: "open-canvas",
+          key: agentKey("s8pln"),
+          title: "Agent @lead · s8pln",
+          placement: "side",
+        },
+      });
+      expect(ribClientEffectSchema.parse(ended.ok ? ended.data : undefined)).toMatchObject({
+        placement: "side",
+      });
+      board(agentKey("s8pln"), sm.frames.get(agentKey("s8pln"))?.at(-1));
       expect(JSON.stringify(sm.frames.get(agentKey("s8pln"))?.at(-1))).not.toContain(
         "message-agent",
       );
