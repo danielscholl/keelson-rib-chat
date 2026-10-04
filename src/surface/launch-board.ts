@@ -44,14 +44,8 @@ export interface LaunchState {
 export const TASK_PLACEHOLDER =
   "What should the swarm work out? Describe the issue or PR in words. A question works; so does a paste of the issue body.";
 
-const DEFAULT_SIZE: SwarmSize = "medium";
-const DEFAULT_POWER: SwarmPower = "balanced";
-
-// The region byline: what Start launches when nothing is adjusted, so the
-// folded head says what a click would do.
 export function launchByline(): string {
-  const l = SIZE_PRESETS[DEFAULT_SIZE];
-  return `Start runs ${DEFAULT_SIZE} · ${l.maxAgents} agents · ${l.maxTurns} turns · ${l.wallClockMs / 60_000} min · ${DEFAULT_POWER} power`;
+  return "Agents investigate, debate, and bring back a conclusion.";
 }
 
 // Each segment carries what the size costs, since the word alone does not.
