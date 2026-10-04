@@ -5079,6 +5079,46 @@ describe("actions", () => {
     expect(JSON.stringify(h.current.runs)).toBe(before);
   });
 
+  test("operator decision card replies reject a later approval gate", async () => {
+    const h = replyHarness();
+    h.current = fixtures.onlyYou!;
+    const run = h.current.runs![0]!;
+    const form = requestOf(h.current, { kind: "decide", run }).more.find(
+      (action) => action.type === "reply",
+    )!;
+    expect(form.binding).toEqual({
+      id: h.current.id,
+      runId: run.runId,
+      gateIdentity: gateIdentity(run),
+    });
+    const next = {
+      ...run,
+      pendingApproval: { ...run.pendingApproval!, pauseId: "next-pause", threadId: "next-thread" },
+    };
+    h.current = { ...h.current, runs: [next] };
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "reply", payload: { ...form.binding, note: "old approval feedback" } },
+          h.deps,
+        )
+      ).ok,
+    ).toBe(false);
+    expect(h.calls).toEqual([]);
+    const currentForm = requestOf(h.current, { kind: "decide", run: next }).more.find(
+      (action) => action.type === "reply",
+    )!;
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "reply", payload: { ...currentForm.binding, note: "current feedback" } },
+          h.deps,
+        )
+      ).ok,
+    ).toBe(true);
+    expect(h.calls).toEqual([["gate", run.runId, "current feedback"]]);
+  });
+
   test("stale forms cannot reply or dismiss ended, stopping, concluded or disappeared targets", async () => {
     const h = replyHarness();
     const initial = h.current;

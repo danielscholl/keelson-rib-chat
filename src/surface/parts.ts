@@ -411,7 +411,15 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
           label: "Read gate",
           payload: { id: s.id, runId: run.runId, gateIdentity: gateIdentity(run) },
         },
-        ...(gate.threadId ? [replyAction(s, { runId: run.runId }, "the approval thread")] : []),
+        ...(gate.threadId
+          ? [
+              replyAction(
+                s,
+                { runId: run.runId, gateIdentity: gateIdentity(run) },
+                "the approval thread",
+              ),
+            ]
+          : []),
       ],
     };
   }
