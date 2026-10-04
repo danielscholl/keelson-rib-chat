@@ -705,7 +705,12 @@ const rib: Rib = {
       hideRegionActions: true,
       badgeKey: BADGE_KEY,
       layout: {
-        header: { key: LAUNCH_KEY, collapsible: true, byline: launchByline() },
+        header: {
+          key: LAUNCH_KEY,
+          title: "Start a swarm",
+          collapsible: true,
+          byline: launchByline(),
+        },
         rows: [{ columns: [{ key: INDEX_KEY, live: true }] }],
       },
     },

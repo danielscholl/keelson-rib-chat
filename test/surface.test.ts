@@ -7839,6 +7839,7 @@ describe("the rib's surface", () => {
     expect(JSON.stringify(surface.layout)).toContain(INDEX_KEY);
     expect(surface.layout.header).toEqual({
       key: LAUNCH_KEY,
+      title: "Start a swarm",
       collapsible: true,
       byline: "Agents investigate, debate, and bring back a conclusion.",
     });
