@@ -42,7 +42,8 @@ One live swarm expands on the page as a cockpit. It runs in this order:
 1. The task and id, a lifecycle or **needs you** pill, and people dots.
 2. The state line, described below.
 3. Once the lead has concluded, the **Outcome** card: the conclusion, with
-   **Open the report** and **Read the conclusion**.
+   **Open the report** and **Read the conclusion**. While a peer reviews a
+   gate, its reviewing card appears here instead.
 4. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
    omitting zero counts. Open seats are hatched.
 5. Three **Budget** tiles: **Turns** used with a sparkline and a forecast
@@ -54,8 +55,8 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    eight newest channel messages, then the count and **transcript ↗** link.
 7. **Message the lead**, expanded directly under Conversation for a running
    swarm that has not concluded.
-8. Peer-review gate cards, Spend, Produced so far, and Activity.
-9. **Open the report** when one exists; **Details**; **Open the record**; and
+8. Spend, Produced so far, and Activity.
+9. **Open the report** when one exists; **Open the record**; **Details**; and
    **Stop swarm…** last.
 
 ### Map
@@ -308,6 +309,8 @@ An approval the swarm can answer itself appears in the state line and a
 **reviewing** card in the cockpit and per-swarm board while a peer checks the
 plan. It names the reviewer when recorded. Select the card or **Read gate**
 to read along. It is not a request and counts nowhere.
+If that gate becomes quiet, its quiet request keeps **Read gate** while
+**Message the lead** stays the primary action.
 
 ## The board for ended swarms and MCP clients
 
@@ -328,7 +331,7 @@ Live, the board runs in this order:
   never summed, because a cached token costs a fraction of a fresh one
 - **Map** beside **Conversation**, the same graph, newest eight messages
   and transcript link as the cockpit, with **Message the lead** under it
-- **Details**, **Open the record** and **Stop swarm…** at the far end of the row.
+- **Open the record**, **Details** and **Stop swarm…** at the far end of the row.
   The **Message the lead** form under Conversation posts in the channel as
   you and wakes the lead. Its placeholder reads **posts as you, wakes the
   lead**. The button reads **Sending…** until the note is posted, the toast
@@ -336,7 +339,7 @@ Live, the board runs in this order:
   **you posted in #swarm-<id>: …**
 
 Ended, it runs: the outcome, the result strip with how many runs verified, and
-**Run again**, **Details** and **Open the record**.
+**Run again**, **Open the record** and **Details**.
 
 The ended **Result** adds **Pull requests** when any exist. It counts distinct
 URLs across runs and writers, with **M with CI passing** beneath the total.

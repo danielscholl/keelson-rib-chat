@@ -470,11 +470,12 @@ id sit in the footnote. Open swarm expands that live swarm on the page.
 
 The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
 the task and id with a lifecycle or needs-you pill and people dots; a state
-line; once the lead has concluded, the Outcome card; an agent strip (busy, waiting, idle, capped, failed, with hatched open
+line; once the lead has concluded, the Outcome card; peer-review gate cards;
+an agent strip (busy, waiting, idle, capped, failed, with hatched open
 seats); three Budget tiles (Turns with its spark and a forecast as its delta,
 Time as a ticking time-left clock, fresh Tokens with cached in the sub); Map beside Conversation and Message the lead;
-peer-review gate cards, Spend, Produced so far and Activity; then Open the report
-when one exists, Details, Open the record, and Stop swarm last. Message the lead is expanded directly under
+Spend, Produced so far and Activity; then Open the report when one exists,
+Open the record, Details, and Stop swarm last. Message the lead is expanded directly under
 Conversation while running, unless the lead has concluded. Tokens says none yet
 before any turn, or that the provider reported none when turns ran without usage.
 
@@ -631,14 +632,16 @@ approval the swarm could answer and no agent has worked since). The tab's badge
 counts swarms with any request. An approval a peer is reviewing appears in the
 state line and a reviewing card in the cockpit and per-swarm board, and counts
 as no request.
+If that gate becomes quiet, its quiet request keeps Read gate while Message the
+lead stays the primary action.
 
 An ended row opens its board in the drawer. The per-swarm board also still
 composes for MCP clients, live or ended. Live, it runs: the requests, the outcome once a
 report exists, a budget strip (turns with the same forecast delta, time, agents, fresh
 tokens with cached beside them), the same Map beside Conversation and Message the
-lead, Details, Open the record and Stop,
+lead, Open the record, Details and Stop,
 then Spend, Produced so far and Activity. Ended, it runs: the outcome, the result
-strip, Run again, Details and Open the record, then the agent bench, Spend,
+strip, Run again, Open the record and Details, then the agent bench, Spend,
 Produced so far, Activity and About. The ended Result includes Pull requests when
 any exist: distinct URLs across runs and writers, with "M with CI passing".
 A URL counts as passing only when every recorded owner explicitly reports pass.

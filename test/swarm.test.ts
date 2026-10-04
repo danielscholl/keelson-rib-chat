@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { needsYou } from "../src/needs.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
+import { buildDetailsInspector } from "../src/surface/inspectors.ts";
 import { buildSwarmBoard } from "../src/surface/swarm-board.ts";
 import {
   keepActivity,
@@ -191,7 +192,9 @@ describe("Swarm", () => {
     expect(summary.agents[0]?.usage).toEqual(two);
     expect(summary.usage).toEqual(two);
     const board = JSON.stringify(buildSwarmBoard(summary));
-    expect(board).toContain("2k in · 600 out · 2k cached tokens");
+    expect(JSON.stringify(buildDetailsInspector(summary))).toContain(
+      "2k in · 600 out · 2k cached tokens",
+    );
     expect(board).toContain("2 turns · 3k tokens");
     expect(board).toContain('"value":"3k","sub":"fresh · 2k cached"');
   });

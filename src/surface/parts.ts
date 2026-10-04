@@ -469,7 +469,24 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
         : "the swarm is idle · a note wakes the lead",
     primary: messageLead(s, "brand"),
     more:
-      gate?.threadId && run ? [replyAction(s, { runId: run.runId }, "the approval thread")] : [],
+      gate && run
+        ? [
+            {
+              type: "select-gate",
+              label: "Read gate",
+              payload: { id: s.id, runId: run.runId, gateIdentity: gateIdentity(run) },
+            },
+            ...(gate.threadId
+              ? [
+                  replyAction(
+                    s,
+                    { runId: run.runId, gateIdentity: gateIdentity(run) },
+                    "the approval thread",
+                  ),
+                ]
+              : []),
+          ]
+        : [],
   };
 }
 

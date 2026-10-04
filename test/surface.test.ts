@@ -1768,6 +1768,33 @@ describe("the live cockpit", () => {
     ).toHaveLength(1);
   });
 
+  test("quiet peer gates retain Read gate on the index and per-swarm board", () => {
+    for (const threadId of ["msg_0042", undefined]) {
+      const current = run("rquiet", {
+        status: "paused",
+        pendingApproval: { ...gate("swarm"), threadId },
+      });
+      const s = swarm("squiet", { health: { quietSince: T0 }, runs: [current] });
+      expect(needsYou(s).map((need) => need.kind)).toEqual(["quiet"]);
+      const payload = { id: s.id, runId: current.runId, gateIdentity: gateIdentity(current) };
+      for (const view of [buildIndex(state({ live: [s] })), buildSwarmBoard(s)]) {
+        const cards = leaves(view.sections).flatMap((section) =>
+          section.kind === "cards" ? section.items : [],
+        );
+        const quiet = cards.find((card) => card.pill?.label === "quiet");
+        expect(quiet?.actions?.[0]?.type).toBe("message-lead");
+        expect(quiet?.actions?.find((action) => action.type === "select-gate")).toEqual({
+          type: "select-gate",
+          label: "Read gate",
+          payload,
+        });
+        expect(quiet?.actions?.find((action) => action.type === "reply")?.binding).toEqual(
+          threadId ? payload : undefined,
+        );
+      }
+    }
+  });
+
   test("Conversation shows the eight newest messages with authors, threads, times and transcript", () => {
     const s = fixtures.running!;
     const cockpit = sections(s);
@@ -3410,7 +3437,7 @@ describe("the reading pane", () => {
   });
 
   test("keeps the full task for every lifecycle and omits questions, gates, context, runs and activity", () => {
-    const task = "t".repeat(7_980) + "Final task sentence.";
+    const task = `${"t".repeat(7_980)}Final task sentence.`;
     const base: SwarmSummary = {
       ...fixtures.asked!,
       task,
@@ -4330,38 +4357,44 @@ describe("the record page", () => {
     expect(section).not.toContain("x".repeat(160));
   });
 
-  test("activity-only changes refresh a live record through the existing publishing window", async () => {
-    const sm = new FakeSnapshots();
-    let live = swarm("slog");
-    const surface = createSwarmsSurface({
-      sm,
-      state: () => state({ live: [live] }),
-      find: () => ({ live }),
-      launch: () => ({ projects: [], live: 1, ended: 0 }),
-      launchOf: () => undefined,
-      server: () => ({ live: 1 }),
-      readLog: async () => "",
-      report: () => undefined,
-      views: [],
-      windowMs: 5,
-    });
-    try {
-      surface.track([live.id]);
-      await Bun.sleep(10);
-      const frames = sm.frames.get(recordKey(live.id))!;
-      expect(frames).toHaveLength(1);
-      live = { ...live, activity: [{ at: T0, text: "dismissed one question", actor: "operator" }] };
-      surface.changed(live.id, "activity");
-      expect(sm.frames.get(recordKey(live.id))).toHaveLength(1);
-      await Bun.sleep(15);
-      expect(sm.frames.get(recordKey(live.id))).toHaveLength(2);
-      expect(sm.frames.get(recordKey(live.id))!.at(-1)).toContain(
-        " · you<td>dismissed one question",
-      );
-    } finally {
-      surface.dispose();
-    }
-  });
+  test.each(["activity", "health"] as const)(
+    "%s changes refresh retained activity in a live record through the publishing window",
+    async (kind) => {
+      const sm = new FakeSnapshots();
+      let live = swarm("slog");
+      const surface = createSwarmsSurface({
+        sm,
+        state: () => state({ live: [live] }),
+        find: () => ({ live }),
+        launch: () => ({ projects: [], live: 1, ended: 0 }),
+        launchOf: () => undefined,
+        server: () => ({ live: 1 }),
+        readLog: async () => "",
+        report: () => undefined,
+        views: [],
+        windowMs: 5,
+      });
+      try {
+        surface.track([live.id]);
+        await Bun.sleep(10);
+        const frames = sm.frames.get(recordKey(live.id))!;
+        expect(frames).toHaveLength(1);
+        live = {
+          ...live,
+          activity: [{ at: T0, text: "dismissed one question", actor: "operator" }],
+        };
+        surface.changed(live.id, kind);
+        expect(sm.frames.get(recordKey(live.id))).toHaveLength(1);
+        await Bun.sleep(15);
+        expect(sm.frames.get(recordKey(live.id))).toHaveLength(2);
+        expect(sm.frames.get(recordKey(live.id))!.at(-1)).toContain(
+          " · you<td>dismissed one question",
+        );
+      } finally {
+        surface.dispose();
+      }
+    },
+  );
 
   test("semantic edges count distinct sources, fold spawn wakes and keep repeat asks", () => {
     const s = swarm("s1", {

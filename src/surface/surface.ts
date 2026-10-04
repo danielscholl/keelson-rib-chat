@@ -104,6 +104,7 @@ const DOC_KINDS = new Set<SwarmChange>([
 const RECORD_WINDOW_MS = 5_000;
 const RECORD_KINDS = new Set<SwarmChange>([
   "activity",
+  "health",
   "turn",
   "agent",
   "run",
