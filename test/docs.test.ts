@@ -67,7 +67,7 @@ describe("contributed docs", () => {
     expect(swarms).toContain("server line");
     expect(swarms).toContain("Manage");
     expect(swarms).toContain("at the side");
-    expect(swarms).toContain("About ends with a transcript link");
+    expect(swarms).toContain("Only ended boards keep About: times, health and one transcript link");
     expect(swarms).toContain("Conversation");
     expect(swarms).toContain("eight newest channel messages, newest first");
     expect(swarms).toContain("newest 20");
@@ -190,6 +190,60 @@ describe("contributed docs", () => {
       ])
         expect(text).toContain(phrase);
       expect(text).not.toContain("details are the same in both");
+    }
+  });
+
+  test("packaged and site docs agree on side inspectors and content destinations", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    const page = readFileSync(
+      new URL("../docs/src/content/docs/guides/swarms-tab.md", import.meta.url),
+      "utf8",
+    );
+    const normalized = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
+    for (const text of [normalized(swarms), normalized(page)]) {
+      for (const phrase of [
+        "rib:chat:ask:<swarm>",
+        "rib:chat:gate:<swarm>",
+        "rib:chat:details:<swarm>",
+        "complete admitted question",
+        "bounded question previews",
+        "only the question inspector shows the full body",
+        "Reply and Dismiss",
+        "full retained prompt",
+        "empty files, read errors and truncation notices",
+        "operator-only gates also offer Open run",
+        "Peer gates have no approval control",
+        "Reply posts as you in the thread and never approves",
+        "Review plan and Answer still open the run drawer",
+        "ordered disclosures of at most 4,000 characters",
+        "every retained context excerpt",
+        "head/base SHA",
+        "all effective limits",
+        "requested models per role/provider",
+        "recorded overrides and effort",
+        "Actually served models stay separate from requested settings",
+        "read-only with no composer",
+        "Each inspector publishes before opening",
+        "one key per swarm and kind",
+        "resolved question or advanced gate",
+        "retention trimming and disposal release inspector keys",
+        "times, health and one transcript link",
+        "separate row outside About",
+        "latest 200 retained entries, newest first",
+        "not a complete transcript",
+        "applicable conclusion or refused draft and the full task, not questions, gates, context, runs or activity",
+        "Legacy summaries cannot recover question text already truncated",
+      ]) {
+        expect(text).toContain(phrase);
+      }
+      for (const obsolete of [
+        "Read question opens the reading pane",
+        "cockpit task disclosure shows at most",
+        "1,000 task characters",
+        "last 200 events are in the reading pane",
+      ]) {
+        expect(text).not.toContain(obsolete);
+      }
     }
   });
 

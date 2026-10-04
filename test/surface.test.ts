@@ -12,11 +12,12 @@ import {
   type SnapshotFrame,
   type SnapshotManager,
 } from "@keelson/shared";
+import { CONTEXT_BOUNDS, type ContextIndexEntry, EXCERPT_CHARS } from "../src/context.ts";
 import { applyStatus } from "../src/dispatch.ts";
 import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
-import { handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
+import { type ActionDeps, handleSwarmsAction, LINK_REFUSAL } from "../src/surface/actions.ts";
 import { buildAgentInspector, INSPECTOR_TURNS_SHOWN } from "../src/surface/agent-inspector.ts";
 import { buildDoc } from "../src/surface/doc.ts";
 import type { forecastDelta } from "../src/surface/forecast.ts";
@@ -38,8 +39,16 @@ import {
   type SurfaceState,
 } from "../src/surface/index-board.ts";
 import {
+  buildDetailsInspector,
+  buildGateInspector,
+  buildQuestionInspector,
+} from "../src/surface/inspectors.ts";
+import {
   agentKey,
+  askKey,
+  detailsKey,
   docKey,
+  gateKey,
   HISTORY_KEY,
   INDEX_KEY,
   LAUNCH_KEY,
@@ -50,10 +59,19 @@ import {
 } from "../src/surface/keys.ts";
 import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
 import {
+  askText,
+  dismissAskAction,
+  gateIdentity,
+  healthRows,
+  modelRow,
+  replyAction,
+  requestOf,
   type ServerLine,
   selectSwarm,
   serverAddress,
   serverState,
+  setupRows,
+  sizeDetail,
   stateLine,
 } from "../src/surface/parts.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
@@ -85,6 +103,7 @@ import {
   type ChildRun,
   MESSAGE_CHARS,
   MESSAGES_KEPT,
+  type OperatorAsk,
   SIZE_PRESETS,
   type StartingSwarm,
   type SwarmAgent,
@@ -416,6 +435,72 @@ const state = (patch: Partial<SurfaceState> = {}): SurfaceState => ({
 const board = (key: string, view: unknown) =>
   expect(() => expectView(key, "board")(view)).not.toThrow();
 
+describe("shared inspector keys and presentation", () => {
+  test("keys stay in the per-swarm native inspector namespaces", () => {
+    expect(askKey("s1")).toBe("rib:chat:ask:s1");
+    expect(gateKey("s1")).toBe("rib:chat:gate:s1");
+    expect(detailsKey("s1")).toBe("rib:chat:details:s1");
+  });
+
+  test("question actions are shared without changing their board payloads", () => {
+    const s = fixtures.asked!;
+    const ask = s.health!.asks![0]!;
+    const request = requestOf(s, needsYou(s).find((n) => n.kind === "question")!);
+    expect(request.more).toEqual([
+      replyAction(s, { threadRootId: ask.threadRootId, messageId: ask.messageId }, "the thread"),
+      dismissAskAction(s, ask.messageId),
+    ]);
+    expect(request.more[0]!.binding).toEqual({
+      id: s.id,
+      threadRootId: ask.threadRootId,
+      messageId: ask.messageId,
+    });
+    expect(request.more[1]!.payload).toEqual({ id: s.id, messageId: ask.messageId });
+    expect(replyAction(s, { runId: "r1" }, "the approval thread").type).toBe("reply");
+  });
+
+  test("shared setup and health rows are available in Details instead of live About", () => {
+    const s = swarm("shelp", {
+      workerModel: "worker-model",
+      usage: { input: 200, output: 50, cached: 100 },
+      health: {
+        socketDrops: 2,
+        channelFault: "offline",
+        leadFailures: 3,
+        lastLeadFailure: "timeout",
+        nudges: 1,
+        refusedConclusions: 2,
+        cancelFault: "could not cancel",
+      },
+    });
+    expect(modelRow(s)).toBe("copilot · lead gpt-5.6-sol · workers worker-model");
+    expect(setupRows(s)).toEqual([
+      { icon: "◫", text: sizeDetail(s) },
+      { icon: "◆", text: "copilot · lead gpt-5.6-sol · workers worker-model" },
+      { icon: "∑", text: "200 in · 50 out · 100 cached tokens" },
+    ]);
+    expect(healthRows(s).map((row) => row.text)).toEqual([
+      "socket closed 2 time(s) since it last opened",
+      "ClickClack fault: offline",
+      "the lead's last turn failed (3 in a row): timeout",
+      "idle: nudged the lead 1 of 2 times",
+      "the lead's conclusion was refused 2 time(s) for length",
+      "could not cancel",
+    ]);
+    expect(leaves(buildSwarmBoard(s).sections).some((section) => section.title === "About")).toBe(
+      false,
+    );
+    const health = buildDetailsInspector(s).sections.find((section) => section.title === "Health");
+    expect(health?.kind === "rows" ? health.items : []).toEqual(healthRows(s));
+    expect(healthRows({ ...s, status: "error", error: "fatal" }).at(-1)).toEqual({
+      icon: "✕",
+      glyph: "error",
+      text: "fatal",
+    });
+    expect(healthRows(swarm("sclean"))).toEqual([]);
+  });
+});
+
 describe("the shared server text", () => {
   test("state words distinguish managed processes from external reachability", () => {
     expect(serverState({ mode: "managed", running: true })).toBe("running");
@@ -718,6 +803,571 @@ describe("the agent map", () => {
       { source: `run:${s.runs![0]!.runId}`, target: "s1-lead", label: "updates" },
     ]);
     expect(sparse.edges.slice(2).every((e) => e.dashed)).toBe(true);
+  });
+});
+
+describe("the question inspector", () => {
+  const ask = fixtures.asked!.health!.asks![0]!;
+  const inspect = (s: SwarmSummary, selected: OperatorAsk = ask) => {
+    const view = buildQuestionInspector(s, selected);
+    board(askKey(s.id), view);
+    return view;
+  };
+
+  test("keeps a complete 8,000-character multiline question with native prose", () => {
+    const text = `@operator: **Full question**\n\n${"q".repeat(7900)}\nFinal sentence?`.padEnd(
+      8000,
+      "?",
+    );
+    const selected = { ...ask, text };
+    const s = { ...fixtures.asked!, health: { asks: [selected] } };
+    const view = inspect(s, selected);
+    const question = view.sections[0];
+    expect(question?.kind).toBe("cards");
+    if (question?.kind !== "cards") throw new Error("missing question");
+    expect(question.title).toBe("Question");
+    expect(question.items[0]).toMatchObject({
+      title: "@w1 asked",
+      prose: true,
+      fields: [
+        { value: askText(text) },
+        { value: `Asked ${ask.at}` },
+        { label: "asked", clock: { at: ask.at, mode: "since" } },
+      ],
+    });
+    expect(question.items[0]!.fields![0]!.value).toContain("\nFinal sentence?");
+    expect(question.items[0]!.fields![0]!.value).toContain("**Full question**");
+    const actions = view.sections.find((section) => section.kind === "actions");
+    if (actions?.kind !== "actions") throw new Error("missing actions");
+    expect(actions.title).toBe("Actions");
+    expect(actions.items.map((item) => item.type)).toEqual(["reply-ask", "dismiss-ask"]);
+    expect(actions.items[0]!.binding).toEqual({
+      id: s.id,
+      messageId: selected.messageId,
+      threadRootId: selected.threadRootId,
+    });
+    expect(actions.items[0]!.fields![0]!.placeholder).toContain("as you");
+    expect(actions.items[0]!.fields![0]!.placeholder).toContain("does not approve");
+    expect(actions.items[1]!.payload).toEqual({ id: s.id, messageId: selected.messageId });
+  });
+
+  test("links to the authoritative thread root, not the question message", () => {
+    const s = fixtures.asked!;
+    const view = inspect(s);
+    expect(view.sections[1]).toEqual({
+      kind: "rows",
+      title: "Thread",
+      items: [{ text: "thread ↗", href: threadHref(s, ask.threadRootId) }],
+    });
+    expect(JSON.stringify(view.sections[1])).not.toContain(ask.messageId);
+    const topLevel = { ...ask, threadRootId: ask.messageId };
+    expect(JSON.stringify(inspect(s, topLevel).sections[1])).toContain(
+      threadHref(s, ask.messageId)!,
+    );
+    expect(JSON.stringify(inspect(s, { ...ask, threadRootId: "" }).sections[1])).toContain(
+      threadHref(s, ask.messageId)!,
+    );
+  });
+
+  test("missing link metadata is explicit without inventing a URL", () => {
+    const s = { ...fixtures.asked!, clickclack: undefined };
+    const view = inspect(s);
+    expect(view.sections[1]).toEqual({
+      kind: "rows",
+      title: "Thread",
+      items: [{ text: "Thread link not recorded." }],
+    });
+    expect(view.sections.some((section) => section.kind === "actions")).toBe(true);
+  });
+
+  test("ended, stopping, concluded and disappeared questions are read-only without clocks", () => {
+    const s = fixtures.asked!;
+    const snapshots: SwarmSummary[] = [
+      ...(["done", "stopped", "stalled", "exhausted", "error", "stopping"] as const).map(
+        (status) => ({ ...s, status }),
+      ),
+      { ...s, endedAt: T0 },
+      { ...s, conclusion: "" },
+      { ...s, health: { asks: [] } },
+      { ...s, health: undefined },
+    ];
+    for (const snapshot of snapshots) {
+      const view = inspect(snapshot);
+      expect(view.sections.some((section) => section.kind === "actions")).toBe(false);
+      expect(JSON.stringify(view)).not.toContain('"clock"');
+      expect(JSON.stringify(view)).toContain("Read-only:");
+      const question = view.sections[0];
+      if (question?.kind !== "cards") throw new Error("missing question");
+      expect(question.items[0]!.fields![0]!.value).toBe(askText(ask.text));
+    }
+  });
+});
+
+describe("the gate inspector", () => {
+  const inspect = (s: SwarmSummary, selected: ChildRun = s.runs![0]!) => {
+    const view = buildGateInspector(s, selected);
+    board(gateKey(s.id), view);
+    return view;
+  };
+  const peer = () => {
+    const approval = { ...gate("swarm"), pauseId: "pause-1", reviewer: "sgate-w1" };
+    return swarm("sgate", {
+      runs: [run("r1", { status: "paused", pendingApproval: approval })],
+    });
+  };
+  const actions = (view: CanvasBoardView) => {
+    const section = view.sections.find((section) => section.kind === "actions");
+    return section?.kind === "actions" ? section.items : [];
+  };
+
+  test("peer reviews keep complete prose, reviewer and thread, with Reply but no approval", () => {
+    const s = peer();
+    const selected = s.runs![0]!;
+    selected.pendingApproval!.prompt = `**Plan**\n\n${"p".repeat(8000)}\nLast prompt line.`;
+    selected.pendingApproval!.files = [
+      { path: "plan.md", text: `# Plan\n\n${"f".repeat(12000)}\nFinal file line.\n` },
+      { path: "config.ts", text: "const retry = 30;\n\nexport { retry };\n" },
+      { path: "empty.txt", text: "" },
+    ];
+    const view = inspect(s);
+    expect(view.sections.map((section) => section.title)).toEqual([
+      "Gate",
+      "Files",
+      "Review",
+      "Actions",
+    ]);
+    const prompt = view.sections[0];
+    if (prompt?.kind !== "cards") throw new Error("missing prompt");
+    expect(prompt.items[0]).toMatchObject({
+      prose: true,
+      fields: [
+        { value: selected.pendingApproval!.prompt },
+        { label: "opened", clock: { at: selected.pendingApproval!.openedAt, mode: "since" } },
+      ],
+    });
+    const files = view.sections[1];
+    if (files?.kind !== "cards") throw new Error("missing files");
+    expect(files.items).toHaveLength(3);
+    for (const [i, file] of selected.pendingApproval!.files.entries()) {
+      expect(files.items[i]).toMatchObject({
+        title: file.path,
+        prose: true,
+        fields: [{ value: file.text }],
+      });
+    }
+    expect(files.items[2]!.footnote).toBe("Empty file.");
+    expect(view.sections[2]).toMatchObject({
+      kind: "rows",
+      items: [
+        { text: "Reviewer: @w1" },
+        { text: `Opened ${selected.pendingApproval!.openedAt}` },
+        { text: "thread ↗", href: threadHref(s, selected.pendingApproval!.threadId) },
+      ],
+    });
+    expect(actions(view).map((item) => item.type)).toEqual(["reply"]);
+    expect(actions(view)[0]!.binding).toEqual({
+      id: s.id,
+      runId: selected.runId,
+      gateIdentity: gateIdentity(selected),
+    });
+    expect(actions(view)[0]!.fields![0]!.placeholder).toContain("as you");
+    expect(actions(view)[0]!.fields![0]!.placeholder).toContain("does not approve");
+  });
+
+  test("operator-only gates offer Open run without an approval composer", () => {
+    const s = fixtures.onlyYou!;
+    expect(actions(inspect(s)).map((item) => item.type)).toEqual(["reply", "open-run"]);
+    expect(actions(inspect(s))[1]!.binding).toEqual({
+      id: s.id,
+      runId: s.runs![0]!.runId,
+      gateIdentity: gateIdentity(s.runs![0]!),
+    });
+    const noThread = swarm(s.id, {
+      runs: [
+        run("r2", {
+          status: "paused",
+          pendingApproval: { ...gate("operator"), threadId: undefined },
+        }),
+      ],
+    });
+    expect(actions(inspect(noThread)).map((item) => item.type)).toEqual(["open-run"]);
+  });
+
+  test("missing reviewer, thread, files and opening time are stated honestly", () => {
+    const s = swarm("slegacy", {
+      clickclack: undefined,
+      runs: [
+        run("r1", {
+          status: "paused",
+          pendingApproval: { ...gate("swarm"), threadId: undefined, openedAt: undefined },
+        }),
+      ],
+    });
+    const view = inspect(s);
+    expect(view.sections[1]).toEqual({
+      kind: "rows",
+      title: "Files",
+      items: [{ text: "No gate files recorded." }],
+    });
+    expect(view.sections[2]).toEqual({
+      kind: "rows",
+      title: "Review",
+      items: [
+        { text: "Reviewer not recorded." },
+        { text: "Gate opening time not recorded." },
+        { text: "Thread link not recorded." },
+      ],
+    });
+    expect(actions(view)).toEqual([]);
+    const withThread = peer();
+    expect(
+      actions(inspect({ ...withThread, clickclack: undefined })).map((item) => item.type),
+    ).toEqual(["reply"]);
+  });
+
+  test("read errors and host or rib truncation do not hide retained or empty files", () => {
+    const s = peer();
+    s.runs![0]!.pendingApproval!.files = [
+      { path: "unreadable.md", error: "permission denied" },
+      { path: "host-cut.md", text: "first retained\nlast retained", truncated: true },
+      { path: "rib-cut.md", text: "", truncated: true },
+      { path: "missing.md" },
+      { path: "partial.md", text: "partial evidence", error: "read interrupted" },
+    ];
+    const files = inspect(s).sections[1];
+    if (files?.kind !== "cards") throw new Error("missing files");
+    expect(files.items).toHaveLength(5);
+    expect(files.items[0]!.footnote).toBe("Could not be read: permission denied");
+    expect(files.items[1]!.fields![0]!.value).toBe("first retained\nlast retained");
+    expect(files.items[1]!.footnote).toContain("Truncated by the host or rib");
+    expect(files.items[2]!.fields![0]!.value).toBe("");
+    expect(files.items[2]!.footnote).toContain("No text retained.");
+    expect(files.items[2]!.footnote).toContain("Truncated by the host or rib");
+    expect(files.items[3]!.footnote).toBe("File text not recorded.");
+    expect(files.items[4]!.fields![0]!.value).toBe("partial evidence");
+    expect(files.items[4]!.footnote).toBe("Could not be read: read interrupted");
+  });
+
+  test("gate identity binds repeated pauses and legacy node, time and thread evidence", () => {
+    const s = peer();
+    const selected = s.runs![0]!;
+    const identity = gateIdentity(selected);
+    expect(
+      gateIdentity({
+        ...selected,
+        pendingApproval: { ...selected.pendingApproval!, prompt: "updated prompt" },
+      }),
+    ).toBe(identity);
+    const later = {
+      ...selected,
+      pendingApproval: { ...selected.pendingApproval!, pauseId: "pause-2" },
+    };
+    expect(gateIdentity(later)).not.toBe(identity);
+    expect(actions(inspect({ ...s, runs: [later] }, selected))).toEqual([]);
+    const legacy = {
+      ...selected,
+      pendingApproval: { ...selected.pendingApproval!, pauseId: undefined },
+    };
+    for (const patch of [
+      { nodeId: "approve-code" },
+      { openedAt: "2026-09-22T14:32:00.000Z" },
+      { threadId: "new-thread" },
+    ]) {
+      expect(
+        gateIdentity({ ...legacy, pendingApproval: { ...legacy.pendingApproval!, ...patch } }),
+      ).not.toBe(gateIdentity(legacy));
+    }
+    expect(gateIdentity({ ...selected, runId: "another-run" })).not.toBe(identity);
+    expect(gateIdentity({ ...selected, pendingApproval: undefined })).toBeUndefined();
+  });
+
+  test("ended, stopping, concluded, resumed and missing gates are read-only", () => {
+    const s = peer();
+    const selected = s.runs![0]!;
+    const snapshots: SwarmSummary[] = [
+      ...(["done", "stopped", "stalled", "exhausted", "error", "stopping"] as const).map(
+        (status) => ({ ...s, status }),
+      ),
+      { ...s, endedAt: T0 },
+      { ...s, conclusion: "" },
+      { ...s, runs: [] },
+      { ...s, runs: [{ ...selected, status: "running" }] },
+      { ...s, runs: [{ ...selected, pendingApproval: undefined }] },
+    ];
+    for (const snapshot of snapshots) {
+      const view = inspect(snapshot, selected);
+      expect(actions(view)).toEqual([]);
+      expect(JSON.stringify(view)).not.toContain('"clock"');
+      expect(JSON.stringify(view)).toContain("Read-only:");
+    }
+    expect(JSON.stringify(inspect(s, { ...selected, pendingApproval: undefined }))).toContain(
+      "Gate prompt not recorded.",
+    );
+  });
+});
+
+describe("the details inspector", () => {
+  const inspect = (s: SwarmSummary) => {
+    const view = buildDetailsInspector(s);
+    board(detailsKey(s.id), view);
+    return view;
+  };
+  const rows = (view: CanvasBoardView, title: string) => {
+    const section = view.sections.find((section) => section.title === title);
+    if (section?.kind !== "rows") throw new Error(`missing ${title} rows`);
+    return section.items;
+  };
+
+  test("reconstructs the full 8,000-character task with bounded numbered disclosures", () => {
+    for (const length of [1, 4000, 4001, 8000]) {
+      const task = ` \n${"t".repeat(3994)} \n\n  **Task**\n`.padEnd(8000, " ").slice(0, length);
+      const view = inspect(swarm("sfull", { task }));
+      const disclosures = rows(view, "Task and context").filter((row) => row.detail !== undefined);
+      expect(disclosures.map((row) => row.detail).join("")).toBe(task);
+      expect(disclosures).toHaveLength(Math.ceil(length / EXCERPT_CHARS));
+      expect(disclosures.every((row) => row.detail!.length <= 4000)).toBe(true);
+      expect(disclosures.map((row) => row.text)).toEqual(
+        disclosures.map((_, i) => `Task · part ${i + 1} of ${disclosures.length}`),
+      );
+    }
+  });
+
+  test("three distinct context disclosures retain their text and complete provenance", () => {
+    const context: ContextIndexEntry[] = [
+      {
+        id: "issue-27",
+        kind: "issue",
+        title: "Original issue",
+        chars: 4000,
+        excerpt: `Issue body\n${"i".repeat(3989)}`,
+        sourceUrl: "https://github.com/o/r/issues/27",
+        retrievedAt: T0,
+      },
+      {
+        id: "diff-27",
+        kind: "diff",
+        title: "Proposed diff",
+        chars: 5000,
+        excerpt: `Diff body\n${"d".repeat(3990)}`,
+        sourceUrl: "https://github.com/o/r/pull/27/files",
+        retrievedAt: "2026-09-22T14:10:00.000Z",
+        headSha: "abcdef1234567890abcdef1234567890abcdef12",
+        baseSha: "1234567890abcdef1234567890abcdef12345678",
+      },
+      {
+        id: "checks-27",
+        kind: "checks",
+        title: "CI checks",
+        chars: 8000,
+        excerpt: `Checks body\n${"c".repeat(3988)}`,
+        sourceUrl: "https://github.com/o/r/actions/runs/27",
+        retrievedAt: "2026-09-22T14:15:00.000Z",
+        headSha: "abcdef1234567890abcdef1234567890abcdef12",
+      },
+    ];
+    const view = inspect(swarm("sctx", { context }));
+    const entries = rows(view, "Task and context");
+    for (const c of context) {
+      expect(entries).toContainEqual(
+        expect.objectContaining({
+          text: `${c.id} · ${c.kind}: ${c.title}`,
+          detail: c.excerpt,
+        }),
+      );
+      expect(entries).toContainEqual({ text: `Source: ${c.sourceUrl}`, href: c.sourceUrl });
+      expect(entries).toContainEqual({
+        text: `Retrieved: ${c.retrievedAt} · Head SHA: ${c.headSha ?? "not recorded"} · Base SHA: ${c.baseSha ?? "not recorded"}`,
+      });
+      expect(entries.find((row) => row.detail === c.excerpt)?.trailing).toContain(
+        c.chars.toLocaleString("en-US"),
+      );
+    }
+    expect(entries.find((row) => row.detail === context[1]!.excerpt)?.trailing).toContain(
+      "Excerpt truncated",
+    );
+  });
+
+  test("keeps every context entry at the retained maximum without a shared preview budget", () => {
+    const context: ContextIndexEntry[] = Array.from(
+      { length: CONTEXT_BOUNDS.maxItems },
+      (_, i) => ({
+        id: `context-${i}`,
+        kind: "note",
+        title: `Context ${i}`,
+        chars: 12000,
+        excerpt: `${i}\n`.padEnd(EXCERPT_CHARS, String(i % 10)),
+      }),
+    );
+    const s = swarm("smax", { task: "t".repeat(8000), context });
+    const entries = rows(inspect(s), "Task and context");
+    const disclosures = entries.filter((row) => row.detail !== undefined);
+    expect(disclosures).toHaveLength(22);
+    expect(disclosures.reduce((total, row) => total + row.detail!.length, 0)).toBe(88000);
+    for (const c of context)
+      expect(entries.find((row) => row.text.startsWith(`${c.id} ·`))?.detail).toBe(c.excerpt);
+  });
+
+  test("names all custom limits, requested role settings, overrides, served models and effort", () => {
+    const s = swarm("ssetup", {
+      size: "custom",
+      sizeBase: "small",
+      limits: {
+        maxAgents: 7,
+        maxTurns: 31,
+        maxTurnsPerAgent: 9,
+        maxConcurrent: 2,
+        wallClockMs: 1234567,
+        turnTimeoutMs: 654321,
+        maxNudges: 4,
+      },
+      provider: "requested-provider",
+      model: "requested-lead",
+      workerModel: "requested-worker",
+      power: "deep",
+      effort: "xhigh",
+      usage: { input: 100, output: 20, cached: 0 },
+      agents: [
+        agent("ssetup", 0, {
+          model: "requested-lead",
+          servedModel: "served-lead",
+          providerId: "served-provider",
+        }),
+        agent("ssetup", 1, {
+          model: "individual-override",
+          servedModel: "served-worker",
+          providerId: "worker-provider",
+        }),
+      ],
+    });
+    const setup = rows(inspect(s), "Setup").map((row) => row.text);
+    expect(setup).toEqual([
+      "Size: small, adjusted",
+      "Effective limits: 7 agents · 31 total turns · 9 turns per worker · 2 concurrent turns",
+      "Wall-clock limit: 1234567 ms · Turn timeout: 654321 ms · Idle nudge limit: 4",
+      "Requested provider: requested-provider",
+      "Requested lead model: requested-lead",
+      "Requested worker model: requested-worker (worker role override)",
+      "Requested power: deep",
+      "Recorded reasoning effort: xhigh",
+      "Requested model for @lead (lead): requested-lead",
+      "Served model for @lead (lead): served-lead · provider: served-provider",
+      "Requested model for @w1 (worker): individual-override (overrides role setting requested-worker)",
+      "Served model for @w1 (worker): served-worker · provider: worker-provider",
+      "100 in · 20 out tokens",
+    ]);
+  });
+
+  test("legacy missing settings and power requests never masquerade as served evidence", () => {
+    const s = swarm("slegacy", {
+      provider: undefined,
+      model: undefined,
+      workerModel: undefined,
+      power: "fast",
+      effort: undefined,
+      agents: [
+        agent("slegacy", 0, { servedModel: "actual-model", providerId: "actual-provider" }),
+        agent("slegacy", 1),
+      ],
+    });
+    const setup = rows(inspect(s), "Setup").map((row) => row.text);
+    expect(setup).toContain("Requested provider: host default; no explicit provider recorded");
+    expect(setup).toContain("Requested lead model: fast power; no explicit model recorded");
+    expect(setup).toContain(
+      "Requested worker model: fast power; no explicit model recorded (inherits lead setting)",
+    );
+    expect(setup).toContain("Recorded reasoning effort: not recorded");
+    expect(setup).toContain(
+      "Served model for @lead (lead): actual-model · provider: actual-provider",
+    );
+    expect(setup).toContain("Served model for @w1 (worker): not reported · provider: not reported");
+    expect(setup.filter((text) => text.startsWith("Requested")).join(" ")).not.toContain(
+      "actual-model",
+    );
+    expect(setup.filter((text) => text.startsWith("Requested")).join(" ")).not.toContain(
+      "actual-provider",
+    );
+    expect(
+      rows(inspect({ ...s, power: undefined, agents: [] }), "Setup").map((row) => row.text),
+    ).toContain("Requested lead model: host default; no explicit model recorded");
+    expect(rows(inspect({ ...s, agents: [] }), "Setup").map((row) => row.text)).toContain(
+      "Served models and per-agent requests not recorded.",
+    );
+    const inherited = rows(inspect({ ...s, model: "explicit-lead" }), "Setup").map(
+      (row) => row.text,
+    );
+    expect(inherited).toContain("Requested worker model: explicit-lead (inherits lead setting)");
+  });
+
+  test("missing legacy excerpts, empty bodies and source truncation remain explicit", () => {
+    const s = swarm("smissing", {
+      task: "",
+      context: [
+        { id: "legacy", kind: "issue", title: "Legacy issue", chars: 6000 },
+        {
+          id: "partial",
+          kind: "note",
+          title: "Partial excerpt",
+          chars: 9000,
+          excerpt: "retained\nexcerpt",
+        },
+        { id: "empty", kind: "note", title: "Empty legacy body", chars: 0, excerpt: "" },
+      ],
+    });
+    const entries = rows(inspect(s), "Task and context");
+    expect(entries[0]!.text).toBe("Task text not recorded.");
+    expect(entries[1]!.trailing).toBe("6,000 characters · excerpt not recorded (legacy summary)");
+    expect(entries[1]!.detail).toBeUndefined();
+    expect(entries[2]!.text).toBe("Source: not recorded");
+    expect(entries[3]!.text).toBe(
+      "Retrieved: not recorded · Head SHA: not recorded · Base SHA: not recorded",
+    );
+    expect(entries[4]!.detail).toBe("retained\nexcerpt");
+    expect(entries[4]!.trailing).toContain("full source body is not retained here");
+    expect(entries[7]!.trailing).toBe("0 characters · retained 0 characters (empty)");
+    expect(entries[7]!.detail).toBeUndefined();
+  });
+
+  test("reuses health rows, provides exactly one transcript row and never offers a composer", () => {
+    const s = swarm("shealth", {
+      health: {
+        socketDrops: 3,
+        disconnectedAt: T0,
+        channelFault: "offline",
+        lastLeadFailure: "timeout",
+        nudges: 1,
+        refusedConclusions: 2,
+        cancelFault: "cancel failed",
+        quietSince: T0,
+      },
+    });
+    for (const snapshot of [
+      s,
+      { ...s, status: "stopping" as const },
+      { ...s, status: "done" as const, endedAt: T0, error: "ended" },
+    ]) {
+      const view = inspect(snapshot);
+      expect(view.sections.map((section) => section.title)).toEqual([
+        "Task and context",
+        "Setup",
+        "Health",
+        "Transcript",
+      ]);
+      expect(rows(view, "Health")).toEqual([
+        ...healthRows(snapshot),
+        { text: `Disconnected since ${T0}` },
+        { text: `Quiet since ${T0}` },
+      ]);
+      expect(rows(view, "Transcript")).toEqual([
+        { text: "transcript ↗", href: channelHref(snapshot) },
+      ]);
+      expect(view.sections.some((section) => section.kind === "actions")).toBe(false);
+      expect(JSON.stringify(view)).not.toContain('"fields"');
+      expect(JSON.stringify(view)).not.toContain('"clock"');
+    }
+    const legacy = inspect(swarm("snolink", { clickclack: undefined }));
+    expect(rows(legacy, "Transcript")).toEqual([{ text: "Transcript link not recorded." }]);
+    expect(rows(legacy, "Health")).toEqual([{ text: "No health faults recorded." }]);
+    expect(rows(legacy, "Task and context").at(-1)!.text).toBe("No task context recorded.");
   });
 });
 
@@ -1026,8 +1676,6 @@ describe("the live cockpit", () => {
       "graph",
       "rows",
       "actions",
-      "rows",
-      "rows",
       "actions",
     ]);
     expect(cockpit[0]).toMatchObject({
@@ -1041,7 +1689,6 @@ describe("the live cockpit", () => {
     expect(head).not.toHaveProperty("chip");
     expect(head?.footnote).toBeUndefined();
     expect(head?.fields?.[0]?.people).toHaveLength(2);
-    expect(cockpit.slice(-3, -1)).toEqual(leaves(buildSwarmBoard(s).sections.slice(-2)));
     const columns = buildCockpit(s, [], { titled: true }).find((x) => x.kind === "columns");
     expect(
       columns?.kind === "columns" ? columns.columns.map((c) => c.sections[0]?.kind) : [],
@@ -1049,7 +1696,11 @@ describe("the live cockpit", () => {
     expect(cockpit.at(-1)).toMatchObject({
       kind: "actions",
       wrap: true,
-      items: [{ type: "open-record" }, { type: "stop-swarm", inline: true, align: "end" }],
+      items: [
+        { type: "open-record" },
+        { type: "open-details", label: "Details", payload: { id: s.id } },
+        { type: "stop-swarm", inline: true, align: "end" },
+      ],
     });
     expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
   });
@@ -1060,13 +1711,18 @@ describe("the live cockpit", () => {
       const actions = sections(s).at(-1);
       return actions?.kind === "actions" ? actions.items.map((x) => x.type) : [];
     };
-    expect(types(s)).toEqual(["open-report", "open-record", "stop-swarm"]);
+    expect(types(s)).toEqual(["open-report", "open-record", "open-details", "stop-swarm"]);
     expect(types({ ...s, conclusion: "Done" })).toEqual([
       "open-report",
       "open-record",
+      "open-details",
       "stop-swarm",
     ]);
-    expect(types({ ...s, status: "stopping" })).toEqual(["open-report", "open-record"]);
+    expect(types({ ...s, status: "stopping" })).toEqual([
+      "open-report",
+      "open-record",
+      "open-details",
+    ]);
     const composer = (s: SwarmSummary) =>
       sections(s).find((x) => x.kind === "actions" && x.items[0]?.type === "message-lead");
     expect(composer(s)).toMatchObject({
@@ -1076,6 +1732,67 @@ describe("the live cockpit", () => {
     });
     expect(composer({ ...s, conclusion: "Done" })).toBeUndefined();
     expect(composer({ ...s, status: "stopping" })).toBeUndefined();
+  });
+
+  test("peer review opens its gate from the cockpit without becoming or duplicating a request", () => {
+    const peer = fixtures.review!;
+    expect(needsYou(peer)).toEqual([]);
+    expect(buildBadge(state({ live: [peer] }))).toEqual({ count: 0 });
+    const index = buildIndex(state({ live: [peer] }));
+    board(INDEX_KEY, index);
+    expect(index.sections.some((section) => section.title === "Needs you")).toBe(false);
+    const reviewing = index.sections.find((section) => section.title === "Approvals in review");
+    if (reviewing?.kind !== "cards") throw new Error("missing peer gate");
+    const card = reviewing.items[0]!;
+    const payload = {
+      id: peer.id,
+      runId: peer.runs![0]!.runId,
+      gateIdentity: gateIdentity(peer.runs![0]!),
+    };
+    expect(card.action).toEqual({ type: "select-gate", payload });
+    expect(card.actions?.[0]).toEqual({ type: "select-gate", label: "Read gate", payload });
+    expect(card.actions?.find((action) => action.type === "reply")?.binding).toEqual(payload);
+    expect(
+      sections({ ...peer, conclusion: "Done" }).some(
+        (section) => section.title === "Approvals in review",
+      ),
+    ).toBe(false);
+    const operator = buildIndex(state({ live: [fixtures.onlyYou!] }));
+    const operatorCards = leaves(operator.sections).flatMap((section) =>
+      section.kind === "cards" ? section.items : [],
+    );
+    expect(
+      operatorCards.filter((card) =>
+        card.actions?.some((action) => action.label === "Review plan"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("quiet peer gates retain Read gate on the index and per-swarm board", () => {
+    for (const threadId of ["msg_0042", undefined]) {
+      const current = run("rquiet", {
+        status: "paused",
+        pendingApproval: { ...gate("swarm"), threadId },
+      });
+      const s = swarm("squiet", { health: { quietSince: T0 }, runs: [current] });
+      expect(needsYou(s).map((need) => need.kind)).toEqual(["quiet"]);
+      const payload = { id: s.id, runId: current.runId, gateIdentity: gateIdentity(current) };
+      for (const view of [buildIndex(state({ live: [s] })), buildSwarmBoard(s)]) {
+        const cards = leaves(view.sections).flatMap((section) =>
+          section.kind === "cards" ? section.items : [],
+        );
+        const quiet = cards.find((card) => card.pill?.label === "quiet");
+        expect(quiet?.actions?.[0]?.type).toBe("message-lead");
+        expect(quiet?.actions?.find((action) => action.type === "select-gate")).toEqual({
+          type: "select-gate",
+          label: "Read gate",
+          payload,
+        });
+        expect(quiet?.actions?.find((action) => action.type === "reply")?.binding).toEqual(
+          threadId ? payload : undefined,
+        );
+      }
+    }
   });
 
   test("Conversation shows the eight newest messages with authors, threads, times and transcript", () => {
@@ -1568,9 +2285,22 @@ describe("Swarms boards", () => {
     ]);
     expect(card?.footnote).toBe("Fix issue #27: README undercounts frontend-mix nodes · s7k1p");
     expect(card?.reason).toBeUndefined();
-    expect(card?.actions?.map((a) => a.label)).toEqual(["Review plan", "Reply", "Open swarm"]);
+    expect(card?.actions?.map((a) => a.label)).toEqual([
+      "Review plan",
+      "Read gate",
+      "Reply",
+      "Open swarm",
+    ]);
     expect(card?.actions?.[0]).toMatchObject({ type: "open-run", tone: "brand" });
-    expect(card?.actions?.[2]?.hint).toBe(
+    expect(card?.actions?.[1]).toMatchObject({
+      type: "select-gate",
+      payload: {
+        id: fixtures.onlyYou!.id,
+        runId: fixtures.onlyYou!.runs![0]!.runId,
+        gateIdentity: gateIdentity(fixtures.onlyYou!.runs![0]!),
+      },
+    });
+    expect(card?.actions?.[3]?.hint).toBe(
       "large: up to 8 agents · 80 turns, 16 per worker · 4 at once · 5 min a turn. Model: gpt-6-astra.",
     );
   });
@@ -1583,7 +2313,11 @@ describe("Swarms boards", () => {
     expect(question?.pill).toEqual({ label: "question", tone: "caution" });
     expect(question?.fields?.some((field) => field.href)).toBe(false);
     expect(JSON.stringify(question)).not.toContain("in ClickClack");
-    expect(question?.actions?.[0]).toMatchObject({ type: "read-doc", label: "Read question" });
+    expect(question?.actions?.[0]).toMatchObject({
+      type: "select-ask",
+      label: "Read question",
+      payload: { id: fixtures.asked!.id, messageId: fixtures.asked!.health!.asks![0]!.messageId },
+    });
     expect(cards[1]?.title).toBe(
       "Review the plan for Fix issue #27: README undercounts frontend-mix nodes",
     );
@@ -1748,10 +2482,12 @@ describe("Swarms boards", () => {
       "medium · 11 turns · 29 min · gpt-6-astra · workers gpt-5.6-sol",
     );
     const text = JSON.stringify(view);
-    expect(text).toContain(
-      "medium: up to 5 agents · 40 turns, 12 per worker · 3 at once · 5 min a turn",
+    const details = JSON.stringify(buildDetailsInspector(fixtures.done!));
+    expect(details).toContain(
+      "Effective limits: 5 agents · 40 total turns · 12 turns per worker · 3 concurrent turns",
     );
-    expect(text).toContain("copilot · lead gpt-6-astra · workers gpt-5.6-sol");
+    expect(details).toContain("Requested lead model: gpt-6-astra");
+    expect(details).toContain("Requested worker model: gpt-5.6-sol");
     expect(text).not.toContain('"type":"steer"');
     expect(text).toContain('"label":"Runs verified","value":"1 of 1","tone":"ok"');
     expect(JSON.stringify(buildIndex(state({ ended: [fixtures.done!] })))).toContain(
@@ -1873,7 +2609,16 @@ describe("Swarms boards", () => {
       swarm("s2cus", { size: "custom", limits: { ...SIZE_PRESETS.medium, maxTurns: 60 } }),
     );
     expect(view.header?.chip).toBe("medium, adjusted · 11 of 60 turns · gpt-5.6-sol");
-    expect(JSON.stringify(view)).toContain("medium, adjusted: up to 5 agents · 60 turns");
+    expect(
+      JSON.stringify(
+        buildDetailsInspector(
+          swarm("s2cus", {
+            size: "custom",
+            limits: { ...SIZE_PRESETS.medium, maxTurns: 60 },
+          }),
+        ),
+      ),
+    ).toContain("Effective limits: 5 agents · 60 total turns");
   });
 
   test("an ended swarm leads with its cause, shows how long it ran, and no agent status", () => {
@@ -1915,8 +2660,6 @@ describe("Swarms boards", () => {
       "columns",
       "actions",
       "rows",
-      "rows",
-      "rows",
     ]);
     const actions = leaves(view.sections).filter((s) => s.kind === "actions");
     expect(actions).toHaveLength(2);
@@ -1928,7 +2671,12 @@ describe("Swarms boards", () => {
       label: "Open the record",
       payload: { id: "s9hjy" },
     });
-    expect(actions[1]?.items[1]).toMatchObject({ inline: true, align: "end" });
+    expect(actions[1]?.items[1]).toMatchObject({
+      type: "open-details",
+      label: "Details",
+      payload: { id: "s9hjy" },
+    });
+    expect(actions[1]?.items[2]).toMatchObject({ inline: true, align: "end" });
     const review = view.sections[0];
     expect(review?.kind === "cards" ? review.title : "").toBe("Approvals in review");
     expect(JSON.stringify(review)).toContain('"pill":{"label":"reviewing","tone":"info"}');
@@ -2000,12 +2748,8 @@ describe("Swarms boards", () => {
       leaves(buildSwarmBoard(s).sections).flatMap((x) =>
         x.kind === "rows" && x.title ? [x.title] : [],
       );
-    expect(titles(fixtures.running!)).toEqual(["Conversation", "Task and context", "About"]);
-    expect(titles(fixtures.dispatchIdle!)).toEqual([
-      "Produced so far",
-      "Task and context",
-      "About",
-    ]);
+    expect(titles(fixtures.running!)).toEqual(["Conversation"]);
+    expect(titles(fixtures.dispatchIdle!)).toEqual(["Produced so far"]);
     expect(JSON.stringify(buildSwarmBoard(fixtures.dispatchIdle!))).toContain(
       "The lead may start fix-issue, docs-check; none started yet.",
     );
@@ -2015,7 +2759,7 @@ describe("Swarms boards", () => {
     expect(JSON.stringify(buildSwarmBoard(fixtures.review!))).toContain("4 steps done");
   });
 
-  test("the task and each context item disclose their text under the row", () => {
+  test("boards relocate full task, context and setup to Details", () => {
     const s = swarm("s8ctx", {
       task: `Fix issue #27
 
@@ -2033,26 +2777,24 @@ ${"detail ".repeat(1000)}`,
         { id: "note-1", kind: "note", title: "a note", chars: 12, excerpt: "twelve chars" },
       ],
     });
-    const section = buildSwarmBoard(s).sections.find(
-      (x) => x.kind === "rows" && x.title === "Task and context",
-    );
-    const rows = section?.kind === "rows" ? section.items : [];
-    expect(rows[0]?.text).toBe("Task: Fix issue #27");
-    expect(rows[0]?.detail?.length).toBe(4000);
-    const cockpitTask = buildCockpit(s, [], { titled: true }).find(
-      (x) => x.kind === "rows" && x.title === "Task and context",
-    );
-    expect(cockpitTask?.kind === "rows" ? cockpitTask.items[0]?.detail?.length : 0).toBe(1000);
-    expect(rows[0]?.trailing).toBe("first 4,000 of 7,014 characters");
-    expect(rows[1]).toMatchObject({
-      text: "issue: README count",
-      trailing: "issue-27 · retrieved Sep 22 13:00 · first 4,000 of 5,000 chars",
-    });
-    expect(rows[1]?.detail?.length).toBe(4000);
-    expect(rows[1]?.href).toBeUndefined();
-    expect(rows[2]).toMatchObject({ trailing: "note-1 · 12 chars", detail: "twelve chars" });
-    board(swarmKey("s8ctx"), buildSwarmBoard(s));
-    expect(buildDoc(s, "s8ctx")).toContain("## issue: README count");
+    for (const snapshot of [s, { ...s, status: "done" as const, endedAt: T0 }]) {
+      const view = buildSwarmBoard(snapshot);
+      board(swarmKey(s.id), view);
+      const frame = JSON.stringify(view);
+      expect(frame).not.toContain("Task and context");
+      expect(frame).not.toContain("twelve chars");
+      expect(frame).not.toContain("x".repeat(4000));
+      expect(frame).not.toContain("detail ".repeat(100));
+      expect(frame).not.toContain("up to 5 agents");
+      expect(frame).toContain('"type":"open-details","label":"Details","payload":{"id":"s8ctx"}');
+    }
+    const cockpit = JSON.stringify(buildCockpit(s, [], { titled: true }));
+    expect(cockpit).not.toContain("Task and context");
+    expect(cockpit).not.toContain('"title":"About"');
+    expect(cockpit).toContain('"type":"open-details"');
+    const inspector = buildDetailsInspector(s);
+    board(detailsKey(s.id), inspector);
+    expect(JSON.stringify(inspector)).toContain("twelve chars");
   });
 
   test("activity lists the newest first, and the running card carries the last line", () => {
@@ -2378,17 +3120,17 @@ describe("the details", () => {
     expect(rows[0]?.text).toBe("event 14");
     expect(rows.at(-1)).toMatchObject({
       text: "Read the full log · 3 earlier events",
-      action: { type: "read-doc", payload: { id: "s7log" } },
+      action: { type: "open-record", payload: { id: "s7log" } },
     });
-    const doc = buildDoc(s, s.id);
-    expect(doc).toContain("## Activity");
-    expect(doc).toContain("- 14:00 event 0\n");
+    const record = buildRecord(s, new Date(T0));
+    expect(record).toContain("<h2>Activity</h2>");
+    expect(record).toContain("<td>event 0</tbody>");
     const short = buildSwarmBoard(swarm("s7few", { activity: [{ at: T0, text: "one" }] }));
     expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
   });
 
-  test("About ends with the transcript before an ended swarm's back-link", () => {
-    for (const s of [fixtures.running!, fixtures.done!]) {
+  test("ended About contains only times, health and one transcript with navigation separate", () => {
+    for (const s of [fixtures.done!, { ...fixtures.done!, health: { socketDrops: 2 } }]) {
       const view = buildSwarmBoard(s);
       board(swarmKey(s.id), view);
       const rows = rowsTitled(view, "About");
@@ -2398,17 +3140,16 @@ describe("the details", () => {
         text: "transcript ↗",
         href: `http://127.0.0.1:18080/app/ws_1/${s.channelId}`,
       };
-      expect(s.status === "running" ? rows.at(-1) : rows.at(-2)).toEqual(transcript);
-      if (s.status !== "running") {
-        expect(rows.at(-1)).toEqual({
-          icon: "←",
-          text: "Ended swarms",
-          action: { type: "history-open" },
-        });
-      }
+      expect(rows.at(-1)).toEqual(transcript);
+      expect(rows.slice(1, -1)).toEqual(healthRows(s));
+      expect(rows.filter((row) => row.text === "transcript ↗")).toHaveLength(1);
+      expect(view.sections.at(-1)).toEqual({
+        kind: "rows",
+        items: [{ icon: "←", text: "Ended swarms", action: { type: "history-open" } }],
+      });
     }
     expect(
-      rowsTitled(buildSwarmBoard({ ...fixtures.running!, clickclack: undefined }), "About").some(
+      rowsTitled(buildSwarmBoard({ ...fixtures.done!, clickclack: undefined }), "About").some(
         (row) => row.text === "transcript ↗",
       ),
     ).toBe(false);
@@ -2486,11 +3227,12 @@ describe("the details", () => {
       text: "fix-issue Fix issue #27: README undercounts frontend-mix nodes · keelson/rb · live checkout · node build failed: tsc exited 2",
       trailing: "3 min · failed",
     });
-    const doc = buildDoc(s, s.id);
-    expect(doc).toContain(`### fix-issue · ${shortRun("rb0000-1111-2222")} · failed`);
-    expect(doc).toContain("[PR #42](https://github.com/o/r/pull/42)");
-    expect(doc).toContain("src/a.ts(1,1): error TS1005");
-    expect(doc).toContain("CI: 2 checks failed");
+    const record = buildRecord(s, new Date(T0));
+    expect(record).toContain(`<code>${shortRun("rb0000-1111-2222")}</code>`);
+    expect(record).toContain("https://github.com/o/r/pull/42");
+    expect(record).toContain("node build failed: tsc exited 2");
+    expect(record).toContain("fail: 2 checks failed");
+    expect(buildDoc(s, s.id)).not.toContain("## Runs");
   });
 
   test("spend bars each agent's fresh tokens against the swarm's", () => {
@@ -2583,7 +3325,7 @@ describe("the details", () => {
 });
 
 describe("the reading pane", () => {
-  test("metadata links the transcript while prose names the channel and keeps thread links", () => {
+  test("metadata retains the transcript but question and gate threads belong to inspectors", () => {
     for (const s of [fixtures.done!, fixtures.stalled!, fixtures.asked!]) {
       const doc = buildDoc(s, s.id);
       expect(doc).toContain(`· [transcript ↗](http://127.0.0.1:18080/app/ws_1/${s.channelId})`);
@@ -2594,9 +3336,15 @@ describe("the reading pane", () => {
       expect(unlinked).not.toContain(" · *");
     }
     const asked = buildDoc(fixtures.asked!, fixtures.asked!.id);
-    expect(asked).toContain("[in its thread](http://127.0.0.1:18080/app/ws_1/msg_0100)");
-    expect(asked).toContain("[The approval thread](http://127.0.0.1:18080/app/ws_1/msg_0042)");
-    expect(asked).toContain("mention @w1 in #swarm-s6ask");
+    expect(asked).not.toContain("msg_0100");
+    expect(asked).not.toContain("msg_0042");
+    expect(asked).toContain("Open questions and gates in the tab's inspectors.");
+    expect(
+      JSON.stringify(buildQuestionInspector(fixtures.asked!, fixtures.asked!.health!.asks![0]!)),
+    ).toContain("http://127.0.0.1:18080/app/ws_1/msg_0100");
+    expect(
+      JSON.stringify(buildGateInspector(fixtures.asked!, fixtures.asked!.runs![0]!)),
+    ).toContain("http://127.0.0.1:18080/app/ws_1/msg_0042");
     expect(buildDoc(fixtures.running!, fixtures.running!.id)).toContain(
       "is working in #swarm-s9hjx.",
     );
@@ -2605,7 +3353,7 @@ describe("the reading pane", () => {
     );
   });
 
-  test("an open gate shows its files: markdown as is, other text fenced, failures named", () => {
+  test("gate files move to the inspector with complete literal prose and explicit failures", () => {
     const withFiles = swarm("s9fil", {
       runs: [
         run("r7", {
@@ -2622,10 +3370,30 @@ describe("the reading pane", () => {
         }),
       ],
     });
-    const doc = buildDoc(withFiles, "s9fil");
-    expect(doc).toContain("### plan.md\n\n## Steps\n\n1. Count the nodes.");
-    expect(doc).toContain("### diff.patch (cut short)\n\n````\n+12 nodes\n````");
-    expect(doc).toContain("### notes.txt\n\n*Could not be read: not found.*");
+    const inspector = buildGateInspector(withFiles, withFiles.runs![0]!);
+    board(gateKey(withFiles.id), inspector);
+    const files = inspector.sections.find((section) => section.title === "Files");
+    if (files?.kind !== "cards") throw new Error("missing files");
+    expect(files.items).toEqual([
+      { title: "plan.md", prose: true, fields: [{ value: "## Steps\n\n1. Count the nodes." }] },
+      {
+        title: "diff.patch",
+        prose: true,
+        fields: [{ value: "+12 nodes" }],
+        footnote: "Truncated by the host or rib; only retained text is shown.",
+      },
+      { title: "notes.txt", prose: true, footnote: "Could not be read: not found" },
+    ]);
+    const doc = buildDoc(withFiles, withFiles.id);
+    for (const text of [
+      "Approve?",
+      "plan.md",
+      "Count the nodes.",
+      "+12 nodes",
+      "notes.txt",
+      "not found",
+    ])
+      expect(doc).not.toContain(text);
   });
 
   test("the board's conclusion preview drops markdown marks; the pane keeps them", () => {
@@ -2656,13 +3424,77 @@ describe("the reading pane", () => {
     expect((await copy("s0non")).ok).toBe(false);
   });
 
-  test("shows the whole conclusion, the refused draft, or the open gate's prompt", () => {
+  test("shows the whole conclusion or refused draft, but not gate prompts", () => {
     expect(buildDoc(fixtures.done, "s8pln")).toContain("x".repeat(3000));
     expect(buildDoc(fixtures.stalled, "s5tcx")).toContain("a draft");
     const gated = buildDoc(fixtures.review, "s9hjy");
-    expect(gated).toContain("> Plan: set the README node count to 12.");
-    expect(gated).toContain("http://127.0.0.1:18080/app/ws_1/msg_0042");
+    expect(gated).not.toContain("Plan: set the README node count to 12.");
+    expect(gated).not.toContain("http://127.0.0.1:18080/app/ws_1/msg_0042");
+    expect(
+      JSON.stringify(buildGateInspector(fixtures.review!, fixtures.review!.runs![0]!)),
+    ).toContain("Plan: set the README node count to 12.");
     expect(buildDoc(undefined, "s0old")).toContain("no longer in the rib's history");
+  });
+
+  test("keeps the full task for every lifecycle and omits questions, gates, context, runs and activity", () => {
+    const task = `${"t".repeat(7_980)}Final task sentence.`;
+    const base: SwarmSummary = {
+      ...fixtures.asked!,
+      task,
+      activity: [{ at: T0, text: "retained activity sentinel" }],
+      context: [
+        {
+          id: "c1",
+          kind: "note",
+          title: "context sentinel",
+          chars: 16,
+          excerpt: "excerpt sentinel",
+        },
+      ],
+    };
+    for (const status of [
+      "running",
+      "stopping",
+      "done",
+      "stopped",
+      "stalled",
+      "exhausted",
+      "error",
+    ] as const) {
+      for (const conclusion of [undefined, "**Complete outcome**\n\nFinal conclusion sentence."]) {
+        const s = {
+          ...base,
+          status,
+          conclusion,
+          draftConclusion: "**Refused draft**",
+          ...(status !== "running" && status !== "stopping" ? { endedAt: T0 } : {}),
+        };
+        const doc = buildDoc(s, s.id);
+        expect(doc).toContain(`## Task\n\n${task}\n`);
+        expect(doc).toContain(`Swarm ${s.id}`);
+        expect(doc).toContain(status);
+        expect(doc).not.toContain("which retry cap");
+        for (const removed of [
+          "## Runs",
+          "## Activity",
+          "asked you",
+          "approve-plan",
+          "Plan: set",
+          "context sentinel",
+          "excerpt sentinel",
+          "retained activity sentinel",
+        ])
+          expect(doc).not.toContain(removed);
+        if (conclusion) {
+          expect(doc).toContain(conclusion);
+          expect(doc).not.toContain("**Refused draft**");
+        } else {
+          expect(doc).toContain("**Refused draft**");
+        }
+      }
+    }
+    const spaced = " \nFull task\n\nwith whitespace.  ";
+    expect(buildDoc({ ...base, task: spaced }, base.id)).toContain(`## Task\n\n${spaced}\n`);
   });
 });
 
@@ -2671,6 +3503,7 @@ class FakeSnapshots implements SnapshotManager {
   frames = new Map<string, unknown[]>();
   inFlight = 0;
   gate: Promise<void> | undefined;
+  failures = new Map<string, Error>();
 
   register<T>(key: string, compose: () => T | Promise<T>, opts?: { validate?: (d: unknown) => T }) {
     if (this.composers.has(key)) throw new Error(`duplicate key ${key}`);
@@ -2683,6 +3516,8 @@ class FakeSnapshots implements SnapshotManager {
     this.inFlight++;
     try {
       if (this.gate) await this.gate;
+      const failure = this.failures.get(key);
+      if (failure) throw failure;
       const data = await c.compose();
       c.validate?.(data);
       this.frames.set(key, [...(this.frames.get(key) ?? []), data]);
@@ -2740,6 +3575,272 @@ describe("publishing", () => {
     });
     return { sm, views, summaries, surface };
   };
+
+  const inspectable = (id = "s1", patch: Partial<SwarmSummary> = {}) =>
+    swarm(id, {
+      health: {
+        asks: ["first", "second"].map((messageId) => ({
+          ...fixtures.asked!.health!.asks![0]!,
+          agentId: `${id}-w1`,
+          handle: `${id}-w1`,
+          messageId,
+          text: `${messageId} question?`,
+        })),
+      },
+      runs: ["first", "second"].map((id) =>
+        run(id, {
+          status: "paused",
+          pendingApproval: { ...gate("swarm"), pauseId: id, prompt: `${id} gate` },
+        }),
+      ),
+      ...patch,
+    });
+  const inspectorKinds = [
+    {
+      key: askKey,
+      open: (surface: SwarmsSurface, s: SwarmSummary, n = 0) =>
+        surface.selectAsk(s.id, s.health!.asks![n]!.messageId),
+    },
+    {
+      key: gateKey,
+      open: (surface: SwarmsSurface, s: SwarmSummary, n = 0) =>
+        surface.selectGate(s.id, s.runs![n]!.runId, gateIdentity(s.runs![n]!)!),
+    },
+    {
+      key: detailsKey,
+      open: (surface: SwarmsSurface, s: SwarmSummary) => surface.openDetails(s.id),
+    },
+  ];
+
+  test("question, gate and Details selections wait for blocked first publication and retry failures", async () => {
+    for (const { key, open } of inspectorKinds) {
+      const s = inspectable();
+      const { sm, surface } = inspectorHarness(s);
+      let unblock = () => {};
+      try {
+        sm.gate = new Promise<void>((resolve) => {
+          unblock = resolve;
+        });
+        let complete = false;
+        const pending = open(surface, s).then(() => {
+          complete = true;
+        });
+        await Bun.sleep(2);
+        expect(complete).toBe(false);
+        expect(sm.frames.has(key(s.id))).toBe(false);
+        unblock();
+        sm.gate = undefined;
+        await pending;
+        expectView(key(s.id), "board")(sm.frames.get(key(s.id))?.at(-1));
+        sm.failures.set(key(s.id), new Error("publication failed"));
+        await expect(open(surface, s)).rejects.toThrow("publication failed");
+        sm.failures.delete(key(s.id));
+        await open(surface, s);
+        expect(sm.keys().filter((k) => k === key(s.id))).toHaveLength(1);
+      } finally {
+        unblock();
+        surface.dispose();
+      }
+    }
+  });
+
+  test("rapid question and gate reselection shares per-kind keys independently of agent and swarm selection", async () => {
+    const s = inspectable();
+    const { sm, surface, summaries } = inspectorHarness(s);
+    let unblock = () => {};
+    try {
+      summaries.set("s2", swarm("s2"));
+      surface.track(["s1", "s2"]);
+      surface.select("s2");
+      await surface.selectAgent("s1", "s1-w1");
+      sm.gate = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      const pending = inspectorKinds.flatMap(({ open }) => [
+        open(surface, s, 0),
+        open(surface, s, 1),
+      ]);
+      unblock();
+      sm.gate = undefined;
+      await Promise.all(pending);
+      expect(JSON.stringify(sm.frames.get(askKey("s1"))?.at(-1))).toContain("second question?");
+      expect(JSON.stringify(sm.frames.get(gateKey("s1"))?.at(-1))).toContain("second gate");
+      expect(sm.frames.get(agentKey("s1"))?.at(-1)).toMatchObject({ title: "Agent @w1 · s1" });
+      await Bun.sleep(10);
+      const index = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
+      if (index.view !== "board") throw new Error("expected board");
+      const strip = index.sections.find((section) => section.kind === "actions");
+      expect(
+        strip?.kind === "actions" ? strip.items.find((i) => i.selected)?.payload : undefined,
+      ).toEqual({ id: "s2" });
+      const drawer = expectView(swarmKey("s1"), "board")(sm.frames.get(swarmKey("s1"))?.at(-1));
+      if (drawer.view !== "board") throw new Error("expected board");
+      const map = leaves(drawer.sections).find((section) => section.kind === "graph");
+      expect(
+        map?.kind === "graph"
+          ? map.nodes.filter((node) => node.selected).map((node) => node.id)
+          : [],
+      ).toEqual(["s1-w1"]);
+      for (const { key } of inspectorKinds)
+        expect(sm.keys().filter((k) => k === key("s1"))).toHaveLength(1);
+    } finally {
+      unblock();
+      surface.dispose();
+    }
+  });
+
+  test("invalid question, gate and Details selections allocate no keys", async () => {
+    const s = inspectable();
+    const { sm, surface } = inspectorHarness(s);
+    try {
+      const before = sm.keys();
+      for (const open of [
+        () => surface.selectAsk("s1", "unknown"),
+        () => surface.selectAsk("s2", "first"),
+        () => surface.selectGate("s1", s.runs![0]!.runId, "stale"),
+        () => surface.selectGate("s1", "foreign-run", gateIdentity(s.runs![0]!)!),
+        () => surface.openDetails("s2"),
+      ]) {
+        await expect(open()).rejects.toThrow();
+        expect(sm.keys()).toEqual(before);
+      }
+    } finally {
+      surface.dispose();
+    }
+  });
+
+  test("all opened inspectors refresh relevant changes and resolved targets stay read-only without retargeting", async () => {
+    const s = inspectable();
+    const { sm, surface, summaries } = inspectorHarness(s);
+    try {
+      for (const { open } of inspectorKinds) await open(surface, s);
+      summaries.set("s1", { ...s, task: "Task after global refresh" });
+      surface.refresh();
+      await Bun.sleep(10);
+      expect(JSON.stringify(sm.frames.get(detailsKey("s1"))?.at(-1))).toContain(
+        "Task after global refresh",
+      );
+      for (const kind of ["health", "gate", "run", "agent", "turn", "conclusion", "end"] as const) {
+        const counts = inspectorKinds.map(({ key }) => sm.frames.get(key("s1"))!.length);
+        summaries.set("s1", { ...summaries.get("s1")!, task: `task after ${kind}` });
+        surface.changed("s1", kind);
+        await Bun.sleep(10);
+        inspectorKinds.forEach(({ key }, i) => {
+          expect(sm.frames.get(key("s1"))!.length).toBeGreaterThan(counts[i]!);
+        });
+        expect(JSON.stringify(sm.frames.get(detailsKey("s1"))?.at(-1))).toContain(
+          `task after ${kind}`,
+        );
+      }
+      const current = summaries.get("s1")!;
+      current.health!.asks = [current.health!.asks![1]!];
+      current.runs![0]!.pendingApproval!.pauseId = "next-pause";
+      current.runs![0]!.pendingApproval!.prompt = "new pause must not replace selected gate";
+      surface.changed("s1", "gate");
+      await Bun.sleep(10);
+      for (const key of [askKey, gateKey]) {
+        const frame = sm.frames.get(key("s1"))?.at(-1);
+        expect(JSON.stringify(frame)).toContain("Read-only");
+        expect(JSON.stringify(frame)).not.toContain('"kind":"actions"');
+        expect(JSON.stringify(frame)).not.toContain('"clock"');
+      }
+      expect(JSON.stringify(sm.frames.get(askKey("s1"))?.at(-1))).toContain("first question?");
+      expect(JSON.stringify(sm.frames.get(gateKey("s1"))?.at(-1))).toContain("first gate");
+      expect(JSON.stringify(sm.frames.get(gateKey("s1"))?.at(-1))).not.toContain("new pause");
+      summaries.delete("s1");
+      surface.changed("s1", "health");
+      await Bun.sleep(10);
+      for (const { key } of inspectorKinds)
+        expect(JSON.stringify(sm.frames.get(key("s1"))?.at(-1))).toContain("no longer available");
+      surface.forget(["s1"]);
+      for (const { key } of inspectorKinds) expect(sm.keys()).not.toContain(key("s1"));
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+  });
+
+  test("ended, stopping and concluded inspectors have no composer and Details reads the latest summary", async () => {
+    for (const patch of [
+      { status: "done" as const, endedAt: T0 },
+      { status: "stopping" as const },
+      { conclusion: "Finished" },
+    ]) {
+      const s = inspectable("s1", patch);
+      const { sm, surface, summaries } = inspectorHarness(s);
+      try {
+        for (const { open } of inspectorKinds) await open(surface, s);
+        for (const key of [askKey, gateKey]) {
+          const frame = JSON.stringify(sm.frames.get(key("s1"))?.at(-1));
+          expect(frame).toContain("Read-only");
+          expect(frame).not.toContain('"kind":"actions"');
+        }
+        summaries.set("s1", { ...s, task: "Latest task" });
+        await surface.openDetails("s1");
+        expect(JSON.stringify(sm.frames.get(detailsKey("s1"))?.at(-1))).toContain("Latest task");
+      } finally {
+        surface.dispose();
+      }
+    }
+  });
+
+  test("forget and disposal reject pending publication of each inspector kind", async () => {
+    for (const { key, open } of inspectorKinds) {
+      for (const disposal of [false, true]) {
+        const s = inspectable();
+        const { sm, surface } = inspectorHarness(s);
+        let unblock = () => {};
+        try {
+          sm.gate = new Promise<void>((resolve) => {
+            unblock = resolve;
+          });
+          const pending = open(surface, s);
+          if (disposal) surface.dispose();
+          else surface.forget(["s1"]);
+          await expect(pending).rejects.toThrow("released");
+          expect(sm.keys()).not.toContain(key("s1"));
+          if (disposal) await expect(open(surface, s)).rejects.toThrow("disposed");
+        } finally {
+          unblock();
+          sm.gate = undefined;
+          surface.dispose();
+        }
+      }
+    }
+  });
+
+  test("retention trimming releases every kind including inspector-only selections at a full live budget", async () => {
+    const { sm, surface, summaries } = inspectorHarness();
+    try {
+      const ids = Array.from({ length: MAX_SWARM_KEYS }, (_, i) => `s${i + 1}`);
+      for (const id of ids) summaries.set(id, swarm(id));
+      surface.track(ids);
+      for (let i = 0; i < 3; i++) {
+        const s = inspectable(`ended${i}`, { status: "done", endedAt: T0 });
+        summaries.set(s.id, s);
+        await surface.selectAgent(s.id, `${s.id}-w1`);
+        for (const { open } of inspectorKinds) await open(surface, s);
+        expect(sm.keys()).not.toContain(swarmKey(s.id));
+        for (const key of [agentKey, askKey, gateKey, detailsKey])
+          expect(sm.keys()).toContain(key(s.id));
+        if (i % 2) summaries.delete(s.id);
+        surface.track([]);
+        for (const key of [agentKey, askKey, gateKey, detailsKey])
+          expect(sm.keys()).not.toContain(key(s.id));
+      }
+      summaries.clear();
+      const ended = Array.from({ length: MAX_SWARM_KEYS + 1 }, (_, i) =>
+        inspectable(`ended${i}`, { status: "done", endedAt: T0 }),
+      );
+      for (const s of ended) summaries.set(s.id, s);
+      for (const { open } of inspectorKinds) await open(surface, ended[0]!);
+      surface.track(ended.map((s) => s.id));
+      for (const { key } of inspectorKinds) expect(sm.keys()).not.toContain(key(ended[0]!.id));
+    } finally {
+      surface.dispose();
+    }
+    expect(sm.keys()).toEqual([]);
+  });
 
   test("agent selection awaits a fresh frame and highlights both boards without changing swarm selection", async () => {
     const { sm, summaries, surface } = inspectorHarness();
@@ -3206,6 +4307,95 @@ describe("publishing", () => {
 });
 
 describe("the record page", () => {
+  const activitySection = (html: string) =>
+    html.match(/<section><h2>Activity<\/h2>.*?<\/section>/)?.[0] ?? "";
+
+  test("activity retains exactly the latest 200 events, newest first, including empty histories", () => {
+    for (const count of [0, 1, 200, 201]) {
+      const activity = Array.from({ length: count }, (_, i) => ({
+        at: new Date(Date.parse(T0) + i * 60_000).toISOString(),
+        text: `retained event ${i}`,
+      }));
+      const s = swarm("slog", { activity });
+      const html = buildRecord(s, new Date(T0));
+      const section = activitySection(html);
+      expect(section).toContain("not a complete transcript");
+      expect(html.indexOf(section)).toBeLessThan(html.indexOf("<footer>"));
+      const rows = section.split(/<tr id=e\d+><td>/).slice(1);
+      expect(rows).toHaveLength(Math.min(count, 200));
+      expect(rows.map((row) => Number(row.match(/retained event (\d+)/)?.[1]))).toEqual(
+        activity
+          .slice(-200)
+          .reverse()
+          .map((event) => Number(event.text.split(" ").at(-1))),
+      );
+      if (count === 0) expect(section).toContain("No retained events.");
+      if (count === 201) expect(section).not.toContain("<td>retained event 0");
+    }
+  });
+
+  test("activity identifies actors and timestamps, counts repeats and escapes bounded event gists", () => {
+    const s = swarm("slog", {
+      activity: [
+        { at: T0, text: "rib event" },
+        { at: T0, text: "operator note", actor: "operator", count: 3 },
+        { at: T0, text: "@slog-w1 turn finished", actor: "slog-w1", count: 1 },
+        { at: T0, text: "<script> & ' \" <img>", actor: "<unknown>" },
+        { at: T0, text: "x".repeat(400), actor: "unknown-agent" },
+      ],
+    });
+    const section = activitySection(buildRecord(s, new Date(T0)));
+    expect(section).toContain(`<td>${day(T0)} ${hhmm(T0)} · rib<td>rib event`);
+    expect(section).toContain(" · you<td>operator note ×3");
+    expect(section).toContain(" · @w1<td>@w1 turn finished");
+    expect(section).not.toContain("×1");
+    expect(section).toContain(
+      " · &lt;unknown&gt;<td>&lt;script&gt; &amp; &#39; &quot; &lt;img&gt;",
+    );
+    expect(section).not.toContain("<script>");
+    expect(section).toContain(` · unknown-agent<td>${"x".repeat(99)}…`);
+    expect(section).not.toContain("x".repeat(100));
+  });
+
+  test.each(["activity", "health"] as const)(
+    "%s changes refresh retained activity in a live record through the publishing window",
+    async (kind) => {
+      const sm = new FakeSnapshots();
+      let live = swarm("slog");
+      const surface = createSwarmsSurface({
+        sm,
+        state: () => state({ live: [live] }),
+        find: () => ({ live }),
+        launch: () => ({ projects: [], live: 1, ended: 0 }),
+        launchOf: () => undefined,
+        server: () => ({ live: 1 }),
+        readLog: async () => "",
+        report: () => undefined,
+        views: [],
+        windowMs: 5,
+      });
+      try {
+        surface.track([live.id]);
+        await Bun.sleep(10);
+        const frames = sm.frames.get(recordKey(live.id))!;
+        expect(frames).toHaveLength(1);
+        live = {
+          ...live,
+          activity: [{ at: T0, text: "dismissed one question", actor: "operator" }],
+        };
+        surface.changed(live.id, kind);
+        expect(sm.frames.get(recordKey(live.id))).toHaveLength(1);
+        await Bun.sleep(15);
+        expect(sm.frames.get(recordKey(live.id))).toHaveLength(2);
+        expect(sm.frames.get(recordKey(live.id))!.at(-1)).toContain(
+          " · you<td>dismissed one question",
+        );
+      } finally {
+        surface.dispose();
+      }
+    },
+  );
+
   test("semantic edges count distinct sources, fold spawn wakes and keep repeat asks", () => {
     const s = swarm("s1", {
       agents: [agent("s1", 0), agent("s1", 1, { spawnedBy: "s1-lead" })],
@@ -3330,11 +4520,18 @@ describe("the record page", () => {
 
   test("the timeline draws a lane per agent in turn order, the operator above and runs below", () => {
     const html = buildRecord(traced(), new Date(at(30)));
+    const eventMarks = [...html.matchAll(/<text[^>]* aria-describedby="(e\d+)"[^>]*>.*?<\/text>/g)];
+    expect(eventMarks).toHaveLength(3);
+    for (const mark of eventMarks) {
+      expect(mark[0]).toMatch(/<title>[^<]+<\/title>/);
+      expect(html).toContain(`<tr id=${mark[1]}>`);
+    }
+    expect(eventMarks[0]?.[0]).toContain(`<title>${hhmm(at(7))} @w1 asked the operator</title>?`);
     const labels = [...html.matchAll(/<text class="lbl[^"]*"[^>]*>([^<]*)<\/text>/g)].map(
       (m) => m[1],
     );
     expect(labels).toEqual(["you", "@lead", "@w2", "@w1", "fix-issue r10000-1"]);
-    for (const x of html.matchAll(/<rect class="t-[^"]*" x="([\d.]+)"/g)) {
+    for (const x of html.matchAll(/<path[^>]* d="M([\d.]+) [\d.]+h/g)) {
       expect(Number(x[1])).toBeGreaterThanOrEqual(112);
       expect(Number(x[1])).toBeLessThanOrEqual(708);
     }
@@ -3444,7 +4641,19 @@ describe("the record page", () => {
       })),
       usage: { input: 9_000_000, output: 400_000, cached: 7_000_000 },
     });
-    expect(buildRecord(big, new Date(at(300))).length).toBeLessThan(128_000);
+    const record = buildRecord(big, new Date(at(300)));
+    expect(record.length).toBeLessThan(128_000);
+    expect(activitySection(record).match(/<tr id=e\d+>/g)).toHaveLength(200);
+    const eventMarks = [
+      ...record.matchAll(/aria-describedby="(e\d+)"><title>([^<]+)<\/title>\?<\/text>/g),
+    ];
+    expect(eventMarks).toHaveLength(200);
+    for (const mark of eventMarks) {
+      expect(mark[2]).toHaveLength(40);
+      expect(mark[2]).toEndWith("…");
+      expect(record).toContain(`<tr id=${mark[1]}>`);
+    }
+    console.info(`Record (200 events, 200 turns, 12 runs): ${record.length} characters`);
   });
 
   test("each swarm's record registers with its other keys, and Open the record opens it", async () => {
@@ -3528,6 +4737,592 @@ const actionDeps = {
 
 describe("actions", () => {
   const deps = actionDeps;
+
+  const inspectorSummary = () =>
+    swarm("s9hjx", {
+      health: {
+        asks: [{ ...fixtures.asked!.health!.asks![0]!, threadRootId: "authoritative-root" }],
+      },
+      runs: [
+        run("peer", {
+          status: "paused",
+          pendingApproval: { ...gate("swarm"), pauseId: "peer-pause" },
+        }),
+        run("operator", {
+          status: "paused",
+          pendingApproval: { ...gate("operator"), pauseId: "operator-pause" },
+        }),
+      ],
+    });
+  const inspectorActions = (s: SwarmSummary) => [
+    {
+      type: "select-ask",
+      payload: { id: s.id, messageId: s.health!.asks![0]!.messageId },
+      key: askKey(s.id),
+      title: `Question · ${s.id}`,
+    },
+    {
+      type: "select-gate",
+      payload: { id: s.id, runId: s.runs![0]!.runId, gateIdentity: gateIdentity(s.runs![0]!) },
+      key: gateKey(s.id),
+      title: `Gate · ${s.id}`,
+    },
+    {
+      type: "open-details",
+      payload: { id: s.id },
+      key: detailsKey(s.id),
+      title: `Details · ${s.id}`,
+    },
+  ];
+
+  test("question, gate and Details opens await publication and return exact native side effects", async () => {
+    let current = inspectorSummary();
+    const sm = new FakeSnapshots();
+    const find = (id: string): SwarmRecord =>
+      id !== current.id ? {} : current.status === "done" ? { ended: current } : { live: current };
+    const surface = createSwarmsSurface({
+      sm,
+      views: [],
+      state: () => state({ live: [current] }),
+      find,
+      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launchOf: () => undefined,
+      server: () => ({ live: 1 }),
+      readLog: async () => "log",
+      report: () => undefined,
+      windowMs: 1,
+    });
+    let unblock = () => {};
+    try {
+      for (const { type, payload, key, title } of inspectorActions(current)) {
+        sm.gate = new Promise<void>((resolve) => {
+          unblock = resolve;
+        });
+        let complete = false;
+        const pending = handleSwarmsAction({ type, payload }, { ...deps, surface, find }).then(
+          (result) => {
+            complete = true;
+            return result;
+          },
+        );
+        await Bun.sleep(2);
+        expect(complete).toBe(false);
+        unblock();
+        sm.gate = undefined;
+        const result = await pending;
+        const effect = { effect: "open-canvas", key, title, placement: "side" } as const;
+        expect(result).toEqual({ ok: true, data: effect });
+        expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual(effect);
+        expectView(key, "board")(sm.frames.get(key)?.at(-1));
+        sm.failures.set(key, new Error("bad publication"));
+        const failed = await handleSwarmsAction({ type, payload }, { ...deps, surface, find });
+        expect(failed.ok).toBe(false);
+        expect(!failed.ok ? failed.error : "").toContain("bad publication");
+        expect(!failed.ok ? failed.error : "").toContain("Could not publish");
+        sm.failures.delete(key);
+        expect((await handleSwarmsAction({ type, payload }, { ...deps, surface, find })).ok).toBe(
+          true,
+        );
+      }
+      const operator = await handleSwarmsAction(
+        {
+          type: "select-gate",
+          payload: {
+            id: current.id,
+            runId: current.runs![1]!.runId,
+            gateIdentity: gateIdentity(current.runs![1]!),
+          },
+        },
+        { ...deps, surface, find },
+      );
+      expect(ribClientEffectSchema.parse(operator.ok ? operator.data : undefined)).toEqual({
+        effect: "open-canvas",
+        key: gateKey(current.id),
+        title: `Gate · ${current.id}`,
+        placement: "side",
+      });
+      current = { ...current, status: "done", endedAt: T0 };
+      const result = await handleSwarmsAction(
+        { type: "open-details", payload: { id: current.id } },
+        { ...deps, surface, find },
+      );
+      expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual({
+        effect: "open-canvas",
+        key: detailsKey(current.id),
+        title: `Details · ${current.id}`,
+        placement: "side",
+      });
+      expect(JSON.stringify(sm.frames.get(detailsKey(current.id))?.at(-1))).not.toContain(
+        '"kind":"actions"',
+      );
+    } finally {
+      unblock();
+      sm.gate = undefined;
+      surface.dispose();
+    }
+  });
+
+  test("inspector actions reject malformed, cross-swarm, HTML-origin and starting inputs before selection", async () => {
+    const s = inspectorSummary();
+    const calls: unknown[][] = [];
+    const surface: SwarmsSurface = {
+      track: () => {},
+      select: () => {},
+      selectAgent: async () => {},
+      selectAsk: async (...args) => {
+        calls.push(["ask", ...args]);
+      },
+      selectGate: async (...args) => {
+        calls.push(["gate", ...args]);
+      },
+      openDetails: async (...args) => {
+        calls.push(["details", ...args]);
+      },
+      changed: () => {},
+      refresh: () => {},
+      forget: () => {},
+      logOpened: () => {},
+      dispose: () => {},
+    };
+    const actionDeps: ActionDeps = {
+      ...deps,
+      surface,
+      find: (id) => (id === s.id ? { live: s } : id === "s8pln" ? { ended: fixtures.done! } : {}),
+    };
+    for (const { type, payload } of inspectorActions(s)) {
+      for (const id of ["../bad", 7, "", undefined, "s0000"])
+        expect(
+          (await handleSwarmsAction({ type, payload: { ...payload, id } }, actionDeps)).ok,
+        ).toBe(false);
+      expect(
+        (await handleSwarmsAction({ type, payload, origin: "canvas-html" }, actionDeps)).ok,
+      ).toBe(false);
+      expect(
+        (await handleSwarmsAction({ type, payload }, { ...actionDeps, find: () => ({ starting }) }))
+          .ok,
+      ).toBe(false);
+      const unavailable = await handleSwarmsAction(
+        { type, payload },
+        { ...actionDeps, surface: undefined },
+      );
+      expect(unavailable.ok).toBe(false);
+      expect(!unavailable.ok ? unavailable.error : "").toContain("inspector is unavailable");
+    }
+    for (const messageId of [undefined, "", 7, "foreign-question"])
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "select-ask", payload: { id: s.id, messageId } },
+            actionDeps,
+          )
+        ).ok,
+      ).toBe(false);
+    for (const payload of [
+      { id: "s8pln", messageId: s.health!.asks![0]!.messageId },
+      { id: s.id, runId: s.runs![0]!.runId },
+      { id: s.id, runId: 7, gateIdentity: gateIdentity(s.runs![0]!) },
+      { id: s.id, gateIdentity: gateIdentity(s.runs![0]!) },
+      { id: s.id, runId: s.runs![0]!.runId, gateIdentity: 7 },
+      { id: s.id, runId: s.runs![0]!.runId, gateIdentity: {} },
+      { id: s.id, runId: s.runs![0]!.runId, gateIdentity: "" },
+      { id: s.id, runId: s.runs![0]!.runId, gateIdentity: "stale" },
+      { id: s.id, runId: "foreign-run", gateIdentity: gateIdentity(s.runs![0]!) },
+      { id: "s8pln", runId: s.runs![0]!.runId, gateIdentity: gateIdentity(s.runs![0]!) },
+    ]) {
+      const type = "messageId" in payload ? "select-ask" : "select-gate";
+      expect((await handleSwarmsAction({ type, payload }, actionDeps)).ok).toBe(false);
+    }
+    expect(calls).toEqual([]);
+    for (const { type, payload } of inspectorActions(s))
+      expect((await handleSwarmsAction({ type, payload }, actionDeps)).ok).toBe(true);
+    expect(calls).toEqual([
+      ["ask", s.id, s.health!.asks![0]!.messageId],
+      ["gate", s.id, s.runs![0]!.runId, gateIdentity(s.runs![0]!)],
+      ["details", s.id],
+    ]);
+  });
+
+  const replyHarness = () => {
+    let current = inspectorSummary();
+    const calls: unknown[][] = [];
+    let failure = false;
+    let blocked: Promise<void> | undefined;
+    const fake: NonNullable<ReturnType<ActionDeps["live"]>> = {
+      summary: () => current,
+      steer: async () => {
+        throw new Error("unexpected steer");
+      },
+      messageAgent: async () => {
+        throw new Error("unexpected agent message");
+      },
+      stop: async () => {
+        throw new Error("unexpected stop");
+      },
+      replyToGate: async (...args) => {
+        if (failure) throw new Error("posting failed");
+        calls.push(["gate", ...args]);
+        if (blocked) await blocked;
+      },
+      replyInThread: async (...args) => {
+        if (failure) throw new Error("posting failed");
+        calls.push(["thread", ...args]);
+        if (blocked) await blocked;
+      },
+      dismissAsk: (messageId) => {
+        if (failure) throw new Error("dismiss failed");
+        calls.push(["dismiss", messageId]);
+        return true;
+      },
+    };
+    const actionDeps: ActionDeps = {
+      ...deps,
+      find: (id) => (id === current.id ? { live: current } : {}),
+      live: (id) => (id === current.id ? fake : undefined),
+    };
+    return {
+      calls,
+      deps: actionDeps,
+      get current() {
+        return current;
+      },
+      set current(s: SwarmSummary) {
+        current = s;
+      },
+      fail() {
+        failure = true;
+      },
+      block(promise: Promise<void>) {
+        blocked = promise;
+      },
+    };
+  };
+
+  test("question replies await the authoritative current thread and dismiss invokes only the existing mutation", async () => {
+    const h = replyHarness();
+    const ask = h.current.health!.asks![0]!;
+    let unblock = () => {};
+    h.block(
+      new Promise<void>((resolve) => {
+        unblock = resolve;
+      }),
+    );
+    let complete = false;
+    const before = JSON.stringify(h.current.runs);
+    const pending = handleSwarmsAction(
+      {
+        type: "reply-ask",
+        payload: {
+          id: h.current.id,
+          messageId: ask.messageId,
+          threadRootId: "forged-route",
+          note: "  answer  ",
+        },
+      },
+      h.deps,
+    ).then((result) => {
+      complete = true;
+      return result;
+    });
+    try {
+      await Bun.sleep(2);
+      expect(complete).toBe(false);
+      expect(h.calls).toEqual([["thread", "authoritative-root", "answer"]]);
+      unblock();
+      expect(await pending).toEqual({
+        ok: true,
+        data: {
+          message: `Replied to @${ask.handle.replace(`${h.current.id}-`, "")}'s question as you`,
+        },
+      });
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "dismiss-ask", payload: { id: h.current.id, messageId: ask.messageId } },
+            h.deps,
+          )
+        ).ok,
+      ).toBe(true);
+      expect(h.calls).toEqual([
+        ["thread", "authoritative-root", "answer"],
+        ["dismiss", ask.messageId],
+      ]);
+      expect(JSON.stringify(h.current.runs)).toBe(before);
+    } finally {
+      unblock();
+    }
+  });
+
+  test("peer and operator gate replies post as you without approval and legacy run-only Reply still works", async () => {
+    const h = replyHarness();
+    const before = JSON.stringify(h.current.runs);
+    for (const run of h.current.runs!) {
+      const result = await handleSwarmsAction(
+        {
+          type: "reply",
+          payload: {
+            id: h.current.id,
+            runId: run.runId,
+            gateIdentity: gateIdentity(run),
+            note: "  feedback  ",
+          },
+        },
+        h.deps,
+      );
+      expect(result).toEqual({
+        ok: true,
+        data: { message: "Replied in the approve-plan thread as you" },
+      });
+    }
+    expect(
+      (
+        await handleSwarmsAction(
+          {
+            type: "reply",
+            payload: { id: h.current.id, runId: h.current.runs![0]!.runId, note: "legacy" },
+          },
+          h.deps,
+        )
+      ).ok,
+    ).toBe(true);
+    expect(h.calls).toEqual([
+      ["gate", h.current.runs![0]!.runId, "feedback"],
+      ["gate", h.current.runs![1]!.runId, "feedback"],
+      ["gate", h.current.runs![0]!.runId, "legacy"],
+    ]);
+    expect(JSON.stringify(h.current.runs)).toBe(before);
+  });
+
+  test("operator decision card replies reject a later approval gate", async () => {
+    const h = replyHarness();
+    h.current = fixtures.onlyYou!;
+    const run = h.current.runs![0]!;
+    const form = requestOf(h.current, { kind: "decide", run }).more.find(
+      (action) => action.type === "reply",
+    )!;
+    expect(form.binding).toEqual({
+      id: h.current.id,
+      runId: run.runId,
+      gateIdentity: gateIdentity(run),
+    });
+    const next = {
+      ...run,
+      pendingApproval: { ...run.pendingApproval!, pauseId: "next-pause", threadId: "next-thread" },
+    };
+    h.current = { ...h.current, runs: [next] };
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "reply", payload: { ...form.binding, note: "old approval feedback" } },
+          h.deps,
+        )
+      ).ok,
+    ).toBe(false);
+    expect(h.calls).toEqual([]);
+    const currentForm = requestOf(h.current, { kind: "decide", run: next }).more.find(
+      (action) => action.type === "reply",
+    )!;
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "reply", payload: { ...currentForm.binding, note: "current feedback" } },
+          h.deps,
+        )
+      ).ok,
+    ).toBe(true);
+    expect(h.calls).toEqual([["gate", run.runId, "current feedback"]]);
+  });
+
+  test("stale forms cannot reply or dismiss ended, stopping, concluded or disappeared targets", async () => {
+    const h = replyHarness();
+    const initial = h.current;
+    const question = {
+      id: initial.id,
+      messageId: initial.health!.asks![0]!.messageId,
+      note: "stale",
+    };
+    const gate = {
+      id: initial.id,
+      runId: initial.runs![0]!.runId,
+      gateIdentity: gateIdentity(initial.runs![0]!),
+      note: "stale",
+    };
+    for (const patch of [
+      { status: "done" as const, endedAt: T0 },
+      { status: "stopping" as const },
+      { conclusion: "finished" },
+      { endedAt: T0 },
+    ]) {
+      h.current = { ...initial, ...patch };
+      for (const [type, payload] of [
+        ["reply", gate],
+        ["reply", { id: initial.id, runId: gate.runId, note: "legacy stale" }],
+        ["reply-ask", question],
+        ["dismiss-ask", question],
+      ] as const)
+        expect((await handleSwarmsAction({ type, payload }, h.deps)).ok).toBe(false);
+    }
+    h.current = { ...initial, health: { asks: [] }, runs: [] };
+    for (const [type, payload] of [
+      ["reply", gate],
+      ["reply-ask", question],
+      ["dismiss-ask", question],
+    ] as const)
+      expect((await handleSwarmsAction({ type, payload }, h.deps)).ok).toBe(false);
+    h.current = initial;
+    for (const payload of [
+      { ...question, id: "s8pln" },
+      { ...question, messageId: 7 },
+      { ...question, messageId: "foreign" },
+    ])
+      for (const type of ["reply-ask", "dismiss-ask"])
+        expect((await handleSwarmsAction({ type, payload }, h.deps)).ok).toBe(false);
+    for (const [type, payload] of [
+      ["reply", gate],
+      ["reply-ask", question],
+      ["dismiss-ask", question],
+    ] as const)
+      expect((await handleSwarmsAction({ type, payload, origin: "canvas-html" }, h.deps)).ok).toBe(
+        false,
+      );
+    expect(h.calls).toEqual([]);
+  });
+
+  test("gate identity guards reject repeated pauses and malformed identities while allowing current replies", async () => {
+    const h = replyHarness();
+    const initial = h.current;
+    const first = initial.runs![0]!;
+    const payload = {
+      id: initial.id,
+      runId: first.runId,
+      gateIdentity: gateIdentity(first),
+      note: "feedback",
+    };
+    for (const gate of [
+      { ...first.pendingApproval!, pauseId: "next-pause" },
+      { ...first.pendingApproval!, pauseId: undefined, nodeId: "approve-deploy" },
+    ]) {
+      h.current = { ...initial, runs: [{ ...first, pendingApproval: gate }] };
+      expect((await handleSwarmsAction({ type: "reply", payload }, h.deps)).ok).toBe(false);
+      expect((await handleSwarmsAction({ type: "select-gate", payload }, h.deps)).ok).toBe(false);
+      expect((await handleSwarmsAction({ type: "open-run", payload }, h.deps)).ok).toBe(false);
+    }
+    const legacy = { ...first, pendingApproval: { ...first.pendingApproval!, pauseId: undefined } };
+    const legacyPayload = { ...payload, gateIdentity: gateIdentity(legacy) };
+    for (const patch of [
+      { nodeId: "approve-answer" },
+      { openedAt: "later" },
+      { threadId: "later-thread" },
+    ]) {
+      h.current = {
+        ...initial,
+        runs: [{ ...legacy, pendingApproval: { ...legacy.pendingApproval!, ...patch } }],
+      };
+      expect((await handleSwarmsAction({ type: "reply", payload: legacyPayload }, h.deps)).ok).toBe(
+        false,
+      );
+    }
+    h.current = initial;
+    for (const identity of [null, 7, "", {}, "foreign-pause"])
+      expect(
+        (
+          await handleSwarmsAction(
+            { type: "reply", payload: { ...payload, gateIdentity: identity } },
+            h.deps,
+          )
+        ).ok,
+      ).toBe(false);
+    for (const patch of [{ status: "running" as const }, { pendingApproval: undefined }]) {
+      h.current = { ...initial, runs: [{ ...first, ...patch }] };
+      expect((await handleSwarmsAction({ type: "reply", payload }, h.deps)).ok).toBe(false);
+      expect((await handleSwarmsAction({ type: "select-gate", payload }, h.deps)).ok).toBe(false);
+    }
+    h.current = initial;
+    expect(h.calls).toEqual([]);
+    expect((await handleSwarmsAction({ type: "reply", payload }, h.deps)).ok).toBe(true);
+    expect(h.calls).toEqual([["gate", first.runId, "feedback"]]);
+  });
+
+  test("reply actions validate notes and missing threads, await gate posting and surface posting failures", async () => {
+    const h = replyHarness();
+    const initial = h.current;
+    const question = { id: initial.id, messageId: initial.health!.asks![0]!.messageId };
+    const gate = {
+      id: initial.id,
+      runId: initial.runs![0]!.runId,
+      gateIdentity: gateIdentity(initial.runs![0]!),
+    };
+    for (const [type, payload] of [
+      ["reply", gate],
+      ["reply-ask", question],
+    ] as const)
+      for (const note of [undefined, 7, " ", "x".repeat(8001)])
+        expect((await handleSwarmsAction({ type, payload: { ...payload, note } }, h.deps)).ok).toBe(
+          false,
+        );
+    h.current = {
+      ...initial,
+      health: { asks: [{ ...initial.health!.asks![0]!, threadRootId: "" }] },
+    };
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "reply-ask", payload: { ...question, note: "answer" } },
+          h.deps,
+        )
+      ).ok,
+    ).toBe(false);
+    h.current = {
+      ...initial,
+      runs: [
+        {
+          ...initial.runs![0]!,
+          pendingApproval: { ...initial.runs![0]!.pendingApproval!, threadId: undefined },
+        },
+      ],
+    };
+    expect(
+      (await handleSwarmsAction({ type: "reply", payload: { ...gate, note: "answer" } }, h.deps))
+        .ok,
+    ).toBe(false);
+    expect(h.calls).toEqual([]);
+    h.current = initial;
+    let unblock = () => {};
+    h.block(
+      new Promise<void>((resolve) => {
+        unblock = resolve;
+      }),
+    );
+    let complete = false;
+    const pending = handleSwarmsAction(
+      { type: "reply", payload: { ...gate, note: "x".repeat(8000) } },
+      h.deps,
+    ).then((result) => {
+      complete = true;
+      return result;
+    });
+    try {
+      await Bun.sleep(2);
+      expect(complete).toBe(false);
+      unblock();
+      expect((await pending).ok).toBe(true);
+      h.fail();
+      for (const [type, payload] of [
+        ["reply", gate],
+        ["reply-ask", question],
+        ["dismiss-ask", question],
+      ] as const) {
+        const result = await handleSwarmsAction(
+          { type, payload: { ...payload, note: "answer" } },
+          h.deps,
+        );
+        expect(result.ok).toBe(false);
+        expect(!result.ok ? result.error : "").toContain("failed");
+      }
+      expect(h.calls).toHaveLength(1);
+    } finally {
+      unblock();
+    }
+  });
 
   test("select-agent composes before its side-open reply and accepts ended agents", async () => {
     const sm = new FakeSnapshots();
@@ -3756,6 +5551,9 @@ describe("actions", () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
       selectAgent: async () => {},
+      selectAsk: async () => {},
+      selectGate: async () => {},
+      openDetails: async () => {},
       select: (id) => {
         selected.push(id);
       },
@@ -4007,8 +5805,12 @@ describe("launching from the tab", () => {
       buildSwarmBoard(fixtures.done!, launch ? { launch } : {})
         .sections.filter((x) => x.kind === "actions")
         .flatMap((x) => (x.kind === "actions" ? x.items : []));
-    expect(actions(undefined).map((a) => a.type)).toEqual(["open-record"]);
-    expect(actions(oldLaunch).map((a) => a.type)).toEqual(["run-again", "open-record"]);
+    expect(actions(undefined).map((a) => a.type)).toEqual(["open-record", "open-details"]);
+    expect(actions(oldLaunch).map((a) => a.type)).toEqual([
+      "run-again",
+      "open-record",
+      "open-details",
+    ]);
     const again = actions(oldLaunch)[0];
     expect(again).toMatchObject({ type: "run-again", binding: { id: "s8pln" } });
     expect(again?.hint).toBe(
@@ -4058,7 +5860,7 @@ describe("opening a run and the tab's count", () => {
 });
 
 describe("power and the served model", () => {
-  test("the drawer names the power, its provider, and the model that served it", () => {
+  test("Details names the power, its provider, and the model that served it", () => {
     const done = fixtures.done!;
     const s = {
       ...done,
@@ -4067,8 +5869,10 @@ describe("power and the served model", () => {
       power: "deep" as const,
       agents: done.agents.map((a) => ({ ...a, model: undefined, servedModel: "gpt-6-pro" })),
     };
-    const drawer = JSON.stringify(buildSwarmBoard(s));
-    expect(drawer).toContain("deep power on copilot · every agent on gpt-6-pro");
+    const details = JSON.stringify(buildDetailsInspector(s));
+    expect(details).toContain("Requested power: deep");
+    expect(details).toContain("Requested provider: copilot");
+    expect(details).toContain("Served model for @lead (lead): gpt-6-pro");
     board(swarmKey(s.id), buildSwarmBoard(s));
   });
 });

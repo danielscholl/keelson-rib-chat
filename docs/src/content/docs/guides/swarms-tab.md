@@ -7,8 +7,8 @@ sidebar:
 
 The rib adds a **Swarms** tab to Keelson. It shows every swarm at once. The
 conversation stays in ClickClack, and the cockpit shows its newest eight
-lines. About links its transcript, and the reading pane links question and
-approval threads.
+lines. Details links the transcript. Questions and gates open side inspectors;
+the reading pane keeps the conclusion or refused draft and the full task.
 
 ## The index
 
@@ -42,7 +42,8 @@ One live swarm expands on the page as a cockpit. It runs in this order:
 1. The task and id, a lifecycle or **needs you** pill, and people dots.
 2. The state line, described below.
 3. Once the lead has concluded, the **Outcome** card: the conclusion, with
-   **Open the report** and **Read the conclusion**.
+   **Open the report** and **Read the conclusion**. While a peer reviews a
+   gate, its reviewing card appears here instead.
 4. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
    omitting zero counts. Open seats are hatched.
 5. Three **Budget** tiles: **Turns** used with a sparkline and a forecast
@@ -54,8 +55,8 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    eight newest channel messages, then the count and **transcript ↗** link.
 7. **Message the lead**, expanded directly under Conversation for a running
    swarm that has not concluded.
-8. Spend, Produced so far, Task and context, Activity, and About.
-9. **Open the report** when one exists; **Open the record**; and
+8. Spend, Produced so far, and Activity.
+9. **Open the report** when one exists; **Open the record**; **Details**; and
    **Stop swarm…** last.
 
 ### Map
@@ -118,6 +119,60 @@ with a reason.
 
 Stopping, concluded and ended inspectors are read-only with no composer.
 Ended inspectors have no live clock, even when an old span has no recorded end.
+
+### Read or answer a question
+
+**Read question** opens the question inspector at the side, at
+`rib:chat:ask:<swarm>`. **Question** shows the complete admitted question,
+up to 8,000 characters, without its `@operator` addressing. It names the
+asker, absolute asked time, and a live since clock while actionable.
+**Thread** is a quiet link; **Actions** offers **Reply** and **Dismiss**.
+
+Needs you cards, the index and the per-swarm board keep their bounded
+question previews; only the question inspector shows the full body.
+Legacy summaries cannot recover question text already truncated.
+**Reply** posts as you in the thread and never approves. **Dismiss** clears
+the question from the tab, not the channel.
+
+### Read a gate
+
+**Read gate** and a reviewing card's body open the gate inspector at
+`rib:chat:gate:<swarm>`. Its sections are:
+
+| Section | Shows |
+|---|---|
+| **Gate** | The full retained prompt as prose |
+| **Files** | One prose card per named file, including empty files, read errors and truncation notices |
+| **Review** | The reviewer and a quiet thread link, or explicit not-recorded states |
+| **Actions** | **Reply** when the gate has an actionable thread; operator-only gates also offer **Open run** |
+
+Peer gates have no approval control. **Reply** posts as you in the thread
+and never approves. **Review plan** and **Answer** still open the run drawer,
+where operator decisions belong.
+
+### Inspect task, context and setup
+
+**Details** opens at the side from the cockpit, live board or ended board,
+at `rib:chat:details:<swarm>`. It is read-only with no composer.
+
+| Section | Shows |
+|---|---|
+| **Task and context** | The full task in ordered disclosures of at most 4,000 characters; every retained context excerpt with its id, kind/title, source, retrieval time, head/base SHA and character count |
+| **Setup** | The size/preset adjustment, all effective limits, requested models per role/provider, recorded overrides and effort |
+| **Health** | Recorded faults, disconnection and idle evidence |
+| **Transcript** | One transcript row, or an explicit not-recorded state |
+
+Excerpts are not complete source bodies. Missing legacy excerpts and
+truncation are explicit. Actually served models stay separate from requested
+settings; missing legacy evidence says **not recorded**.
+
+Each inspector publishes before opening. Question and gate selection is
+shared by every viewer, independently of expanded-swarm and agent selection,
+with one key per swarm and kind. Open inspectors refresh from current
+summaries. A resolved question or advanced gate stays explicitly read-only
+without **Reply** or **Dismiss**, not silently switched to another target.
+Stopping, concluded and ended question/gate inspectors have no live clock or
+composer. Forgetting, retention trimming and disposal release inspector keys.
 
 ### The budget forecast
 
@@ -243,17 +298,19 @@ its own way of clearing. The tab's badge counts swarms with any request.
 | Pill | What happened | First action | Clears when |
 |---|---|---|---|
 | **decide** | A run waits at an approval this swarm may not answer: the host refused the workflow under `ribApprovalGrants`, or offers the rib no way to answer. | **Review plan** for a plan approval, **Answer** for any other, opening the run beside the tab. **Reply** posts in the approval thread as you; it approves nothing. | The run leaves the approval. |
-| **question** | An agent opened a sentence with `@operator` (or your ClickClack handle), or asked a question naming you. A passing mention, such as "I'll present both to @operator", isn't one. | **Read question** opens the reading pane. **Reply** posts in the question's thread. **Dismiss** clears it from the tab. | You reply in that thread, post in the channel mentioning the asker, or dismiss it. Other questions stay open. A note to the lead answers the lead's own questions only. |
+| **question** | An agent opened a sentence with `@operator` (or your ClickClack handle), or asked a question naming you. A passing mention, such as "I'll present both to @operator", isn't one. | **Read question** opens the question inspector. **Reply** posts in the question's thread. **Dismiss** clears it from the tab. | You reply in that thread, post in the channel mentioning the asker, or dismiss it. Other questions stay open. A note to the lead answers the lead's own questions only. |
 | **connection** | The swarm's ClickClack socket closed twice without reopening. | **Start ClickClack** when the managed server is down, otherwise **Open swarm** expands the swarm on the page; the card links the transcript. | The socket reopens. |
 | **quiet** | A run waits at an approval the swarm could answer, and no agent has worked since. | **Message the lead** | Any agent takes a turn. |
 
 A swarm with an open question waits for you. It isn't nudged or stalled, and
 only its wall clock ends it.
 
-An approval the swarm can answer itself appears in the cockpit's state line
-while a peer checks the plan in its thread. It names the reviewer when the
-lead asked one by mention. The per-swarm board shows it as **reviewing**.
-It is not a request and counts nowhere.
+An approval the swarm can answer itself appears in the state line and a
+**reviewing** card in the cockpit and per-swarm board while a peer checks the
+plan. It names the reviewer when recorded. Select the card or **Read gate**
+to read along. It is not a request and counts nowhere.
+If that gate becomes quiet, its quiet request keeps **Read gate** while
+**Message the lead** stays the primary action.
 
 ## The board for ended swarms and MCP clients
 
@@ -274,7 +331,7 @@ Live, the board runs in this order:
   never summed, because a cached token costs a fraction of a fresh one
 - **Map** beside **Conversation**, the same graph, newest eight messages
   and transcript link as the cockpit, with **Message the lead** under it
-- **Open the record** and **Stop swarm…** at the far end of the row.
+- **Open the record**, **Details** and **Stop swarm…** at the far end of the row.
   The **Message the lead** form under Conversation posts in the channel as
   you and wakes the lead. Its placeholder reads **posts as you, wakes the
   lead**. The button reads **Sending…** until the note is posted, the toast
@@ -282,7 +339,7 @@ Live, the board runs in this order:
   **you posted in #swarm-<id>: …**
 
 Ended, it runs: the outcome, the result strip with how many runs verified, and
-**Run again** beside **Open the record**.
+**Run again**, **Open the record** and **Details**.
 
 The ended **Result** adds **Pull requests** when any exist. It counts distinct
 URLs across runs and writers, with **M with CI passing** beneath the total.
@@ -308,18 +365,17 @@ do not repeat an agent bench. Ended boards keep these agent cards:
   against the swarm's, with the count and share beside it
 - **Produced so far**: reports, dispatched runs, writer draft PRs, and, once
   ended, kept worktrees, as described below
-- **Task and context**: a bounded task disclosure, and each context item with
-  its id, retrieval time, commit and text under its own. The cockpit shows at
-  most 1,000 task characters to reserve map space; the per-swarm board keeps
-  4,000 and the reading pane keeps the full task.
 - **Activity**: the last twelve events, newest first, with repeats counted,
-  then **Read the full log**, which opens the last 200 in the reading pane.
+  then **Read the full log**, which opens the record's latest 200 retained
+  events, not the reading pane.
   Each row starts with who it is by: the agent's handle in its color, or
   **you**. A turn is one row, written when it ends: **turn 3 ok · 42 s · 2
   new**, or **nudged** or **run update** when no message woke it
-- **About**: the times, the size's limits, the model per role, the tokens, any
-  problems with ClickClack or the lead's turns, and the **transcript ↗** link;
-  an ended board keeps its row back to the ended swarms after the transcript
+- **About** (ended only): times, health and one transcript link. The back-link
+  to Ended swarms is a separate row outside About.
+
+Task and context disclosures live in Details, not on the cockpit or
+per-swarm board. Setup and live health evidence also live in Details.
 
 ### Produced so far
 
@@ -365,7 +421,7 @@ fully pushed worktrees at the end and records why it keeps the others.
 **Message the lead** goes away once the lead concludes, since no new turn would
 read it. **Stop swarm…** names the runs it cancels, and the board shows
 **stopping** until the runs are cancelled and the bot tokens revoked. A
-cancellation that fails is a row under About.
+cancellation that fails appears in Details, and in About after ending.
 
 **Open the report** opens the swarm's report: a designed page the lead
 publishes with `chat_report` before it concludes, with the answer first and the
@@ -377,11 +433,9 @@ swarm is still running. A folded card offers **Report**, and an ended row marks
 it with **◧ report**. The lead skips the report when the whole answer fits in a
 sentence or two.
 
-**Read the conclusion** and **Read question** open the reading pane. It shows
-the conclusion, a refused draft, each open question with a link to its thread,
-or an open approval's prompt and the files it names, such as the plan, with
-formatting, then the task in full, each context item's text, and each run with
-its pull requests, full error and CI detail. The copy button
+**Read the conclusion** and **Read the draft** open the reading pane. It
+contains the applicable conclusion or refused draft and the full task, not
+questions, gates, context, runs or activity. The copy button
 beside the conclusion copies all of it, not just the preview on the board.
 
 ## A swarm's record
@@ -405,6 +459,10 @@ answers what happened, in what order, by whom, and at what cost:
 - **Runs**: each run in full, with its branch, every pull request, its CI
   verdict and detail, its steps, how long it took, each gate it paused at, who
   answered it, and why
+- **Activity**: the latest 200 retained entries, newest first, with actor,
+  date/time, event and repeat count. The operator reads as **you**, absent
+  actors as **rib**, and unknown actors stay identified. Retained events are
+  not a complete transcript.
 - **Evidence given**: each context item's id, kind, title, source, retrieval
   time and commit
 

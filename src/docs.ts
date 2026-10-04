@@ -470,11 +470,12 @@ id sit in the footnote. Open swarm expands that live swarm on the page.
 
 The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
 the task and id with a lifecycle or needs-you pill and people dots; a state
-line; once the lead has concluded, the Outcome card; an agent strip (busy, waiting, idle, capped, failed, with hatched open
+line; once the lead has concluded, the Outcome card; peer-review gate cards;
+an agent strip (busy, waiting, idle, capped, failed, with hatched open
 seats); three Budget tiles (Turns with its spark and a forecast as its delta,
 Time as a ticking time-left clock, fresh Tokens with cached in the sub); Map beside Conversation and Message the lead;
-the details described below; then Open the report when one exists, Open the
-record, and Stop swarm last. Message the lead is expanded directly under
+Spend, Produced so far and Activity; then Open the report when one exists,
+Open the record, Details, and Stop swarm last. Message the lead is expanded directly under
 Conversation while running, unless the lead has concluded. Tokens says none yet
 before any turn, or that the provider reported none when turns ran without usage.
 
@@ -497,9 +498,8 @@ agent nodes select the agent.
 Map keeps at most 48 nodes and 200 edges. It retains You, the lead and the
 selected agent before optional nodes, removes dangling edges, and names actual
 shown/total counts in the heading for each clipped dimension. Map and Conversation
-stack on narrow screens. The cockpit task disclosure shows at most 1,000 characters
-to reserve map space; the per-swarm board keeps 4,000 and the reading pane keeps
-the full task.
+stack on narrow screens. Task and context disclosures live in Details, not on
+the cockpit or per-swarm board. The reading pane also keeps the full task.
 
 Selecting an agent opens its freshly composed inspector at the side. Selection
 is shared by every viewer, separately from the expanded swarm choice; another
@@ -522,6 +522,42 @@ The 8,000-character body limit includes the operator prefix and mention.
 Capped/failed workers and exhausted budgets disable messaging with a reason.
 Stopping, concluded and ended inspectors are read-only with no composer; ended
 inspectors have no live clock, even when an old span has no recorded end.
+
+Read question opens the question inspector at the side, at
+\`rib:chat:ask:<swarm>\`. Question contains the complete admitted question,
+up to 8,000 characters, without its @operator addressing, the asker, absolute
+asked time and a live since clock while actionable. Thread is a quiet link.
+Actions offers Reply and Dismiss. Needs you cards, the index and the per-swarm
+board keep their bounded question previews; only the question inspector shows
+the full body. Legacy summaries cannot recover question text already truncated.
+
+Read gate and a reviewing card's body open the gate inspector at
+\`rib:chat:gate:<swarm>\`. Gate shows the full retained prompt. Files has one
+prose card per named file, including empty files, read errors and truncation
+notices. Review names the reviewer and thread, or says not recorded. Actions
+offers Reply when the gate has an actionable thread; operator-only gates also
+offer Open run. Peer gates have no approval control. Reply posts as you in the
+thread and never approves. Review plan and Answer still open the run drawer,
+where operator decisions belong.
+
+Details opens at the side from the cockpit, live board or ended board, at
+\`rib:chat:details:<swarm>\`. Task and context keeps the full task in ordered
+disclosures of at most 4,000 characters, and every retained context excerpt
+with its id, kind/title, source, retrieval time, head/base SHA and character
+count. Excerpts are not complete source bodies; missing legacy excerpts and
+truncation are explicit. Setup names the size/preset adjustment, all effective
+limits, requested models per role/provider, recorded overrides and effort.
+Actually served models stay separate from requested settings; missing legacy
+evidence says not recorded. Health shows recorded faults, and Transcript has
+one row. Details is read-only with no composer.
+
+Each inspector publishes before opening. Question and gate selection is shared
+by every viewer, independently of expanded-swarm and agent selection, with one
+key per swarm and kind. Open inspectors refresh from current summaries. A
+resolved question or advanced gate stays explicitly read-only without Reply
+or Dismiss, not silently switched to another target. Stopping, concluded and
+ended question/gate inspectors have no live clock or composer. Forgetting,
+retention trimming and disposal release inspector keys.
 
 The live Turns tile's sub reads "pace over the last 5 min". The forecast counts
 turn start timestamps over the last five minutes, or since the start when younger,
@@ -594,15 +630,19 @@ or offers no respond), question (an agent addressed \`@operator\` to ask somethi
 and offers Start ClickClack when the managed server is down), quiet (a run waits at an
 approval the swarm could answer and no agent has worked since). The tab's badge
 counts swarms with any request. An approval a peer is reviewing appears in the
-state line and counts as no request.
+state line and a reviewing card in the cockpit and per-swarm board, and counts
+as no request.
+If that gate becomes quiet, its quiet request keeps Read gate while Message the
+lead stays the primary action.
 
 An ended row opens its board in the drawer. The per-swarm board also still
 composes for MCP clients, live or ended. Live, it runs: the requests, the outcome once a
 report exists, a budget strip (turns with the same forecast delta, time, agents, fresh
 tokens with cached beside them), the same Map beside Conversation and Message the
-lead, Open the record and Stop,
-then the details. Ended, it runs: the outcome, the result strip, Run again and
-Open the record, then the details. The ended Result includes Pull requests when
+lead, Open the record, Details and Stop,
+then Spend, Produced so far and Activity. Ended, it runs: the outcome, the result
+strip, Run again, Open the record and Details, then the agent bench, Spend,
+Produced so far, Activity and About. The ended Result includes Pull requests when
 any exist: distinct URLs across runs and writers, with "M with CI passing".
 A URL counts as passing only when every recorded owner explicitly reports pass.
 Run verification is not a substitute for CI. Live and zero-PR boards omit it.
@@ -614,11 +654,11 @@ live details no longer repeat an agent bench. Ended boards keep proportional
 identity-colored agent cards that select the same read-only inspector, without
 monospace/stacked cards or ghost seats. Both retain Spend
 (each agent's fresh tokens against the swarm's, once two agents have spent),
-Produced so far, the task and each context
-item by id with its text under a disclosure, the activity with repeats counted
-(the last 200 events are in the reading pane, with each run's full error and
-CI detail), and About. About ends with a transcript link; an ended board keeps
-its back-link to Ended swarms after that. Each activity row carries its actor as a chip in the
+Produced so far and the short Activity preview with repeats counted.
+Read the full log opens the record's latest 200 retained events, not the reading
+pane. Only ended boards keep About: times, health and one transcript link.
+The back-link to Ended swarms is a separate row outside About.
+Each activity row carries its actor as a chip in the
 agent's color, or you for the operator, and a turn is one row written when it
 ends, with its outcome, how long it took and what woke it. Each bench card's
 footnote names the agent's last event, and the Turns tile keeps its spark after
@@ -652,10 +692,18 @@ a lane per agent (turns as bars in the agent's color, hatched when a turn timed
 out or failed), the operator's lane above and a lane per run below, with marks
 for spawns, questions to the operator, operator posts, the report, the
 conclusion, gates opened and answered, and verification; a graph of who woke
-whom; spend by agent with fresh and cached tokens apart; each run in full; and
-the evidence the agents were given. It has no buttons; the board keeps every
+whom; spend by agent with fresh and cached tokens apart; each run in full;
+Activity; and the evidence the agents were given. Activity shows the latest
+200 retained entries, newest first, with actor, date/time, event and repeat
+count. The operator reads as you, absent actors as rib, and unknown actors stay
+identified. Retained events are not a complete transcript. It has no buttons; the board keeps every
 verb. A live record redraws when the swarm's course changes, at most every five
 seconds.
+
+Read the conclusion and Read the draft open the reading pane. It contains the
+applicable conclusion or refused draft and the full task, not questions, gates,
+context, runs or activity. The conclusion's copy button copies all of it, not
+the board preview.
 
 The Start a swarm header is one form, open on an empty tab and folded once
 the tab has a swarm; its folded head names the default launch. Setup starts on

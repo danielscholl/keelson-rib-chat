@@ -16,14 +16,18 @@ import {
 import type { SwarmReport } from "../report.ts";
 import type { SwarmChange } from "../swarm.ts";
 import type { StartSwarmInput } from "../tools.ts";
-import type { StartingSwarm, SwarmSummary } from "../types.ts";
+import type { ChildRun, OperatorAsk, StartingSwarm, SwarmSummary } from "../types.ts";
 import { buildAgentInspector } from "./agent-inspector.ts";
 import { buildDoc } from "./doc.ts";
 import { buildBadge, buildHistory, buildIndex, type SurfaceState } from "./index-board.ts";
+import { buildDetailsInspector, buildGateInspector, buildQuestionInspector } from "./inspectors.ts";
 import {
   agentKey,
+  askKey,
   BADGE_KEY,
+  detailsKey,
   docKey,
+  gateKey,
   HISTORY_KEY,
   INDEX_KEY,
   LAUNCH_KEY,
@@ -34,6 +38,7 @@ import {
   swarmKey,
 } from "./keys.ts";
 import { buildLaunch, type LaunchState } from "./launch-board.ts";
+import { gateIdentity } from "./parts.ts";
 import { createKeyPublisher, type KeyPublisher } from "./publisher.ts";
 import { buildGoneRecord, buildRecord } from "./record.ts";
 import { buildServerPanel, type ServerPanelState } from "./server-panel.ts";
@@ -69,6 +74,9 @@ export interface SwarmsSurface {
   track(ids: readonly string[]): void;
   select(id: string): void;
   selectAgent(id: string, agentId: string): Promise<void>;
+  selectAsk(id: string, messageId: string): Promise<void>;
+  selectGate(id: string, runId: string, identity: string): Promise<void>;
+  openDetails(id: string): Promise<void>;
   changed(id: string, kind: SwarmChange): void;
   // Recompose the index and history, for a change no swarm reports: the server
   // row, or history cleared by a reset.
@@ -95,6 +103,8 @@ const DOC_KINDS = new Set<SwarmChange>([
 // swarm's course changes, at most this often.
 const RECORD_WINDOW_MS = 5_000;
 const RECORD_KINDS = new Set<SwarmChange>([
+  "activity",
+  "health",
   "turn",
   "agent",
   "run",
@@ -124,7 +134,10 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   let selected: string | undefined;
   let disposed = false;
   const selectedAgents = new Map<string, string>();
-  const inspectors = new Map<string, KeyPublisher>();
+  const selectedAsks = new Map<string, OperatorAsk>();
+  const selectedGates = new Map<string, ChildRun>();
+  type InspectorKind = "agent" | "ask" | "gate" | "details";
+  const inspectors = new Map<string, Partial<Record<InspectorKind, KeyPublisher>>>();
   const index = createKeyPublisher<CanvasView>(
     sm,
     INDEX_KEY,
@@ -281,10 +294,14 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     return true;
   }
 
-  function release(id: string): void {
-    inspectors.get(id)?.release();
-    inspectors.delete(id);
-    selectedAgents.delete(id);
+  function release(id: string, keepInspectors = false): void {
+    if (!keepInspectors) {
+      for (const publisher of Object.values(inspectors.get(id) ?? {})) publisher.release();
+      inspectors.delete(id);
+      selectedAgents.delete(id);
+      selectedAsks.delete(id);
+      selectedGates.delete(id);
+    }
     const record = records.get(id);
     if (record) {
       record.release();
@@ -308,18 +325,18 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     if (at >= 0) deps.views.splice(at, 1);
   }
 
-  function trim(): boolean {
+  function trim(keepInspectors?: string): boolean {
     let released = false;
     for (const id of swarms.keys()) {
       if (swarms.size <= MAX_SWARM_KEYS) break;
       const found = deps.find(id);
       if (!found.live && !found.starting) {
-        release(id);
+        release(id, id === keepInspectors);
         released = true;
       }
     }
     for (const id of inspectors.keys()) {
-      if (swarms.has(id)) continue;
+      if (swarms.has(id) || id === keepInspectors) continue;
       const found = deps.find(id);
       if (!found.live && !found.starting) {
         release(id);
@@ -329,17 +346,65 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     return released;
   }
 
-  function track(ids: readonly string[]): void {
+  function track(ids: readonly string[], keepInspectors?: string): void {
+    if (disposed) return;
     let added = false;
     for (const id of ids) {
       added = register(id) || added;
       added = ensureReport(id) || added;
       added = ensureRecord(id) || added;
     }
-    const trimmed = trim();
+    const trimmed = trim(keepInspectors);
     if (!added && !trimmed) return;
     if (trimmed) index.schedule();
     deps.invalidateManifest?.();
+  }
+
+  function summaryOf(id: string): SwarmSummary | undefined {
+    const found = deps.find(id);
+    return found.live ?? found.ended;
+  }
+
+  function assertAvailable(): void {
+    if (disposed) throw new Error("The Swarms surface has been disposed.");
+  }
+
+  function unavailable(id: string, title: string): CanvasView {
+    return {
+      view: "board",
+      title: `${title} · ${id}`,
+      sections: [
+        {
+          kind: "rows",
+          title,
+          items: [
+            { text: `Read-only: the selected ${title.toLowerCase()} is no longer available.` },
+          ],
+        },
+      ],
+    };
+  }
+
+  async function publishInspector(
+    id: string,
+    kind: InspectorKind,
+    key: string,
+    compose: () => CanvasView,
+  ): Promise<void> {
+    const entry = inspectors.get(id) ?? {};
+    let publisher = entry[kind];
+    if (!publisher) {
+      publisher = createKeyPublisher<CanvasView>(
+        sm,
+        key,
+        compose,
+        expectView(key, "board"),
+        windowMs,
+      );
+      entry[kind] = publisher;
+      inspectors.set(id, entry);
+    }
+    await publisher.flush();
   }
 
   return {
@@ -349,40 +414,65 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       index.schedule();
     },
     async selectAgent(id, agentId) {
-      if (disposed) throw new Error("The Swarms surface has been disposed.");
-      const found = deps.find(id);
-      const summary = found.live ?? found.ended;
+      assertAvailable();
+      const summary = summaryOf(id);
       if (!summary?.agents.some((a) => a.id === agentId)) {
         throw new Error(`Agent ${agentId} does not belong to swarm ${id}.`);
       }
-      track([id]);
+      track([id], id);
       selectedAgents.set(id, agentId);
-      let publisher = inspectors.get(id);
-      if (!publisher) {
-        const key = agentKey(id);
-        publisher = createKeyPublisher<CanvasView>(
-          sm,
-          key,
-          () => {
-            const found = deps.find(id);
-            const summary = found.live ?? found.ended;
-            const agent = summary?.agents.find((a) => a.id === selectedAgents.get(id));
-            if (!summary || !agent)
-              throw new Error(`The selected agent in swarm ${id} is no longer available.`);
-            return buildAgentInspector(summary, agent);
-          },
-          expectView(key, "board"),
-          windowMs,
-        );
-        inspectors.set(id, publisher);
-      }
-      await publisher.flush();
+      await publishInspector(id, "agent", agentKey(id), () => {
+        const summary = summaryOf(id);
+        const agent = summary?.agents.find((a) => a.id === selectedAgents.get(id));
+        return summary && agent ? buildAgentInspector(summary, agent) : unavailable(id, "Agent");
+      });
       index.schedule();
       swarms.get(id)?.board.schedule();
     },
+    async selectAsk(id, messageId) {
+      assertAvailable();
+      const ask = summaryOf(id)?.health?.asks?.find((a) => a.messageId === messageId);
+      if (!ask) throw new Error(`Swarm ${id} has no open question '${messageId}'.`);
+      track([id], id);
+      selectedAsks.set(id, structuredClone(ask));
+      await publishInspector(id, "ask", askKey(id), () => {
+        const summary = summaryOf(id);
+        const selected = selectedAsks.get(id);
+        if (!summary || !selected) return unavailable(id, "Question");
+        const current = summary.health?.asks?.find((a) => a.messageId === selected.messageId);
+        return buildQuestionInspector(summary, current ?? selected);
+      });
+    },
+    async selectGate(id, runId, identity) {
+      assertAvailable();
+      const run = summaryOf(id)?.runs?.find((r) => r.runId === runId);
+      if (run?.status !== "paused" || !identity || gateIdentity(run) !== identity) {
+        throw new Error(`Run '${runId}' has no matching gate in swarm ${id}.`);
+      }
+      track([id], id);
+      selectedGates.set(id, structuredClone(run));
+      await publishInspector(id, "gate", gateKey(id), () => {
+        const summary = summaryOf(id);
+        const selected = selectedGates.get(id);
+        if (!summary || !selected) return unavailable(id, "Gate");
+        const current = summary.runs?.find(
+          (r) => r.runId === selected.runId && gateIdentity(r) === gateIdentity(selected),
+        );
+        return buildGateInspector(summary, current ?? selected);
+      });
+    },
+    async openDetails(id) {
+      assertAvailable();
+      if (!summaryOf(id)) throw new Error(`Swarm ${id} has no Details available.`);
+      track([id], id);
+      await publishInspector(id, "details", detailsKey(id), () => {
+        const summary = summaryOf(id);
+        return summary ? buildDetailsInspector(summary) : unavailable(id, "Details");
+      });
+    },
     changed(id, kind) {
       track([id]);
-      inspectors.get(id)?.schedule();
+      for (const publisher of Object.values(inspectors.get(id) ?? {})) publisher.schedule();
       if (kind === "message") {
         index.schedule();
         swarms.get(id)?.board.schedule();
@@ -412,6 +502,9 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       launch.schedule();
     },
     refresh() {
+      for (const entry of inspectors.values()) {
+        for (const publisher of Object.values(entry)) publisher.schedule();
+      }
       index.schedule();
       badge.schedule();
       history.schedule();

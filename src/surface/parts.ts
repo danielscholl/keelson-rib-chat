@@ -6,10 +6,18 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
+import { createHash } from "node:crypto";
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
-import { modelLabel, sizeText } from "../labels.ts";
+import { modelLabel, servedModels, sizeText, tokensText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
-import { SIZE_PRESETS, SWARM_SIZES, type SwarmStatus, type SwarmSummary } from "../types.ts";
+import {
+  type ChildRun,
+  isLive,
+  SIZE_PRESETS,
+  SWARM_SIZES,
+  type SwarmStatus,
+  type SwarmSummary,
+} from "../types.ts";
 import {
   activityText,
   channelHref,
@@ -28,6 +36,7 @@ import {
 
 type Card = Extract<CanvasBoardView["sections"][number], { kind: "cards" }>["items"][number];
 type Pill = NonNullable<Card["pill"]>;
+type Row = Extract<CanvasBoardView["sections"][number], { kind: "rows" }>["items"][number];
 
 export interface ServerLine {
   mode: "managed" | "external";
@@ -71,6 +80,102 @@ export function sizeWord(s: Pick<SwarmSummary, "size" | "sizeBase">): string {
 export function sizeDetail(s: Pick<SwarmSummary, "limits" | "size" | "sizeBase">): string {
   const l = s.limits;
   return `${sizeWord(s)}: up to ${l.maxAgents} agents · ${l.maxTurns} turns, ${l.maxTurnsPerAgent} per worker · ${l.maxConcurrent} at once · ${minutes(l.turnTimeoutMs)} min a turn`;
+}
+
+export function modelRow(s: SwarmSummary): string {
+  const provider =
+    s.provider ?? s.agents.find((a) => a.providerId)?.providerId ?? "the host's default provider";
+  const lead = s.model;
+  const workers = s.workerModel ?? s.model;
+  if (lead && workers && lead !== workers) return `${provider} · lead ${lead} · workers ${workers}`;
+  if (lead) return `${provider} · every agent on ${lead}`;
+  const power = s.power ? `${s.power} power` : undefined;
+  if (workers) return `${provider} · lead at ${power ?? "its default"} · workers ${workers}`;
+  const models = servedModels(s);
+  const on =
+    models.length === 1
+      ? ` · every agent on ${models[0]}`
+      : models.length > 1
+        ? ` · agents on ${models.join(", ")}`
+        : "";
+  return power ? `${power} on ${provider}${on}` : `${provider} · the provider's default model${on}`;
+}
+
+function detailedSetupRows(s: SwarmSummary): Row[] {
+  const l = s.limits;
+  const defaultModel = s.power
+    ? `${s.power} power; no explicit model recorded`
+    : "host default; no explicit model recorded";
+  return [
+    { icon: "◫", text: `Size: ${sizeWord(s)}` },
+    {
+      text: `Effective limits: ${l.maxAgents} agents · ${l.maxTurns} total turns · ${l.maxTurnsPerAgent} turns per worker · ${l.maxConcurrent} concurrent turns`,
+    },
+    {
+      text: `Wall-clock limit: ${l.wallClockMs} ms · Turn timeout: ${l.turnTimeoutMs} ms · Idle nudge limit: ${l.maxNudges}`,
+    },
+    { text: `Requested provider: ${s.provider ?? "host default; no explicit provider recorded"}` },
+    { text: `Requested lead model: ${s.model ?? defaultModel}` },
+    {
+      text: `Requested worker model: ${s.workerModel ?? s.model ?? defaultModel}${s.workerModel ? " (worker role override)" : " (inherits lead setting)"}`,
+    },
+    { text: `Requested power: ${s.power ?? "not recorded"}` },
+    { text: `Recorded reasoning effort: ${s.effort ?? "not recorded"}` },
+    ...s.agents.flatMap((a): Row[] => {
+      const roleModel = a.lead ? s.model : (s.workerModel ?? s.model);
+      const override = a.model && roleModel && a.model !== roleModel;
+      const who = `@${shortHandle(a.handle, s.id)} (${a.lead ? "lead" : "worker"})`;
+      return [
+        {
+          text: `Requested model for ${who}: ${a.model ?? "no per-agent request recorded"}${override ? ` (overrides role setting ${roleModel})` : ""}`,
+        },
+        {
+          text: `Served model for ${who}: ${a.servedModel ?? "not reported"} · provider: ${a.providerId ?? "not reported"}`,
+        },
+      ];
+    }),
+    ...(s.agents.length ? [] : [{ text: "Served models and per-agent requests not recorded." }]),
+  ];
+}
+
+export function setupRows(s: SwarmSummary, options: { detailed?: boolean } = {}): Row[] {
+  return [
+    ...(options.detailed
+      ? detailedSetupRows(s)
+      : [
+          { icon: "◫", text: sizeDetail(s) },
+          { icon: "◆", text: modelRow(s) },
+        ]),
+    ...(s.usage ? [{ icon: "∑", text: `${tokensText(s.usage)} tokens` }] : []),
+  ];
+}
+
+export function healthRows(s: SwarmSummary): Row[] {
+  const h = s.health;
+  const warn = (text: string): Row => ({ icon: "!", glyph: "warn", text });
+  return [
+    ...(h?.socketDrops
+      ? [warn(`socket closed ${h.socketDrops} time(s) since it last opened`)]
+      : []),
+    ...(h?.channelFault ? [warn(`ClickClack fault: ${h.channelFault}`)] : []),
+    ...(h?.lastLeadFailure
+      ? [
+          warn(
+            `the lead's last turn failed (${h.leadFailures ?? 1} in a row): ${h.lastLeadFailure}`,
+          ),
+        ]
+      : []),
+    ...(h?.nudges
+      ? [{ icon: "◌", text: `idle: nudged the lead ${h.nudges} of ${s.limits.maxNudges} times` }]
+      : []),
+    ...(h?.refusedConclusions
+      ? [warn(`the lead's conclusion was refused ${h.refusedConclusions} time(s) for length`)]
+      : []),
+    ...(h?.cancelFault ? [warn(h.cancelFault)] : []),
+    ...(!isLive(s.status) && s.error
+      ? [{ icon: "✕", glyph: "error" as const, text: s.error }]
+      : []),
+  ];
 }
 
 // The question without the @operator that addressed it.
@@ -245,6 +350,20 @@ export function gateVerb(nodeId: string): string {
   return "Answer";
 }
 
+export function gateIdentity(run: Pick<ChildRun, "runId" | "pendingApproval">): string | undefined {
+  const gate = run.pendingApproval;
+  if (!gate) return undefined;
+  const identity = gate.pauseId
+    ? [run.runId, "pause", gate.pauseId]
+    : [run.runId, "legacy", gate.nodeId, gate.openedAt ?? null, gate.threadId ?? null];
+  // Keep repeated gate bindings compact without weakening stale-action matching.
+  return createHash("sha256")
+    .update(JSON.stringify(identity))
+    .digest()
+    .subarray(0, 16)
+    .toString("base64url");
+}
+
 export const NEED_PILL: Record<NeedKind, Pill> = {
   decide: { label: "decide", tone: "caution" },
   question: { label: "question", tone: "caution" },
@@ -289,10 +408,24 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
         type: "open-run",
         label: verb,
         tone: "brand",
-        hint: "Opens the run beside the tab, where you answer its approval.",
         binding: { id: s.id, runId: run.runId },
       },
-      more: gate.threadId ? [replyAction(s, { runId: run.runId }, "the approval thread")] : [],
+      more: [
+        {
+          type: "select-gate",
+          label: "Read gate",
+          payload: { id: s.id, runId: run.runId, gateIdentity: gateIdentity(run) },
+        },
+        ...(gate.threadId
+          ? [
+              replyAction(
+                s,
+                { runId: run.runId, gateIdentity: gateIdentity(run) },
+                "the approval thread",
+              ),
+            ]
+          : []),
+      ],
     };
   }
   if (need.kind === "question" && need.ask) {
@@ -304,20 +437,15 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
       pill: NEED_PILL.question,
       line: `in #${s.channelName} · a reply in its thread answers it; other questions stay open`,
       primary: {
-        type: "read-doc",
+        type: "select-ask",
         label: "Read question",
         tone: "brand",
         glyph: "▤",
-        payload: { id: s.id },
+        payload: { id: s.id, messageId: ask.messageId },
       },
       more: [
         replyAction(s, { threadRootId: ask.threadRootId, messageId: ask.messageId }, "the thread"),
-        {
-          type: "dismiss-ask",
-          label: "Dismiss",
-          hint: "Clears the question from the tab. The message stays in the channel.",
-          payload: { id: s.id, messageId: ask.messageId },
-        },
+        dismissAskAction(s, ask.messageId),
       ],
     };
   }
@@ -354,7 +482,24 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
         : "the swarm is idle · a note wakes the lead",
     primary: messageLead(s, "brand"),
     more:
-      gate?.threadId && run ? [replyAction(s, { runId: run.runId }, "the approval thread")] : [],
+      gate && run
+        ? [
+            {
+              type: "select-gate",
+              label: "Read gate",
+              payload: { id: s.id, runId: run.runId, gateIdentity: gateIdentity(run) },
+            },
+            ...(gate.threadId
+              ? [
+                  replyAction(
+                    s,
+                    { runId: run.runId, gateIdentity: gateIdentity(run) },
+                    "the approval thread",
+                  ),
+                ]
+              : []),
+          ]
+        : [],
   };
 }
 
@@ -402,9 +547,9 @@ export function messageLead(s: SwarmSummary, tone?: CanvasActionItem["tone"]): C
 
 // A reply as the operator in a thread: an approval's, or a question's. It never
 // approves anything, and the field says so.
-function replyAction(
+export function replyAction(
   s: SwarmSummary,
-  where: { runId: string } | { threadRootId: string; messageId: string },
+  where: { runId: string; gateIdentity?: string } | { threadRootId: string; messageId: string },
   what: string,
 ): CanvasActionItem {
   const type = "runId" in where ? "reply" : "reply-ask";
@@ -420,13 +565,22 @@ function replyAction(
       {
         name: "note",
         label: "Reply",
-        placeholder: `Posts in ${what} as you · does not approve; Answer opens the run · Enter sends`,
+        placeholder: `Posts in ${what} as you · does not approve · Enter sends`,
         required: true,
       },
     ],
     submitLabel: "Reply",
     pendingLabel: "Sending…",
     ...(href ? { hint: `Thread: ${href}` } : {}),
+  };
+}
+
+export function dismissAskAction(s: SwarmSummary, messageId: string): CanvasActionItem {
+  return {
+    type: "dismiss-ask",
+    label: "Dismiss",
+    hint: "Clears the question from the tab. The message stays in the channel.",
+    payload: { id: s.id, messageId },
   };
 }
 

@@ -23,6 +23,18 @@ export function agentKey(id: string): string {
   return `rib:chat:agent:${id}`;
 }
 
+export function askKey(id: string): string {
+  return `rib:chat:ask:${id}`;
+}
+
+export function gateKey(id: string): string {
+  return `rib:chat:gate:${id}`;
+}
+
+export function detailsKey(id: string): string {
+  return `rib:chat:details:${id}`;
+}
+
 export function docKey(id: string): string {
   return `rib:chat:doc:${id}`;
 }
