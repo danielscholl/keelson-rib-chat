@@ -64,6 +64,21 @@ export function sizeField(defaultValue: SwarmSize = "medium"): Field {
   };
 }
 
+export function powerField(defaultValue: SwarmPower = "balanced"): Field {
+  return {
+    name: "power",
+    label: "Power",
+    required: false,
+    segmented: true,
+    half: true,
+    defaultValue,
+    options: SWARM_POWERS.map((k) => ({
+      value: k,
+      label: k === "fast" ? "fast · quick models" : k === "deep" ? "deep · strongest models" : "balanced · balanced models",
+    })),
+  };
+}
+
 export function modelField(model?: string, provider?: string): Field {
   return {
     name: "model",
@@ -300,6 +315,7 @@ const PAGE_SCRIPT = `
       payload.size = size;
       payload.model = model;
       if (provider) payload.provider = provider;
+      if (power !== "balanced") payload.power = power;
     } else if (size !== "medium" || power !== "balanced") {
       payload.size = size;
       if (power !== "balanced") payload.power = power;
@@ -434,7 +450,11 @@ export function runAgainItem(s: SwarmSummary, launch: StartSwarmInput): Item {
     label: "Run again",
     glyph: "↻",
     hint: `Starts a new swarm with ${reuses.join(", ")}. Context is not refreshed.`,
-    fields: [sizeField(s.sizeBase), modelField(s.model, s.provider)],
+    fields: [
+      sizeField(s.sizeBase),
+      powerField(launch.power ?? s.power ?? "balanced"),
+      modelField(s.model, s.provider),
+    ],
     submitLabel: "Run again",
     binding: { id: s.id },
   };

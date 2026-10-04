@@ -66,6 +66,7 @@ import {
   buildLaunch,
   type LaunchState,
   launchByline,
+  runAgainItem,
   TASK_PLACEHOLDER,
 } from "../src/surface/launch-board.ts";
 import {
@@ -7696,6 +7697,30 @@ describe("start and run again", () => {
         provider: "copilot",
       },
     ]);
+  });
+
+  test("the HTML launcher keeps explicit power with a named model", () => {
+    const html = buildLaunch(
+      {
+        projects: [],
+        provider: "copilot",
+        classes: [{ provider: "copilot" }],
+      },
+      "nonce-1",
+    );
+    expect(html).toContain('if (power !== "balanced") payload.power = power;');
+  });
+
+  test("Run again exposes the saved power field for explicit model choices", () => {
+    const item = runAgainItem(fixtures.done!, {
+      task: "Investigate",
+      workTools: "none",
+      model: "gpt-6-astra",
+      provider: "copilot",
+      power: "deep",
+    });
+    expect(item.fields?.map((field) => field.name)).toEqual(["size", "power", "model"]);
+    expect(item.fields?.find((field) => field.name === "power")?.defaultValue).toBe("deep");
   });
 
   test("workflows named grant them to the lead, and refusals come back to the form", async () => {
