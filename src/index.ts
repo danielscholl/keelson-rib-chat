@@ -354,11 +354,13 @@ function launchState(): LaunchState {
     .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
     .map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath }));
   const provider = servingProvider(undefined);
-  const classes = (getProviders?.() ?? []).flatMap((p) =>
-    p.modelClasses && !NOT_AGENT_PROVIDERS.has(p.id)
-      ? [{ provider: p.id, classes: p.modelClasses }]
-      : [],
-  );
+  const classes = (getProviders?.() ?? [])
+    .filter((p) => !NOT_AGENT_PROVIDERS.has(p.id))
+    .map((p) => ({
+      provider: p.id,
+      ...(p.defaultModel ? { defaultModel: p.defaultModel } : {}),
+      ...(p.modelClasses ? { classes: p.modelClasses } : {}),
+    }));
   return {
     projects,
     ...(provider ? { provider } : {}),

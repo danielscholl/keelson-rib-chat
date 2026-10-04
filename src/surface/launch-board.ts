@@ -33,8 +33,7 @@ type Field = NonNullable<Item["fields"]>[number];
 export interface LaunchState {
   projects: readonly { id: string; name: string; rootPath: string }[];
   provider?: string;
-  // Each provider's class map, for the hover on each power.
-  classes?: readonly { provider: string; classes: ModelClassMap }[];
+  classes?: readonly { provider: string; defaultModel?: string; classes?: ModelClassMap }[];
 }
 
 export const TASK_PLACEHOLDER =
@@ -86,8 +85,9 @@ export function powerField(
               : `${c.provider}: lead ${pin.lead} · workers ${pin.worker}`;
           }
           const same =
-            c.classes.fast === c.classes.balanced && c.classes.balanced === c.classes.deep;
-          return `${c.provider}: ${c.classes[k]}${same ? " (every power)" : ""}`;
+            c.classes?.fast === c.classes?.balanced && c.classes?.balanced === c.classes?.deep;
+          const model = c.classes?.[k] ?? c.defaultModel;
+          return model ? `${c.provider}: ${model}${same ? " (every power)" : ""}` : "";
         })
         .join(" · ");
       return { value: k, label: k, ...(hint ? { hint: hint.slice(0, 200) } : {}) };

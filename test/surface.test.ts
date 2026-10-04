@@ -7030,10 +7030,29 @@ describe("launching from the tab", () => {
       expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
       const frame = await h.sm.recompose(LAUNCH_KEY);
       expect(frame?.data).toBe(page);
+      const frames = h.sm.frames.get(LAUNCH_KEY)!.length;
       h.inputs.classes = [{ provider: "other", classes: { fast: "x", balanced: "y", deep: "z" } }];
       h.surface.refresh();
       await Bun.sleep(5);
-      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(2);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 1);
+      h.inputs.classes = [
+        { provider: "other", classes: { fast: "x", balanced: "updated", deep: "z" } },
+        { provider: "default-only", defaultModel: "default-one" },
+      ];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 2);
+      h.inputs.classes = h.inputs.classes.map((c) => ({ ...c }));
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 2);
+      h.inputs.classes = [
+        h.inputs.classes[0]!,
+        { provider: "default-only", defaultModel: "default-two" },
+      ];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 3);
     } finally {
       h.surface.dispose();
     }
@@ -7834,13 +7853,18 @@ describe("the rib's surface", () => {
           {
             id: "claude",
             displayName: "Claude",
+            defaultModel: "claude-default",
             modelClasses: { fast: "a", balanced: "b", deep: "c" },
           },
           {
             id: "copilot",
             displayName: "Copilot",
+            defaultModel: "copilot-default",
             modelClasses: { fast: "x", balanced: "y", deep: "z" },
           },
+          { id: "default-only", displayName: "Default only", defaultModel: "default-only-model" },
+          { id: "workflow", displayName: "Workflow", defaultModel: "not-an-agent" },
+          { id: "stub", displayName: "Stub", defaultModel: "also-not-an-agent" },
         ],
       });
       const page = await sm.composers.get(LAUNCH_KEY)!.compose();

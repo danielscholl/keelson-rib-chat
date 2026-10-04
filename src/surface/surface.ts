@@ -174,25 +174,18 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   let launchInputs: string | undefined;
   function launchState(): LaunchState {
     const state = deps.launch();
-    const classes = state.classes?.find((c) => c.provider === state.provider)?.classes;
     return {
       projects: state.projects
         .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
         .map(({ id, name, rootPath }) => ({ id, name, rootPath })),
       provider: state.provider,
-      classes:
-        state.provider && classes
-          ? [
-              {
-                provider: state.provider,
-                classes: {
-                  fast: classes.fast,
-                  balanced: classes.balanced,
-                  deep: classes.deep,
-                },
-              },
-            ]
-          : [],
+      classes: (state.classes ?? []).map(({ provider, defaultModel, classes }) => ({
+        provider,
+        ...(defaultModel ? { defaultModel } : {}),
+        ...(classes
+          ? { classes: { fast: classes.fast, balanced: classes.balanced, deep: classes.deep } }
+          : {}),
+      })),
     };
   }
   const launch = createKeyPublisher<string>(
