@@ -1726,10 +1726,53 @@ describe("the agent inspector", () => {
     for (const status of ["busy", "idle", "waiting", "capped", "failed"] as const) {
       const s = writer();
       const view = inspect({ ...s, agents: [s.agents[0]!, { ...s.agents[1]!, status }] });
+      expect(view.sections[0]).toMatchObject({ items: [{ pill: { label: status } }] });
       const composer = view.sections.find((x) => x.kind === "actions");
       const item = composer?.kind === "actions" ? composer.items[0] : undefined;
       expect(item?.disabled ?? false).toBe(status === "capped" || status === "failed");
       if (item?.disabled) expect(item.reason).toContain("cannot take another turn");
+    }
+  });
+
+  test("terminal agent heads reflect the swarm lifecycle regardless of stale activity or end time", () => {
+    const endings = [
+      ["done", { label: "done", tone: "ok" }],
+      ["stopped", { label: "stopped", tone: "neutral" }],
+      ["stalled", { label: "stalled", tone: "warn" }],
+      ["exhausted", { label: "out of budget", tone: "warn" }],
+      ["error", { label: "failed", tone: "error" }],
+    ] as const;
+    for (const [status, pill] of endings) {
+      for (const agentStatus of ["idle", "waiting", "busy", "capped", "failed"] as const) {
+        for (const endedAt of [undefined, T0]) {
+          const s = writer();
+          const snapshot = {
+            ...s,
+            status,
+            endedAt,
+            agents: s.agents.map((a) => ({ ...a, status: agentStatus })),
+          };
+          for (const index of [0, 1]) {
+            const view = inspect(snapshot, index);
+            expect(view.sections[0]).toMatchObject({
+              items: [{ title: index === 0 ? "@lead" : "@w1", pill }],
+            });
+            expect(JSON.stringify(view)).not.toContain('"clock"');
+            expect(JSON.stringify(view)).not.toContain('"type":"message-agent"');
+          }
+        }
+      }
+    }
+  });
+
+  test("a retained end time with a live status suppresses activity pills without inventing an outcome", () => {
+    for (const status of ["running", "stopping"] as const) {
+      const view = inspect({ ...writer(), status, endedAt: T0 });
+      const head = view.sections[0];
+      if (head?.kind !== "cards") throw new Error("missing agent head");
+      expect(head.items[0]).not.toHaveProperty("pill");
+      expect(JSON.stringify(view)).not.toContain('"clock"');
+      expect(JSON.stringify(view)).not.toContain('"type":"message-agent"');
     }
   });
 
