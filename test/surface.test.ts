@@ -6597,6 +6597,7 @@ describe("launching from the tab", () => {
       attributes = new Map<string, string>();
       classes = new Set<string>();
       listeners = new Map<string, (event: Event) => void>();
+      listenerCounts = new Map<string, number>();
       children: Element[] = [];
       private contentText = "";
       constructor(
@@ -6616,6 +6617,7 @@ describe("launching from the tab", () => {
         this.classes = new Set(value.split(" "));
       }
       addEventListener(type: string, listener: (event: Event) => void) {
+        this.listenerCounts.set(type, (this.listenerCounts.get(type) ?? 0) + 1);
         this.listeners.set(type, listener);
       }
       setAttribute(name: string, value: string) {
@@ -6756,6 +6758,7 @@ describe("launching from the tab", () => {
       release,
       prevented: () => prevented,
       focused: () => focused,
+      mounted: () => root.all(),
     };
   };
 
@@ -8154,20 +8157,108 @@ describe("launching from the tab", () => {
   });
 
   test("ordinary refreshes and swarm changes leave the launcher unchanged", async () => {
-    const h = launcherHarness({ projects, provider: "copilot" });
+    const h = launcherHarness(
+      {
+        projects,
+        provider: "copilot",
+        toolReachability: [{ name: "beads_ready", status: "reachable" }],
+      },
+      state({ live: [fixtures.running!], ended: [fixtures.done!] }),
+    );
     try {
       await Bun.sleep(5);
       const page = h.page();
-      for (const kind of ["message", "start", "end", "gate", "turn"] as const) {
-        h.surface.changed(fixtures.running!.id, kind);
-        h.surface.refresh();
+      const nonce = h.nonce();
+      const local = frameHarness(page);
+      local.get("compact-task")!.value = "A locally expanded draft";
+      local.fire("compact-more", "click");
+      local.fire("plan-large", "click");
+      local.fire("launch-customize", "click");
+      local.get("launch-model")!.value = "other";
+      local.fire("launch-model", "change");
+      local.get("launch-other-model")!.value = "custom/model";
+      local.fire("launch-other-model", "input");
+      local.select("p1");
+      for (const permission of ["write", "workflows", "tracker"]) {
+        local.fire(`allow-${permission}`, "click");
       }
-      h.surface.select(fixtures.running!.id);
-      h.surface.forget([fixtures.done!.id]);
-      await Bun.sleep(10);
-      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
-      const frame = await h.sm.recompose(LAUNCH_KEY);
-      expect(frame?.data).toBe(page);
+      local.get("workflow-entry")!.value = "fix-issue";
+      local.fire("workflow-entry", "keydown", { key: "Enter" });
+      const summary = local.get("launch-summary")!.textContent;
+      const mutations = [
+        () => {
+          h.swarms.live = [...h.swarms.live, fixtures.waiting!];
+          h.surface.changed(fixtures.waiting!.id, "start");
+        },
+        () => {
+          h.swarms.ended = [...h.swarms.ended, fixtures.concluded!];
+          h.surface.changed(fixtures.concluded!.id, "end");
+        },
+        () => {
+          h.swarms.live = h.swarms.live.map((s) => ({
+            ...s,
+            task: "Updated task",
+            channelName: "renamed-channel",
+            startedAt: "2026-10-04T12:00:00.000Z",
+            turnsUsed: 11,
+            status: "stopping",
+            agents: s.agents.map((a) => ({ ...a, turns: 4, status: "busy" })),
+          }));
+          for (const kind of ["message", "gate", "turn"] as const) {
+            h.surface.changed(fixtures.running!.id, kind);
+          }
+        },
+        () => {
+          h.surface.select(fixtures.running!.id);
+        },
+        () => {
+          h.swarms.ended = [
+            ...h.swarms.ended,
+            ...h.swarms.live.map((s) => ({ ...s, status: "done" as const, endedAt: T0 })),
+          ];
+          h.swarms.live = [];
+          h.surface.changed(fixtures.running!.id, "end");
+        },
+        () => {
+          h.swarms.ended = h.swarms.ended.filter((s) => s.id !== fixtures.done!.id);
+          h.surface.forget([fixtures.done!.id]);
+        },
+      ];
+      for (const mutate of mutations) {
+        const publications = h.sm.frames.get(LAUNCH_KEY)!.length;
+        mutate();
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(publications);
+        expect((await h.sm.recompose(LAUNCH_KEY))?.data).toBe(page);
+        expect(h.nonce()).toBe(nonce);
+        expect(local.get("compact-task")).toBeUndefined();
+        expect(local.get("launch-task")!.value).toBe("A locally expanded draft");
+        expect(local.get("launch-drawer")!.hidden).toBe(false);
+        expect(local.get("effort-large")!.attributes.get("aria-pressed")).toBe("true");
+        expect(local.get("launch-other-model")!.value).toBe("custom/model");
+        expect(local.get("launch-model")!.value).toBe("other");
+        expect(local.get("launch-summary")!.textContent).toBe(summary);
+        expect(local.get("launch-project")!.value).toBe("p1");
+        for (const permission of ["write", "workflows", "tracker"]) {
+          expect(local.get(`allow-${permission}`)!.attributes.get("aria-checked")).toBe("true");
+        }
+        expect(local.get("workflow-chips")!.children[0]!.children[0]!.textContent).toBe(
+          "fix-issue",
+        );
+      }
+      local.fire("launch-start", "click");
+      expect(local.calls.at(-1)?.payload).toEqual({
+        nonce,
+        task: "A locally expanded draft",
+        project: "p1",
+        tools: "write",
+        size: "large",
+        model: "custom/model",
+        provider: "copilot",
+        workflows: "fix-issue",
+        lead_tools: ["beads_ready"],
+      });
       const frames = h.sm.frames.get(LAUNCH_KEY)!.length;
       h.inputs.classes = [{ provider: "other", classes: { fast: "x", balanced: "y", deep: "z" } }];
       h.surface.refresh();
@@ -8194,6 +8285,110 @@ describe("launching from the tab", () => {
     } finally {
       h.surface.dispose();
     }
+  });
+
+  test("crossing zero retained swarms replaces the page while starting-only entries do not", async () => {
+    for (const first of ["live", "ended"] as const) {
+      const h = launcherHarness({ projects });
+      try {
+        await Bun.sleep(5);
+        const emptyPage = h.page();
+        const nonce = h.nonce();
+        const draft = frameHarness(emptyPage);
+        draft.get("launch-task")!.value = "Lost when presence changes";
+        h.swarms.starting = [starting];
+        h.surface.changed(starting.id, "start");
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
+        expect(h.page()).toBe(emptyPage);
+        if (first === "live") h.swarms.live = [fixtures.running!];
+        else h.swarms.ended = [fixtures.done!];
+        h.surface.changed(
+          first === "live" ? fixtures.running!.id : fixtures.done!.id,
+          first === "live" ? "start" : "end",
+        );
+        await Bun.sleep(5);
+        const compactPage = h.page();
+        expect(compactPage).not.toBe(emptyPage);
+        expect(frameHarness(compactPage).get("compact-task")!.value).toBe("");
+        expect(h.nonce()).toBe(nonce);
+        if (first === "live") {
+          h.swarms.live = [];
+          h.swarms.ended = [{ ...fixtures.running!, status: "done", endedAt: T0 }];
+          h.surface.changed(fixtures.running!.id, "end");
+          await Bun.sleep(5);
+          expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(2);
+          expect(h.page()).toBe(compactPage);
+        }
+        const final = h.swarms.ended[0]!;
+        h.swarms.ended = [];
+        h.surface.forget([final.id]);
+        await Bun.sleep(5);
+        expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(3);
+        expect(h.page()).toBe(emptyPage);
+        expect(frameHarness(h.page()).get("launch-task")!.value).toBe("");
+        expect(h.nonce()).toBe(nonce);
+        h.swarms.live = [fixtures.running!];
+        h.swarms.ended = [fixtures.done!];
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.page()).toBe(compactPage);
+        h.swarms.live = [];
+        h.swarms.ended = [];
+        h.swarms.starting = [];
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.page()).toBe(emptyPage);
+        expect(h.nonce()).toBe(nonce);
+      } finally {
+        h.surface.dispose();
+      }
+    }
+  });
+
+  test("deferred templates escape delimiters and mount controls without duplicate IDs or listeners", () => {
+    const malicious = "</template></script><script>alert(\"markup\")</script> & 'text'";
+    const page = buildLaunch(
+      {
+        hasSwarms: true,
+        projects: [{ id: malicious, name: malicious, rootPath: `/tmp/${malicious}` }],
+        provider: malicious,
+        classes: [{ provider: malicious, defaultModel: malicious }],
+        refused: [malicious],
+      },
+      'nonce"',
+    );
+    expect(page.match(/<script>/g)).toHaveLength(1);
+    expect(page.match(/<\/script>/g)).toHaveLength(1);
+    expect(page.match(/<\/template>/g)).toHaveLength(2);
+    expect(page).not.toContain(malicious);
+    expect(page).not.toContain("innerHTML");
+    const frame = frameHarness(page);
+    const expand = frame.get("compact-more")!;
+    frame.fire("compact-more", "click");
+    expand.listeners.get("click")!(frame.event);
+    expect(frame.get("launch-form")!.dataset.provider).toBe(malicious);
+    const option = frame
+      .get("launch-project")!
+      .all()
+      .find((node) => node.attributes.get("value") === malicious);
+    expect(option?.dataset.name).toBe(malicious);
+    expect(option?.dataset.path).toBe(`/tmp/${malicious}`);
+    expect(frame.get("launch-model")!.textContent).toContain(malicious);
+    frame.select(malicious);
+    frame.select("");
+    frame.select(malicious);
+    const ids = frame
+      .mounted()
+      .flatMap((node) => (node.attributes.has("id") ? [node.attributes.get("id")!] : []));
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const node of frame.mounted()) {
+      for (const count of node.listenerCounts.values()) expect(count).toBe(1);
+    }
+    frame.get("launch-task")!.value = "A safe draft";
+    frame.fire("launch-start", "click");
+    expect(frame.calls).toHaveLength(1);
   });
 
   test("relevant launcher changes coalesce and survive in-flight updates and failed composition", async () => {
@@ -8369,9 +8564,13 @@ describe("launching from the tab", () => {
       expect(wcagContrast(t.accent, t.card2)).toBeGreaterThanOrEqual(4.5);
       expect(wcagContrast(theme === "dark" ? t.bg : t.card, t.accent)).toBeGreaterThanOrEqual(4.5);
     }
-    const page = buildLaunch({ projects }, "nonce");
-    expect(page).toContain("--button-ink: var(--bg)");
-    expect(page).toContain("--button-ink: var(--card)");
+    for (const hasSwarms of [false, true]) {
+      const page = buildLaunch({ projects, hasSwarms }, "nonce");
+      expect(page).toContain("--button-ink: var(--bg)");
+      expect(page).toContain("--button-ink: var(--card)");
+      expect(page).toContain(".compact-plan { background: var(--card-2); color: var(--fg);");
+      expect(page).toContain(".compact-budget { font: 12px var(--mono); color: var(--muted); }");
+    }
   });
 
   test("plan lines use equal or split pins and provider class/default fallbacks", () => {
