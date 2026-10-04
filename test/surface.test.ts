@@ -2314,18 +2314,105 @@ describe("Swarms boards", () => {
     expect(tile).not.toHaveProperty("delta");
   });
 
-  test("a live three-of-twenty Turns tile has a numeric value and the total in its sub", () => {
-    const s = swarm("s3for", { turnsUsed: 3, limits: SIZE_PRESETS.small, spans: [] });
-    const now = new Date("2026-09-22T14:03:00.000Z");
-    for (const view of [buildIndex(state({ live: [s] }), now), buildSwarmBoard(s, { now })]) {
+  test("the three-of-twenty fixture preserves full-width spawn, wake and question edges and readable inspectors", () => {
+    const ask = {
+      agentId: "s3for-w1",
+      handle: "s3for-w1",
+      messageId: "question",
+      threadRootId: "question",
+      text: "@operator which retry cap?",
+      at: "2026-09-22T14:04:00.000Z",
+    };
+    const s = swarm("s3for", {
+      turnsUsed: 3,
+      limits: { ...SIZE_PRESETS.medium, maxTurns: 20, turnTimeoutMs: 45_000 },
+      size: "custom",
+      agents: [
+        agent("s3for", 0, { turns: 2, status: "busy" }),
+        agent("s3for", 1, { turns: 1, status: "waiting", spawnedBy: "s3for-lead" }),
+      ],
+      health: { asks: [ask] },
+      activity: [{ at: ask.at, text: ask.text, kind: "ask", actor: ask.agentId }],
+      recent: [{ id: ask.messageId, at: ask.at, author: ask.agentId, text: ask.text }],
+      pace: [1, 1, 0, 1, 0],
+      spans: turnSpans("s3for", [1, 2, 4]).map((span, i) => ({
+        ...span,
+        agentId: i === 1 ? "s3for-w1" : "s3for-lead",
+        n: i === 2 ? 2 : 1,
+        wokeBy: i === 0 ? ["rib"] : i === 1 ? ["s3for-lead", "operator"] : ["s3for-w1"],
+        ...(i < 2 ? { endedAt: span.startedAt, outcome: "ok" as const } : {}),
+      })),
+    });
+    const now = new Date("2026-09-22T14:05:00.000Z");
+    const selectedAgentId = s.agents[1]!.id;
+    const index = buildIndex(
+      state({ live: [s], selectedAgents: new Map([[s.id, selectedAgentId]]) }),
+      now,
+    );
+    const perSwarm = buildSwarmBoard(s, { now, selectedAgentId });
+    const cockpit = {
+      view: "board" as const,
+      sections: buildCockpit(s, needsYou(s), { titled: true, now, selectedAgentId }),
+    };
+    for (const view of [index, perSwarm, cockpit]) {
+      board(swarmKey(s.id), view);
+      expect(view.sections.some((section) => section.kind === "columns")).toBe(false);
       const budget = view.sections.find((section) => section.title === "Budget");
       expect(budget?.kind === "stats" ? budget.items[0] : undefined).toEqual({
         label: "Turns",
         value: 3,
         sub: "of 20 · pace over the last 5 min",
-        delta: { text: "17 left · no turn in 5 min", direction: "flat" },
+        spark: [1, 1, 0, 1, 0],
+        delta: {
+          text: `17 left · about 2 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          direction: "flat",
+          tone: "caution",
+        },
+      });
+      const mapAt = view.sections.findIndex((section) => section.kind === "graph");
+      const map = view.sections[mapAt];
+      if (map?.kind !== "graph") throw new Error("missing top-level Map");
+      expect(map.nodes.find((node) => node.id === selectedAgentId)?.selected).toBe(true);
+      expect(map.edges).toEqual([
+        { source: "s3for-lead", target: "s3for-w1", label: "×1" },
+        { source: "you", target: "s3for-w1", label: "×1" },
+        { source: "s3for-w1", target: "s3for-lead", label: "×1" },
+        { source: "s3for-w1", target: "you", label: "asked ×1", dashed: true },
+      ]);
+      expect(view.sections[mapAt + 1]?.title).toBe("Conversation");
+      expect(view.sections[mapAt + 2]).toMatchObject({
+        kind: "actions",
+        items: [{ type: "message-lead", expanded: true }],
       });
     }
+    const details = buildDetailsInspector(s);
+    board(detailsKey(s.id), details);
+    const task = details.sections.find((section) => section.title === "Task and context");
+    expect(task?.kind === "rows" ? task.items[0] : undefined).toMatchObject({
+      text: "Task",
+      detail: s.task,
+    });
+    const setup = details.sections.find((section) => section.title === "Setup");
+    if (setup?.kind !== "rows") throw new Error("missing Setup");
+    expect(setup.items.map((row) => row.text)).toContain(
+      "Wall-clock limit: 30 min · Turn timeout: 45 s · Idle nudge limit: 2",
+    );
+    expect(setup.items.filter((row) => /^(Lead|Worker) model:/.test(row.text))).toHaveLength(2);
+    const ended = { ...s, status: "done" as const, endedAt: now.toISOString() };
+    const inspector = buildAgentInspector(ended, ended.agents[1]!);
+    board(agentKey(s.id), inspector);
+    expect(inspector.sections[0]).toMatchObject({
+      items: [{ title: "@w1", pill: { label: "done", tone: "ok" } }],
+    });
+    expect(JSON.stringify(inspector)).not.toContain('"clock"');
+    expect(JSON.stringify(inspector)).not.toContain('"type":"message-agent"');
+    const result = buildSwarmBoard(ended).sections.find((section) => section.title === "Result");
+    expect(result?.kind === "stats" ? result.items[0] : undefined).toEqual({
+      label: "Turns",
+      value: 3,
+      sub: "of 20",
+      spark: [1, 1, 0, 1, 0],
+    });
   });
 
   test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
