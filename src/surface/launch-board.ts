@@ -182,8 +182,9 @@ const PAGE_SCRIPT = `
       ? "Reads " + selected.dataset.name + " · no workflows"
       : chatMode;
   });
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
+  // The host's frame sandbox grants allow-scripts only, never allow-forms, so a
+  // form never fires submit here; Start is a plain click.
+  const startSwarm = () => {
     if (start.disabled) return;
     keelson.action("start-swarm", {
       nonce: form.dataset.nonce,
@@ -199,6 +200,10 @@ const PAGE_SCRIPT = `
       start.textContent = "Start swarm";
       start.removeAttribute("aria-busy");
     }, 2000);
+  };
+  start.addEventListener("click", startSwarm);
+  task.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) startSwarm();
   });
 })();
 `;
@@ -250,7 +255,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
       </div>
     </div>
     <footer>
-      <button class="start" id="launch-start" type="submit">Start swarm</button>
+      <button class="start" id="launch-start" type="button">Start swarm</button>
       <div><p>${limits.maxAgents} agents · up to ${limits.maxTurns} turns · about ${limits.wallClockMs / 60_000} min · balanced models</p><p class="models">${esc(models)}</p></div>
       <p class="mode" id="launch-mode">Chat mode · nothing on disk</p>
     </footer>

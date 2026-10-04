@@ -6567,11 +6567,13 @@ describe("launching from the tab", () => {
     const task = elements["launch-task"];
     const start = elements["launch-start"];
     const project = elements["launch-project"];
-    const submit = () => elements["launch-form"].listeners.get("submit")!(event);
+    // The host sandbox has no allow-forms, so Start is a click, never a submit.
+    expect(elements["launch-form"].listeners.has("submit")).toBe(false);
+    const submit = () => start.listeners.get("click")!(event);
     task.value = "Keep my typed draft";
     submit();
     submit();
-    expect(prevented).toBe(2);
+    expect(prevented).toBe(0);
     expect(calls).toEqual([
       {
         type: "start-swarm",
@@ -6605,6 +6607,11 @@ describe("launching from the tab", () => {
     timers[1]!.callback();
     elements["launch-prepare"].listeners.get("click")!(event);
     expect(calls[2]).toEqual({ type: "start-in-chat", payload: { nonce: "instance-nonce" } });
+    task.listeners.get("keydown")!({ ...event, key: "Enter", metaKey: true });
+    expect(calls[3]?.type).toBe("start-swarm");
+    timers[2]!.callback();
+    task.listeners.get("keydown")!({ ...event, key: "Enter" });
+    expect(calls).toHaveLength(4);
     expect(task.value).toBe("Keep my typed draft");
     project.value = "";
     project.listeners.get("change")!(event);
