@@ -338,14 +338,27 @@ Live, the board runs in this order:
   says where it went, and the note shows at once under Activity as
   **you posted in #swarm-<id>: …**
 
-Ended, it runs: the outcome, the result strip with how many runs verified, and
-**Run again**, **Open the record** and **Details**.
+Ended section order: Outcome, Result, actions, Agents, Produced so far when
+applicable, Activity when events exist, About, then the separate Ended swarms
+back-link.
 
-The ended **Result** adds **Pull requests** when any exist. It counts distinct
-URLs across runs and writers, with **M with CI passing** beneath the total.
+The ended Result orders Turns, Time, Tokens, Pull requests when eligible, then
+Runs verified only when runs exist. There is no Agents tile.
+Tokens is 0 when no turns ran; after positive turns without usage it is
+unavailable, not an invented zero.
+
+The Pull requests tile appears when workflows were named, `writeEnabled`
+is true, a legacy writer has a worktree, or any run or writer PR exists.
+Eligible write or dispatch swarms with no PRs show 0 with "0 with CI passing".
+A chat-only swarm with no runs and no PRs omits the tile.
+It counts distinct URLs across runs and writers, with **M with CI passing**
+beneath the total.
 A URL counts as passing only when every recorded owner explicitly reports
-pass. A verified run is not a substitute for CI evidence. Live boards and
-zero-PR boards omit this tile.
+pass. Run CI must also identify the same PR URL. A verified run is not a
+substitute for CI evidence. Live boards omit the Pull requests tile.
+
+The actions strip is Run again, Open the record, Details.
+Run again is omitted when retained launch inputs are unavailable.
 
 The outcome is one card. When the lead published a report, the card carries
 its title, the conclusion with a copy button, **Open the report** and **Read
@@ -353,26 +366,33 @@ the conclusion**, and a footnote with who concluded,
 when, the conclusion's length and the report's size. Without a report the card
 is titled **Conclusion**. A swarm that did not conclude shows its cause
 instead, such as **Stopped by you at 21:50**, **Out of turns at 40** or
-**Failed: …**.
+**Failed: …**. A refused draft keeps its **Read the draft** action.
+Outcome has no channel field.
 
-The remaining details follow in both and in the live cockpit. Live details
-do not repeat an agent bench. Ended boards keep these agent cards:
+Live details do not repeat an agent bench. The remaining details depend on
+the lifecycle:
 
 - **Agents** (ended only): proportional identity-colored agent cards with
   turns, role, tokens and the last event. They select the same read-only
   inspector, without monospace/stacked cards or ghost seats.
-- **Spend**, once two agents have spent: a bar per agent, its fresh tokens
-  against the swarm's, with the count and share beside it
+- **Spend** (live boards and cockpits only), once two agents have spent:
+  a bar per agent, its fresh tokens against the swarm's, with the count and
+  share beside it. For ended swarms, Spend by agent is on the record only,
+  with fresh and cached tokens apart.
 - **Produced so far**: reports, dispatched runs, writer draft PRs, and, once
   ended, kept worktrees, as described below
-- **Activity**: the last twelve events, newest first, with repeats counted,
-  then **Read the full log**, which opens the record's latest 200 retained
-  events, not the reading pane.
+- **Activity**: Ended Activity shows at most the newest 12 events, with actor,
+  time and repeats, and no Read the full log row. Only live Activity adds
+  Read the full log when earlier events exist; it opens the record's latest
+  200 retained events, not the reading pane.
   Each row starts with who it is by: the agent's handle in its color, or
   **you**. A turn is one row, written when it ends: **turn 3 ok · 42 s · 2
   new**, or **nudged** or **run update** when no message woke it
 - **About** (ended only): times, health and one transcript link. The back-link
-  to Ended swarms is a separate row outside About.
+  to Ended swarms is a separate row outside About. The transcript link is
+  omitted when its address is unavailable.
+
+Open the record reaches Activity as well as the timeline and spend.
 
 Task and context disclosures live in Details, not on the cockpit or
 per-swarm board. Setup and live health evidence also live in Details.
@@ -435,8 +455,8 @@ sentence or two.
 
 **Read the conclusion** and **Read the draft** open the reading pane. It
 contains the applicable conclusion or refused draft and the full task, not
-questions, gates, context, runs or activity. The copy button
-beside the conclusion copies all of it, not just the preview on the board.
+questions, gates, context, runs or activity. The conclusion's copy button
+copies all of it, not the board preview.
 
 ## A swarm's record
 

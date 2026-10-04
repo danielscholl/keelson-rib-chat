@@ -640,23 +640,40 @@ composes for MCP clients, live or ended. Live, it runs: the requests, the outcom
 report exists, a budget strip (turns with the same forecast delta, time, agents, fresh
 tokens with cached beside them), the same Map beside Conversation and Message the
 lead, Open the record, Details and Stop,
-then Spend, Produced so far and Activity. Ended, it runs: the outcome, the result
-strip, Run again, Open the record and Details, then the agent bench, Spend,
-Produced so far, Activity and About. The ended Result includes Pull requests when
-any exist: distinct URLs across runs and writers, with "M with CI passing".
+then Spend, Produced so far and Activity. Ended section order: Outcome, Result,
+actions, Agents, Produced so far when applicable, Activity when events exist,
+About, then the separate Ended swarms back-link.
+The ended Result orders Turns, Time, Tokens, Pull requests when eligible, then
+Runs verified only when runs exist. There is no Agents tile.
+Tokens is 0 when no turns ran; after positive turns without usage it is
+unavailable, not an invented zero.
+The Pull requests tile appears when workflows were named, \`writeEnabled\`
+is true, a legacy writer has a worktree, or any run or writer PR exists.
+Eligible write or dispatch swarms with no PRs show 0 with "0 with CI passing".
+A chat-only swarm with no runs and no PRs omits the tile.
+It counts distinct URLs across runs and writers, with "M with CI passing".
 A URL counts as passing only when every recorded owner explicitly reports pass.
-Run verification is not a substitute for CI. Live and zero-PR boards omit it.
+Run CI must also identify the same PR URL. Run verification is not a substitute
+for CI. Live boards omit the Pull requests tile.
+The actions strip is Run again, Open the record, Details.
+Run again is omitted when retained launch inputs are unavailable.
 The outcome is one card: under the report's title when the lead published one
 (else Conclusion), the conclusion with a copy button, Open the report, Read the
 conclusion; a swarm that did not conclude shows
-its cause instead, such as Stopped by you at 21:50 or Out of turns at 40. The
+its cause instead, such as Stopped by you at 21:50 or Out of turns at 40, and
+offers Read the draft when a refused draft exists. Outcome has no channel field. The
 live details no longer repeat an agent bench. Ended boards keep proportional
 identity-colored agent cards that select the same read-only inspector, without
-monospace/stacked cards or ghost seats. Both retain Spend
-(each agent's fresh tokens against the swarm's, once two agents have spent),
-Produced so far and the short Activity preview with repeats counted.
-Read the full log opens the record's latest 200 retained events, not the reading
-pane. Only ended boards keep About: times, health and one transcript link.
+monospace/stacked cards or ghost seats. Spend stays on live boards and cockpits
+once two agents have spent: each agent's fresh tokens against the swarm's.
+For ended swarms, Spend by agent is on the record only, with fresh and cached
+tokens apart. Both lifecycles retain Produced so far when applicable.
+Ended Activity shows at most the newest 12 events, with actor, time and repeats,
+and no Read the full log row. Only live Activity adds Read the full log when
+earlier events exist; it opens the record's latest 200 retained events, not the
+reading pane. Open the record reaches Activity as well as the timeline and spend.
+Only ended boards keep About: times, health and one transcript link.
+The transcript link is omitted when its address is unavailable.
 The back-link to Ended swarms is a separate row outside About.
 Each activity row carries its actor as a chip in the
 agent's color, or you for the operator, and a turn is one row written when it
