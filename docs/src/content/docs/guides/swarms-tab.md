@@ -522,30 +522,39 @@ their turns were not kept.
 
 ## Starting a swarm
 
-The **Start a swarm** header above the index is one form. It is open on an
-empty tab and folds to its head once the tab has a swarm, live or ended; after
-that it stays as you leave it. The folded head names what **Start swarm** would
-launch: **Start runs medium · 5 agents · 40 turns · 30 min · balanced power**.
+The **Start a swarm** header above the index is a themed launcher with a task
+box and a project picker. It opens expanded, including with retained swarms.
+You can fold it by hand; starting a swarm does not fold it automatically.
 
-| Field | Means |
-|---|---|
-| **Task** | What the swarm works out. Agents can't open links, so describe the issue or PR, or use **Prepare in chat** to attach it. A task that names a URL or `#123` with nothing attached is refused before a channel exists. |
-| **Project** | The registered project agents work on. **Agents may** and **Workflows** appear once one is picked. |
-| **Agents may** | Whether agents only talk (**chat only**), read the project (**read the project**), or read it while the lead spawns writers that change it in their own worktrees (**write the project**). See [Let agents write code](../let-agents-write/). |
-| **Workflows the lead may start** | Leave it empty and the swarm investigates. Name workflows and the lead may start them in isolated worktrees; each still needs the chat rib's `ribWorkflowGrants` entry. The placeholder names the workflows whose approvals the host keeps for you. With no registered project the field stays visible and says it needs one. |
-| **Setup** | **defaults · medium · balanced** launches on the defaults; **adjust** shows size, power and model override. A launch on defaults sends none of the three, so **Run again** later repeats what you chose, not what was filled in. Switching back to defaults keeps what you typed in the task. |
-| **Size** | Each segment carries its agents and turns; the hover has every limit. |
-| **Power** | `fast`, `balanced` or `deep`; hovering one names the model each provider runs at it. |
-| **Model override** | Leave it on **use the power's model** to let the power pick. An override sets every agent's model and the power no longer applies. |
+Describe the question in **Task**, or paste the issue or PR body. Agents
+cannot open links: a task naming a URL or `#123` is refused before a channel
+exists.
+
+**Project** starts on **No project · chat only**. Agents work from the task
+and attached evidence; nothing on disk is read or changed. Registered projects
+list as **name · path**, shortening the home directory to `~` and leaving
+other paths absolute. Picking one gives agents read access to its checkout.
+It does not grant write access or workflows.
+
+The footer shows **5 agents · up to 40 turns · about 30 min · balanced models**,
+with the lead and worker models below it. These are the fixed medium limits
+and the effective provider's balanced models, not launcher controls. The
+launcher sends no size, power or model overrides. For advanced inputs, use
+[`chat_swarm_start`](../../reference/tools/#chat_swarm_start).
 
 **Prepare in chat · attach an issue or PR** opens a chat that gathers the issue or PR context, picks a
 size, and calls `chat_swarm_start`. Use it when the swarm needs evidence it
 can't fetch.
 
-**Start swarm** returns at once. The card shows the swarm as starting while it
-boots, and a start that fails after that becomes an ended row with the reason.
-A start the rib refuses outright, such as an unknown project or a provider that
-can't run agents, shows its reason on the form instead.
+**Start swarm** shows **Starting…** and disables the button for about two
+seconds as a duplicate-click guard, not a completion signal. Your task stays
+in the box. A successful start opens the swarm on the index. Its card shows
+starting while it boots; a later failure becomes an ended row with the reason.
+An outright refusal, such as an unknown project or a provider that cannot
+run agents, appears in a host toast. After the guard clears you can retry.
+
+Ordinary refreshes preserve an unsent task. A change to the registered project
+list or provider configuration can replace the launcher page and discard it.
 
 A swarm started any other way, over MCP or from the `chat-swarm` workflow,
 appears in the same live area.

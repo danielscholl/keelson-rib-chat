@@ -30,6 +30,32 @@ function row(name: string): string {
 }
 
 describe("contributed docs", () => {
+  test("launcher docs describe only shipped controls and approved lifecycle behavior", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    const launcher = swarms.slice(
+      swarms.indexOf("The Start a swarm header"),
+      swarms.indexOf("One muted server line"),
+    );
+    for (const copy of [
+      "themed HTML launcher",
+      "No project · chat only",
+      "name · path",
+      "5 agents",
+      "up to 40 turns",
+      "balanced",
+      "no size, power or model overrides",
+      "host toast",
+      "about two seconds",
+      "fold it by hand",
+      "discard it",
+      "Prepare in chat",
+    ])
+      expect(launcher).toContain(copy);
+    for (const old of ["Setup starts", "Agents may field", "adjust shows", "folded once"]) {
+      expect(launcher).not.toContain(old);
+    }
+  });
+
   test("the rib contributes one valid, inline docs source", () => {
     expect(rib.contributeDocs?.(ctx)).toHaveLength(1);
     expect(ribDocsSourceSchema.safeParse(source).success).toBe(true);
