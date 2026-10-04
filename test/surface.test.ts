@@ -108,7 +108,7 @@ import {
   tokensTile,
 } from "../src/surface/swarm-board.ts";
 import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
-import { START_BOUNDS, type StartSwarmInput } from "../src/tools.ts";
+import type { StartSwarmInput } from "../src/tools.ts";
 import {
   BODY_MAX,
   type ChildRun,
