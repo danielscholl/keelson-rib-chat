@@ -2028,8 +2028,8 @@ describe("the live cockpit", () => {
       items: [
         {
           label: "Turns",
-          value: "11 of 40",
-          sub: "pace over the last 5 min",
+          value: 11,
+          sub: "of 40 · pace over the last 5 min",
           spark: [1, 2, 0],
           delta: {
             text: "29 left · no turn in 5 min",
@@ -2057,9 +2057,9 @@ describe("the live cockpit", () => {
     const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
     expect(budget?.kind === "stats" ? budget.items[0] : undefined).toMatchObject({
       label: "Turns",
-      sub: "pace over the last 5 min",
+      sub: "of 40 · pace over the last 5 min",
       delta: {
-        text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+        text: `8 left · out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
         direction: "down",
         tone: "warn",
       },
@@ -2086,7 +2086,7 @@ describe("Swarms boards", () => {
         turnsUsed: 32,
         pace: [2, 1, 2, 1, 2],
         delta: {
-          text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+          text: `8 left · out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
           direction: "down",
           tone: "warn",
         },
@@ -2095,7 +2095,7 @@ describe("Swarms boards", () => {
         turnsUsed: 18,
         pace: [1, 1, 1, 1, 2],
         delta: {
-          text: `22 left · at this pace about 11 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          text: `22 left · about 11 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
           direction: "flat",
           tone: "caution",
         },
@@ -2135,6 +2135,8 @@ describe("Swarms boards", () => {
         const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
         const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
         expect(tile?.delta).toEqual(delta);
+        expect(tile?.value).toBe(turnsUsed);
+        expect(tile?.sub).toBe("of 40 · pace over the last 5 min");
         expect(tile?.tone).toBe(turnsUsed === 40 ? "warn" : undefined);
       }
     }
@@ -2156,7 +2158,7 @@ describe("Swarms boards", () => {
         const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
         const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
         expect(tile?.delta).toEqual({
-          text: `35 left · at this pace about 12 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          text: `35 left · about 12 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
           direction: "flat",
           tone: "caution",
         });
@@ -2174,6 +2176,20 @@ describe("Swarms boards", () => {
     expect(tile).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: s.pace });
     expect(tile?.delta).toBeUndefined();
     expect(tile).not.toHaveProperty("delta");
+  });
+
+  test("a live three-of-twenty Turns tile has a numeric value and the total in its sub", () => {
+    const s = swarm("s3for", { turnsUsed: 3, limits: SIZE_PRESETS.small, spans: [] });
+    const now = new Date("2026-09-22T14:03:00.000Z");
+    for (const view of [buildIndex(state({ live: [s] }), now), buildSwarmBoard(s, { now })]) {
+      const budget = view.sections.find((section) => section.title === "Budget");
+      expect(budget?.kind === "stats" ? budget.items[0] : undefined).toEqual({
+        label: "Turns",
+        value: 3,
+        sub: "of 20 · pace over the last 5 min",
+        delta: { text: "17 left · no turn in 5 min", direction: "flat" },
+      });
+    }
   });
 
   test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
@@ -2883,11 +2899,11 @@ describe("Swarms boards", () => {
     const tiles = stats?.kind === "stats" ? stats.items : [];
     expect(tiles[0]).toMatchObject({
       label: "Turns",
-      value: "11 of 40",
-      sub: "pace over the last 5 min",
+      value: 11,
+      sub: "of 40 · pace over the last 5 min",
       spark: [1, 3, 2, 0, 1],
       delta: {
-        text: `29 left · at this pace about 13 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+        text: `29 left · about 13 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
         direction: "flat",
         tone: "caution",
       },

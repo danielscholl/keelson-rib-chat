@@ -175,8 +175,10 @@ export function turnsTile(s: SwarmSummary, now = new Date()): Stat {
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
   return {
     label: "Turns",
-    value: live(s) ? `${s.turnsUsed} of ${s.limits.maxTurns}` : s.turnsUsed,
-    sub: live(s) ? `pace over the last ${PACE_WINDOW_MINUTES} min` : `of ${s.limits.maxTurns}`,
+    value: s.turnsUsed,
+    sub: live(s)
+      ? `of ${s.limits.maxTurns} · pace over the last ${PACE_WINDOW_MINUTES} min`
+      : `of ${s.limits.maxTurns}`,
     ...(live(s) ? { delta: forecastDelta(forecast(s, now)) } : {}),
     ...(live(s) && left === 0 ? { tone: "warn" as const } : {}),
     ...(s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
