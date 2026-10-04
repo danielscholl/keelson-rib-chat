@@ -167,11 +167,17 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     expectView(HISTORY_KEY, "board"),
     windowMs,
   );
-  const launch = createKeyPublisher<CanvasView>(
+  const launchNonce = crypto.randomUUID();
+  const launch = createKeyPublisher<string>(
     sm,
     LAUNCH_KEY,
-    () => buildLaunch(deps.launch()),
-    expectView(LAUNCH_KEY, "board"),
+    () => buildLaunch(deps.launch(), launchNonce),
+    (data: unknown) => {
+      if (typeof data !== "string" || data.length === 0) {
+        throw new Error(`${LAUNCH_KEY} expects a non-empty html page`);
+      }
+      return data;
+    },
     windowMs,
   );
   const server = createKeyPublisher<CanvasView>(

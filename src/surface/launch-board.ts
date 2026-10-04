@@ -6,7 +6,13 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { CanvasBoardView, ModelClassMap } from "@keelson/shared";
+import { homedir } from "node:os";
+import {
+  type CanvasBoardView,
+  DEFAULT_PROJECT_NAME,
+  designTokenCssBlock,
+  type ModelClassMap,
+} from "@keelson/shared";
 import type { StartSwarmInput } from "../tools.ts";
 import {
   pinnedModels,
@@ -18,7 +24,7 @@ import {
   type SwarmSummary,
 } from "../types.ts";
 import { day, hhmm, plural } from "./format.ts";
-import { sizesHint } from "./parts.ts";
+import { esc } from "./record.ts";
 
 type ActionsSection = Extract<CanvasBoardView["sections"][number], { kind: "actions" }>;
 type Item = ActionsSection["items"][number];
@@ -36,7 +42,7 @@ export interface LaunchState {
 }
 
 export const TASK_PLACEHOLDER =
-  "What should the swarm work out? Agents can't open links: describe the issue or PR here, or Prepare in chat to attach it.";
+  "What should the swarm work out? Describe the issue or PR in words. A question works; so does a paste of the issue body.";
 
 const DEFAULT_SIZE: SwarmSize = "medium";
 const DEFAULT_POWER: SwarmPower = "balanced";
@@ -110,126 +116,106 @@ export function modelField(model?: string, provider?: string): Field {
   };
 }
 
-// Workflows and read access need a project; they stay hidden until one is picked.
-const ONCE_A_PROJECT = { field: "project" };
-// Size, power and model stay hidden, and so undispatched, until the operator adjusts.
-const ADJUSTING = { field: "setup", equals: "adjust" };
+const PAGE_CSS = `
+:root { --button-ink: var(--bg); }
+:root[data-theme="light"] { --button-ink: var(--card); }
+body { font-size: 14px; }
+* { box-sizing: border-box; }
+main { margin: 0 auto; max-width: 1120px; border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden; background: var(--card); }
+header { display: flex; align-items: center; gap: 14px; padding: 24px; flex-wrap: wrap; }
+.glyph { display: grid; place-items: center; width: 44px; height: 44px; flex: none;
+  border-radius: 12px; background: var(--card-2); color: var(--accent); }
+.intro { flex: 1; min-width: 220px; }
+h1 { font-size: 22px; line-height: 1.3; margin: 0 0 5px; color: var(--fg-strong); }
+p { margin: 0; }
+.hint { color: var(--muted); font-size: 13px; }
+button, textarea, select { font: inherit; }
+button { cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; }
+.prepare { border-radius: 999px; color: var(--fg); background: var(--card-2); }
+.fields { padding: 0 24px 24px; }
+label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .08em; margin-bottom: 8px; }
+textarea, select { display: block; width: 100%; border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; color: var(--fg); background: var(--bg); }
+textarea { resize: vertical; min-height: 112px; line-height: 1.5; }
+textarea::placeholder { color: var(--muted); opacity: 1; }
+.task-hint { margin-top: 8px; }
+.project { margin-top: 24px; }
+.project > .hint { margin: -2px 0 12px; }
+.project-row { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(240px, 1fr); gap: 16px; align-items: start; }
+.project-note { padding: 12px 16px; color: var(--muted); border: 1px dashed var(--border); border-radius: 8px; }
+.project-row.has-project { grid-template-columns: 1fr; }
+.has-project .project-note { border: 0; padding: 0; }
+footer { display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+  background: var(--card-2); border-top: 1px solid var(--border); padding: 18px 24px; }
+.start { background: var(--accent); color: var(--button-ink); border-color: var(--accent); font-weight: 600; }
+.start:disabled { cursor: wait; }
+.models { font-family: var(--mono); color: var(--muted); font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
+.mode { margin-left: auto; color: var(--fg); }
+button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+[hidden] { display: none !important; }
+@media (max-width: 640px) {
+  header, footer { padding: 18px; }
+  .fields { padding: 0 18px 18px; }
+  .project-row { grid-template-columns: 1fr; }
+  .prepare { width: 100%; }
+  .mode { margin-left: 0; width: 100%; }
+}
+`;
 
-function setupField(): Field {
-  const l = SIZE_PRESETS[DEFAULT_SIZE];
-  return {
-    name: "setup",
-    label: "Setup",
-    required: true,
-    segmented: true,
-    half: true,
-    defaultValue: "defaults",
-    options: [
-      {
-        value: "defaults",
-        label: `defaults · ${DEFAULT_SIZE} · ${DEFAULT_POWER}`,
-        hint: `${l.maxAgents} agents · ${l.maxTurns} turns · ${l.wallClockMs / 60_000} min, on the ${DEFAULT_POWER} power's model`,
-      },
-      { value: "adjust", label: "adjust", hint: "Pick the size, the power, or a model." },
-    ],
-  };
+function projectPath(rootPath: string): string {
+  const home = homedir();
+  return rootPath === home || rootPath.startsWith(`${home}/`)
+    ? `~${rootPath.slice(home.length)}`
+    : rootPath;
 }
 
-// The workflows field says who answers their approvals, from the refusals the
-// host has made so far, where the decision it informs is made.
-function workflowsField(state: LaunchState): Field {
-  const refused = state.refused ?? [];
-  const approvals =
-    refused.length > 0 ? ` · ${refused.join(", ")} approvals: you answer them in Workflows` : "";
-  const placeholder = state.dispatchBlocked
-    ? state.dispatchBlocked
-    : state.projects.length === 0
-      ? "needs a registered project"
-      : `none: the swarm investigates · e.g. fix-issue${approvals}`;
-  return {
-    name: "workflows",
-    label: "Workflows the lead may start",
-    placeholder,
-    ...(state.projects.length > 0 && !state.dispatchBlocked ? { showWhen: ONCE_A_PROJECT } : {}),
-  };
-}
-
-function fields(state: LaunchState): Field[] {
-  const hasProjects = state.projects.length > 0;
-  return [
-    {
-      name: "task",
-      label: "Task",
-      required: true,
-      multiline: true,
-      placeholder: TASK_PLACEHOLDER,
-    },
-    ...(hasProjects
-      ? [
-          {
-            name: "project",
-            label: "Project",
-            half: true,
-            placeholder: "no project",
-            options: state.projects.map((p) => ({ value: p.id, label: p.name })),
-          },
-        ]
-      : []),
-    setupField(),
-    ...(hasProjects
-      ? [
-          {
-            name: "tools",
-            label: "Agents may",
-            showWhen: ONCE_A_PROJECT,
-            required: true,
-            segmented: true,
-            half: true,
-            defaultValue: "read",
-            options: [
-              { value: "none", label: "chat only" },
-              { value: "read", label: "read the project" },
-              { value: "write", label: "write the project" },
-            ],
-          },
-        ]
-      : []),
-    workflowsField(state),
-    { ...sizeField(DEFAULT_SIZE), showWhen: ADJUSTING },
-    { ...powerField(DEFAULT_POWER, state.classes), showWhen: ADJUSTING },
-    { ...modelField(), showWhen: ADJUSTING },
-  ];
-}
-
-// One form. A swarm with no workflows named investigates; one with workflows
-// named may dispatch them. Prepare in chat gathers evidence first. The region
-// folds once the tab has a swarm to read, and opens on an empty tab.
-export function buildLaunch(state: LaunchState): CanvasBoardView {
-  const items: Item[] = [
-    {
-      type: "start-swarm",
-      label: "Start a swarm",
-      glyph: "▶",
-      fields: fields(state),
-      submitLabel: "Start swarm",
-      submitTone: "brand",
-      pendingLabel: "Starting…",
-      hint: `Sizes: ${sizesHint()}.`,
-      expanded: true,
-    },
-    {
-      type: "start-in-chat",
-      label: "Prepare in chat · attach an issue or PR",
-      glyph: "→",
-      hint: "Opens a chat that gathers issue and PR context, then starts the swarm with it attached.",
-    },
-  ];
-  return {
-    view: "board",
-    title: "Start a swarm",
-    header: { defaultCollapsed: false },
-    sections: [{ kind: "actions", wrap: true, items }],
-  };
+export function buildLaunch(state: LaunchState, nonce: string): string {
+  const projects = state.projects.filter((p) => p.name !== DEFAULT_PROJECT_NAME);
+  const limits = SIZE_PRESETS.medium;
+  const pins = pinnedModels(state.provider, "balanced");
+  const classes = state.classes?.find((c) => c.provider === state.provider)?.classes;
+  const models = pins
+    ? `lead ${pins.lead} · workers ${pins.worker}`
+    : classes
+      ? `${state.provider}: ${classes.balanced}`
+      : "";
+  const options = projects
+    .map((p) => {
+      const path = projectPath(p.rootPath);
+      return `<option value="${esc(p.id)}" data-name="${esc(p.name)}" data-path="${esc(path)}">${esc(`${p.name} · ${path}`)}</option>`;
+    })
+    .join("");
+  return `<style>${designTokenCssBlock()}\n${PAGE_CSS}</style>
+<main>
+  <header>
+    <span class="glyph" aria-hidden="true">▶</span>
+    <div class="intro"><h1>Start a swarm</h1><p class="hint">Describe the problem. Agents investigate, debate, and bring back a conclusion.</p></div>
+    <button class="prepare" id="launch-prepare" type="button">Prepare in chat · attach an issue or PR</button>
+  </header>
+  <form id="launch-form" data-nonce="${esc(nonce)}">
+    <div class="fields">
+      <label for="launch-task">TASK</label>
+      <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
+      <p class="hint task-hint" id="task-hint">Agents can't open links. Paste the text, or use Prepare in chat to attach the issue or PR.</p>
+      <div class="project">
+        <label for="launch-project">PROJECT</label>
+        <p class="hint" id="project-hint">Picking one lets agents read it. Anything more is a switch.</p>
+        <div class="project-row" id="project-row">
+          <select id="launch-project" name="project" aria-describedby="project-hint project-note">
+            <option value="" selected>No project · chat only</option>${options}
+          </select>
+          <p class="project-note" id="project-note">Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.</p>
+        </div>
+      </div>
+    </div>
+    <footer>
+      <button class="start" id="launch-start" type="submit">Start swarm</button>
+      <div><p>${limits.maxAgents} agents · up to ${limits.maxTurns} turns · about ${limits.wallClockMs / 60_000} min · balanced models</p><p class="models">${esc(models)}</p></div>
+      <p class="mode" id="launch-mode">Chat mode · nothing on disk</p>
+    </footer>
+  </form>
+</main>`;
 }
 
 // Run again reads the old swarm's size, power and model as its defaults, and

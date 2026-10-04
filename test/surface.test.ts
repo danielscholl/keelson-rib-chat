@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type CanvasBoardView,
   DEFAULT_PROJECT_NAME,
+  DESIGN_TOKENS,
   expectView,
   type RibViewDescriptor,
   ribClientEffectSchema,
@@ -12,6 +13,7 @@ import {
   ribSurfaceDescriptorSchema,
   type SnapshotFrame,
   type SnapshotManager,
+  wcagContrast,
 } from "@keelson/shared";
 import { CONTEXT_BOUNDS, type ContextIndexEntry, EXCERPT_CHARS } from "../src/context.ts";
 import { applyStatus } from "../src/dispatch.ts";
@@ -58,7 +60,7 @@ import {
   SERVER_LOG_KEY,
   swarmKey,
 } from "../src/surface/keys.ts";
-import { buildLaunch, launchByline } from "../src/surface/launch-board.ts";
+import { buildLaunch, powerField, TASK_PLACEHOLDER } from "../src/surface/launch-board.ts";
 import {
   askText,
   dismissAskAction,
@@ -6468,124 +6470,112 @@ describe("actions", () => {
 describe("launching from the tab", () => {
   const projects = [{ id: "p1", name: "keelson-sample", rootPath: "/tmp/keelson-sample" }];
 
-  test("the Launch header is one form beside Prepare in chat, initially open", () => {
+  test("the launcher is a themed HTML form with only task and project controls", () => {
     for (const st of [
       { projects },
       { projects: [] },
-      { projects, dispatchBlocked: "no workflows", refused: ["fix-issue"] },
+      { projects, refused: ["fix-issue"], dispatchBlocked: "unavailable" },
     ]) {
-      board(LAUNCH_KEY, buildLaunch(st));
+      const page = buildLaunch(st, "nonce");
+      for (const copy of [
+        "Start a swarm",
+        "Describe the problem. Agents investigate, debate, and bring back a conclusion.",
+        "Prepare in chat · attach an issue or PR",
+        "TASK",
+        "PROJECT",
+        TASK_PLACEHOLDER,
+        "Agents can't open links. Paste the text, or use Prepare in chat to attach the issue or PR.",
+        "Picking one lets agents read it. Anything more is a switch.",
+        "Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.",
+        "5 agents · up to 40 turns · about 30 min · balanced models",
+        "Chat mode · nothing on disk",
+      ])
+        expect(page).toContain(copy);
+      expect(page).toContain('rows="4" required aria-describedby="task-hint"');
+      expect(page).toContain("resize: vertical");
+      expect(page).toContain('for="launch-task"');
+      expect(page).toContain('for="launch-project"');
+      expect(page).toContain('<option value="" selected>No project · chat only</option>');
+      expect(page).toContain(':root[data-theme="light"]');
+      expect(page).toContain(":focus-visible");
+      for (const name of ["setup", "tools", "workflows", "size", "power", "model", "provider"]) {
+        expect(page).not.toContain(`name="${name}"`);
+      }
+      expect(page).not.toContain("--brand");
     }
-    const items = (st: Parameters<typeof buildLaunch>[0]) => {
-      const section = buildLaunch(st).sections[0];
-      return section?.kind === "actions" ? section.items : [];
-    };
-    expect(items({ projects }).map((i) => i.label)).toEqual([
-      "Start a swarm",
-      "Prepare in chat · attach an issue or PR",
-    ]);
-    expect(items({ projects })[0]?.expanded).toBe(true);
-    expect(buildLaunch({ projects }).header).toEqual({
-      defaultCollapsed: false,
-    });
-    expect(buildLaunch({ projects }).header).toEqual({
-      defaultCollapsed: false,
-    });
-    expect(buildLaunch({ projects }).header).toEqual({
-      defaultCollapsed: false,
-    });
-    expect(items({ projects })[0]?.fields?.map((f) => f.name)).toEqual([
-      "task",
-      "project",
-      "setup",
-      "tools",
-      "workflows",
-      "size",
-      "power",
-      "model",
-    ]);
-    expect(items({ projects: [] })[0]?.fields?.map((f) => f.name)).toEqual([
-      "task",
-      "setup",
-      "workflows",
-      "size",
-      "power",
-      "model",
-    ]);
-    const adjusting = { field: "setup", equals: "adjust" };
-    const fieldsOf = items({ projects })[0]?.fields ?? [];
-    for (const name of ["size", "power", "model"]) {
-      expect(fieldsOf.find((f) => f.name === name)?.showWhen).toEqual(adjusting);
+  });
+
+  test("project labels shorten only the home directory and escape every attribute", () => {
+    const page = buildLaunch(
+      {
+        projects: [
+          { id: "home", name: "Home", rootPath: homedir() },
+          { id: "child", name: "Child", rootPath: `${homedir()}/code` },
+          { id: "sibling", name: "Sibling", rootPath: `${homedir()}-other/code` },
+          { id: '"><script>', name: "A & 'B'", rootPath: '/tmp/<repo>"' },
+          { id: "hidden-project", name: DEFAULT_PROJECT_NAME, rootPath: "/hidden-root" },
+        ],
+      },
+      'nonce"',
+    );
+    expect(page).toContain("Home · ~</option>");
+    expect(page).toContain("Child · ~/code</option>");
+    expect(page).toContain(`Sibling · ${homedir()}-other/code</option>`);
+    expect(page).toContain('value="&quot;&gt;&lt;script&gt;"');
+    expect(page).toContain('data-name="A &amp; &#39;B&#39;"');
+    expect(page).toContain('data-path="/tmp/&lt;repo&gt;&quot;"');
+    expect(page).toContain('data-nonce="nonce&quot;"');
+    expect(page).not.toContain("hidden-project");
+    expect(page).not.toContain("/hidden-root");
+    expect(page).not.toContain("<script>");
+  });
+
+  test("footer models use the serving provider rather than class-list order", () => {
+    const classes = [
+      { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
+      { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
+    ];
+    expect(buildLaunch({ projects, provider: "copilot", classes }, "nonce")).toContain(
+      "lead claude-sonnet-5 · workers claude-sonnet-5.5",
+    );
+    const fallback = buildLaunch(
+      { projects, provider: "claude", classes: [...classes].reverse() },
+      "nonce",
+    );
+    expect(fallback).toContain("claude: sonnet-9");
+    expect(fallback).not.toContain("gpt-6");
+  });
+
+  test("all launcher text pairings meet 4.5:1 in both themes", () => {
+    for (const theme of ["dark", "light"] as const) {
+      const t = DESIGN_TOKENS[theme];
+      for (const bg of [t.bg, t.card, t.card2]) {
+        for (const fg of [t.fg, t.fgStrong, t.muted]) {
+          expect(wcagContrast(fg, bg)).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      expect(wcagContrast(t.accent, t.card2)).toBeGreaterThanOrEqual(4.5);
+      expect(wcagContrast(theme === "dark" ? t.bg : t.card, t.accent)).toBeGreaterThanOrEqual(4.5);
     }
-    expect(fieldsOf.find((f) => f.name === "setup")).toMatchObject({
-      defaultValue: "defaults",
-      options: [
-        { value: "defaults", label: "defaults · medium · balanced" },
-        { value: "adjust", label: "adjust" },
-      ],
-    });
-    expect(launchByline()).toBe(
-      "Start runs medium · 5 agents · 40 turns · 30 min · balanced power",
-    );
-    const field = (st: Parameters<typeof buildLaunch>[0], name: string) =>
-      items(st)[0]?.fields?.find((f) => f.name === name);
-    expect(field({ projects: [] }, "workflows")?.placeholder).toBe("needs a registered project");
-    expect(field({ projects, refused: ["fix-issue"] }, "workflows")?.placeholder).toBe(
-      "none: the swarm investigates · e.g. fix-issue · fix-issue approvals: you answer them in Workflows",
-    );
-    expect(field({ projects }, "size")?.options?.map((o) => o.label)).toEqual([
-      "small · 3 agents · 20 turns",
-      "medium · 5 agents · 40 turns",
-      "large · 8 agents · 80 turns",
-    ]);
-    expect(field({ projects }, "project")?.placeholder).toBe("no project");
-    expect(field({ projects }, "workflows")?.showWhen).toEqual({
-      field: "project",
-    });
-    expect(field({ projects }, "tools")?.showWhen).toEqual({ field: "project" });
-    expect(field({ projects }, "tools")?.options).toEqual([
-      { value: "none", label: "chat only" },
-      { value: "read", label: "read the project" },
-      { value: "write", label: "write the project" },
-    ]);
-    expect(field({ projects: [] }, "workflows")?.showWhen).toBeUndefined();
-    expect(
-      field({ projects, dispatchBlocked: "no workflows" }, "workflows")?.showWhen,
-    ).toBeUndefined();
-    expect(items({ projects })[0]?.pendingLabel).toBe("Starting…");
+    const page = buildLaunch({ projects }, "nonce");
+    expect(page).toContain("--button-ink: var(--bg)");
+    expect(page).toContain("--button-ink: var(--card)");
   });
 
   test("each power's hover names the model every provider runs at it", () => {
-    const section = buildLaunch({
-      projects,
-      classes: [
-        { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
-        { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
-      ],
-    }).sections[0];
-    const power = (section?.kind === "actions" ? section.items[0]?.fields : [])?.find(
-      (f) => f.name === "power",
-    );
+    const power = powerField("balanced", [
+      { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
+      { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
+    ]);
     expect(power?.defaultValue).toBe("balanced");
     expect(power?.options?.find((o) => o.value === "deep")?.hint).toBe(
       "claude: opus-9 · copilot: lead claude-opus-5.5 · workers claude-sonnet-5",
     );
-    const flat = buildLaunch({
-      projects,
-      classes: [{ provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } }],
-    }).sections[0];
-    const flatPower = (flat?.kind === "actions" ? flat.items[0]?.fields : [])?.find(
-      (f) => f.name === "power",
-    );
+    const flatPower = powerField("balanced", [
+      { provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } },
+    ]);
     expect(flatPower?.options?.find((o) => o.value === "fast")?.hint).toBe(
       "claude: auto (every power)",
-    );
-    expect(
-      buildLaunch({ projects }).sections.flatMap((x) =>
-        x.kind === "actions" ? (x.items[0]?.fields ?? []) : [],
-      ),
-    ).toContainEqual(
-      expect.objectContaining({ name: "model", placeholder: "use the power's model" }),
     );
   });
 
@@ -7244,7 +7234,9 @@ describe("the rib's surface", () => {
       expect(json).toContain("sample");
       expect(json).not.toContain("fallback");
       expect(json).not.toContain(`"label":"${DEFAULT_PROJECT_NAME}"`);
-      expect(json).toContain("copilot");
+      expect(json).toContain("/tmp/sample");
+      expect(json).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
+      expect(json).not.toContain("claude: b");
     } finally {
       if (saved === undefined) delete process.env.KEELSON_WORKFLOW_PROVIDER;
       else process.env.KEELSON_WORKFLOW_PROVIDER = saved;
