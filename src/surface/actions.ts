@@ -514,8 +514,15 @@ export async function handleSwarmsAction(
     case "start-swarm": {
       const html = action.origin === "canvas-html";
       const project = html ? text(payload, "project") : "";
-      if (project && !deps.surface?.offersLaunchProject(project))
-        return fail(`the launcher doesn't offer project '${project}'`);
+      if (project) {
+        let offered: boolean | undefined;
+        try {
+          offered = deps.surface?.offersLaunchProject(project);
+        } catch (e) {
+          return fail(`Could not check launcher availability: ${errText(e)}`);
+        }
+        if (!offered) return fail(`the launcher doesn't offer project '${project}'`);
+      }
       const input = startInput(
         html
           ? {
