@@ -510,7 +510,7 @@ const PAGE_SCRIPT = `
   });
   activeStart.addEventListener("click", startCompact);
   task.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       startCompact();
     }

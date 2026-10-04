@@ -6573,6 +6573,8 @@ describe("launching from the tab", () => {
       key?: string;
       metaKey?: boolean;
       ctrlKey?: boolean;
+      isComposing?: boolean;
+      keyCode?: number;
       clipboardData?: { getData(type: string): string };
     };
     let focused: Element | undefined;
@@ -6889,6 +6891,41 @@ describe("launching from the tab", () => {
     expect(compact.get("compact-start")!.textContent).toBe("Start");
     expect(compact.get("compact-start")!.disabled).toBe(false);
     expect(compact.get("compact-start")!.attributes.has("aria-busy")).toBe(false);
+  });
+
+  test("compact Enter confirms IME candidates without starting a swarm", () => {
+    for (const keyboard of [
+      { isComposing: true, keyCode: 13 },
+      { isComposing: false, keyCode: 229 },
+      { isComposing: true, keyCode: 229 },
+    ]) {
+      const frame = frameHarness({ projects, hasSwarms: true });
+      frame.get("compact-task")!.value = "Keep this draft";
+      expect(frame.fire("compact-task", "keydown", { key: "Enter", ...keyboard })).toBe(false);
+      expect(frame.calls).toEqual([]);
+      expect(frame.timers).toEqual([]);
+      expect(frame.get("compact-start")!.disabled).toBe(false);
+      expect(frame.get("compact-task")!.value).toBe("Keep this draft");
+
+      expect(
+        frame.fire("compact-task", "keydown", {
+          key: "Enter",
+          isComposing: false,
+          keyCode: 13,
+        }),
+      ).toBe(true);
+      expect(frame.calls).toEqual([
+        {
+          type: "start-swarm",
+          payload: {
+            nonce: "instance-nonce",
+            task: "Keep this draft",
+            project: "",
+            tools: "none",
+          },
+        },
+      ]);
+    }
   });
 
   test("compact payload is admitted through the existing HTML action route without overrides", async () => {
