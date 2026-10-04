@@ -1179,8 +1179,8 @@ describe("the details inspector", () => {
     return section.items;
   };
 
-  test("reconstructs the full 8,000-character task with bounded numbered disclosures", () => {
-    for (const length of [1, 4000, 4001, 8000]) {
+  test("reconstructs tasks losslessly with a simple single-part label and bounded numbered parts", () => {
+    for (const length of [0, 1, 4000, 4001, 8000]) {
       const task = ` \n${"t".repeat(3994)} \n\n  **Task**\n`.padEnd(8000, " ").slice(0, length);
       const view = inspect(swarm("sfull", { task }));
       const disclosures = rows(view, "Task and context").filter((row) => row.detail !== undefined);
@@ -1188,8 +1188,12 @@ describe("the details inspector", () => {
       expect(disclosures).toHaveLength(Math.ceil(length / EXCERPT_CHARS));
       expect(disclosures.every((row) => row.detail!.length <= 4000)).toBe(true);
       expect(disclosures.map((row) => row.text)).toEqual(
-        disclosures.map((_, i) => `Task · part ${i + 1} of ${disclosures.length}`),
+        disclosures.map((_, i) =>
+          disclosures.length === 1 ? "Task" : `Task · part ${i + 1} of ${disclosures.length}`,
+        ),
       );
+      if (length === 0)
+        expect(rows(view, "Task and context")[0]).toEqual({ text: "Task text not recorded." });
     }
   });
 

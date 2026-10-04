@@ -177,7 +177,7 @@ function taskRows(task: string): Row[] {
   for (let offset = 0; offset < task.length; offset += EXCERPT_CHARS) {
     rows.push({
       icon: "▤",
-      text: `Task · part ${rows.length + 1} of ${parts}`,
+      text: parts === 1 ? "Task" : `Task · part ${rows.length + 1} of ${parts}`,
       detail: task.slice(offset, offset + EXCERPT_CHARS),
     });
   }
