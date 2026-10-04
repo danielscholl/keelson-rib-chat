@@ -6508,8 +6508,11 @@ describe("launching from the tab", () => {
     return { sm, views, surface, inputs, page, nonce };
   };
 
-  const frameHarness = (inputs: LaunchState = { projects, provider: "copilot" }) => {
-    const page = buildLaunch(inputs, "instance-nonce");
+  const frameHarness = (
+    inputs: LaunchState = { projects, provider: "copilot" },
+    nonce = "instance-nonce",
+  ) => {
+    const page = buildLaunch(inputs, nonce);
     const script = page.match(/<script>([\s\S]*?)<\/script>/)![1]!;
     const decode = (value: string) =>
       value.replace(
@@ -6917,7 +6920,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("HTML launches ignore crafted access, workflows and setup", async () => {
+  test("HTML launches admit choices but ignore crafted access, workflows and setup", async () => {
     const h = launcherHarness({ projects });
     try {
       await Bun.sleep(5);
@@ -6941,6 +6944,12 @@ describe("launching from the tab", () => {
                     power: "deep",
                     model: "gpt-6-astra",
                     provider: "copilot",
+                    workerModel: "not-for-workers",
+                    worker_model: "not-for-workers",
+                    effort: "xhigh",
+                    lead_tools: ["beads_close"],
+                    work_tools: "write",
+                    context: [{ kind: "issue", text: "invented" }],
                   },
                 },
                 { ...actionDeps, surface: h.surface },
@@ -6949,6 +6958,9 @@ describe("launching from the tab", () => {
           ).toBe(true);
           expect(begun.at(-1)).toEqual({
             task: "Fix issue",
+            size: "large",
+            model: "gpt-6-astra",
+            provider: "copilot",
             workTools: project ? "read" : "none",
             ...(project ? { project } : {}),
           });
@@ -6957,6 +6969,59 @@ describe("launching from the tab", () => {
       expect(begun).toHaveLength(9);
     } finally {
       h.surface.dispose();
+    }
+  });
+
+  test("HTML plan and custom frame inputs reach begin and persist without added defaults", async () => {
+    const h = launcherHarness({ projects, provider: "copilot" });
+    const dir = mkdtempSync(join(tmpdir(), "chat-plan-launches-"));
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const store = launchStore(dir);
+      for (const project of ["", "p1"]) {
+        for (const choice of ["small", "medium", "large", "custom"] as const) {
+          const frame = frameHarness(h.inputs, h.nonce());
+          frame.elements["launch-task"]!.value = "Investigate the build";
+          frame.elements["launch-project"]!.value = project;
+          if (choice === "custom") {
+            frame.trigger("effort-large");
+            frame.elements["launch-model"]!.value = JSON.stringify({
+              model: "claude-opus-5.5",
+              provider: "copilot",
+            });
+            frame.trigger("launch-model", "change");
+          } else frame.trigger(`plan-${choice}`);
+          frame.trigger("launch-start");
+          const action = frame.calls.at(-1)!;
+          expect(
+            (
+              await handleSwarmsAction(
+                { ...action, origin: "canvas-html" },
+                { ...actionDeps, surface: h.surface },
+              )
+            ).ok,
+          ).toBe(true);
+          const expected: StartSwarmInput = {
+            task: "Investigate the build",
+            workTools: project ? "read" : "none",
+            ...(project ? { project } : {}),
+            ...(choice === "small" ? { size: "small", power: "fast" } : {}),
+            ...(choice === "large" ? { size: "large", power: "deep" } : {}),
+            ...(choice === "custom"
+              ? { size: "large", model: "claude-opus-5.5", provider: "copilot" }
+              : {}),
+          };
+          expect(begun.at(-1)).toEqual(expected);
+          const id = `s${project || "chat"}${choice}`;
+          store.save(id, begun.at(-1)!);
+          expect(launchStore(dir).load(id)).toEqual(expected);
+        }
+      }
+      expect(begun).toHaveLength(8);
+    } finally {
+      h.surface.dispose();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -7613,7 +7678,6 @@ describe("start and run again", () => {
       task: "Fix the README node count",
       workTools: "read",
       size: "large",
-      power: "deep",
       project: "p1",
       model: "gpt-6-astra",
       provider: "copilot",

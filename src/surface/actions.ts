@@ -112,7 +112,8 @@ function startInput(payload: Record<string, unknown>): StartSwarmInput | string 
   // says what was chosen and Run again repeats a choice rather than a default.
   const adjusted = text(payload, "setup") !== "defaults";
   const size = adjusted ? sizeOf(payload) : undefined;
-  const power = adjusted ? powerOf(payload) : undefined;
+  const models = adjusted ? modelOf(payload) : {};
+  const power = adjusted && !models.model ? powerOf(payload) : undefined;
   const input: StartSwarmInput = {
     task,
     workTools:
@@ -120,7 +121,7 @@ function startInput(payload: Record<string, unknown>): StartSwarmInput | string 
     ...(size ? { size } : {}),
     ...(power ? { power } : {}),
     ...(project ? { project } : {}),
-    ...(adjusted ? modelOf(payload) : {}),
+    ...models,
   };
   const names = [
     ...new Set(
@@ -479,7 +480,18 @@ export async function handleSwarmsAction(
       const project = html ? text(payload, "project") : "";
       if (project && !deps.surface?.offersLaunchProject(project))
         return fail(`the launcher doesn't offer project '${project}'`);
-      const input = startInput(html ? { task: payload.task, project, setup: "defaults" } : payload);
+      const input = startInput(
+        html
+          ? {
+              task: payload.task,
+              project,
+              size: payload.size,
+              power: payload.power,
+              model: payload.model,
+              provider: payload.provider,
+            }
+          : payload,
+      );
       return typeof input === "string" ? fail(input) : started(deps, input, "index");
     }
     case "run-again": {

@@ -113,7 +113,25 @@ describe("chat_swarm_start inputs", () => {
 
   test("no size leaves the launcher on its default", async () => {
     const seen = await start({ task: "t" });
-    expect(seen?.size).toBeUndefined();
+    for (const key of ["size", "power", "model", "provider", "workerModel", "effort"] as const) {
+      expect(seen?.[key]).toBeUndefined();
+    }
+  });
+
+  test("plan and customized inputs retain the existing API contract", async () => {
+    for (const choice of [
+      {},
+      { size: "small", power: "fast" },
+      { size: "large", power: "deep" },
+      { size: "large", model: "claude-opus-5.5", provider: "copilot" },
+      { size: "large", model: "claude-opus-5.5", provider: "copilot", power: "deep" },
+    ]) {
+      const seen = await start({ task: "t", ...choice });
+      expect(seen).toMatchObject({ task: "t", ...choice });
+      expect(seen?.workerModel).toBeUndefined();
+      expect(seen?.effort).toBeUndefined();
+      if (!("power" in choice)) expect(seen?.power).toBeUndefined();
+    }
   });
 
   test("an unknown size is refused", async () => {
