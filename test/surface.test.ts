@@ -66,7 +66,6 @@ import {
   buildLaunch,
   type LaunchState,
   launchByline,
-  powerField,
   TASK_PLACEHOLDER,
 } from "../src/surface/launch-board.ts";
 import {
@@ -7104,7 +7103,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("the launcher is a themed HTML form with only task and project controls", () => {
+  test("the launcher is a themed HTML form with plans and a hidden Customize drawer", () => {
     for (const st of [{ projects }, { projects: [] }]) {
       const page = buildLaunch(st, "nonce");
       for (const copy of [
@@ -7112,6 +7111,18 @@ describe("launching from the tab", () => {
         "Describe the problem. Agents investigate, debate, and bring back a conclusion.",
         "Prepare in chat · attach an issue or PR",
         "TASK",
+        "HOW HARD IT WORKS",
+        "Quick look",
+        "A narrow question, or a first pass before a bigger run.",
+        "Working session",
+        "Most tasks: investigate, debate, and decide.",
+        "Deep dig",
+        "Wide or hard problems that are worth the spend.",
+        "Customize",
+        "EFFORT",
+        "MODEL",
+        "the plan's models",
+        "Other…",
         "PROJECT",
         TASK_PLACEHOLDER,
         "Agents can't open links. Paste the text, or use Prepare in chat to attach the issue or PR.",
@@ -7128,8 +7139,27 @@ describe("launching from the tab", () => {
       expect(page).toContain('<option value="" selected>No project · chat only</option>');
       expect(page).toContain(':root[data-theme="light"]');
       expect(page).toContain(":focus-visible");
-      for (const name of ["setup", "tools", "workflows", "size", "power", "model", "provider"]) {
+      for (const name of ["setup", "tools", "workflows", "size", "power", "provider"]) {
         expect(page).not.toContain(`name="${name}"`);
+      }
+      expect(page).toContain('id="launch-model" name="model"');
+      expect(page).toContain('aria-expanded="false" aria-controls="launch-drawer"');
+      expect(page).toContain('id="launch-drawer" hidden');
+      expect(page).toContain('id="other-model-row" hidden');
+      expect(page).toContain('id="custom-chip" hidden>custom');
+      expect(page).toContain('id="working-chip">selected');
+      expect(page).toContain(
+        'id="plan-medium" type="button" data-size="medium" data-power="balanced" aria-pressed="true"',
+      );
+      expect(page).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
+      expect(page).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+      expect(page).toContain("box-shadow: 0 0 0 1px var(--accent)");
+      for (const size of ["small", "medium", "large"] as const) {
+        const l = SIZE_PRESETS[size];
+        const card = page.match(new RegExp(`id="plan-${size}"[\\s\\S]*?</button>`))![0];
+        expect(card).toContain(`<strong>${l.maxAgents}</strong>agents`);
+        expect(card).toContain(`<strong>${l.maxTurns}</strong>turns`);
+        expect(card).toContain(`<strong>${l.wallClockMs / 60_000}</strong>min`);
       }
       expect(page).not.toContain("--brand");
     }
@@ -7173,7 +7203,9 @@ describe("launching from the tab", () => {
       "nonce",
     );
     expect(fallback).toContain("claude: sonnet-9");
-    expect(fallback).not.toContain("gpt-6");
+    expect(fallback.match(/id="plan-medium"[\s\S]*?<\/button>/)![0]).not.toContain("gpt-6");
+    expect(fallback).toContain("claude: haiku-9");
+    expect(fallback).toContain("claude: opus-9");
   });
 
   test("all launcher text pairings meet 4.5:1 in both themes", () => {
@@ -7192,21 +7224,67 @@ describe("launching from the tab", () => {
     expect(page).toContain("--button-ink: var(--card)");
   });
 
-  test("each power's hover names the model every provider runs at it", () => {
-    const power = powerField("balanced", [
-      { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
-      { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
-    ]);
-    expect(power?.defaultValue).toBe("balanced");
-    expect(power?.options?.find((o) => o.value === "deep")?.hint).toBe(
-      "claude: opus-9 · copilot: lead claude-opus-5.5 · workers claude-sonnet-5",
+  test("plan lines use equal or split pins and provider class/default fallbacks", () => {
+    const pinned = buildLaunch({ projects: [], provider: "copilot" }, "nonce");
+    expect(pinned).toContain("claude-sonnet-5.5 · lead and workers");
+    expect(pinned).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
+    expect(pinned).toContain("lead claude-opus-5.5 · workers claude-sonnet-5");
+    const flat = buildLaunch(
+      {
+        projects: [],
+        provider: "claude",
+        classes: [
+          { provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } },
+        ],
+      },
+      "nonce",
     );
-    const flatPower = powerField("balanced", [
-      { provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } },
-    ]);
-    expect(flatPower?.options?.find((o) => o.value === "fast")?.hint).toBe(
-      "claude: auto (every power)",
+    expect(flat.match(/class="models plan-models">claude: auto/g)).toHaveLength(3);
+    const defaults = buildLaunch(
+      {
+        projects: [],
+        provider: "default-only",
+        classes: [{ provider: "default-only", defaultModel: "default-model" }],
+      },
+      "nonce",
     );
+    expect(defaults.match(/class="models plan-models">default-only: default-model/g)).toHaveLength(
+      3,
+    );
+  });
+
+  test("Model groups union defaults, classes and pins once per provider and escape metadata", () => {
+    const page = buildLaunch(
+      {
+        projects: [],
+        provider: "copilot",
+        classes: [
+          {
+            provider: "copilot",
+            defaultModel: "claude-sonnet-5",
+            classes: { fast: "class-only", balanced: "claude-sonnet-5", deep: "class-only" },
+          },
+          { provider: "second", defaultModel: "claude-sonnet-5" },
+          { provider: 'a"<provider>', defaultModel: 'x"</script>&' },
+          { provider: "empty" },
+        ],
+      },
+      "nonce",
+    );
+    const group = page.match(/<optgroup label="copilot">([\s\S]*?)<\/optgroup>/)![1]!;
+    for (const model of ["claude-sonnet-5", "claude-sonnet-5.5", "claude-opus-5.5", "class-only"]) {
+      expect(
+        group.match(new RegExp(`>${model.replaceAll(".", "\\.")}</option>`, "g")),
+      ).toHaveLength(1);
+    }
+    expect(page).toContain('<optgroup label="second">');
+    expect(page).toContain("&quot;provider&quot;:&quot;second&quot;");
+    expect(page).toContain('<optgroup label="a&quot;&lt;provider&gt;">');
+    expect(page).toContain("x&quot;&lt;/script&gt;&amp;</option>");
+    expect(page).not.toContain('<optgroup label="empty">');
+    expect(page.match(/<script>/g)).toHaveLength(1);
+    expect(page.match(/<\/script>/g)).toHaveLength(1);
+    expect(buildLaunch({ projects: [] }, "nonce")).not.toContain("<optgroup");
   });
 
   test("an ended swarm offers Run again, seeded with its size and model, only when its launch is kept", () => {
@@ -7875,6 +7953,10 @@ describe("the rib's surface", () => {
       expect(json).toContain("/tmp/sample");
       expect(json).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
       expect(json).not.toContain("claude: b");
+      for (const model of ["claude-default", "copilot-default", "default-only-model"]) {
+        expect(json).toContain(model);
+      }
+      expect(json).not.toContain("not-an-agent");
       const nonce = String(page).match(/data-nonce="([^"]+)"/)![1]!;
       expect(
         await rib.onAction?.(
@@ -7889,7 +7971,8 @@ describe("the rib's surface", () => {
       delete process.env.KEELSON_WORKFLOW_PROVIDER;
       const hostDefaultPage = String(await sm.composers.get(LAUNCH_KEY)!.compose());
       expect(hostDefaultPage).toContain("claude: b");
-      expect(hostDefaultPage).not.toContain("lead claude-sonnet-5");
+      expect(hostDefaultPage.match(/id="launch-models">([^<]*)/)![1]).toBe("claude: b");
+      expect(hostDefaultPage).toContain("default-only-model");
     } finally {
       if (saved === undefined) delete process.env.KEELSON_WORKFLOW_PROVIDER;
       else process.env.KEELSON_WORKFLOW_PROVIDER = saved;

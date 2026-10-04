@@ -15,6 +15,7 @@ import {
 } from "@keelson/shared";
 import type { StartSwarmInput } from "../tools.ts";
 import {
+  POWER_MODELS,
   pinnedModels,
   SIZE_PRESETS,
   SWARM_POWERS,
@@ -106,6 +107,54 @@ export function modelField(model?: string, provider?: string): Field {
   };
 }
 
+const PLANS = [
+  {
+    name: "Quick look",
+    blurb: "A narrow question, or a first pass before a bigger run.",
+    size: "small",
+    power: "fast",
+  },
+  {
+    name: "Working session",
+    blurb: "Most tasks: investigate, debate, and decide.",
+    size: "medium",
+    power: "balanced",
+  },
+  {
+    name: "Deep dig",
+    blurb: "Wide or hard problems that are worth the spend.",
+    size: "large",
+    power: "deep",
+  },
+] as const satisfies readonly {
+  name: string;
+  blurb: string;
+  size: SwarmSize;
+  power: SwarmPower;
+}[];
+
+function planModels(state: LaunchState, power: SwarmPower): string {
+  const pins = pinnedModels(state.provider, power);
+  if (pins) {
+    return pins.lead === pins.worker
+      ? `${pins.lead} · lead and workers`
+      : `lead ${pins.lead} · workers ${pins.worker}`;
+  }
+  const provider = state.classes?.find((c) => c.provider === state.provider);
+  const model = provider?.classes?.[power] ?? provider?.defaultModel;
+  return model ? `${state.provider}: ${model}` : "";
+}
+
+function effortDetail(size: SwarmSize): string {
+  const l = SIZE_PRESETS[size];
+  return `${l.maxAgents} agents, ${l.maxConcurrent} at once · ${l.maxTurns} turns in all, ${l.maxTurnsPerAgent} per agent · stops after ${l.wallClockMs / 60_000} min`;
+}
+
+function budgetSummary(size: SwarmSize): string {
+  const l = SIZE_PRESETS[size];
+  return `${l.maxAgents} agents · up to ${l.maxTurns} turns · about ${l.wallClockMs / 60_000} min`;
+}
+
 const PAGE_CSS = `
 :root { --button-ink: var(--bg); }
 :root[data-theme="light"] { --button-ink: var(--card); }
@@ -120,16 +169,40 @@ header { display: flex; align-items: center; gap: 14px; padding: 24px; flex-wrap
 h1 { font-size: 22px; line-height: 1.3; margin: 0 0 5px; color: var(--fg-strong); }
 p { margin: 0; }
 .hint { color: var(--muted); font-size: 13px; }
-button, textarea, select { font: inherit; }
+button, textarea, select, input { font: inherit; }
 button { cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; }
 .prepare { border-radius: 999px; color: var(--fg); background: var(--card-2); }
 .fields { padding: 0 24px 24px; }
 label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .08em; margin-bottom: 8px; }
-textarea, select { display: block; width: 100%; border: 1px solid var(--border);
+textarea, select, input { display: block; width: 100%; border: 1px solid var(--border);
   border-radius: 8px; padding: 12px; color: var(--fg); background: var(--bg); }
 textarea { resize: vertical; min-height: 112px; line-height: 1.5; }
 textarea::placeholder { color: var(--muted); opacity: 1; }
 .task-hint { margin-top: 8px; }
+.plans { margin-top: 24px; }
+.plans-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; }
+.chip { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.plan[aria-pressed="true"] .chip { color: var(--accent); }
+.customize { margin-left: auto; padding: 6px 0 6px 12px; border: 0; color: var(--fg); background: transparent; }
+.chevron { display: inline-block; margin-left: 6px; }
+.customize[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+.plan-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.plan { text-align: left; padding: 16px; background: var(--bg); color: var(--fg); }
+.plan[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.plan-title { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: var(--fg-strong); }
+.plan-blurb { display: block; margin-top: 8px; color: var(--muted); line-height: 1.5; min-height: 4.5em; }
+.figures { display: flex; gap: 18px; margin-top: 16px; }
+.figure { color: var(--muted); font-size: 12px; }
+.figure strong { display: block; font-size: 24px; line-height: 1.3; font-weight: 600; color: var(--fg-strong); }
+.plan-models { display: block; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 14px; }
+.drawer { margin-top: 16px; padding: 18px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card-2); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.effort-pills { display: flex; gap: 6px; }
+.effort-pills button { flex: 1; padding: 10px; background: var(--bg); color: var(--fg); }
+.effort-pills button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.detail { margin-top: 10px; line-height: 1.5; }
+.other-model { margin-top: 12px; }
 .project { margin-top: 24px; }
 .project > .hint { margin: -2px 0 12px; }
 .project-row { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(240px, 1fr); gap: 16px; align-items: start; }
@@ -142,7 +215,7 @@ footer { display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
 .start:disabled { cursor: wait; }
 .models { font-family: var(--mono); color: var(--muted); font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
 .mode { margin-left: auto; color: var(--fg); }
-button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 [hidden] { display: none !important; }
 @media (max-width: 640px) {
   header, footer { padding: 18px; }
@@ -150,6 +223,8 @@ button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2p
   .project-row { grid-template-columns: 1fr; }
   .prepare { width: 100%; }
   .mode { margin-left: 0; width: 100%; }
+  .plan-cards, .drawer { grid-template-columns: 1fr; }
+  .plan-blurb { min-height: 0; }
 }
 `;
 
@@ -213,14 +288,39 @@ function projectPath(rootPath: string): string {
 
 export function buildLaunch(state: LaunchState, nonce: string): string {
   const projects = state.projects.filter((p) => p.name !== DEFAULT_PROJECT_NAME);
-  const limits = SIZE_PRESETS.medium;
-  const pins = pinnedModels(state.provider, "balanced");
-  const classes = state.classes?.find((c) => c.provider === state.provider)?.classes;
-  const models = pins
-    ? `lead ${pins.lead} · workers ${pins.worker}`
-    : classes
-      ? `${state.provider}: ${classes.balanced}`
-      : "";
+  const models = Object.fromEntries(SWARM_POWERS.map((p) => [p, planModels(state, p)]));
+  const details = Object.fromEntries(SWARM_SIZES.map((s) => [s, effortDetail(s)]));
+  const budgets = Object.fromEntries(SWARM_SIZES.map((s) => [s, budgetSummary(s)]));
+  const cards = PLANS.map((plan) => {
+    const l = SIZE_PRESETS[plan.size];
+    const selected = plan.size === "medium";
+    return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
+      <span class="plan-title">${plan.name}${selected ? '<span class="chip" id="working-chip">selected</span>' : ""}</span>
+      <span class="plan-blurb">${plan.blurb}</span>
+      <span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>
+      <span class="models plan-models">${esc(models[plan.power]!)}</span>
+    </button>`;
+  }).join("");
+  const catalog = [...(state.classes ?? [])];
+  if (state.provider && !catalog.some((c) => c.provider === state.provider)) {
+    catalog.push({ provider: state.provider });
+  }
+  const modelOptions = catalog
+    .map((c) => {
+      const names = new Set([
+        ...(c.defaultModel ? [c.defaultModel] : []),
+        ...Object.values(c.classes ?? {}),
+        ...Object.values(POWER_MODELS[c.provider] ?? {}).flatMap((p) => [p.lead, p.worker]),
+      ]);
+      if (names.size === 0) return "";
+      return `<optgroup label="${esc(c.provider)}">${[...names]
+        .map(
+          (model) =>
+            `<option value="${esc(JSON.stringify({ model, provider: c.provider }))}">${esc(model)}</option>`,
+        )
+        .join("")}</optgroup>`;
+    })
+    .join("");
   const options = projects
     .map((p) => {
       const path = projectPath(p.rootPath);
@@ -234,11 +334,19 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
     <div class="intro"><h1>Start a swarm</h1><p class="hint">Describe the problem. Agents investigate, debate, and bring back a conclusion.</p></div>
     <button class="prepare" id="launch-prepare" type="button">Prepare in chat · attach an issue or PR</button>
   </header>
-  <form id="launch-form" data-nonce="${esc(nonce)}">
+  <form id="launch-form" data-nonce="${esc(nonce)}" data-provider="${esc(state.provider ?? "")}" data-models="${esc(JSON.stringify(models))}" data-details="${esc(JSON.stringify(details))}" data-budgets="${esc(JSON.stringify(budgets))}">
     <div class="fields">
       <label for="launch-task">TASK</label>
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
       <p class="hint task-hint" id="task-hint">Agents can't open links. Paste the text, or use Prepare in chat to attach the issue or PR.</p>
+      <section class="plans" aria-labelledby="plans-heading">
+        <div class="plans-heading"><span class="eyebrow" id="plans-heading">HOW HARD IT WORKS</span><span class="chip" id="custom-chip" hidden>custom</span><button class="customize" id="launch-customize" type="button" aria-expanded="false" aria-controls="launch-drawer"><span id="customize-label">Customize</span><span class="chevron" aria-hidden="true">⌄</span></button></div>
+        <div class="plan-cards">${cards}</div>
+        <div class="drawer" id="launch-drawer" hidden>
+          <div><label id="effort-label">EFFORT</label><div class="effort-pills" role="group" aria-labelledby="effort-label">${SWARM_SIZES.map((s) => `<button id="effort-${s}" type="button" data-size="${s}" aria-pressed="${s === "medium"}">${s}</button>`).join("")}</div><p class="hint detail" id="effort-detail">${esc(details.medium!)}</p></div>
+          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-detail">Keeps the plan's pair: ${esc(models.balanced!)}.</p></div>
+        </div>
+      </section>
       <div class="project">
         <label for="launch-project">PROJECT</label>
         <p class="hint" id="project-hint">Picking one lets agents read it. Anything more is a switch.</p>
@@ -252,7 +360,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
     </div>
     <footer>
       <button class="start" id="launch-start" type="button">Start swarm</button>
-      <div><p>${limits.maxAgents} agents · up to ${limits.maxTurns} turns · about ${limits.wallClockMs / 60_000} min · balanced models</p><p class="models">${esc(models)}</p></div>
+      <div aria-live="polite"><p id="launch-summary">${budgets.medium} · balanced models</p><p class="models" id="launch-models">${esc(models.balanced!)}</p></div>
       <p class="mode" id="launch-mode">Chat mode · nothing on disk</p>
     </footer>
   </form>
