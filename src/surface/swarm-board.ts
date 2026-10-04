@@ -175,8 +175,10 @@ export function turnsTile(s: SwarmSummary, now = new Date()): Stat {
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
   return {
     label: "Turns",
-    value: live(s) ? `${s.turnsUsed} of ${s.limits.maxTurns}` : s.turnsUsed,
-    sub: live(s) ? `pace over the last ${PACE_WINDOW_MINUTES} min` : `of ${s.limits.maxTurns}`,
+    value: s.turnsUsed,
+    sub: live(s)
+      ? `of ${s.limits.maxTurns} · pace over the last ${PACE_WINDOW_MINUTES} min`
+      : `of ${s.limits.maxTurns}`,
     ...(live(s) ? { delta: forecastDelta(forecast(s, now)) } : {}),
     ...(live(s) && left === 0 ? { tone: "warn" as const } : {}),
     ...(s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
@@ -432,27 +434,20 @@ export function buildAgentMap(s: SwarmSummary, selectedAgentId?: string): Canvas
   };
 }
 
-function mapConversation(s: SwarmSummary, selectedAgentId?: string): Section {
-  return {
-    kind: "columns",
-    columns: [
-      { sections: [buildAgentMap(s, selectedAgentId)] },
-      {
-        sections: [
-          ...conversation(s),
-          ...(s.status === "running" && s.conclusion === undefined
-            ? [
-                {
-                  kind: "actions" as const,
-                  wrap: true,
-                  items: [{ ...messageLead(s), expanded: true }],
-                },
-              ]
-            : []),
-        ],
-      },
-    ],
-  };
+function mapConversation(s: SwarmSummary, selectedAgentId?: string): Leaf[] {
+  return [
+    buildAgentMap(s, selectedAgentId),
+    ...conversation(s),
+    ...(s.status === "running" && s.conclusion === undefined
+      ? [
+          {
+            kind: "actions" as const,
+            wrap: true,
+            items: [{ ...messageLead(s), expanded: true }],
+          },
+        ]
+      : []),
+  ];
 }
 
 // ---- Spend: each agent's fresh tokens against the swarm's. ----
@@ -936,7 +931,7 @@ export function buildCockpit(
       title: "Budget",
       items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s)],
     },
-    mapConversation(s, opts.selectedAgentId),
+    ...mapConversation(s, opts.selectedAgentId),
     ...liveDetails(s, opts.selectedAgentId),
     { kind: "actions", wrap: true, items },
   ];
@@ -971,7 +966,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
           ...requests(s, needs, opts.server),
           ...outcome(s),
           stats(s, now),
-          mapConversation(s, opts.selectedAgentId),
+          ...mapConversation(s, opts.selectedAgentId),
           ...controls(s),
           ...details,
         ]

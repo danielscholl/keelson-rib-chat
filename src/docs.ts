@@ -473,7 +473,7 @@ the task and id with a lifecycle or needs-you pill and people dots; a state
 line; once the lead has concluded, the Outcome card; peer-review gate cards;
 an agent strip (busy, waiting, idle, capped, failed, with hatched open
 seats); three Budget tiles (Turns with its spark and a forecast as its delta,
-Time as a ticking time-left clock, fresh Tokens with cached in the sub); Map beside Conversation and Message the lead;
+Time as a ticking time-left clock, fresh Tokens with cached in the sub); full-width Map, then Conversation and Message the lead;
 Spend, Produced so far and Activity; then Open the report when one exists,
 Open the record, Details, and Stop swarm last. Message the lead is expanded directly under
 Conversation while running, unless the lead has concluded. Tokens says none yet
@@ -497,8 +497,9 @@ agent nodes select the agent.
 
 Map keeps at most 48 nodes and 200 edges. It retains You, the lead and the
 selected agent before optional nodes, removes dangling edges, and names actual
-shown/total counts in the heading for each clipped dimension. Map and Conversation
-stack on narrow screens. Task and context disclosures live in Details, not on
+shown/total counts in the heading for each clipped dimension.
+Map owns a full-width row on both live surfaces; Conversation and the eligible
+composer follow. Task and context disclosures live in Details, not on
 the cockpit or per-swarm board. The reading pane also keeps the full task.
 
 Selecting an agent opens its freshly composed inspector at the side. Selection
@@ -522,6 +523,10 @@ The 8,000-character body limit includes the operator prefix and mention.
 Capped/failed workers and exhausted budgets disable messaging with a reason.
 Stopping, concluded and ended inspectors are read-only with no composer; ended
 inspectors have no live clock, even when an old span has no recorded end.
+Ended agent heads use the swarm lifecycle pill: done, stopped, stalled, out of
+budget or failed, not the agent's last live status. Live, unended heads retain
+the agent's actual status. A retained end time with a still-live status
+suppresses the activity pill rather than inventing an outcome.
 
 Read question opens the question inspector at the side, at
 \`rib:chat:ask:<swarm>\`. Question contains the complete admitted question,
@@ -544,11 +549,22 @@ Details opens at the side from the cockpit, live board or ended board, at
 \`rib:chat:details:<swarm>\`. Task and context keeps the full task in ordered
 disclosures of at most 4,000 characters, and every retained context excerpt
 with its id, kind/title, source, retrieval time, head/base SHA and character
-count. Excerpts are not complete source bodies; missing legacy excerpts and
+count. A single-part task is labeled Task; longer tasks use numbered parts.
+Excerpts are not complete source bodies; missing legacy excerpts and
 truncation are explicit. Setup names the size/preset adjustment, all effective
 limits, requested models per role/provider, recorded overrides and effort.
 Actually served models stay separate from requested settings; missing legacy
-evidence says not recorded. Health shows recorded faults, and Transcript has
+evidence says not recorded. Details durations use exact whole minutes or
+seconds, including fractional seconds: 1800000 ms becomes 30 min, 300000 ms
+becomes 5 min, 45000 ms becomes 45 s, and 90000 ms remains 90 s.
+Setup has one Lead model row and one Worker model row, requested settings first.
+Without explicit settings, the request reads "balanced power, host default".
+Workers inherit the lead setting unless a worker role override is recorded.
+Each role's disclosure labels served model and served provider per agent by
+short handle, with explicit per-agent request overrides. Missing served
+evidence says not reported; missing role agents are explicitly not recorded.
+Recorded reasoning effort and aggregate token usage remain visible.
+Health shows recorded faults, and Transcript has
 one row. Details is read-only with no composer.
 
 Each inspector publishes before opening. Question and gate selection is shared
@@ -559,7 +575,9 @@ or Dismiss, not silently switched to another target. Stopping, concluded and
 ended question/gate inspectors have no live clock or composer. Forgetting,
 retention trimming and disposal release inspector keys.
 
-The live Turns tile's sub reads "pace over the last 5 min". The forecast counts
+The live Turns tile has a numeric value and its sub reads
+"of N · pace over the last 5 min". At 3 of 20 turns, its value is 3 and its sub
+is "of 20 · pace over the last 5 min". The forecast counts
 turn start timestamps over the last five minutes, or since the start when younger,
 with at least one minute as the rate's denominator. Older records without spans
 use the last five pace buckets over their covered time, accounting for the partial
@@ -571,17 +589,20 @@ turn budget (rounded up) would be unused; less reads fits.
 
 | Reading | Delta text | Direction | Tone |
 |---|---|---|---|
-| runs-out-first | N left · at R a minute they run out about hh:mm, before the clock | down | warn |
-| clock-first | N left · at this pace about M unused when the clock ends at hh:mm | flat | caution |
+| runs-out-first | N left · out about hh:mm, before the clock | down | warn |
+| clock-first | N left · about M unused at hh:mm | flat | caution |
 | fits | N left · pace fits the clock | flat | none |
 | no-pace | N left · no turn in 5 min | flat | none |
 | out-of-turns | none left · agents finish their turns | down | warn |
 
-N is turns left, R is turns a minute and M is projected unused turns. The host
+N is turns left and M is projected unused turns. Delta text stays within 44
+characters through the 200-turn bound. The rate is not displayed; times use the
+local clock. The host
 supplies the directional glyph, not the text. This is an advisory projection
 computed when the board composes, not stored or periodically refreshed.
 It changes nothing the engine does: no limits, nudges or stopping.
 An ended Turns tile has no forecast and its sub stays "of N".
+It retains the numeric used count and existing sparkline.
 
 Conversation shows the eight newest channel messages, newest first. Each row
 carries its author's short handle in an identity-colored chip (you for the
@@ -638,8 +659,8 @@ lead stays the primary action.
 An ended row opens its board in the drawer. The per-swarm board also still
 composes for MCP clients, live or ended. Live, it runs: the requests, the outcome once a
 report exists, a budget strip (turns with the same forecast delta, time, agents, fresh
-tokens with cached beside them), the same Map beside Conversation and Message the
-lead, Open the record, Details and Stop,
+tokens with cached beside them), the same full-width Map, then Conversation
+and the eligible Message the lead composer, Open the record, Details and Stop,
 then Spend, Produced so far and Activity. Ended section order: Outcome, Result,
 actions, Agents, Produced so far when applicable, Activity when events exist,
 About, then the separate Ended swarms back-link.

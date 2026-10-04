@@ -21,7 +21,7 @@ import {
   span,
   threadHref,
 } from "./format.ts";
-import { turnMeter } from "./parts.ts";
+import { LIFECYCLE, turnMeter } from "./parts.ts";
 import { AGENT_PILL, DETAIL_CHARS, openRecord } from "./swarm-board.ts";
 
 type Section = CanvasBoardView["sections"][number];
@@ -68,6 +68,11 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
   const href = channelHref(s);
   const refusal = agentMessageRefusal(s, a);
   const writableSwarm = s.status === "running" && !s.endedAt && s.conclusion === undefined;
+  const pill = !isLive(s.status)
+    ? LIFECYCLE[s.status]
+    : !s.endedAt
+      ? AGENT_PILL[a.status]
+      : undefined;
   const facts: Row[] = [
     ...(current
       ? [{ text: turnText(s, current) }, { text: `Woken by ${wakeSources(s, current)}` }]
@@ -119,7 +124,7 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
           {
             title: `@${shortHandle(a.handle, s.id)}`,
             titleTone: a.tone,
-            pill: AGENT_PILL[a.status],
+            ...(pill ? { pill } : {}),
             bar: a.lead
               ? turnMeter(s)
               : {

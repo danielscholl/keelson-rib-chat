@@ -78,10 +78,6 @@ export function forecast(
   };
 }
 
-function rateText(rate: number): string {
-  return rate.toFixed(1).replace(/\.0$/, "");
-}
-
 export function forecastDelta(f: Forecast): {
   text: string;
   direction: "down" | "flat";
@@ -90,13 +86,13 @@ export function forecastDelta(f: Forecast): {
   switch (f.reading) {
     case "runs-out-first":
       return {
-        text: `${f.left} left · at ${rateText(f.rate)} a minute they run out about ${hhmm(f.runOutAt)}, before the clock`,
+        text: `${f.left} left · out about ${hhmm(f.runOutAt)}, before the clock`,
         direction: "down",
         tone: "warn",
       };
     case "clock-first":
       return {
-        text: `${f.left} left · at this pace about ${f.unused} unused when the clock ends at ${hhmm(f.clockEndsAt)}`,
+        text: `${f.left} left · about ${f.unused} unused at ${hhmm(f.clockEndsAt)}`,
         direction: "flat",
         tone: "caution",
       };

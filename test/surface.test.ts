@@ -1179,8 +1179,8 @@ describe("the details inspector", () => {
     return section.items;
   };
 
-  test("reconstructs the full 8,000-character task with bounded numbered disclosures", () => {
-    for (const length of [1, 4000, 4001, 8000]) {
+  test("reconstructs tasks losslessly with a simple single-part label and bounded numbered parts", () => {
+    for (const length of [0, 1, 4000, 4001, 8000]) {
       const task = ` \n${"t".repeat(3994)} \n\n  **Task**\n`.padEnd(8000, " ").slice(0, length);
       const view = inspect(swarm("sfull", { task }));
       const disclosures = rows(view, "Task and context").filter((row) => row.detail !== undefined);
@@ -1188,8 +1188,12 @@ describe("the details inspector", () => {
       expect(disclosures).toHaveLength(Math.ceil(length / EXCERPT_CHARS));
       expect(disclosures.every((row) => row.detail!.length <= 4000)).toBe(true);
       expect(disclosures.map((row) => row.text)).toEqual(
-        disclosures.map((_, i) => `Task · part ${i + 1} of ${disclosures.length}`),
+        disclosures.map((_, i) =>
+          disclosures.length === 1 ? "Task" : `Task · part ${i + 1} of ${disclosures.length}`,
+        ),
       );
+      if (length === 0)
+        expect(rows(view, "Task and context")[0]).toEqual({ text: "Task text not recorded." });
     }
   });
 
@@ -1300,22 +1304,110 @@ describe("the details inspector", () => {
         }),
       ],
     });
-    const setup = rows(inspect(s), "Setup").map((row) => row.text);
-    expect(setup).toEqual([
+    const setup = rows(inspect(s), "Setup");
+    expect(setup.map((row) => row.text)).toEqual([
       "Size: small, adjusted",
       "Effective limits: 7 agents · 31 total turns · 9 turns per worker · 2 concurrent turns",
-      "Wall-clock limit: 1234567 ms · Turn timeout: 654321 ms · Idle nudge limit: 4",
-      "Requested provider: requested-provider",
-      "Requested lead model: requested-lead",
-      "Requested worker model: requested-worker (worker role override)",
-      "Requested power: deep",
+      "Wall-clock limit: 1234.567 s · Turn timeout: 654.321 s · Idle nudge limit: 4",
+      "Lead model: requested requested-lead, requested-provider",
+      "Worker model: requested requested-worker, requested-provider (worker role override)",
       "Recorded reasoning effort: xhigh",
-      "Requested model for @lead (lead): requested-lead",
-      "Served model for @lead (lead): served-lead · provider: served-provider",
-      "Requested model for @w1 (worker): individual-override (overrides role setting requested-worker)",
-      "Served model for @w1 (worker): served-worker · provider: worker-provider",
       "100 in · 20 out tokens",
     ]);
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.detail).toBe(
+      "@lead: served model: served-lead · served provider: served-provider · requested model: requested-lead",
+    );
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.detail).toBe(
+      "@w1: served model: served-worker · served provider: worker-provider · requested model: individual-override (agent override)",
+    );
+  });
+
+  test("worker model overrides power while retaining the power-derived effort", () => {
+    const setup = rows(
+      inspect(
+        swarm("sworkerpower", {
+          model: undefined,
+          workerModel: "requested-worker",
+          power: "balanced",
+          effort: "medium",
+        }),
+      ),
+      "Setup",
+    );
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
+      "Lead model: requested balanced power, copilot",
+    );
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
+      "Worker model: requested requested-worker, copilot (worker role override)",
+    );
+    expect(setup).toContainEqual({ text: "Recorded reasoning effort: medium" });
+  });
+
+  test("named lead and inherited worker models override power", () => {
+    const setup = rows(
+      inspect(
+        swarm("sleadpower", {
+          model: "requested-lead",
+          power: "deep",
+          effort: "high",
+        }),
+      ),
+      "Setup",
+    );
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
+      "Lead model: requested requested-lead, copilot",
+    );
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
+      "Worker model: requested requested-lead, copilot (inherits lead setting)",
+    );
+    expect(setup).toContainEqual({ text: "Recorded reasoning effort: high" });
+  });
+
+  test.each([
+    ["fast", "low"],
+    ["balanced", "medium"],
+    ["deep", "high"],
+  ] as const)("both roles request %s power without named models", (power, effort) => {
+    const setup = rows(
+      inspect(swarm("spoweronly", { model: undefined, workerModel: undefined, power, effort })),
+      "Setup",
+    );
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
+      `Lead model: requested ${power} power, copilot`,
+    );
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
+      `Worker model: requested ${power} power, copilot (inherits lead setting)`,
+    );
+    expect(setup).toContainEqual({ text: `Recorded reasoning effort: ${effort}` });
+  });
+
+  test("formats default Details durations as minutes without changing compact setup", () => {
+    const s = swarm("sduration");
+    const setup = rows(inspect(s), "Setup");
+    expect(setup.find((row) => row.text.startsWith("Wall-clock limit:"))?.text).toBe(
+      "Wall-clock limit: 30 min · Turn timeout: 5 min · Idle nudge limit: 2",
+    );
+    expect(setupRows(s)[0]?.text).toBe(sizeDetail(s));
+  });
+
+  test.each([
+    [45_000, "45 s"],
+    [60_000, "1 min"],
+    [90_000, "90 s"],
+    [1_800_000, "30 min"],
+    [300_000, "5 min"],
+    [45_001, "45.001 s"],
+    [500, "0.5 s"],
+    [1_234_567, "1234.567 s"],
+  ])("retains the exact Details limit of %i milliseconds as %s", (ms, text) => {
+    const s = swarm("sduration", {
+      limits: { ...SIZE_PRESETS.medium, wallClockMs: ms, turnTimeoutMs: ms },
+    });
+    const setup = rows(inspect(s), "Setup");
+    expect(setup.find((row) => row.text.startsWith("Wall-clock limit:"))?.text).toBe(
+      `Wall-clock limit: ${text} · Turn timeout: ${text} · Idle nudge limit: 2`,
+    );
+    expect(setup.map((row) => row.text).join("\n")).not.toContain(" ms");
   });
 
   test("legacy missing settings and power requests never masquerade as served evidence", () => {
@@ -1330,33 +1422,93 @@ describe("the details inspector", () => {
         agent("slegacy", 1),
       ],
     });
-    const setup = rows(inspect(s), "Setup").map((row) => row.text);
-    expect(setup).toContain("Requested provider: host default; no explicit provider recorded");
-    expect(setup).toContain("Requested lead model: fast power; no explicit model recorded");
-    expect(setup).toContain(
-      "Requested worker model: fast power; no explicit model recorded (inherits lead setting)",
+    const setup = rows(inspect(s), "Setup");
+    const settings = setup.map((row) => row.text);
+    expect(settings).toContain("Lead model: requested fast power, host default");
+    expect(settings).toContain(
+      "Worker model: requested fast power, host default (inherits lead setting)",
     );
-    expect(setup).toContain("Recorded reasoning effort: not recorded");
-    expect(setup).toContain(
-      "Served model for @lead (lead): actual-model · provider: actual-provider",
+    expect(settings).toContain("Recorded reasoning effort: not recorded");
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.detail).toBe(
+      "@lead: served model: actual-model · served provider: actual-provider",
     );
-    expect(setup).toContain("Served model for @w1 (worker): not reported · provider: not reported");
-    expect(setup.filter((text) => text.startsWith("Requested")).join(" ")).not.toContain(
-      "actual-model",
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.detail).toBe(
+      "@w1: served model: not reported · served provider: not reported",
     );
-    expect(setup.filter((text) => text.startsWith("Requested")).join(" ")).not.toContain(
-      "actual-provider",
+    expect(settings.join("\n")).not.toContain("actual-model");
+    expect(settings.join("\n")).not.toContain("actual-provider");
+    const missing = rows(inspect({ ...s, power: undefined, agents: [] }), "Setup");
+    expect(missing).toContainEqual({
+      text: "Lead model: requested balanced power, host default",
+      detail: "No lead agents recorded; served models and per-agent requests not recorded.",
+    });
+    expect(missing).toContainEqual({
+      text: "Worker model: requested balanced power, host default (inherits lead setting)",
+      detail: "No worker agents recorded; served models and per-agent requests not recorded.",
+    });
+    const inherited = rows(inspect({ ...s, model: "explicit-lead" }), "Setup");
+    expect(inherited.map((row) => row.text)).toContain(
+      "Worker model: requested explicit-lead, host default (inherits lead setting)",
     );
-    expect(
-      rows(inspect({ ...s, power: undefined, agents: [] }), "Setup").map((row) => row.text),
-    ).toContain("Requested lead model: host default; no explicit model recorded");
-    expect(rows(inspect({ ...s, agents: [] }), "Setup").map((row) => row.text)).toContain(
-      "Served models and per-agent requests not recorded.",
+  });
+
+  test.each([undefined, "fast", "balanced", "deep"] as const)(
+    "groups a twelve-agent roster by role with %s power and retains every served model",
+    (power) => {
+      const agents = Array.from({ length: 12 }, (_, i) =>
+        agent("smodels", i, {
+          model: i === 1 ? "agent-override" : undefined,
+          servedModel: `served-${i}`,
+          providerId: `provider-${i}`,
+        }),
+      );
+      const setup = rows(
+        inspect(swarm("smodels", { power, agents, model: undefined, provider: undefined })),
+        "Setup",
+      );
+      const models = setup.filter((row) => /^(Lead|Worker) model:/.test(row.text));
+      expect(models).toHaveLength(2);
+      expect(models[0]?.text).toBe(
+        `Lead model: requested ${power ?? "balanced"} power, host default`,
+      );
+      expect(models[1]?.text).toBe(
+        `Worker model: requested ${power ?? "balanced"} power, host default (inherits lead setting)`,
+      );
+      expect(models[0]?.detail?.split("\n")).toHaveLength(1);
+      expect(models[1]?.detail?.split("\n")).toHaveLength(11);
+      expect(models[1]?.detail).toContain("requested model: agent-override (agent override)");
+      for (const [i, a] of agents.entries()) {
+        expect(models[i === 0 ? 0 : 1]?.detail).toContain(
+          `served model: ${a.servedModel} · served provider: ${a.providerId}`,
+        );
+      }
+    },
+  );
+
+  test("role and per-agent overrides never fill missing served model or provider evidence", () => {
+    const s = swarm("soverrides", {
+      provider: "requested-provider",
+      model: "requested-lead",
+      workerModel: "requested-worker",
+      agents: [
+        agent("soverrides", 0, { model: "lead-override", servedModel: "served-lead" }),
+        agent("soverrides", 1, { model: "requested-worker", providerId: "served-provider" }),
+      ],
+    });
+    const setup = rows(inspect(s), "Setup");
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.detail).toBe(
+      "@lead: served model: served-lead · served provider: not reported · requested model: lead-override (agent override)",
     );
-    const inherited = rows(inspect({ ...s, model: "explicit-lead" }), "Setup").map(
-      (row) => row.text,
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.detail).toBe(
+      "@w1: served model: not reported · served provider: served-provider · requested model: requested-worker",
     );
-    expect(inherited).toContain("Requested worker model: explicit-lead (inherits lead setting)");
+    const workerOnly = rows(inspect({ ...s, model: undefined }), "Setup");
+    expect(workerOnly.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
+      "Lead model: requested balanced power, requested-provider",
+    );
+    expect(workerOnly.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
+      "Worker model: requested requested-worker, requested-provider (worker role override)",
+    );
   });
 
   test("missing legacy excerpts, empty bodies and source truncation remain explicit", () => {
@@ -1633,10 +1785,53 @@ describe("the agent inspector", () => {
     for (const status of ["busy", "idle", "waiting", "capped", "failed"] as const) {
       const s = writer();
       const view = inspect({ ...s, agents: [s.agents[0]!, { ...s.agents[1]!, status }] });
+      expect(view.sections[0]).toMatchObject({ items: [{ pill: { label: status } }] });
       const composer = view.sections.find((x) => x.kind === "actions");
       const item = composer?.kind === "actions" ? composer.items[0] : undefined;
       expect(item?.disabled ?? false).toBe(status === "capped" || status === "failed");
       if (item?.disabled) expect(item.reason).toContain("cannot take another turn");
+    }
+  });
+
+  test("terminal agent heads reflect the swarm lifecycle regardless of stale activity or end time", () => {
+    const endings = [
+      ["done", { label: "done", tone: "ok" }],
+      ["stopped", { label: "stopped", tone: "neutral" }],
+      ["stalled", { label: "stalled", tone: "warn" }],
+      ["exhausted", { label: "out of budget", tone: "warn" }],
+      ["error", { label: "failed", tone: "error" }],
+    ] as const;
+    for (const [status, pill] of endings) {
+      for (const agentStatus of ["idle", "waiting", "busy", "capped", "failed"] as const) {
+        for (const endedAt of [undefined, T0]) {
+          const s = writer();
+          const snapshot = {
+            ...s,
+            status,
+            endedAt,
+            agents: s.agents.map((a) => ({ ...a, status: agentStatus })),
+          };
+          for (const index of [0, 1]) {
+            const view = inspect(snapshot, index);
+            expect(view.sections[0]).toMatchObject({
+              items: [{ title: index === 0 ? "@lead" : "@w1", pill }],
+            });
+            expect(JSON.stringify(view)).not.toContain('"clock"');
+            expect(JSON.stringify(view)).not.toContain('"type":"message-agent"');
+          }
+        }
+      }
+    }
+  });
+
+  test("a retained end time with a live status suppresses activity pills without inventing an outcome", () => {
+    for (const status of ["running", "stopping"] as const) {
+      const view = inspect({ ...writer(), status, endedAt: T0 });
+      const head = view.sections[0];
+      if (head?.kind !== "cards") throw new Error("missing agent head");
+      expect(head.items[0]).not.toHaveProperty("pill");
+      expect(JSON.stringify(view)).not.toContain('"clock"');
+      expect(JSON.stringify(view)).not.toContain('"type":"message-agent"');
     }
   });
 
@@ -1723,10 +1918,10 @@ describe("the live cockpit", () => {
   const sections = (s: SwarmSummary, now?: Date) => {
     const sections = buildCockpit(s, needsYou(s), { titled: true, now });
     board(INDEX_KEY, { view: "board", title: "Swarms", sections });
-    return leaves(sections);
+    return sections;
   };
 
-  test("the head, state, agent strip and budget precede conversation, composer, details and verbs", () => {
+  test("the head, state, agent strip and budget precede Map, conversation, composer, details and verbs", () => {
     const s = fixtures.running!;
     const cockpit = sections(s);
     expect(cockpit.map((x) => x.kind)).toEqual([
@@ -1750,10 +1945,7 @@ describe("the live cockpit", () => {
     expect(head).not.toHaveProperty("chip");
     expect(head?.footnote).toBeUndefined();
     expect(head?.fields?.[0]?.people).toHaveLength(2);
-    const columns = buildCockpit(s, [], { titled: true }).find((x) => x.kind === "columns");
-    expect(
-      columns?.kind === "columns" ? columns.columns.map((c) => c.sections[0]?.kind) : [],
-    ).toEqual(["graph", "rows"]);
+    expect(cockpit.some((x) => x.kind === "columns")).toBe(false);
     expect(cockpit.at(-1)).toMatchObject({
       kind: "actions",
       wrap: true,
@@ -1764,6 +1956,45 @@ describe("the live cockpit", () => {
       ],
     });
     expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
+  });
+
+  test("Map owns a top-level row before Conversation and the eligible composer on every live surface", () => {
+    for (const status of ["running", "stopping"] as const) {
+      for (const conclusion of [undefined, "Done"]) {
+        for (const recent of [undefined, [], fixtures.running!.recent]) {
+          const s = { ...fixtures.running!, status, conclusion, recent };
+          const selectedAgentId = s.agents[1]!.id;
+          const index = buildIndex(
+            state({ live: [s], selectedAgents: new Map([[s.id, selectedAgentId]]) }),
+          );
+          const perSwarm = buildSwarmBoard(s, { selectedAgentId });
+          board(INDEX_KEY, index);
+          board(swarmKey(s.id), perSwarm);
+          for (const raw of [
+            buildCockpit(s, needsYou(s), { titled: true, selectedAgentId }),
+            index.sections,
+            perSwarm.sections,
+          ]) {
+            expect(raw.some((section) => section.kind === "columns")).toBe(false);
+            const mapAt = raw.findIndex((section) => section.kind === "graph");
+            expect(mapAt).toBeGreaterThanOrEqual(0);
+            expect(raw[mapAt]).toEqual(buildAgentMap(s, selectedAgentId));
+            const conversationAt = raw.findIndex((section) => section.title === "Conversation");
+            expect(conversationAt).toBe(recent?.length ? mapAt + 1 : -1);
+            const composerAt = raw.findIndex(
+              (section) =>
+                section.kind === "actions" &&
+                section.items.some((item) => item.type === "message-lead" && item.expanded),
+            );
+            expect(composerAt).toBe(
+              status === "running" && conclusion === undefined
+                ? mapAt + (recent?.length ? 2 : 1)
+                : -1,
+            );
+          }
+        }
+      }
+    }
   });
 
   test("report, concluding and stopping verbs match their lifecycle", () => {
@@ -1992,8 +2223,8 @@ describe("the live cockpit", () => {
       items: [
         {
           label: "Turns",
-          value: "11 of 40",
-          sub: "pace over the last 5 min",
+          value: 11,
+          sub: "of 40 · pace over the last 5 min",
           spark: [1, 2, 0],
           delta: {
             text: "29 left · no turn in 5 min",
@@ -2021,9 +2252,9 @@ describe("the live cockpit", () => {
     const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
     expect(budget?.kind === "stats" ? budget.items[0] : undefined).toMatchObject({
       label: "Turns",
-      sub: "pace over the last 5 min",
+      sub: "of 40 · pace over the last 5 min",
       delta: {
-        text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+        text: `8 left · out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
         direction: "down",
         tone: "warn",
       },
@@ -2050,7 +2281,7 @@ describe("Swarms boards", () => {
         turnsUsed: 32,
         pace: [2, 1, 2, 1, 2],
         delta: {
-          text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+          text: `8 left · out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
           direction: "down",
           tone: "warn",
         },
@@ -2059,7 +2290,7 @@ describe("Swarms boards", () => {
         turnsUsed: 18,
         pace: [1, 1, 1, 1, 2],
         delta: {
-          text: `22 left · at this pace about 11 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          text: `22 left · about 11 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
           direction: "flat",
           tone: "caution",
         },
@@ -2099,6 +2330,8 @@ describe("Swarms boards", () => {
         const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
         const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
         expect(tile?.delta).toEqual(delta);
+        expect(tile?.value).toBe(turnsUsed);
+        expect(tile?.sub).toBe("of 40 · pace over the last 5 min");
         expect(tile?.tone).toBe(turnsUsed === 40 ? "warn" : undefined);
       }
     }
@@ -2120,7 +2353,7 @@ describe("Swarms boards", () => {
         const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
         const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
         expect(tile?.delta).toEqual({
-          text: `35 left · at this pace about 12 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          text: `35 left · about 12 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
           direction: "flat",
           tone: "caution",
         });
@@ -2138,6 +2371,107 @@ describe("Swarms boards", () => {
     expect(tile).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: s.pace });
     expect(tile?.delta).toBeUndefined();
     expect(tile).not.toHaveProperty("delta");
+  });
+
+  test("the three-of-twenty fixture preserves full-width spawn, wake and question edges and readable inspectors", () => {
+    const ask = {
+      agentId: "s3for-w1",
+      handle: "s3for-w1",
+      messageId: "question",
+      threadRootId: "question",
+      text: "@operator which retry cap?",
+      at: "2026-09-22T14:04:00.000Z",
+    };
+    const s = swarm("s3for", {
+      turnsUsed: 3,
+      limits: { ...SIZE_PRESETS.medium, maxTurns: 20, turnTimeoutMs: 45_000 },
+      size: "custom",
+      agents: [
+        agent("s3for", 0, { turns: 2, status: "busy" }),
+        agent("s3for", 1, { turns: 1, status: "waiting", spawnedBy: "s3for-lead" }),
+      ],
+      health: { asks: [ask] },
+      activity: [{ at: ask.at, text: ask.text, kind: "ask", actor: ask.agentId }],
+      recent: [{ id: ask.messageId, at: ask.at, author: ask.agentId, text: ask.text }],
+      pace: [1, 1, 0, 1, 0],
+      spans: turnSpans("s3for", [1, 2, 4]).map((span, i) => ({
+        ...span,
+        agentId: i === 1 ? "s3for-w1" : "s3for-lead",
+        n: i === 2 ? 2 : 1,
+        wokeBy: i === 0 ? ["rib"] : i === 1 ? ["s3for-lead", "operator"] : ["s3for-w1"],
+        ...(i < 2 ? { endedAt: span.startedAt, outcome: "ok" as const } : {}),
+      })),
+    });
+    const now = new Date("2026-09-22T14:05:00.000Z");
+    const selectedAgentId = s.agents[1]!.id;
+    const index = buildIndex(
+      state({ live: [s], selectedAgents: new Map([[s.id, selectedAgentId]]) }),
+      now,
+    );
+    const perSwarm = buildSwarmBoard(s, { now, selectedAgentId });
+    const cockpit = {
+      view: "board" as const,
+      sections: buildCockpit(s, needsYou(s), { titled: true, now, selectedAgentId }),
+    };
+    for (const view of [index, perSwarm, cockpit]) {
+      board(swarmKey(s.id), view);
+      expect(view.sections.some((section) => section.kind === "columns")).toBe(false);
+      const budget = view.sections.find((section) => section.title === "Budget");
+      expect(budget?.kind === "stats" ? budget.items[0] : undefined).toEqual({
+        label: "Turns",
+        value: 3,
+        sub: "of 20 · pace over the last 5 min",
+        spark: [1, 1, 0, 1, 0],
+        delta: {
+          text: `17 left · about 2 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+          direction: "flat",
+          tone: "caution",
+        },
+      });
+      const mapAt = view.sections.findIndex((section) => section.kind === "graph");
+      const map = view.sections[mapAt];
+      if (map?.kind !== "graph") throw new Error("missing top-level Map");
+      expect(map.nodes.find((node) => node.id === selectedAgentId)?.selected).toBe(true);
+      expect(map.edges).toEqual([
+        { source: "s3for-lead", target: "s3for-w1", label: "×1" },
+        { source: "you", target: "s3for-w1", label: "×1" },
+        { source: "s3for-w1", target: "s3for-lead", label: "×1" },
+        { source: "s3for-w1", target: "you", label: "asked ×1", dashed: true },
+      ]);
+      expect(view.sections[mapAt + 1]?.title).toBe("Conversation");
+      expect(view.sections[mapAt + 2]).toMatchObject({
+        kind: "actions",
+        items: [{ type: "message-lead", expanded: true }],
+      });
+    }
+    const details = buildDetailsInspector(s);
+    board(detailsKey(s.id), details);
+    const task = details.sections.find((section) => section.title === "Task and context");
+    expect(task?.kind === "rows" ? task.items[0] : undefined).toMatchObject({
+      text: "Task",
+      detail: s.task,
+    });
+    const setup = details.sections.find((section) => section.title === "Setup");
+    if (setup?.kind !== "rows") throw new Error("missing Setup");
+    expect(setup.items.map((row) => row.text)).toContain(
+      "Wall-clock limit: 30 min · Turn timeout: 45 s · Idle nudge limit: 2",
+    );
+    expect(setup.items.filter((row) => /^(Lead|Worker) model:/.test(row.text))).toHaveLength(2);
+    const ended = { ...s, status: "done" as const, endedAt: now.toISOString() };
+    const inspector = buildAgentInspector(ended, ended.agents[1]!);
+    board(agentKey(s.id), inspector);
+    expect(inspector.sections[0]).toMatchObject({
+      items: [{ title: "@w1", pill: { label: "done", tone: "ok" } }],
+    });
+    expect(JSON.stringify(inspector)).not.toContain('"clock"');
+    expect(JSON.stringify(inspector)).not.toContain('"type":"message-agent"');
+    const result = buildSwarmBoard(ended).sections.find((section) => section.title === "Result");
+    expect(result?.kind === "stats" ? result.items[0] : undefined).toEqual({
+      label: "Turns",
+      value: 3,
+      sub: "of 20",
+      spark: [1, 1, 0, 1, 0],
+    });
   });
 
   test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
@@ -2547,8 +2881,8 @@ describe("Swarms boards", () => {
     expect(details).toContain(
       "Effective limits: 5 agents · 40 total turns · 12 turns per worker · 3 concurrent turns",
     );
-    expect(details).toContain("Requested lead model: gpt-6-astra");
-    expect(details).toContain("Requested worker model: gpt-5.6-sol");
+    expect(details).toContain("Lead model: requested gpt-6-astra, copilot");
+    expect(details).toContain("Worker model: requested gpt-5.6-sol, copilot");
     expect(text).not.toContain('"type":"steer"');
     expect(text).toContain('"label":"Runs verified","value":"1 of 1","tone":"ok"');
     expect(JSON.stringify(buildIndex(state({ ended: [fixtures.done!] })))).toContain(
@@ -2791,12 +3125,14 @@ describe("Swarms boards", () => {
     expect(JSON.stringify(out)).toContain('"title":"Out of turns at 40"');
   });
 
-  test("a live board runs requests, budget, conversation, controls, then the details", () => {
+  test("a live board runs requests, budget, Map, conversation, controls, then the details", () => {
     const view = buildSwarmBoard({ ...fixtures.review!, recent: fixtures.running!.recent });
     expect(view.sections.map((x) => x.kind)).toEqual([
       "cards",
       "stats",
-      "columns",
+      "graph",
+      "rows",
+      "actions",
       "actions",
       "rows",
     ]);
@@ -2845,11 +3181,11 @@ describe("Swarms boards", () => {
     const tiles = stats?.kind === "stats" ? stats.items : [];
     expect(tiles[0]).toMatchObject({
       label: "Turns",
-      value: "11 of 40",
-      sub: "pace over the last 5 min",
+      value: 11,
+      sub: "of 40 · pace over the last 5 min",
       spark: [1, 3, 2, 0, 1],
       delta: {
-        text: `29 left · at this pace about 13 unused when the clock ends at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+        text: `29 left · about 13 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
         direction: "flat",
         tone: "caution",
       },
@@ -3241,7 +3577,7 @@ describe("ended board contract", () => {
       "Full task destination sentinel.",
       "Context destination sentinel.",
       "Effective limits:",
-      "Requested lead model:",
+      "Lead model: requested",
     ])
       expect(frame).not.toContain(removed);
     const details = buildDetailsInspector(s);
@@ -3257,7 +3593,7 @@ describe("ended board contract", () => {
       "Full task destination sentinel.",
       "Context destination sentinel.",
       "Effective limits:",
-      "Requested lead model:",
+      "Lead model: requested",
     ])
       expect(detailText).toContain(retained);
   });
@@ -6331,9 +6667,11 @@ describe("power and the served model", () => {
       agents: done.agents.map((a) => ({ ...a, model: undefined, servedModel: "gpt-6-pro" })),
     };
     const details = JSON.stringify(buildDetailsInspector(s));
-    expect(details).toContain("Requested power: deep");
-    expect(details).toContain("Requested provider: copilot");
-    expect(details).toContain("Served model for @lead (lead): gpt-6-pro");
+    expect(details).toContain("Lead model: requested deep power, copilot");
+    expect(details).toContain(
+      "Worker model: requested deep power, copilot (inherits lead setting)",
+    );
+    expect(details).toContain("@lead: served model: gpt-6-pro");
     board(swarmKey(s.id), buildSwarmBoard(s));
   });
 });

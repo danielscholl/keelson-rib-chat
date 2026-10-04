@@ -85,7 +85,7 @@ describe("contributed docs", () => {
     for (const reading of ["runs-out-first", "clock-first", "fits", "no-pace", "out-of-turns"]) {
       expect(swarms).toContain(`| ${reading} |`);
     }
-    expect(swarms).toContain("pace over the last 5 min");
+    expect(swarms).toContain("of N · pace over the last 5 min");
     expect(swarms).toContain("turn start timestamps over the last five minutes");
     expect(swarms).toContain("Older records without spans");
     expect(swarms).toContain("accounting for the partial");
@@ -94,6 +94,62 @@ describe("contributed docs", () => {
     expect(swarms).toContain("computed when the board composes");
     expect(swarms).toContain("It changes nothing the engine does: no limits, nudges or stopping.");
     expect(swarms).toContain('An ended Turns tile has no forecast and its sub stays "of N".');
+  });
+
+  test("packaged and site docs agree on full-width Map, compact Turns and readable Details", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    const page = readFileSync(
+      new URL("../docs/src/content/docs/guides/swarms-tab.md", import.meta.url),
+      "utf8",
+    );
+    const normalized = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
+    for (const text of [normalized(swarms), normalized(page)]) {
+      for (const phrase of [
+        "Map owns a full-width row on both live surfaces; Conversation and the eligible composer follow",
+        "The live Turns tile has a numeric value",
+        "At 3 of 20 turns, its value is 3",
+        '"of 20 · pace over the last 5 min"',
+        "Delta text stays within 44 characters through the 200-turn bound",
+        "The rate is not displayed",
+        'An ended Turns tile has no forecast and its sub stays "of N"',
+        "It retains the numeric used count and existing sparkline",
+        "A single-part task is labeled Task; longer tasks use numbered parts",
+        "Details durations use exact whole minutes or seconds, including fractional seconds",
+        "1800000 ms becomes 30 min",
+        "300000 ms becomes 5 min",
+        "45000 ms becomes 45 s",
+        "90000 ms remains 90 s",
+        "Setup has one Lead model row and one Worker model row, requested settings first",
+        '"balanced power, host default"',
+        "Each role's disclosure labels served model and served provider per agent by short handle",
+        "explicit per-agent request overrides",
+        "Missing served evidence says not reported",
+        "missing role agents are explicitly not recorded",
+        "Recorded reasoning effort and aggregate token usage remain visible",
+        "Ended agent heads use the swarm lifecycle pill: done, stopped, stalled, out of budget or failed",
+        "not the agent's last live status",
+        "Live, unended heads retain the agent's actual status",
+        "A retained end time with a still-live status suppresses the activity pill",
+      ])
+        expect(text).toContain(phrase);
+      for (const line of [
+        "| runs-out-first | N left · out about hh:mm, before the clock | down | warn |",
+        "| clock-first | N left · about M unused at hh:mm | flat | caution |",
+        "| fits | N left · pace fits the clock | flat | none |",
+        "| no-pace | N left · no turn in 5 min | flat | none |",
+        "| out-of-turns | none left · agents finish their turns | down | warn |",
+      ])
+        expect(text).toContain(line);
+      for (const obsolete of [
+        "Map beside Conversation",
+        "Map and Conversation stack on narrow screens",
+        "at R a minute",
+        "at this pace about",
+        "rate shows one decimal",
+        "Task · part 1 of 1",
+      ])
+        expect(text).not.toContain(obsolete);
+    }
   });
 
   test("packaged and site docs agree on produced rows, honest CI and PR totals", () => {

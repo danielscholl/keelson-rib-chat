@@ -44,7 +44,7 @@ describe("turn budget forecast", () => {
       clockEndsAt: endsAt(s),
     });
     expect(forecastDelta(f)).toEqual({
-      text: `8 left · at 1.6 a minute they run out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+      text: `8 left · out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
       direction: "down",
       tone: "warn",
     });
@@ -62,7 +62,7 @@ describe("turn budget forecast", () => {
       unused: 11,
     });
     expect(forecastDelta(f)).toEqual({
-      text: `22 left · at this pace about 11 unused when the clock ends at ${hhmm(endsAt(s))}`,
+      text: `22 left · about 11 unused at ${hhmm(endsAt(s))}`,
       direction: "flat",
       tone: "caution",
     });
@@ -257,13 +257,40 @@ describe("turn budget forecast", () => {
   });
 
   test.each([
-    [5, "1"],
-    [10, "2"],
-    [1, "0.2"],
-    [8, "1.6"],
-  ])("formats %i turns in five minutes as %s a minute", (turns, text) => {
+    [5, 1],
+    [10, 2],
+    [1, 0.2],
+    [8, 1.6],
+  ])("retains the rate of %i turns in five minutes as %f without displaying it", (turns, rate) => {
     const f = forecast(summary({ turnsUsed: 39, spans: recentSpans(turns) }), NOW);
-    expect(forecastDelta(f).text).toContain(`at ${text} a minute`);
+    expect(f).toMatchObject({ rate });
+    if (f.reading !== "runs-out-first") throw new Error("expected turns to run out first");
+    expect(forecastDelta(f).text).toBe(`1 left · out about ${hhmm(f.runOutAt)}, before the clock`);
+    expect(forecastDelta(f).text).not.toContain("a minute");
+  });
+
+  test("keeps every reading within 44 characters for all admitted left and unused counts", () => {
+    const base = {
+      clockEndsAt: "2026-09-22T20:13:00.000Z",
+      runOutAt: "2026-09-22T20:09:00.000Z",
+      rate: 1,
+    };
+    const check = (f: Forecast, direction: "down" | "flat", tone?: "warn" | "caution") => {
+      const delta = forecastDelta(f);
+      expect(delta.text.length).toBeLessThanOrEqual(44);
+      expect(delta.text).not.toMatch(/[▼▲→↓↑←↔]/);
+      expect(delta.direction).toBe(direction);
+      expect(delta.tone).toBe(tone);
+    };
+    check({ ...base, left: 0, reading: "out-of-turns" }, "down", "warn");
+    for (let left = 1; left <= 200; left++) {
+      check({ ...base, left, reading: "runs-out-first" }, "down", "warn");
+      check({ ...base, left, reading: "no-pace" }, "flat");
+      for (let unused = 0; unused <= left; unused++) {
+        check({ ...base, left, unused, reading: "clock-first" }, "flat", "caution");
+        check({ ...base, left, unused, reading: "fits" }, "flat");
+      }
+    }
   });
 
   test("leaves directional glyphs to the host for every reading", () => {
