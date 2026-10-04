@@ -6,7 +6,13 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { Rib, RibAuthStatus, RibContext, RibViewDescriptor } from "@keelson/shared";
+import {
+  DEFAULT_PROJECT_NAME,
+  type Rib,
+  type RibAuthStatus,
+  type RibContext,
+  type RibViewDescriptor,
+} from "@keelson/shared";
 import { ClickClackClient, ClickClackError } from "./clickclack.ts";
 import { serialStarts, type WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
@@ -344,7 +350,10 @@ function pruneLaunches(): void {
 }
 
 function launchState(): LaunchState {
-  const projects = (getProjects?.() ?? []).map((p) => ({ id: p.id, name: p.name }));
+  const projects = (getProjects?.() ?? [])
+    .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
+    .map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath }));
+  const provider = servingProvider(undefined);
   const canDispatch = Boolean(startWorkflow && getRunStatus && cancelRun);
   const classes = (getProviders?.() ?? []).flatMap((p) =>
     p.modelClasses && !NOT_AGENT_PROVIDERS.has(p.id)
@@ -353,8 +362,7 @@ function launchState(): LaunchState {
   );
   return {
     projects,
-    live: swarms.size + starting.size,
-    ended: ended.size,
+    ...(provider ? { provider } : {}),
     refused: [...refusedApprovals],
     ...(classes.length > 0 ? { classes } : {}),
     ...(canDispatch

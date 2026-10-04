@@ -25,12 +25,10 @@ type Item = ActionsSection["items"][number];
 type Field = NonNullable<Item["fields"]>[number];
 
 export interface LaunchState {
-  projects: readonly { id: string; name: string }[];
+  projects: readonly { id: string; name: string; rootPath: string }[];
   // Why the lead can't dispatch workflows on this host, when it can't.
   dispatchBlocked?: string;
-  live: number;
-  // Ended swarms the rib keeps; with any live one, the form folds away.
-  ended: number;
+  provider?: string;
   // Each provider's class map, for the hover on each power.
   classes?: readonly { provider: string; classes: ModelClassMap }[];
   // Workflows whose approvals the host keeps for the operator.
@@ -229,7 +227,7 @@ export function buildLaunch(state: LaunchState): CanvasBoardView {
   return {
     view: "board",
     title: "Start a swarm",
-    header: { defaultCollapsed: state.live + state.ended > 0 },
+    header: { defaultCollapsed: false },
     sections: [{ kind: "actions", wrap: true, items }],
   };
 }

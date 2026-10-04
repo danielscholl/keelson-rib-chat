@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type CanvasBoardView,
+  DEFAULT_PROJECT_NAME,
   expectView,
   type RibViewDescriptor,
   ribClientEffectSchema,
@@ -4311,7 +4312,7 @@ describe("publishing", () => {
             ? { live: s }
             : { ended: s };
       },
-      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
       readLog: async () => "log",
@@ -4896,7 +4897,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ live }),
       find: (id) => ({ live: live.find((s) => s.id === id) }),
-      launch: () => ({ projects: [], live: live.length, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: live.length }),
       readLog: async () => "log",
@@ -4934,7 +4935,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ live }),
       find: (id) => ({ live: live.find((s) => s.id === id) }),
-      launch: () => ({ projects: [], live: live.length, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: live.length }),
       readLog: async () => "log",
@@ -5013,7 +5014,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ ended: [...ended.values()] }),
       find: (id): SwarmRecord => (ended.has(id) ? { ended: ended.get(id) as SwarmSummary } : {}),
-      launch: () => ({ projects: [], live: 0, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
       readLog: async () => "log",
@@ -5152,7 +5153,7 @@ describe("the record page", () => {
         sm,
         state: () => state({ live: [live] }),
         find: () => ({ live }),
-        launch: () => ({ projects: [], live: 1, ended: 0 }),
+        launch: () => ({ projects: [] }),
         launchOf: () => undefined,
         server: () => ({ live: 1 }),
         readLog: async () => "",
@@ -5452,7 +5453,7 @@ describe("the record page", () => {
       state: () => state({ live: [live], ended: [done] }),
       find: (id): SwarmRecord =>
         id === live.id ? { live } : id === done.id ? { ended: done } : {},
-      launch: () => ({ projects: [], live: 1, ended: 1 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
       readLog: async () => "log",
@@ -5571,7 +5572,7 @@ describe("actions", () => {
       views: [],
       state: () => state({ live: [current] }),
       find,
-      launch: () => ({ projects: [], live: 1, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
       readLog: async () => "log",
@@ -6117,7 +6118,7 @@ describe("actions", () => {
       views: [],
       state: () => state({ live: [fixtures.running!], ended: [fixtures.done!] }),
       find: deps.find,
-      launch: () => ({ projects: [], live: 1, ended: 1 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
       readLog: async () => "log",
@@ -6465,13 +6466,13 @@ describe("actions", () => {
 });
 
 describe("launching from the tab", () => {
-  const projects = [{ id: "p1", name: "keelson-sample" }];
+  const projects = [{ id: "p1", name: "keelson-sample", rootPath: "/tmp/keelson-sample" }];
 
-  test("the Launch header is one form beside Prepare in chat, folded once the tab has a swarm", () => {
+  test("the Launch header is one form beside Prepare in chat, initially open", () => {
     for (const st of [
-      { projects, live: 0, ended: 0 },
-      { projects: [], live: 0, ended: 0 },
-      { projects, live: 2, ended: 3, dispatchBlocked: "no workflows", refused: ["fix-issue"] },
+      { projects },
+      { projects: [] },
+      { projects, dispatchBlocked: "no workflows", refused: ["fix-issue"] },
     ]) {
       board(LAUNCH_KEY, buildLaunch(st));
     }
@@ -6479,21 +6480,21 @@ describe("launching from the tab", () => {
       const section = buildLaunch(st).sections[0];
       return section?.kind === "actions" ? section.items : [];
     };
-    expect(items({ projects, live: 0, ended: 0 }).map((i) => i.label)).toEqual([
+    expect(items({ projects }).map((i) => i.label)).toEqual([
       "Start a swarm",
       "Prepare in chat · attach an issue or PR",
     ]);
-    expect(items({ projects, live: 1, ended: 0 })[0]?.expanded).toBe(true);
-    expect(buildLaunch({ projects, live: 0, ended: 0 }).header).toEqual({
+    expect(items({ projects })[0]?.expanded).toBe(true);
+    expect(buildLaunch({ projects }).header).toEqual({
       defaultCollapsed: false,
     });
-    expect(buildLaunch({ projects, live: 0, ended: 1 }).header).toEqual({
-      defaultCollapsed: true,
+    expect(buildLaunch({ projects }).header).toEqual({
+      defaultCollapsed: false,
     });
-    expect(buildLaunch({ projects, live: 1, ended: 0 }).header).toEqual({
-      defaultCollapsed: true,
+    expect(buildLaunch({ projects }).header).toEqual({
+      defaultCollapsed: false,
     });
-    expect(items({ projects, live: 0, ended: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
+    expect(items({ projects })[0]?.fields?.map((f) => f.name)).toEqual([
       "task",
       "project",
       "setup",
@@ -6503,7 +6504,7 @@ describe("launching from the tab", () => {
       "power",
       "model",
     ]);
-    expect(items({ projects: [], live: 0, ended: 0 })[0]?.fields?.map((f) => f.name)).toEqual([
+    expect(items({ projects: [] })[0]?.fields?.map((f) => f.name)).toEqual([
       "task",
       "setup",
       "workflows",
@@ -6512,7 +6513,7 @@ describe("launching from the tab", () => {
       "model",
     ]);
     const adjusting = { field: "setup", equals: "adjust" };
-    const fieldsOf = items({ projects, live: 0, ended: 0 })[0]?.fields ?? [];
+    const fieldsOf = items({ projects })[0]?.fields ?? [];
     for (const name of ["size", "power", "model"]) {
       expect(fieldsOf.find((f) => f.name === name)?.showWhen).toEqual(adjusting);
     }
@@ -6528,42 +6529,35 @@ describe("launching from the tab", () => {
     );
     const field = (st: Parameters<typeof buildLaunch>[0], name: string) =>
       items(st)[0]?.fields?.find((f) => f.name === name);
-    expect(field({ projects: [], live: 0, ended: 0 }, "workflows")?.placeholder).toBe(
-      "needs a registered project",
-    );
-    expect(
-      field({ projects, live: 0, ended: 0, refused: ["fix-issue"] }, "workflows")?.placeholder,
-    ).toBe(
+    expect(field({ projects: [] }, "workflows")?.placeholder).toBe("needs a registered project");
+    expect(field({ projects, refused: ["fix-issue"] }, "workflows")?.placeholder).toBe(
       "none: the swarm investigates · e.g. fix-issue · fix-issue approvals: you answer them in Workflows",
     );
-    expect(field({ projects, live: 0, ended: 0 }, "size")?.options?.map((o) => o.label)).toEqual([
+    expect(field({ projects }, "size")?.options?.map((o) => o.label)).toEqual([
       "small · 3 agents · 20 turns",
       "medium · 5 agents · 40 turns",
       "large · 8 agents · 80 turns",
     ]);
-    expect(field({ projects, live: 0, ended: 0 }, "project")?.placeholder).toBe("no project");
-    expect(field({ projects, live: 0, ended: 0 }, "workflows")?.showWhen).toEqual({
+    expect(field({ projects }, "project")?.placeholder).toBe("no project");
+    expect(field({ projects }, "workflows")?.showWhen).toEqual({
       field: "project",
     });
-    expect(field({ projects, live: 0, ended: 0 }, "tools")?.showWhen).toEqual({ field: "project" });
-    expect(field({ projects, live: 0, ended: 0 }, "tools")?.options).toEqual([
+    expect(field({ projects }, "tools")?.showWhen).toEqual({ field: "project" });
+    expect(field({ projects }, "tools")?.options).toEqual([
       { value: "none", label: "chat only" },
       { value: "read", label: "read the project" },
       { value: "write", label: "write the project" },
     ]);
-    expect(field({ projects: [], live: 0, ended: 0 }, "workflows")?.showWhen).toBeUndefined();
+    expect(field({ projects: [] }, "workflows")?.showWhen).toBeUndefined();
     expect(
-      field({ projects, live: 0, ended: 0, dispatchBlocked: "no workflows" }, "workflows")
-        ?.showWhen,
+      field({ projects, dispatchBlocked: "no workflows" }, "workflows")?.showWhen,
     ).toBeUndefined();
-    expect(items({ projects, live: 0, ended: 0 })[0]?.pendingLabel).toBe("Starting…");
+    expect(items({ projects })[0]?.pendingLabel).toBe("Starting…");
   });
 
   test("each power's hover names the model every provider runs at it", () => {
     const section = buildLaunch({
       projects,
-      live: 0,
-      ended: 0,
       classes: [
         { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
         { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
@@ -6578,8 +6572,6 @@ describe("launching from the tab", () => {
     );
     const flat = buildLaunch({
       projects,
-      live: 0,
-      ended: 0,
       classes: [{ provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } }],
     }).sections[0];
     const flatPower = (flat?.kind === "actions" ? flat.items[0]?.fields : [])?.find(
@@ -6589,7 +6581,7 @@ describe("launching from the tab", () => {
       "claude: auto (every power)",
     );
     expect(
-      buildLaunch({ projects, live: 0, ended: 0 }).sections.flatMap((x) =>
+      buildLaunch({ projects }).sections.flatMap((x) =>
         x.kind === "actions" ? (x.items[0]?.fields ?? []) : [],
       ),
     ).toContainEqual(
@@ -6835,7 +6827,7 @@ describe("the server line and inspector", () => {
       sm,
       state: () => state({ server }),
       find: () => ({}),
-      launch: () => ({ projects: [], live: 0, ended: 0 }),
+      launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ server, live: 0, ...(op ? { op } : {}) }),
       readLog: async () => "log",
@@ -7217,6 +7209,49 @@ describe("the launch store", () => {
 });
 
 describe("the rib's surface", () => {
+  test("launch state filters the fallback project and keeps provider configuration", async () => {
+    const sm = new FakeSnapshots();
+    const saved = process.env.KEELSON_WORKFLOW_PROVIDER;
+    process.env.KEELSON_WORKFLOW_PROVIDER = "copilot";
+    try {
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getSnapshotManager: () => sm,
+        getProjects: () => [
+          {
+            id: "fallback",
+            name: DEFAULT_PROJECT_NAME,
+            rootPath: "/tmp/fallback",
+            createdAt: "2026-10-04T00:00:00Z",
+          },
+          { id: "p1", name: "sample", rootPath: "/tmp/sample", createdAt: "2026-10-04T00:00:00Z" },
+        ],
+        getProviders: () => [
+          {
+            id: "claude",
+            displayName: "Claude",
+            modelClasses: { fast: "a", balanced: "b", deep: "c" },
+          },
+          {
+            id: "copilot",
+            displayName: "Copilot",
+            modelClasses: { fast: "x", balanced: "y", deep: "z" },
+          },
+        ],
+      });
+      const page = await sm.composers.get(LAUNCH_KEY)!.compose();
+      const json = JSON.stringify(page);
+      expect(json).toContain("sample");
+      expect(json).not.toContain("fallback");
+      expect(json).not.toContain(`"label":"${DEFAULT_PROJECT_NAME}"`);
+      expect(json).toContain("copilot");
+    } finally {
+      if (saved === undefined) delete process.env.KEELSON_WORKFLOW_PROVIDER;
+      else process.env.KEELSON_WORKFLOW_PROVIDER = saved;
+      await rib.dispose?.();
+    }
+  });
+
   test("declares one valid Swarms tab over the live index", () => {
     expect(rib.surfaces).toHaveLength(1);
     const surface = ribSurfaceDescriptorSchema.parse(rib.surfaces?.[0]);
