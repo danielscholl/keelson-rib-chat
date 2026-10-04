@@ -48,7 +48,7 @@ export function launchByline(): string {
 export function sizeField(defaultValue: SwarmSize = "medium"): Field {
   return {
     name: "size",
-    label: "Size",
+    label: "Effort",
     required: true,
     segmented: true,
     half: true,
@@ -64,43 +64,11 @@ export function sizeField(defaultValue: SwarmSize = "medium"): Field {
   };
 }
 
-// The hover names the model each provider runs at that power.
-export function powerField(
-  defaultValue: SwarmPower = "balanced",
-  classes: LaunchState["classes"] = [],
-): Field {
-  return {
-    name: "power",
-    label: "Power",
-    required: true,
-    segmented: true,
-    half: true,
-    defaultValue,
-    options: SWARM_POWERS.map((k) => {
-      const hint = classes
-        .map((c) => {
-          const pin = pinnedModels(c.provider, k);
-          if (pin) {
-            return pin.lead === pin.worker
-              ? `${c.provider}: ${pin.lead}`
-              : `${c.provider}: lead ${pin.lead} · workers ${pin.worker}`;
-          }
-          const same =
-            c.classes?.fast === c.classes?.balanced && c.classes?.balanced === c.classes?.deep;
-          const model = c.classes?.[k] ?? c.defaultModel;
-          return model ? `${c.provider}: ${model}${same ? " (every power)" : ""}` : "";
-        })
-        .join(" · ");
-      return { value: k, label: k, ...(hint ? { hint: hint.slice(0, 200) } : {}) };
-    }),
-  };
-}
-
 export function modelField(model?: string, provider?: string): Field {
   return {
     name: "model",
-    label: "Model override",
-    placeholder: "use the power's model",
+    label: "Model",
+    placeholder: "the plan's models",
     half: true,
     ...(model ? { defaultValue: model } : {}),
     modelPicker: { providerField: "provider", ...(provider ? { providerDefault: provider } : {}) },
@@ -466,7 +434,7 @@ export function runAgainItem(s: SwarmSummary, launch: StartSwarmInput): Item {
     label: "Run again",
     glyph: "↻",
     hint: `Starts a new swarm with ${reuses.join(", ")}. Context is not refreshed.`,
-    fields: [sizeField(s.sizeBase), powerField(s.power), modelField(s.model, s.provider)],
+    fields: [sizeField(s.sizeBase), modelField(s.model, s.provider)],
     submitLabel: "Run again",
     binding: { id: s.id },
   };

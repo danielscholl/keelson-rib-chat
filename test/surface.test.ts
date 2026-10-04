@@ -115,6 +115,7 @@ import {
   MESSAGE_CHARS,
   MESSAGES_KEPT,
   type OperatorAsk,
+  pinnedModels,
   SIZE_PRESETS,
   type StartingSwarm,
   type SwarmAgent,
@@ -7544,11 +7545,23 @@ describe("launching from the tab", () => {
       "Starts a new swarm with the same task, project, workflows (fix-issue), 1 context item. Context is not refreshed.",
     );
     expect(again?.fields?.find((f) => f.name === "size")?.defaultValue).toBe("medium");
+    expect(again?.fields?.map((f) => [f.name, f.label])).toEqual([
+      ["size", "Effort"],
+      ["model", "Model"],
+    ]);
     expect(again?.fields?.find((f) => f.name === "model")).toMatchObject({
       defaultValue: "gpt-6-astra",
       modelPicker: { providerField: "provider", providerDefault: "copilot" },
+      placeholder: "the plan's models",
     });
     board(swarmKey("s8pln"), buildSwarmBoard(fixtures.done!, { launch: oldLaunch }));
+    const captured = buildSwarmBoard(fixtures.done!, {
+      launch: { ...oldLaunch, context: [{ ...oldLaunch.context![0]!, retrievedAt: T0 }] },
+    })
+      .sections.filter((x) => x.kind === "actions")
+      .flatMap((x) => (x.kind === "actions" ? x.items : []))[0]!;
+    expect(captured.hint).toContain(`captured ${day(T0)} ${hhmm(T0)}`);
+    expect(captured.hint).toEndWith("Context is not refreshed.");
   });
 });
 
@@ -7727,7 +7740,7 @@ describe("start and run again", () => {
       effect: "open-canvas",
       key: swarmKey("s0new1"),
     });
-    expect(begun[0]).toEqual({ ...oldLaunch, size: "large", power: "balanced" });
+    expect(begun[0]).toEqual({ ...oldLaunch, size: "large" });
     expect(origins.at(-1)).toEqual({ rerunOf: "s8pln" });
     begun.length = 0;
     await act("run-again", {
@@ -7740,12 +7753,125 @@ describe("start and run again", () => {
     const { workerModel: _dropped, ...rest } = oldLaunch;
     expect(begun[0]).toEqual({
       ...rest,
-      power: "fast",
       model: "gpt-5.6-sol",
       provider: "copilot",
     });
     expect((await act("run-again", { id: "s9hjx", size: "small" })).ok).toBe(false);
     expect((await act("run-again", { id: "s5tcx", size: "small" })).ok).toBe(false);
+  });
+
+  test("Run again repeats omitted/default and saved plan power, not the summary's effective lead", async () => {
+    for (const power of [undefined, "fast", "deep"] as const) {
+      const old: StartSwarmInput = {
+        task: "Investigate",
+        workTools: "none",
+        ...(power ? { power, size: power === "fast" ? "small" : "large" } : {}),
+      };
+      const ended: SwarmSummary = {
+        ...fixtures.done!,
+        sizeBase: old.size ?? "medium",
+        power: power ?? "balanced",
+        model: pinnedModels("copilot", power ?? "balanced")!.lead,
+        provider: "copilot",
+      };
+      const deps = { ...actionDeps, launchOf: () => old, find: () => ({ ended }) };
+      begun.length = 0;
+      for (const incomingPower of [undefined, "fast", "balanced", "deep"]) {
+        const result = await handleSwarmsAction(
+          {
+            type: "run-again",
+            payload: {
+              id: ended.id,
+              size: ended.sizeBase,
+              model: ended.model,
+              provider: ended.provider,
+              power: incomingPower,
+            },
+          },
+          deps,
+        );
+        expect(result.ok).toBe(true);
+        expect(begun.at(-1)).toEqual(old);
+        expect(origins.at(-1)).toEqual({ rerunOf: ended.id });
+      }
+      await handleSwarmsAction(
+        {
+          type: "run-again",
+          payload: { id: ended.id, size: "large", model: "named-model", provider: "copilot" },
+        },
+        deps,
+      );
+      expect(begun.at(-1)).toEqual({
+        task: old.task,
+        workTools: old.workTools,
+        size: "large",
+        model: "named-model",
+        provider: "copilot",
+      });
+      await handleSwarmsAction(
+        {
+          type: "run-again",
+          payload: { id: ended.id, size: ended.sizeBase, model: "", provider: "" },
+        },
+        deps,
+      );
+      expect(begun.at(-1)).toEqual(old);
+    }
+  });
+
+  test("Run again preserves deliberate model pairs but drops workers and power for changed or cleared models", async () => {
+    const old: StartSwarmInput = { ...oldLaunch, power: "deep" };
+    const ended = { ...fixtures.done!, model: old.model, provider: old.provider };
+    const deps = { ...actionDeps, launchOf: () => old, find: () => ({ ended }) };
+    begun.length = 0;
+    await handleSwarmsAction(
+      {
+        type: "run-again",
+        payload: {
+          id: ended.id,
+          size: "large",
+          model: old.model,
+          provider: old.provider,
+          power: "fast",
+        },
+      },
+      deps,
+    );
+    const {
+      power: _power,
+      workerModel: _worker,
+      model: _model,
+      provider: _provider,
+      ...rest
+    } = old;
+    expect(begun.at(-1)).toEqual({
+      ...rest,
+      size: "large",
+      model: old.model,
+      provider: old.provider,
+      workerModel: old.workerModel,
+    });
+    await handleSwarmsAction(
+      {
+        type: "run-again",
+        payload: { id: ended.id, size: "small", model: "new-model", provider: "second" },
+      },
+      deps,
+    );
+    expect(begun.at(-1)).toEqual({
+      ...rest,
+      size: "small",
+      model: "new-model",
+      provider: "second",
+    });
+    await handleSwarmsAction(
+      {
+        type: "run-again",
+        payload: { id: ended.id, size: old.size, model: "", provider: "", power: "fast" },
+      },
+      deps,
+    );
+    expect(begun.at(-1)).toEqual({ ...rest, power: "deep" });
   });
 });
 

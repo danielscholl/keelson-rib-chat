@@ -149,17 +149,20 @@ function againInput(
   const { model, provider, workerModel, size, power, ...rest } = old;
   const picked = modelOf(payload);
   const same = picked.model === was.model && picked.provider === was.provider;
+  const models = same
+    ? {
+        ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
+        ...(workerModel ? { workerModel } : {}),
+      }
+    : picked;
+  const pickedSize = sizeOf(payload);
+  const nextSize = pickedSize === "medium" && size === undefined ? undefined : (pickedSize ?? size);
   return {
     ...rest,
-    size: sizeOf(payload) ?? size ?? "medium",
-    power: powerOf(payload) ?? power ?? "balanced",
-    ...(same
-      ? {
-          ...(model ? { model } : {}),
-          ...(provider ? { provider } : {}),
-          ...(workerModel ? { workerModel } : {}),
-        }
-      : picked),
+    ...(nextSize ? { size: nextSize } : {}),
+    ...(!models.model && power ? { power } : {}),
+    ...models,
   };
 }
 
