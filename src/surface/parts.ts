@@ -116,7 +116,7 @@ function roleModelRow(s: SwarmSummary, lead: boolean): Row {
       : " (inherits lead setting)";
   const agents = s.agents.filter((a) => a.lead === lead);
   return {
-    text: `${role} model: requested ${model ?? power}, ${s.provider ?? "host default"}${inheritance}${model && s.power ? ` · ${power}` : ""}`,
+    text: `${role} model: requested ${model ?? power}, ${s.provider ?? "host default"}${inheritance}`,
     detail: agents.length
       ? agents
           .map(

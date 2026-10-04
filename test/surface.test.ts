@@ -1309,8 +1309,8 @@ describe("the details inspector", () => {
       "Size: small, adjusted",
       "Effective limits: 7 agents · 31 total turns · 9 turns per worker · 2 concurrent turns",
       "Wall-clock limit: 1234.567 s · Turn timeout: 654.321 s · Idle nudge limit: 4",
-      "Lead model: requested requested-lead, requested-provider · deep power",
-      "Worker model: requested requested-worker, requested-provider (worker role override) · deep power",
+      "Lead model: requested requested-lead, requested-provider",
+      "Worker model: requested requested-worker, requested-provider (worker role override)",
       "Recorded reasoning effort: xhigh",
       "100 in · 20 out tokens",
     ]);
@@ -1320,6 +1320,65 @@ describe("the details inspector", () => {
     expect(setup.find((row) => row.text.startsWith("Worker model:"))?.detail).toBe(
       "@w1: served model: served-worker · served provider: worker-provider · requested model: individual-override (agent override)",
     );
+  });
+
+  test("worker model overrides power while retaining the power-derived effort", () => {
+    const setup = rows(
+      inspect(
+        swarm("sworkerpower", {
+          model: undefined,
+          workerModel: "requested-worker",
+          power: "balanced",
+          effort: "medium",
+        }),
+      ),
+      "Setup",
+    );
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
+      "Lead model: requested balanced power, copilot",
+    );
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
+      "Worker model: requested requested-worker, copilot (worker role override)",
+    );
+    expect(setup).toContainEqual({ text: "Recorded reasoning effort: medium" });
+  });
+
+  test("named lead and inherited worker models override power", () => {
+    const setup = rows(
+      inspect(
+        swarm("sleadpower", {
+          model: "requested-lead",
+          power: "deep",
+          effort: "high",
+        }),
+      ),
+      "Setup",
+    );
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
+      "Lead model: requested requested-lead, copilot",
+    );
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
+      "Worker model: requested requested-lead, copilot (inherits lead setting)",
+    );
+    expect(setup).toContainEqual({ text: "Recorded reasoning effort: high" });
+  });
+
+  test.each([
+    ["fast", "low"],
+    ["balanced", "medium"],
+    ["deep", "high"],
+  ] as const)("both roles request %s power without named models", (power, effort) => {
+    const setup = rows(
+      inspect(swarm("spoweronly", { model: undefined, workerModel: undefined, power, effort })),
+      "Setup",
+    );
+    expect(setup.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
+      `Lead model: requested ${power} power, copilot`,
+    );
+    expect(setup.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
+      `Worker model: requested ${power} power, copilot (inherits lead setting)`,
+    );
+    expect(setup).toContainEqual({ text: `Recorded reasoning effort: ${effort}` });
   });
 
   test("formats default Details durations as minutes without changing compact setup", () => {
@@ -1389,7 +1448,7 @@ describe("the details inspector", () => {
     });
     const inherited = rows(inspect({ ...s, model: "explicit-lead" }), "Setup");
     expect(inherited.map((row) => row.text)).toContain(
-      "Worker model: requested explicit-lead, host default (inherits lead setting) · fast power",
+      "Worker model: requested explicit-lead, host default (inherits lead setting)",
     );
   });
 
