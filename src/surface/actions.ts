@@ -6,7 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { RibAction, RibActionResult } from "@keelson/shared";
+import type { RibAction, RibActionResult, RibContext } from "@keelson/shared";
 import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
@@ -64,9 +64,10 @@ export interface ActionDeps {
   hasReport?: (id: string) => boolean;
   // Probes the ClickClack server again and refreshes the server line and inspector.
   probe?: () => Promise<void>;
+  getToolReachability?: RibContext["getToolReachability"];
 }
 
-const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+export const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 // A URL, or an issue or PR number, in a task: something agents cannot open.
 const LINK = /https?:\/\/\S+|(^|[\s(])#\d+\b/;
 
@@ -95,10 +96,37 @@ function modelOf(payload: Record<string, unknown>): Pick<StartSwarmInput, "model
   return { ...(model ? { model } : {}), ...(provider ? { provider } : {}) };
 }
 
-// One form: a swarm with workflows named may dispatch them; one without
-// investigates. The form carries no context, so a task that points at a link
-// is refused here, before a channel exists.
-function startInput(payload: Record<string, unknown>): StartSwarmInput | string {
+function leadToolsOf(value: unknown, deps: ActionDeps): string[] | string {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return "lead_tools must be an array";
+  if (value.length > START_BOUNDS.maxLeadTools) {
+    return `at most ${START_BOUNDS.maxLeadTools} lead tools`;
+  }
+  const names: string[] = [];
+  for (const name of value) {
+    if (typeof name !== "string" || !/^[a-z][a-z0-9_]{1,63}$/.test(name)) {
+      return "a tool name such as beads_ready";
+    }
+    if (name.startsWith("chat_")) return "chat_* tools are the swarm's own";
+    if (!names.includes(name)) names.push(name);
+  }
+  if (!deps.getToolReachability || names.length === 0) return [];
+  try {
+    const results = deps.getToolReachability(names);
+    return names.filter(
+      (name) => results.find((tool) => tool.name === name)?.status === "reachable",
+    );
+  } catch (e) {
+    return `Could not check lead tool reachability: ${errText(e)}`;
+  }
+}
+
+// The form carries no context, so links are refused before a channel exists.
+function startInput(
+  payload: Record<string, unknown>,
+  deps: ActionDeps,
+  html: boolean,
+): StartSwarmInput | string {
   const task = text(payload, "task");
   if (!task) return "a swarm needs a task";
   if (task.length > BODY_MAX) return `a task is at most ${BODY_MAX} characters`;
@@ -129,14 +157,23 @@ function startInput(payload: Record<string, unknown>): StartSwarmInput | string 
         .filter(Boolean),
     ),
   ];
-  if (names.length === 0) return input;
-  if (!project) return "workflows need a project to run on: pick one, or leave Workflows empty";
+  if (names.length > 0 && !project)
+    return "workflows need a project to run on: pick one, or leave Workflows empty";
   if (names.length > START_BOUNDS.maxWorkflows) {
     return `at most ${START_BOUNDS.maxWorkflows} workflows`;
   }
   const bad = names.find((n) => !WORKFLOW.test(n));
   if (bad) return `'${bad}' is not a workflow name`;
-  return { ...input, workflows: names.map((name) => ({ name, isolated: true })) };
+  const leadTools = leadToolsOf(payload.lead_tools, deps);
+  if (typeof leadTools === "string") return leadTools;
+  if (html && !project && Array.isArray(payload.lead_tools) && payload.lead_tools.length > 0) {
+    return "tracker tools need a project: pick one, or leave Use the tracker off";
+  }
+  return {
+    ...input,
+    ...(names.length ? { workflows: names.map((name) => ({ name, isolated: true })) } : {}),
+    ...(leadTools.length ? { leadTools } : {}),
+  };
 }
 
 // A new swarm from an old one's launch, with the size and model the form sent.
@@ -477,16 +514,41 @@ export async function handleSwarmsAction(
     case "start-swarm": {
       const html = action.origin === "canvas-html";
       const project = html ? text(payload, "project") : "";
-      if (project && !deps.surface?.offersLaunchProject(project))
-        return fail(`the launcher doesn't offer project '${project}'`);
-      const input = startInput(html ? { task: payload.task, project, setup: "defaults" } : payload);
+      if (project) {
+        let offered: boolean | undefined;
+        try {
+          offered = deps.surface?.offersLaunchProject(project);
+        } catch (e) {
+          return fail(`Could not check launcher availability: ${errText(e)}`);
+        }
+        if (!offered) return fail(`the launcher doesn't offer project '${project}'`);
+      }
+      const input = startInput(
+        html
+          ? {
+              task: payload.task,
+              project,
+              tools: !project && payload.tools !== "write" ? "none" : payload.tools,
+              workflows: payload.workflows,
+              lead_tools: payload.lead_tools,
+              setup: "defaults",
+            }
+          : payload,
+        deps,
+        html,
+      );
       return typeof input === "string" ? fail(input) : started(deps, input, "index");
     }
     case "run-again": {
       const record = id ? deps.find(id) : {};
       const old = id ? deps.launchOf(id) : undefined;
       if (!id || !record.ended || !old) return fail(`swarm '${String(raw)}' can't run again`);
-      return started(deps, againInput(old, payload, record.ended), "drawer", { rerunOf: id });
+      const leadTools = leadToolsOf(old.leadTools, deps);
+      if (typeof leadTools === "string") return fail(leadTools);
+      const { leadTools: _previous, ...input } = againInput(old, payload, record.ended);
+      return started(deps, { ...input, ...(leadTools.length ? { leadTools } : {}) }, "drawer", {
+        rerunOf: id,
+      });
     }
     case "copy-conclusion": {
       const record = id ? deps.find(id) : {};

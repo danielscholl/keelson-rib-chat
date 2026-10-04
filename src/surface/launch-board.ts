@@ -12,8 +12,9 @@ import {
   DEFAULT_PROJECT_NAME,
   designTokenCssBlock,
   type ModelClassMap,
+  type ToolReachability,
 } from "@keelson/shared";
-import type { StartSwarmInput } from "../tools.ts";
+import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
   pinnedModels,
   SIZE_PRESETS,
@@ -23,6 +24,7 @@ import {
   type SwarmSize,
   type SwarmSummary,
 } from "../types.ts";
+import { WORKFLOW } from "./actions.ts";
 import { day, hhmm, plural } from "./format.ts";
 import { esc } from "./record.ts";
 
@@ -35,7 +37,20 @@ export interface LaunchState {
   provider?: string;
   // Each provider's class map, for the hover on each power.
   classes?: readonly { provider: string; classes: ModelClassMap }[];
+  toolReachability?: readonly ToolReachability[];
+  toolReachabilityError?: string;
+  refused?: readonly string[];
+  dispatchBlocked?: string;
 }
+
+export const TRACKER_TOOLS = [
+  "beads_ready",
+  "beads_show",
+  "beads_create",
+  "beads_update",
+  "beads_close",
+  "beads_dep",
+] as const;
 
 export const TASK_PLACEHOLDER =
   "What should the swarm work out? Describe the issue or PR in words. A question works; so does a paste of the issue body.";
@@ -120,7 +135,7 @@ header { display: flex; align-items: center; gap: 14px; padding: 24px; flex-wrap
 h1 { font-size: 22px; line-height: 1.3; margin: 0 0 5px; color: var(--fg-strong); }
 p { margin: 0; }
 .hint { color: var(--muted); font-size: 13px; }
-button, textarea, select { font: inherit; }
+button, textarea, select, input { font: inherit; }
 button { cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; }
 .prepare { border-radius: 999px; color: var(--fg); background: var(--card-2); }
 .fields { padding: 0 24px 24px; }
@@ -136,13 +151,38 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .project-note { padding: 12px 16px; color: var(--muted); border: 1px dashed var(--border); border-radius: 8px; }
 .project-row.has-project { grid-template-columns: 1fr; }
 .has-project .project-note { border: 0; padding: 0; }
+.access { margin-top: 24px; }
+.access-heading { font-size: 12px; letter-spacing: .08em; margin: 0 0 8px; }
+.access-row { display: grid; grid-template-columns: 8px 44px minmax(150px, 1fr) minmax(240px, 2fr);
+  gap: 14px; align-items: center; padding: 16px 0; border-top: 1px solid var(--border); }
+.access-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.access-row.is-on .access-dot { background: var(--accent); }
+.access-name { color: var(--fg-strong); font-weight: 600; }
+.access-tag { display: block; font: 11px var(--mono); color: var(--muted); margin-top: 4px; }
+.access-meaning { color: var(--muted); line-height: 1.5; }
+.switch { width: 44px; height: 26px; padding: 3px; border-radius: 999px; background: var(--card-2); }
+.switch::after { content: ""; display: block; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); }
+.switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+.switch[aria-checked="true"]::after { background: var(--button-ink); transform: translateX(18px); }
+.switch:disabled { cursor: not-allowed; }
+.access-details { grid-column: 4; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 6px; font: 12px var(--mono); color: var(--fg); background: var(--card-2); }
+.chip.is-muted { color: var(--muted); border-style: dashed; background: transparent; }
+.chip button { padding: 0 4px; border: 0; background: transparent; color: var(--fg); }
+.workflow-input { width: 100%; min-width: 0; margin-top: 10px; padding: 8px 10px;
+  border: 1px dashed var(--border); border-radius: 6px; color: var(--fg); background: var(--bg); }
+.workflow-input::placeholder { color: var(--muted); opacity: 1; }
+.workflow-error { color: var(--fg); margin-top: 8px; }
+.workflow-count { margin-top: 8px; }
 footer { display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
   background: var(--card-2); border-top: 1px solid var(--border); padding: 18px 24px; }
 .start { background: var(--accent); color: var(--button-ink); border-color: var(--accent); font-weight: 600; }
 .start:disabled { cursor: wait; }
 .models { font-family: var(--mono); color: var(--muted); font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
 .mode { margin-left: auto; color: var(--fg); }
-button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 [hidden] { display: none !important; }
 @media (max-width: 640px) {
   header, footer { padding: 18px; }
@@ -150,6 +190,8 @@ button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2p
   .project-row { grid-template-columns: 1fr; }
   .prepare { width: 100%; }
   .mode { margin-left: 0; width: 100%; }
+  .access-row { grid-template-columns: 8px 44px minmax(0, 1fr); gap: 12px; }
+  .access-meaning, .access-details { grid-column: 3; }
 }
 `;
 
@@ -164,6 +206,67 @@ const PAGE_SCRIPT = `
   const mode = document.getElementById("launch-mode");
   const chatNote = note.textContent;
   const chatMode = mode.textContent;
+  const access = document.getElementById("launch-access");
+  const template = document.getElementById("access-template");
+  const permissions = { write: false, workflows: false, tracker: false };
+  let workflows = [];
+  let controls;
+  const updateMode = () => {
+    mode.textContent = project.value
+      ? "Reads " + project.selectedOptions[0].dataset.name
+        + (permissions.write ? " · writes on a branch" : "")
+        + (permissions.workflows && workflows.length ? " · " + workflows.join(", ") : " · no workflows")
+        + (permissions.tracker ? " · beads" : "")
+      : chatMode;
+  };
+  const workflowError = (message) => {
+    controls.error.textContent = message;
+    controls.error.hidden = !message;
+    controls.entry.setAttribute("aria-invalid", message ? "true" : "false");
+  };
+  let removeButtons = [];
+  const renderWorkflows = () => {
+    controls.chips.replaceChildren();
+    removeButtons = [];
+    workflows.forEach((name, index) => {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      const label = document.createElement("span");
+      label.textContent = name;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", "Remove " + name);
+      remove.addEventListener("click", () => {
+        workflows = workflows.filter((value) => value !== name);
+        renderWorkflows();
+        (removeButtons[Math.min(index, removeButtons.length - 1)] ?? controls.entry).focus();
+      });
+      removeButtons.push(remove);
+      chip.append(label, remove);
+      controls.chips.append(chip);
+    });
+    controls.count.textContent = workflows.length + " / ${START_BOUNDS.maxWorkflows} workflows";
+    updateMode();
+  };
+  const addWorkflows = () => {
+    const names = controls.entry.value.trim().split(/[\\s,]+/).filter(Boolean);
+    const bad = names.find((name) => !${WORKFLOW}.test(name));
+    if (bad) {
+      workflowError("'" + bad + "' is not a workflow name");
+      return false;
+    }
+    const next = [...new Set([...workflows, ...names])];
+    if (next.length > ${START_BOUNDS.maxWorkflows}) {
+      workflowError("at most ${START_BOUNDS.maxWorkflows} workflows");
+      return false;
+    }
+    workflows = next;
+    controls.entry.value = "";
+    workflowError("");
+    renderWorkflows();
+    return true;
+  };
   document.getElementById("launch-prepare").addEventListener("click", () => {
     keelson.action("start-in-chat", { nonce: form.dataset.nonce });
   });
@@ -174,20 +277,65 @@ const PAGE_SCRIPT = `
     note.textContent = hasProject
       ? "Agents read " + selected.dataset.path + " and run read-only commands there. Nothing changes unless you allow more."
       : chatNote;
-    mode.textContent = hasProject
-      ? "Reads " + selected.dataset.name + " · no workflows"
-      : chatMode;
+    Object.keys(permissions).forEach((key) => { permissions[key] = false; });
+    workflows = [];
+    controls = undefined;
+    access.replaceChildren();
+    if (hasProject && template) {
+      access.append(template.content.cloneNode(true));
+      controls = {
+        entry: document.getElementById("workflow-entry"),
+        chips: document.getElementById("workflow-chips"),
+        count: document.getElementById("workflow-count"),
+        error: document.getElementById("workflow-error")
+      };
+      Object.keys(permissions).forEach((key) => {
+        const button = document.getElementById("allow-" + key);
+        button.addEventListener("click", () => {
+          if (button.disabled || !project.value) return;
+          permissions[key] = !permissions[key];
+          button.setAttribute("aria-checked", String(permissions[key]));
+          document.getElementById(key + "-row").classList.toggle("is-on", permissions[key]);
+          if (key !== "write") document.getElementById(key + "-details").hidden = !permissions[key];
+          updateMode();
+        });
+      });
+      controls.entry.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === ",") {
+          event.preventDefault();
+          addWorkflows();
+        }
+      });
+      controls.entry.addEventListener("paste", (event) => {
+        event.preventDefault();
+        const text = event.clipboardData.getData("text").replace(/[\\r\\n]+/g, " ");
+        const from = controls.entry.selectionStart;
+        const to = controls.entry.selectionEnd;
+        controls.entry.value = controls.entry.value.slice(0, from) + text + controls.entry.value.slice(to);
+        addWorkflows();
+      });
+      renderWorkflows();
+    }
+    updateMode();
   });
   // The host's frame sandbox grants allow-scripts only, never allow-forms, so a
   // form never fires submit here; Start is a plain click.
   const startSwarm = () => {
     if (start.disabled) return;
-    keelson.action("start-swarm", {
+    if (permissions.workflows && !addWorkflows()) return;
+    const payload = {
       nonce: form.dataset.nonce,
       task: task.value,
       project: project.value,
-      tools: project.value ? "read" : "none"
-    });
+      tools: project.value ? (permissions.write ? "write" : "read") : "none"
+    };
+    if (permissions.workflows && workflows.length) payload.workflows = workflows.join(", ");
+    if (permissions.tracker) {
+      const names = Array.from(access.querySelectorAll('[data-tool][data-reachable="true"]'))
+        .map((chip) => chip.dataset.tool);
+      if (names.length) payload.lead_tools = names;
+    }
+    keelson.action("start-swarm", payload);
     start.disabled = true;
     start.textContent = "Starting…";
     start.setAttribute("aria-busy", "true");
@@ -209,6 +357,59 @@ function projectPath(rootPath: string): string {
   return rootPath === home || rootPath.startsWith(`${home}/`)
     ? `~${rootPath.slice(home.length)}`
     : rootPath;
+}
+
+function accessTemplate(state: LaunchState): string {
+  const approvals = state.refused?.length
+    ? ` · ${state.refused.join(", ")} approvals: you answer them in Workflows`
+    : "";
+  const workflowMeaning =
+    (state.dispatchBlocked ??
+      "The lead can hand the work to a workflow once the swarm agrees on it. You answer its approvals in Workflows.") +
+    approvals;
+  const trackerMeaning =
+    state.toolReachabilityError ??
+    (state.toolReachability
+      ? "The lead reads and updates beads for the project, and says in the channel what it changed."
+      : "This host does not say which tools a lead may hold.");
+  const rows = [
+    {
+      key: "write",
+      name: "Write",
+      tag: "elevated",
+      meaning: "Change files. Each agent works in its own worktree on a branch, never on main.",
+      disabled: false,
+      details: "",
+    },
+    {
+      key: "workflows",
+      name: "Run workflows",
+      tag: "elevated · needs your grant",
+      meaning: workflowMeaning,
+      disabled: Boolean(state.dispatchBlocked),
+      details: `<div class="access-details" id="workflows-details" hidden><div class="chips" id="workflow-chips"></div><input class="workflow-input" id="workflow-entry" type="text" aria-label="Add a workflow" aria-describedby="workflow-count workflow-error" placeholder="add a workflow…" /><p class="hint workflow-count" id="workflow-count">0 / ${START_BOUNDS.maxWorkflows} workflows</p><p class="workflow-error" id="workflow-error" role="alert" hidden></p></div>`,
+    },
+    {
+      key: "tracker",
+      name: "Use the tracker",
+      tag: "elevated · needs your grant",
+      meaning: trackerMeaning,
+      disabled: !state.toolReachability || Boolean(state.toolReachabilityError),
+      details: `<div class="access-details chips" id="tracker-details" hidden>${TRACKER_TOOLS.map(
+        (name) => {
+          const reachable =
+            state.toolReachability?.find((tool) => tool.name === name)?.status === "reachable";
+          return `<span class="chip${reachable ? "" : " is-muted"}" data-tool="${esc(name)}" data-reachable="${reachable}"${reachable ? "" : ' title="needs your grant: crossRibGrants"'}>${esc(name)}</span>`;
+        },
+      ).join("")}</div>`,
+    },
+  ];
+  return `<template id="access-template"><section class="access" aria-labelledby="access-heading"><h2 class="access-heading" id="access-heading">ALSO ALLOW</h2>${rows
+    .map(
+      (item) =>
+        `<div class="access-row" id="${item.key}-row"><span class="access-dot" aria-hidden="true"></span><button class="switch" id="allow-${item.key}" type="button" role="switch" aria-label="${esc(item.name)}" aria-describedby="${item.key}-meaning" aria-checked="false"${item.disabled ? " disabled" : ""}></button><div class="access-name">${esc(item.name)}<span class="access-tag">${esc(item.tag)}</span></div><p class="access-meaning" id="${item.key}-meaning">${esc(item.meaning)}</p>${item.details}</div>`,
+    )
+    .join("")}</section></template>`;
 }
 
 export function buildLaunch(state: LaunchState, nonce: string): string {
@@ -248,6 +449,8 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
           </select>
           <p class="project-note" id="project-note">Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.</p>
         </div>
+        <div id="launch-access"></div>
+        ${projects.length ? accessTemplate(state) : ""}
       </div>
     </div>
     <footer>

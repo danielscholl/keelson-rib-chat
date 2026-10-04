@@ -18,6 +18,7 @@ import {
 } from "@keelson/shared";
 import { CONTEXT_BOUNDS, type ContextIndexEntry, EXCERPT_CHARS } from "../src/context.ts";
 import { applyStatus } from "../src/dispatch.ts";
+import { historyPath, loadHistory } from "../src/history.ts";
 import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
@@ -68,6 +69,7 @@ import {
   launchByline,
   powerField,
   TASK_PLACEHOLDER,
+  TRACKER_TOOLS,
 } from "../src/surface/launch-board.ts";
 import {
   askText,
@@ -4323,6 +4325,7 @@ describe("publishing", () => {
             ? { live: s }
             : { ended: s };
       },
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
@@ -4908,6 +4911,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ live }),
       find: (id) => ({ live: live.find((s) => s.id === id) }),
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: live.length }),
@@ -4946,6 +4950,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ live }),
       find: (id) => ({ live: live.find((s) => s.id === id) }),
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: live.length }),
@@ -5025,6 +5030,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ ended: [...ended.values()] }),
       find: (id): SwarmRecord => (ended.has(id) ? { ended: ended.get(id) as SwarmSummary } : {}),
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
@@ -5168,6 +5174,7 @@ describe("the record page", () => {
         sm,
         state: () => state({ live: [live] }),
         find: () => ({ live }),
+        projects: () => [],
         launch: () => ({ projects: [] }),
         launchOf: () => undefined,
         server: () => ({ live: 1 }),
@@ -5468,6 +5475,7 @@ describe("the record page", () => {
       state: () => state({ live: [live], ended: [done] }),
       find: (id): SwarmRecord =>
         id === live.id ? { live } : id === done.id ? { ended: done } : {},
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
@@ -5587,6 +5595,7 @@ describe("actions", () => {
       views: [],
       state: () => state({ live: [current] }),
       find,
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
@@ -6135,6 +6144,7 @@ describe("actions", () => {
       views: [],
       state: () => state({ live: [fixtures.running!], ended: [fixtures.done!] }),
       find: deps.find,
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
@@ -6492,6 +6502,7 @@ describe("launching from the tab", () => {
     const surface = createSwarmsSurface({
       sm,
       views,
+      projects: () => inputs.projects,
       launch: () => inputs,
       state: () => state({ live: [fixtures.running!] }),
       find: actionDeps.find,
@@ -6509,56 +6520,148 @@ describe("launching from the tab", () => {
     return { sm, views, surface, inputs, page, nonce };
   };
 
-  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
-    const page = buildLaunch({ projects }, "instance-nonce");
-    const script = page.match(/<script>([\s\S]*?)<\/script>/)![1]!;
-    const makeElement = (textContent = "") => ({
-      textContent,
-      value: "",
-      disabled: false,
-      dataset: { nonce: "instance-nonce" },
-      selectedOptions: [{ dataset: { name: "A <name>", path: "~/A <path>" } }],
-      attributes: new Map<string, string>(),
-      classes: new Set<string>(),
-      listeners: new Map<
-        string,
-        (event: {
-          preventDefault(): void;
-          key?: string;
-          metaKey?: boolean;
-          ctrlKey?: boolean;
-        }) => void
-      >(),
-      addEventListener(type: string, listener: (event: { preventDefault(): void }) => void) {
+  const frameHarness = (page: string) => {
+    type Event = {
+      preventDefault(): void;
+      key?: string;
+      metaKey?: boolean;
+      ctrlKey?: boolean;
+      clipboardData?: { getData(type: string): string };
+    };
+    let focused: Element | undefined;
+    class Element {
+      private rawValue = "";
+      get value(): string {
+        return this.rawValue;
+      }
+      set value(text: string) {
+        this.rawValue = this.tag === "input" ? text.replace(/[\r\n]/g, "") : text;
+      }
+      focus() {
+        focused = this;
+      }
+      disabled = false;
+      hidden = false;
+      type = "";
+      selectionStart = 0;
+      selectionEnd = 0;
+      dataset: Record<string, string> = {};
+      selectedOptions = [{ dataset: { name: "A <name>", path: "~/A <path>" } }];
+      attributes = new Map<string, string>();
+      classes = new Set<string>();
+      listeners = new Map<string, (event: Event) => void>();
+      children: Element[] = [];
+      private contentText = "";
+      constructor(
+        readonly tag = "div",
+        text = "",
+      ) {
+        this.contentText = text;
+      }
+      get textContent(): string {
+        return this.contentText + this.children.map((child) => child.textContent).join("");
+      }
+      set textContent(text: string) {
+        this.contentText = text;
+        this.children = [];
+      }
+      set className(value: string) {
+        this.classes = new Set(value.split(" "));
+      }
+      addEventListener(type: string, listener: (event: Event) => void) {
         this.listeners.set(type, listener);
-      },
+      }
       setAttribute(name: string, value: string) {
         this.attributes.set(name, value);
-      },
+        if (name === "disabled") this.disabled = true;
+        if (name === "hidden") this.hidden = true;
+        if (name === "class") this.className = value;
+        if (name.startsWith("data-")) {
+          this.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] =
+            value;
+        }
+      }
       removeAttribute(name: string) {
         this.attributes.delete(name);
-      },
+      }
+      append(...nodes: Element[]) {
+        for (const node of nodes)
+          this.children.push(...(node.tag === "fragment" ? node.children : [node]));
+      }
+      replaceChildren(...nodes: Element[]) {
+        this.children = [];
+        this.append(...nodes);
+      }
+      all(): Element[] {
+        return this.children.flatMap((child) => [child, ...child.all()]);
+      }
+      querySelectorAll(selector: string) {
+        if (selector !== '[data-tool][data-reachable="true"]')
+          throw new Error(`unsupported selector ${selector}`);
+        return this.all().filter((node) => node.dataset.tool && node.dataset.reachable === "true");
+      }
       get classList() {
         return {
           toggle: (name: string, enabled: boolean) =>
             enabled ? this.classes.add(name) : this.classes.delete(name),
         };
-      },
-    });
-    const elements = {
-      "launch-form": makeElement(),
-      "launch-task": makeElement(),
-      "launch-project": makeElement(),
-      "launch-start": makeElement("Start swarm"),
-      "launch-prepare": makeElement(),
-      "project-note": makeElement("Chat mode note"),
-      "project-row": makeElement(),
-      "launch-mode": makeElement("Chat mode · nothing on disk"),
+      }
+    }
+    const decode = (text: string) =>
+      text.replace(
+        /&(amp|lt|gt|quot|#39);/g,
+        (_, entity: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" })[entity]!,
+      );
+    const templateText = page.match(/<template id="access-template">([\s\S]*?)<\/template>/)?.[1];
+    const parseTemplate = () => {
+      const root = new Element("fragment");
+      const stack = [root];
+      for (const token of templateText!.match(/<[^>]+>|[^<]+/g)!) {
+        if (token.startsWith("</")) {
+          stack.pop();
+          continue;
+        }
+        if (token.startsWith("<")) {
+          const tag = token.match(/^<(\w+)/)![1]!;
+          const node = new Element(tag);
+          for (const attr of token.matchAll(/([\w-]+)(?:="([^"]*)")?/g)) {
+            if (attr[1] !== tag) node.setAttribute(attr[1]!, decode(attr[2] ?? ""));
+          }
+          stack.at(-1)!.append(node);
+          if (tag !== "input") stack.push(node);
+        } else {
+          stack.at(-1)!.append(new Element("text", decode(token)));
+        }
+      }
+      return root;
     };
+    const elements: Record<string, Element> = {
+      "launch-form": new Element(),
+      "launch-task": new Element(),
+      "launch-project": new Element(),
+      "launch-start": new Element("button", "Start swarm"),
+      "launch-prepare": new Element(),
+      "project-note": new Element("p", "Chat mode note"),
+      "project-row": new Element(),
+      "launch-mode": new Element("p", "Chat mode · nothing on disk"),
+      "launch-access": new Element(),
+    };
+    elements["launch-form"]!.dataset.nonce = page.match(/data-nonce="([^"]+)"/)![1]!;
+    const get = (id: string) =>
+      elements[id] ??
+      elements["launch-access"]!.all().find((node) => node.attributes.get("id") === id);
     const calls: { type: string; payload: Record<string, unknown> }[] = [];
     const timers: { callback: () => void; delay: number }[] = [];
-    runInNewContext(script, {
-      document: { getElementById: (id: keyof typeof elements) => elements[id] },
+    runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)![1]!, {
+      document: {
+        getElementById: (id: string) =>
+          id === "access-template"
+            ? templateText
+              ? { content: { cloneNode: parseTemplate } }
+              : null
+            : get(id),
+        createElement: (tag: string) => new Element(tag),
+      },
       keelson: {
         action: (type: string, payload: Record<string, unknown>) => {
           calls.push({ type, payload });
@@ -6568,17 +6671,38 @@ describe("launching from the tab", () => {
         timers.push({ callback, delay });
       },
     });
+    const fire = (id: string, type: string, extra: Partial<Event> = {}) => {
+      let prevented = false;
+      get(id)!.listeners.get(type)!({
+        preventDefault: () => {
+          prevented = true;
+        },
+        ...extra,
+      });
+      return prevented;
+    };
+    const select = (value: string, name = "keelson-sample") => {
+      elements["launch-project"]!.value = value;
+      elements["launch-project"]!.selectedOptions = [{ dataset: { name, path: "~/sample" } }];
+      fire("launch-project", "change");
+    };
+    return { elements, get, fire, select, calls, timers, focused: () => focused };
+  };
+
+  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
+    const page = buildLaunch({ projects }, "instance-nonce");
+    const { elements, calls, timers } = frameHarness(page);
     let prevented = 0;
     const event = {
       preventDefault: () => {
         prevented++;
       },
     };
-    const task = elements["launch-task"];
-    const start = elements["launch-start"];
-    const project = elements["launch-project"];
+    const task = elements["launch-task"]!;
+    const start = elements["launch-start"]!;
+    const project = elements["launch-project"]!;
     // The host sandbox has no allow-forms, so Start is a click, never a submit.
-    expect(elements["launch-form"].listeners.has("submit")).toBe(false);
+    expect(elements["launch-form"]!.listeners.has("submit")).toBe(false);
     const submit = () => start.listeners.get("click")!(event);
     task.value = "Keep my typed draft";
     submit();
@@ -6603,11 +6727,11 @@ describe("launching from the tab", () => {
 
     project.value = "p1";
     project.listeners.get("change")!(event);
-    expect(elements["project-note"].textContent).toBe(
+    expect(elements["project-note"]!.textContent).toBe(
       "Agents read ~/A <path> and run read-only commands there. Nothing changes unless you allow more.",
     );
-    expect(elements["launch-mode"].textContent).toBe("Reads A <name> · no workflows");
-    expect(elements["project-row"].classes.has("has-project")).toBe(true);
+    expect(elements["launch-mode"]!.textContent).toBe("Reads A <name> · no workflows");
+    expect(elements["project-row"]!.classes.has("has-project")).toBe(true);
     expect(calls).toHaveLength(1);
     submit();
     expect(calls[1]).toEqual({
@@ -6615,7 +6739,7 @@ describe("launching from the tab", () => {
       payload: { nonce: "instance-nonce", task: task.value, project: "p1", tools: "read" },
     });
     timers[1]!.callback();
-    elements["launch-prepare"].listeners.get("click")!(event);
+    elements["launch-prepare"]!.listeners.get("click")!(event);
     expect(calls[2]).toEqual({ type: "start-in-chat", payload: { nonce: "instance-nonce" } });
     task.listeners.get("keydown")!({ ...event, key: "Enter", metaKey: true });
     expect(calls[3]?.type).toBe("start-swarm");
@@ -6625,14 +6749,456 @@ describe("launching from the tab", () => {
     expect(task.value).toBe("Keep my typed draft");
     project.value = "";
     project.listeners.get("change")!(event);
-    expect(elements["project-note"].textContent).toBe("Chat mode note");
-    expect(elements["launch-mode"].textContent).toBe("Chat mode · nothing on disk");
-    expect(elements["project-row"].classes.has("has-project")).toBe(false);
+    expect(elements["project-note"]!.textContent).toBe("Chat mode note");
+    expect(elements["launch-mode"]!.textContent).toBe("Chat mode · nothing on disk");
+    expect(elements["project-row"]!.classes.has("has-project")).toBe(false);
     expect(page).not.toContain("fetch(");
     expect(page).not.toContain("innerHTML");
     expect(page).not.toContain("await keelson.action");
     expect(page).not.toContain("localStorage");
     expect(page).not.toContain("sessionStorage");
+  });
+
+  test("project-gated switches edit the scope and produce an exact all-switches launch", async () => {
+    const h = launcherHarness({
+      projects,
+      toolReachability: [
+        { name: "beads_ready", status: "reachable" },
+        { name: "beads_close", status: "reachable" },
+      ],
+    });
+    try {
+      await Bun.sleep(5);
+      const frame = frameHarness(h.page());
+      expect(frame.get("allow-write")).toBeUndefined();
+      frame.elements["launch-task"]!.value = "Fix the flaky test";
+      frame.select("p1");
+      for (const key of ["write", "workflows", "tracker"]) {
+        expect(frame.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+        frame.fire(`allow-${key}`, "click");
+      }
+      frame.get("workflow-entry")!.value = "fix-issue";
+      expect(frame.fire("workflow-entry", "keydown", { key: "Enter" })).toBe(true);
+      expect(frame.get("launch-mode")!.textContent).toBe(
+        "Reads keelson-sample · writes on a branch · fix-issue · beads",
+      );
+      frame.fire("launch-start", "click");
+      expect(frame.calls).toEqual([
+        {
+          type: "start-swarm",
+          payload: {
+            nonce: h.nonce(),
+            task: "Fix the flaky test",
+            project: "p1",
+            tools: "write",
+            workflows: "fix-issue",
+            lead_tools: ["beads_ready", "beads_close"],
+          },
+        },
+      ]);
+      begun.length = 0;
+      expect(
+        (
+          await handleSwarmsAction(
+            {
+              ...frame.calls[0]!,
+              origin: "canvas-html",
+            },
+            {
+              ...actionDeps,
+              surface: h.surface,
+              getToolReachability: () => [
+                { name: "beads_ready", status: "reachable" },
+                { name: "beads_close", status: "reachable" },
+              ],
+            },
+          )
+        ).ok,
+      ).toBe(true);
+      expect(begun).toEqual([
+        {
+          task: "Fix the flaky test",
+          project: "p1",
+          workTools: "write",
+          workflows: [{ name: "fix-issue", isolated: true }],
+          leadTools: ["beads_ready", "beads_close"],
+        },
+      ]);
+      frame.select("");
+      expect(frame.get("allow-write")).toBeUndefined();
+      expect(frame.get("launch-mode")!.textContent).toBe("Chat mode · nothing on disk");
+      expect(frame.get("launch-task")!.value).toBe("Fix the flaky test");
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("empty and fallback-only inventories contain no access labels, and selection mounts exactly three switches", () => {
+    for (const inventory of [
+      [],
+      [{ id: "fallback", name: DEFAULT_PROJECT_NAME, rootPath: "/tmp" }],
+    ]) {
+      const page = buildLaunch({ projects: inventory }, "nonce");
+      for (const label of ["ALSO ALLOW", "Write", "Run workflows", "Use the tracker"]) {
+        expect(page).not.toContain(label);
+      }
+      expect(frameHarness(page).get("launch-access")!.children).toEqual([]);
+    }
+    const frame = frameHarness(buildLaunch({ projects, toolReachability: [] }, "nonce"));
+    expect(frame.get("access-heading")).toBeUndefined();
+    frame.select("p1");
+    const switches = frame
+      .get("launch-access")!
+      .all()
+      .filter((node) => node.attributes.get("role") === "switch");
+    expect(switches.map((node) => node.attributes.get("aria-label"))).toEqual([
+      "Write",
+      "Run workflows",
+      "Use the tracker",
+    ]);
+    for (const button of switches) {
+      expect(button.attributes.get("type")).toBe("button");
+      expect(button.attributes.get("aria-checked")).toBe("false");
+      expect(button.disabled).toBe(false);
+    }
+    expect(frame.get("write-meaning")!.textContent).toBe(
+      "Change files. Each agent works in its own worktree on a branch, never on main.",
+    );
+    expect(frame.get("workflows-meaning")!.textContent).toBe(
+      "The lead can hand the work to a workflow once the swarm agrees on it. You answer its approvals in Workflows.",
+    );
+    expect(frame.get("tracker-meaning")!.textContent).toBe(
+      "The lead reads and updates beads for the project, and says in the channel what it changed.",
+    );
+    expect(
+      frame
+        .get("launch-access")!
+        .all()
+        .filter((node) => node.classes.has("access-tag"))
+        .map((node) => node.textContent),
+    ).toEqual(["elevated", "elevated · needs your grant", "elevated · needs your grant"]);
+  });
+
+  test("all eight switch combinations send only intended access fields in footer order", () => {
+    for (let mask = 0; mask < 8; mask++) {
+      const frame = frameHarness(
+        buildLaunch(
+          { projects, toolReachability: [{ name: "beads_ready", status: "reachable" }] },
+          "nonce",
+        ),
+      );
+      frame.select("p1");
+      frame.get("launch-task")!.value = "Investigate";
+      const write = Boolean(mask & 1),
+        workflows = Boolean(mask & 2),
+        tracker = Boolean(mask & 4);
+      for (const [key, enabled] of [
+        ["write", write],
+        ["workflows", workflows],
+        ["tracker", tracker],
+      ] as const) {
+        if (enabled) frame.fire(`allow-${key}`, "click");
+        expect(frame.get(`${key}-row`)!.classes.has("is-on")).toBe(enabled);
+      }
+      if (workflows) frame.get("workflow-entry")!.value = "fix-issue";
+      frame.fire("launch-start", "click");
+      expect(frame.calls[0]!.payload).toEqual({
+        nonce: "nonce",
+        task: "Investigate",
+        project: "p1",
+        tools: write ? "write" : "read",
+        ...(workflows ? { workflows: "fix-issue" } : {}),
+        ...(tracker ? { lead_tools: ["beads_ready"] } : {}),
+      });
+      expect(frame.get("launch-mode")!.textContent).toBe(
+        "Reads keelson-sample" +
+          (write ? " · writes on a branch" : "") +
+          (workflows ? " · fix-issue" : " · no workflows") +
+          (tracker ? " · beads" : ""),
+      );
+    }
+  });
+
+  test("workflow Enter, comma, paste, duplicates, removal and pending input preserve typed intent", () => {
+    const frame = frameHarness(buildLaunch({ projects }, "nonce"));
+    frame.select("p1");
+    frame.fire("allow-workflows", "click");
+    const entry = frame.get("workflow-entry")!;
+    entry.value = "fix-issue";
+    expect(frame.fire("workflow-entry", "keydown", { key: "," })).toBe(true);
+    expect(entry.value).toBe("");
+    entry.value = "fix-issue";
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    expect(frame.get("workflow-chips")!.children).toHaveLength(1);
+    expect(
+      frame.fire("workflow-entry", "paste", {
+        clipboardData: { getData: () => "docs-check,\nFix.v1_test-2  fix-issue" },
+      }),
+    ).toBe(true);
+    expect(
+      frame.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
+    ).toEqual(["fix-issue", "docs-check", "Fix.v1_test-2"]);
+    expect(frame.get("workflow-count")!.textContent).toBe("3 / 10 workflows");
+    const remove = frame.get("workflow-chips")!.children[1]!.children[1]!;
+    expect(remove.attributes.get("aria-label")).toBe("Remove docs-check");
+    remove.listeners.get("click")!({ preventDefault() {} });
+    expect(frame.get("launch-mode")!.textContent).toBe(
+      "Reads keelson-sample · fix-issue, Fix.v1_test-2",
+    );
+    for (const bad of ["../bad", '<img src=x onerror="oops">', "x".repeat(101)]) {
+      entry.value = bad;
+      frame.fire("launch-start", "click");
+      expect(frame.calls).toEqual([]);
+      expect(frame.get("launch-start")!.disabled).toBe(false);
+      expect(entry.value).toBe(bad);
+      expect(entry.attributes.get("aria-invalid")).toBe("true");
+      expect(frame.get("workflow-error")!.textContent).toContain("is not a workflow name");
+      expect(frame.get("workflow-error")!.children).toEqual([]);
+    }
+    entry.value = "x".repeat(100);
+    frame.fire("launch-start", "click");
+    expect(frame.calls[0]!.payload.workflows).toBe(`fix-issue, Fix.v1_test-2, ${"x".repeat(100)}`);
+    expect(entry.attributes.get("aria-invalid")).toBe("false");
+    expect(frame.get("workflow-error")!.hidden).toBe(true);
+    expect(entry.value).toBe("");
+  });
+
+  test("a newline-separated workflow paste adds each name, since a text input drops line breaks", () => {
+    const frame = frameHarness(buildLaunch({ projects }, "nonce"));
+    frame.select("p1");
+    frame.fire("allow-workflows", "click");
+    frame.fire("workflow-entry", "paste", {
+      clipboardData: { getData: () => "fix-issue\r\ndocs-check\nrelease" },
+    });
+    expect(
+      frame.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
+    ).toEqual(["fix-issue", "docs-check", "release"]);
+  });
+
+  test("removing a workflow chip keeps focus in the editor", () => {
+    const frame = frameHarness(buildLaunch({ projects }, "nonce"));
+    frame.select("p1");
+    frame.fire("allow-workflows", "click");
+    const entry = frame.get("workflow-entry")!;
+    entry.value = "fix-issue docs-check release";
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    const removeAt = (index: number) => frame.get("workflow-chips")!.children[index]!.children[1]!;
+    removeAt(1).listeners.get("click")!({ preventDefault() {} });
+    expect(frame.focused()).toBe(removeAt(1));
+    expect(frame.focused()!.attributes.get("aria-label")).toBe("Remove release");
+    removeAt(1).listeners.get("click")!({ preventDefault() {} });
+    expect(frame.focused()!.attributes.get("aria-label")).toBe("Remove fix-issue");
+    removeAt(0).listeners.get("click")!({ preventDefault() {} });
+    expect(frame.focused()).toBe(entry);
+  });
+
+  test("workflow bounds reject a whole addition, preserve the input and recover after removal", () => {
+    const frame = frameHarness(buildLaunch({ projects }, "nonce"));
+    frame.select("p1");
+    frame.fire("allow-workflows", "click");
+    const entry = frame.get("workflow-entry")!;
+    entry.value = Array.from({ length: START_BOUNDS.maxWorkflows }, (_, index) => `w${index}`).join(
+      " ",
+    );
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    expect(frame.get("workflow-chips")!.children).toHaveLength(START_BOUNDS.maxWorkflows);
+    entry.value = "w0";
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    expect(entry.value).toBe("");
+    entry.value = "extra";
+    frame.fire("workflow-entry", "keydown", { key: "," });
+    expect(entry.value).toBe("extra");
+    expect(frame.get("workflow-error")!.textContent).toBe("at most 10 workflows");
+    frame.get("workflow-chips")!.children[0]!.children[1]!.listeners.get("click")!({
+      preventDefault() {},
+    });
+    frame.fire("launch-start", "click");
+    expect(frame.calls[0]!.payload.workflows).toBe("w1, w2, w3, w4, w5, w6, w7, w8, w9, extra");
+  });
+
+  test("turning switches off retains same-project chips but project changes reset consent without clearing the task", () => {
+    const frame = frameHarness(
+      buildLaunch(
+        { projects: [...projects, { ...projects[0]!, id: "p2" }], toolReachability: [] },
+        "nonce",
+      ),
+    );
+    frame.select("p1");
+    frame.get("launch-task")!.value = "Keep the draft";
+    for (const key of ["write", "workflows", "tracker"]) frame.fire(`allow-${key}`, "click");
+    frame.get("workflow-entry")!.value = "fix-issue";
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    for (const key of ["write", "workflows", "tracker"]) frame.fire(`allow-${key}`, "click");
+    expect(frame.get("workflow-chips")!.children).toHaveLength(1);
+    expect(frame.get("workflows-details")!.hidden).toBe(true);
+    frame.fire("launch-start", "click");
+    expect(frame.calls[0]!.payload).toEqual({
+      nonce: "nonce",
+      task: "Keep the draft",
+      project: "p1",
+      tools: "read",
+    });
+    frame.timers[0]!.callback();
+    frame.fire("allow-workflows", "click");
+    expect(frame.get("launch-mode")!.textContent).toBe("Reads keelson-sample · fix-issue");
+    frame.select("p2", "Another project");
+    for (const key of ["write", "workflows", "tracker"]) {
+      expect(frame.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+    }
+    expect(frame.get("workflow-chips")!.children).toEqual([]);
+    expect(frame.get("launch-mode")!.textContent).toBe("Reads Another project · no workflows");
+    frame.select("");
+    frame.fire("launch-start", "click");
+    expect(frame.calls[1]!.payload).toEqual({
+      nonce: "nonce",
+      task: "Keep the draft",
+      project: "",
+      tools: "none",
+    });
+  });
+
+  test("dispatch-blocked and unsupported tracker switches stay off with explicit explanations", () => {
+    const frame = frameHarness(
+      buildLaunch(
+        {
+          projects,
+          dispatchBlocked: "Cannot <dispatch>",
+          refused: ["fix-issue", "docs-check"],
+        },
+        "nonce",
+      ),
+    );
+    frame.select("p1");
+    expect(frame.get("workflows-meaning")!.textContent).toBe(
+      "Cannot <dispatch> · fix-issue, docs-check approvals: you answer them in Workflows",
+    );
+    expect(frame.get("tracker-meaning")!.textContent).toBe(
+      "This host does not say which tools a lead may hold.",
+    );
+    for (const key of ["workflows", "tracker"]) {
+      expect(frame.get(`allow-${key}`)!.disabled).toBe(true);
+      frame.fire(`allow-${key}`, "click");
+      expect(frame.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+      expect(frame.get(`${key}-details`)!.hidden).toBe(true);
+    }
+    frame.fire("launch-start", "click");
+    expect(frame.calls[0]!.payload).not.toHaveProperty("workflows");
+    expect(frame.calls[0]!.payload).not.toHaveProperty("lead_tools");
+  });
+
+  test("tracker chips distinguish all reachability statuses and missing results, not switch intent", () => {
+    for (const toolReachability of [
+      [],
+      [
+        { name: "beads_ready", status: "reachable" as const },
+        { name: "beads_show", status: "cross-rib-denied" as const },
+        { name: "beads_create", status: "denylisted" as const },
+        { name: "beads_update", status: "unregistered" as const },
+        { name: "beads_close", status: "reachable" as const },
+        { name: "other_tool", status: "reachable" as const },
+      ],
+    ]) {
+      const frame = frameHarness(buildLaunch({ projects, toolReachability }, "nonce"));
+      frame.select("p1");
+      expect(frame.get("allow-tracker")!.disabled).toBe(false);
+      frame.fire("allow-tracker", "click");
+      const chips = frame.get("tracker-details")!.children;
+      expect(chips.map((chip) => chip.textContent)).toEqual([...TRACKER_TOOLS]);
+      for (const chip of chips) {
+        const reachable =
+          toolReachability.find((tool) => tool.name === chip.textContent)?.status === "reachable";
+        expect(chip.classes.has("is-muted")).toBe(!reachable);
+        expect(chip.attributes.get("title")).toBe(
+          reachable ? undefined : "needs your grant: crossRibGrants",
+        );
+      }
+      expect(frame.get("launch-mode")!.textContent).toBe(
+        "Reads keelson-sample · no workflows · beads",
+      );
+      frame.fire("launch-start", "click");
+      expect(frame.calls[0]!.payload.lead_tools).toEqual(
+        toolReachability.length ? ["beads_ready", "beads_close"] : undefined,
+      );
+    }
+  });
+
+  test("fresh host filtering overrides a stale or crafted HTML tracker snapshot and failures never launch", async () => {
+    const h = launcherHarness({
+      projects,
+      toolReachability: TRACKER_TOOLS.map((name) => ({ name, status: "reachable" })),
+    });
+    try {
+      await Bun.sleep(5);
+      const frame = frameHarness(h.page());
+      frame.select("p1");
+      frame.get("launch-task")!.value = "Investigate";
+      frame.fire("allow-tracker", "click");
+      let allowed = ["beads_ready", "beads_close"];
+      const deps: ActionDeps = {
+        ...actionDeps,
+        surface: h.surface,
+        getToolReachability: () => [
+          ...allowed.map((name) => ({ name, status: "reachable" as const })),
+          { name: "unrequested_tool", status: "reachable" },
+        ],
+      };
+      allowed = ["beads_close"];
+      frame.fire("launch-start", "click");
+      begun.length = 0;
+      const action = { ...frame.calls[0]!, origin: "canvas-html" as const };
+      expect((await handleSwarmsAction(action, deps)).ok).toBe(true);
+      expect(begun.at(-1)?.leadTools).toEqual(["beads_close"]);
+      allowed = ["beads_ready", "beads_close"];
+      expect((await handleSwarmsAction(action, deps)).ok).toBe(true);
+      expect(begun.at(-1)?.leadTools).toEqual(["beads_ready", "beads_close"]);
+      for (const lead_tools of [
+        null,
+        {},
+        "beads_ready",
+        [null],
+        [false],
+        ["x"],
+        ["A_tool"],
+        ["bad-tool"],
+        ["chat_done"],
+        ["a".repeat(65)],
+        Array(START_BOUNDS.maxLeadTools + 1).fill("beads_ready"),
+      ]) {
+        expect(
+          (
+            await handleSwarmsAction(
+              { ...action, payload: { ...action.payload, lead_tools } },
+              deps,
+            )
+          ).ok,
+        ).toBe(false);
+      }
+      expect(begun).toHaveLength(2);
+      expect(
+        (await handleSwarmsAction(action, { ...deps, getToolReachability: undefined })).ok,
+      ).toBe(true);
+      expect(begun.at(-1)?.leadTools).toBeUndefined();
+      expect(
+        await handleSwarmsAction(action, {
+          ...deps,
+          getToolReachability: () => {
+            throw new Error("changed host");
+          },
+        }),
+      ).toEqual({ ok: false, error: "Could not check lead tool reachability: changed host" });
+      expect(begun).toHaveLength(3);
+      for (const workflows of [
+        "../bad",
+        Array.from({ length: 11 }, (_, index) => `w${index}`).join(","),
+      ]) {
+        expect(
+          (await handleSwarmsAction({ ...action, payload: { ...action.payload, workflows } }, deps))
+            .ok,
+        ).toBe(false);
+      }
+    } finally {
+      h.surface.dispose();
+    }
   });
 
   test("publishing declares HTML, validates strings and owns a nonce per surface instance", async () => {
@@ -6743,12 +7309,12 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("HTML launches ignore crafted access, workflows and setup", async () => {
+  test("HTML launches admit access and workflows but ignore model and setup overrides", async () => {
     const h = launcherHarness({ projects });
     try {
       await Bun.sleep(5);
       begun.length = 0;
-      for (const project of ["p1", "", undefined]) {
+      for (const project of ["p1"]) {
         for (const setup of [undefined, "defaults", "adjust"]) {
           expect(
             (
@@ -6775,12 +7341,31 @@ describe("launching from the tab", () => {
           ).toBe(true);
           expect(begun.at(-1)).toEqual({
             task: "Fix issue",
-            workTools: project ? "read" : "none",
-            ...(project ? { project } : {}),
+            workTools: "write",
+            project,
+            workflows: [{ name: "fix-issue", isolated: true }],
           });
         }
       }
-      expect(begun).toHaveLength(9);
+      expect(begun).toHaveLength(3);
+      for (const extra of [
+        { tools: "write" },
+        { workflows: "fix-issue" },
+        { lead_tools: ["beads_ready"] },
+      ]) {
+        expect(
+          (
+            await handleSwarmsAction(
+              {
+                type: "start-swarm",
+                origin: "canvas-html",
+                payload: { nonce: h.nonce(), task: "Fix issue", ...extra },
+              },
+              { ...actionDeps, surface: h.surface },
+            )
+          ).ok,
+        ).toBe(false);
+      }
     } finally {
       h.surface.dispose();
     }
@@ -6900,7 +7485,71 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("only project/provider configuration changes replace the launcher document", async () => {
+  test("capability, dispatch and refusal changes can discard drafts but equivalent snapshots preserve them", async () => {
+    const h = launcherHarness({
+      projects,
+      toolReachability: [
+        { name: "beads_ready", status: "reachable", ownerRibId: "beads" },
+        { name: "beads_close", status: "cross-rib-denied" },
+      ],
+      refused: ["z-check", "a-check"],
+    });
+    try {
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      const page = h.page();
+      const frame = frameHarness(page);
+      frame.select("p1");
+      frame.get("launch-task")!.value = "Typed draft";
+      frame.fire("allow-write", "click");
+      frame.fire("allow-workflows", "click");
+      frame.get("workflow-entry")!.value = "fix-issue";
+      frame.fire("workflow-entry", "keydown", { key: "Enter" });
+      h.inputs.toolReachability = [
+        { name: "extra_tool", status: "reachable" },
+        { name: "beads_close", status: "cross-rib-denied" },
+        { name: "beads_ready", status: "reachable" },
+      ];
+      h.inputs.refused = ["a-check", "z-check", "a-check"];
+      for (const kind of ["message", "start", "end", "gate", "turn"] as const)
+        h.surface.changed(fixtures.running!.id, kind);
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
+      expect((await h.sm.recompose(LAUNCH_KEY))?.data).toBe(page);
+      expect(frame.get("launch-task")!.value).toBe("Typed draft");
+      expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+      expect(frame.get("workflow-chips")!.children[0]!.children[0]!.textContent).toBe("fix-issue");
+      let previous = page;
+      for (const change of [
+        () => {
+          h.inputs.toolReachability = [{ name: "beads_close", status: "reachable" }];
+        },
+        () => {
+          h.inputs.dispatchBlocked = "Dispatch unavailable";
+        },
+        () => {
+          h.inputs.refused = ["other-workflow"];
+        },
+        () => {
+          h.inputs.toolReachability = [];
+        },
+        () => {
+          h.inputs.toolReachability = undefined;
+        },
+      ]) {
+        change();
+        h.surface.refresh();
+        await Bun.sleep(5);
+        expect(h.page()).not.toBe(previous);
+        expect(h.nonce()).toBe(nonce);
+        previous = h.page();
+      }
+    } finally {
+      h.surface.dispose();
+    }
+  });
+  test("actual project/provider configuration changes can still discard launcher drafts", async () => {
     const h = launcherHarness({
       projects,
       provider: "claude",
@@ -7085,7 +7734,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("the launcher is a themed HTML form with only task and project controls", () => {
+  test("the themed launcher keeps model defaults and offers access only in a project template", () => {
     for (const st of [{ projects }, { projects: [] }]) {
       const page = buildLaunch(st, "nonce");
       for (const copy of [
@@ -7113,6 +7762,17 @@ describe("launching from the tab", () => {
         expect(page).not.toContain(`name="${name}"`);
       }
       expect(page).not.toContain("--brand");
+      if (st.projects.length) {
+        expect(page).toContain('<template id="access-template">');
+        for (const name of ["Write", "Run workflows", "Use the tracker"]) {
+          expect(page).toContain(`role="switch" aria-label="${name}"`);
+        }
+        expect(page).toContain("width: 44px; height: 26px");
+      } else {
+        for (const name of ["ALSO ALLOW", "Write", "Run workflows", "Use the tracker"]) {
+          expect(page).not.toContain(name);
+        }
+      }
     }
   });
 
@@ -7273,6 +7933,76 @@ describe("start and run again", () => {
   const act = (type: string, payload: Record<string, unknown>) =>
     handleSwarmsAction({ type, payload }, actionDeps);
 
+  test("lead tools validate before deduplication and use fresh reachability for starts and reruns", async () => {
+    begun.length = 0;
+    let allowed = ["beads_ready", "beads_close"];
+    const deps: ActionDeps = {
+      ...actionDeps,
+      getToolReachability: (names) => [
+        ...names.map((name) => ({
+          name,
+          status: allowed.includes(name) ? ("reachable" as const) : ("cross-rib-denied" as const),
+        })),
+        { name: "beads_unrequested", status: "reachable" },
+      ],
+      launchOf: () => ({ ...oldLaunch, leadTools: ["beads_ready", "beads_close"] }),
+    };
+    const start = (lead_tools: unknown) =>
+      handleSwarmsAction(
+        { type: "start-swarm", payload: { task: "Investigate", lead_tools } },
+        deps,
+      );
+    expect((await start(["beads_ready", "beads_show", "beads_close", "beads_ready"])).ok).toBe(
+      true,
+    );
+    expect(begun.at(-1)?.leadTools).toEqual(["beads_ready", "beads_close"]);
+    for (const value of [
+      null,
+      "beads_ready",
+      {},
+      ["chat_read"],
+      [1],
+      ["a"],
+      ["Beads_ready"],
+      ["../beads"],
+      ["a".repeat(65)],
+      Array(START_BOUNDS.maxLeadTools + 1).fill("beads_ready"),
+    ]) {
+      expect((await start(value)).ok).toBe(false);
+    }
+    expect(begun).toHaveLength(1);
+    allowed = ["beads_close"];
+    expect(
+      (await handleSwarmsAction({ type: "run-again", payload: { id: "s8pln" } }, deps)).ok,
+    ).toBe(true);
+    expect(begun.at(-1)?.leadTools).toEqual(["beads_close"]);
+    expect(
+      (
+        await handleSwarmsAction(
+          { type: "run-again", payload: { id: "s8pln" } },
+          { ...deps, getToolReachability: undefined },
+        )
+      ).ok,
+    ).toBe(true);
+    expect(begun.at(-1)?.leadTools).toBeUndefined();
+    const failing = {
+      ...deps,
+      getToolReachability: () => {
+        throw new Error("host offline");
+      },
+    };
+    for (const action of [
+      { type: "start-swarm", payload: { task: "Investigate", lead_tools: ["beads_ready"] } },
+      { type: "run-again", payload: { id: "s8pln" } },
+    ]) {
+      expect(await handleSwarmsAction(action, failing)).toEqual({
+        ok: false,
+        error: "Could not check lead tool reachability: host offline",
+      });
+    }
+    expect(begun).toHaveLength(3);
+  });
+
   test("a form with no workflows starts an investigating swarm and opens the index", async () => {
     begun.length = 0;
     const result = await act("start-swarm", {
@@ -7428,6 +8158,7 @@ describe("the server line and inspector", () => {
       sm,
       state: () => state({ server }),
       find: () => ({}),
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ server, live: 0, ...(op ? { op } : {}) }),
@@ -7810,6 +8541,200 @@ describe("the launch store", () => {
 });
 
 describe("the rib's surface", () => {
+  test("project launches without tracker tools survive a failed capability probe", async () => {
+    const sm = new FakeSnapshots();
+    const dir = mkdtempSync(join(tmpdir(), "chat-launch-probe-"));
+    const savedUrl = process.env.CLICKCLACK_URL;
+    const savedToken = process.env.CLICKCLACK_TOKEN;
+    process.env.CLICKCLACK_URL = "http://127.0.0.1:1";
+    delete process.env.CLICKCLACK_TOKEN;
+    let probeFailed = false;
+    try {
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getDataDir: () => dir,
+        getCredential: async () => {
+          throw new Error("test boot stopped before contacting ClickClack");
+        },
+        runAgentTurn: () => {
+          throw new Error("no agent turn should run");
+        },
+        getProjects: () => [{ id: "p1", name: "sample", rootPath: "/tmp/sample", createdAt: T0 }],
+        getSnapshotManager: () => sm,
+        getToolReachability: () => {
+          if (probeFailed) throw new Error("tracker lookup failed");
+          return [];
+        },
+      });
+      const page = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+      const action = {
+        type: "start-swarm",
+        origin: "canvas-html" as const,
+        payload: {
+          nonce: page.match(/data-nonce="([^"]+)"/)![1]!,
+          task: "Investigate",
+          project: "p1",
+        },
+      };
+      probeFailed = true;
+      expect(await rib.onAction?.(action, { getExec: () => ({}) as never })).toMatchObject({
+        ok: true,
+      });
+      expect(
+        await rib.onAction?.(
+          { ...action, payload: { ...action.payload, lead_tools: ["beads_ready"] } },
+          { getExec: () => ({}) as never },
+        ),
+      ).toEqual({
+        ok: false,
+        error: "Could not check lead tool reachability: tracker lookup failed",
+      });
+      const failedPage = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+      expect(failedPage).toContain(
+        "Could not check tracker tool reachability: tracker lookup failed",
+      );
+      expect(failedPage.match(/<button[^>]+id="allow-tracker"[^>]*>/)![0]).toContain(" disabled");
+      await Bun.sleep(0);
+      expect(loadHistory(historyPath(dir)).ended).toMatchObject([
+        {
+          task: "Investigate",
+          project: { id: "p1", name: "sample" },
+          error: "test boot stopped before contacting ClickClack",
+        },
+      ]);
+    } finally {
+      await Bun.sleep(0);
+      await rib.dispose?.();
+      if (savedUrl === undefined) delete process.env.CLICKCLACK_URL;
+      else process.env.CLICKCLACK_URL = savedUrl;
+      if (savedToken === undefined) delete process.env.CLICKCLACK_TOKEN;
+      else process.env.CLICKCLACK_TOKEN = savedToken;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("registration displays dispatch prerequisites and passes live reachability into HTML actions", async () => {
+    const project = { id: "p1", name: "sample", rootPath: "/tmp/sample", createdAt: T0 };
+    const unused = async () => {
+      throw new Error("no workflow should run");
+    };
+    for (const missing of ["none", "startWorkflow", "getRunStatus", "cancelRun"]) {
+      const sm = new FakeSnapshots();
+      let lookupFailed = false;
+      let snapshotFailed = false;
+      const queries: string[][] = [];
+      try {
+        rib.registerTools?.({
+          getExec: () => ({}) as never,
+          getProjects: () => [project],
+          getSnapshotManager: () => sm,
+          startWorkflow: missing === "startWorkflow" ? undefined : unused,
+          getRunStatus: missing === "getRunStatus" ? undefined : unused,
+          cancelRun: missing === "cancelRun" ? undefined : unused,
+          getToolReachability: (names) => {
+            queries.push([...names]);
+            if (snapshotFailed) {
+              snapshotFailed = false;
+              throw new Error("snapshot lookup failed");
+            }
+            if (lookupFailed && names.length === 1) throw new Error("live grant lookup failed");
+            return [{ name: "beads_ready", status: "reachable" }];
+          },
+        });
+        const page = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+        const workflowButton = page.match(/<button[^>]+id="allow-workflows"[^>]*>/)![0];
+        expect(workflowButton.includes(" disabled")).toBe(missing !== "none");
+        expect(page.includes("This Keelson host can&#39;t start workflows for a rib.")).toBe(
+          missing !== "none",
+        );
+        expect(page).toContain('data-tool="beads_ready" data-reachable="true"');
+        lookupFailed = true;
+        expect(
+          await rib.onAction?.(
+            {
+              type: "start-swarm",
+              origin: "canvas-html",
+              payload: {
+                nonce: page.match(/data-nonce="([^"]+)"/)![1]!,
+                task: "Investigate",
+                project: "p1",
+                lead_tools: ["beads_ready"],
+              },
+            },
+            { getExec: () => ({}) as never },
+          ),
+        ).toEqual({
+          ok: false,
+          error: "Could not check lead tool reachability: live grant lookup failed",
+        });
+        expect(queries.at(-1)).toEqual(["beads_ready"]);
+        snapshotFailed = true;
+        expect(
+          await rib.onAction?.(
+            {
+              type: "start-swarm",
+              origin: "canvas-html",
+              payload: {
+                nonce: page.match(/data-nonce="([^"]+)"/)![1]!,
+                task: "Investigate",
+                project: "p1",
+                lead_tools: ["beads_ready"],
+              },
+            },
+            { getExec: () => ({}) as never },
+          ),
+        ).toEqual({
+          ok: false,
+          error: "Could not check lead tool reachability: snapshot lookup failed",
+        });
+      } finally {
+        await rib.dispose?.();
+      }
+    }
+  });
+
+  test("queries tracker capabilities and cannot reuse a previous host after re-registration", async () => {
+    const queries: string[][] = [];
+    const sm = new FakeSnapshots();
+    try {
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getSnapshotManager: () => sm,
+        getToolReachability: (names) => {
+          queries.push([...names]);
+          return [];
+        },
+      });
+      await sm.composers.get(LAUNCH_KEY)!.compose();
+      expect(queries.length).toBeGreaterThan(0);
+      expect(
+        queries.every(
+          (names) =>
+            JSON.stringify(names) ===
+            JSON.stringify([
+              "beads_ready",
+              "beads_show",
+              "beads_create",
+              "beads_update",
+              "beads_close",
+              "beads_dep",
+            ]),
+        ),
+      ).toBe(true);
+      await rib.dispose?.();
+      const count = queries.length;
+      const next = new FakeSnapshots();
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getSnapshotManager: () => next,
+      });
+      await next.composers.get(LAUNCH_KEY)!.compose();
+      expect(queries).toHaveLength(count);
+    } finally {
+      await rib.dispose?.();
+    }
+  });
+
   test("launch state filters the fallback project and keeps provider configuration", async () => {
     const sm = new FakeSnapshots();
     const saved = process.env.KEELSON_WORKFLOW_PROVIDER;
