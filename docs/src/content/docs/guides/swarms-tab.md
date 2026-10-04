@@ -47,16 +47,17 @@ One live swarm expands on the page as a cockpit. It runs in this order:
 4. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
    omitting zero counts. Open seats are hatched.
 5. Three **Budget** tiles: **Turns** used with a sparkline and a forecast
-   delta, with **pace over the last 5 min** in the sub; **Time** as a ticking
+   delta, with **of N · pace over the last 5 min** in the sub; **Time** as a ticking
    time-left clock; and fresh **Tokens** with cached tokens in the sub.
    Before a turn, Tokens says **none yet**; after turns without usage, it
    says **the provider reported none**.
-6. **Map** beside **Conversation**: the agents and runs as a graph, and the
+6. **Map**: the agents and runs as a full-width graph.
+7. **Conversation** follows Map when recent messages exist: the
    eight newest channel messages, then the count and **transcript ↗** link.
-7. **Message the lead**, expanded directly under Conversation for a running
+8. **Message the lead**, expanded directly under Conversation for a running
    swarm that has not concluded.
-8. Spend, Produced so far, and Activity.
-9. **Open the report** when one exists; **Open the record**; **Details**; and
+9. Spend, Produced so far, and Activity.
+10. **Open the report** when one exists; **Open the record**; **Details**; and
    **Stop swarm…** last.
 
 ### Map
@@ -83,7 +84,8 @@ Map keeps at most **48 nodes and 200 edges**. It retains You, the lead and
 the selected agent before optional nodes, removes dangling edges, and names
 actual shown/total counts in the heading for each clipped dimension.
 Spawn and run **updates** edges are kept first, then wakes, then questions.
-Map and Conversation stack on narrow screens.
+Map owns a full-width row on both live surfaces; Conversation and the eligible
+composer follow.
 
 ### Inspect or message an agent
 
@@ -119,6 +121,11 @@ with a reason.
 
 Stopping, concluded and ended inspectors are read-only with no composer.
 Ended inspectors have no live clock, even when an old span has no recorded end.
+Ended agent heads use the swarm lifecycle pill: **done**, **stopped**,
+**stalled**, **out of budget** or **failed**, not the agent's last live status.
+Live, unended heads retain the agent's actual status. A retained end time with
+a still-live status suppresses the activity pill rather than inventing an
+outcome.
 
 ### Read or answer a question
 
@@ -166,6 +173,20 @@ Excerpts are not complete source bodies. Missing legacy excerpts and
 truncation are explicit. Actually served models stay separate from requested
 settings; missing legacy evidence says **not recorded**.
 
+A single-part task is labeled **Task**; longer tasks use numbered parts.
+Details durations use exact whole minutes or seconds, including fractional
+seconds: 1800000 ms becomes **30 min**, 300000 ms becomes **5 min**, 45000 ms
+becomes **45 s**, and 90000 ms remains **90 s**.
+
+Setup has one **Lead model** row and one **Worker model** row, requested
+settings first. Without explicit settings, the request reads
+"balanced power, host default". Workers inherit the lead setting unless a
+worker role override is recorded. Each role's disclosure labels served model
+and served provider per agent by short handle, with explicit per-agent request
+overrides. Missing served evidence says **not reported**; missing role agents
+are explicitly **not recorded**. Recorded reasoning effort and aggregate
+token usage remain visible.
+
 Each inspector publishes before opening. Question and gate selection is
 shared by every viewer, independently of expanded-swarm and agent selection,
 with one key per swarm and kind. Open inspectors refresh from current
@@ -175,6 +196,10 @@ Stopping, concluded and ended question/gate inspectors have no live clock or
 composer. Forgetting, retention trimming and disposal release inspector keys.
 
 ### The budget forecast
+
+The live Turns tile has a numeric value and its sub reads
+"of N · pace over the last 5 min". At 3 of 20 turns, its value is **3** and its
+sub is **"of 20 · pace over the last 5 min"**.
 
 The Turns delta projects when the remaining turns run out against the wall
 clock. It counts turn start timestamps over the last five minutes, or since
@@ -186,14 +211,15 @@ Fewer than one turn in the window reads **no pace**, not infinite time.
 
 | Reading | Delta text | Direction | Tone |
 |---|---|---|---|
-| runs-out-first | N left · at R a minute they run out about hh:mm, before the clock | down | warn |
-| clock-first | N left · at this pace about M unused when the clock ends at hh:mm | flat | caution |
+| runs-out-first | N left · out about hh:mm, before the clock | down | warn |
+| clock-first | N left · about M unused at hh:mm | flat | caution |
 | fits | N left · pace fits the clock | flat | none |
 | no-pace | N left · no turn in 5 min | flat | none |
 | out-of-turns | none left · agents finish their turns | down | warn |
 
-N is turns left, R is turns a minute and M is projected unused turns. The
-rate shows one decimal without a trailing `.0`; times use the local clock.
+N is turns left and M is projected unused turns. Delta text stays within 44
+characters through the 200-turn bound. The rate is not displayed; times use
+the local clock.
 The host supplies the directional glyph, not the delta text.
 
 With positive pace, running out before the clock reads **runs-out-first**.
@@ -204,7 +230,9 @@ would be unused: 2 turns for small, 4 for medium, 8 for large. Less reads
 
 The forecast is advisory. It is computed when the board composes, not
 stored or periodically refreshed. It changes nothing the engine does:
-no limits, nudges or stopping. An ended Turns tile has no forecast.
+no limits, nudges or stopping.
+An ended Turns tile has no forecast and its sub stays "of N".
+It retains the numeric used count and existing sparkline.
 
 ### Conversation
 
@@ -323,14 +351,15 @@ Live, the board runs in this order:
 - the requests, one card each, with **reviewing** approvals after them
 - the report, once the lead has published one
 - the budget strip: turns used with a sparkline of turns per minute and the
-  same forecast delta while live, with **pace over the last 5 min** in the
+  same forecast delta while live, with **of N · pace over the last 5 min** in the
   sub; an ended board keeps the sparkline, spread over the whole run, with
   no delta and **of N** in the sub, where N is the total turn budget; time
   left on a live clock; agents against the cap with how many are busy or
   waiting; and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
-- **Map** beside **Conversation**, the same graph, newest eight messages
-  and transcript link as the cockpit, with **Message the lead** under it
+- the same full-width **Map**, then **Conversation**, with the newest eight
+  messages and transcript link as the cockpit, followed by the eligible
+  **Message the lead** composer
 - **Open the record**, **Details** and **Stop swarm…** at the far end of the row.
   The **Message the lead** form under Conversation posts in the channel as
   you and wakes the lead. Its placeholder reads **posts as you, wakes the
