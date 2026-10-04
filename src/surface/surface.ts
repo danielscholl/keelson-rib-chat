@@ -8,6 +8,7 @@
 
 import {
   type CanvasView,
+  DEFAULT_PROJECT_NAME,
   expectView,
   type RibSurfaceBadge,
   type RibViewDescriptor,
@@ -71,6 +72,7 @@ export interface SurfaceDeps {
 }
 
 export interface SwarmsSurface {
+  acceptsLaunchNonce(nonce: string): boolean;
   track(ids: readonly string[]): void;
   select(id: string): void;
   selectAgent(id: string, agentId: string): Promise<void>;
@@ -168,10 +170,41 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     windowMs,
   );
   const launchNonce = crypto.randomUUID();
+  let launchInputs: string | undefined;
+  function launchState(): LaunchState {
+    const state = deps.launch();
+    const classes = state.classes?.find((c) => c.provider === state.provider)?.classes;
+    return {
+      projects: state.projects
+        .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
+        .map(({ id, name, rootPath }) => ({ id, name, rootPath })),
+      provider: state.provider,
+      classes:
+        state.provider && classes
+          ? [
+              {
+                provider: state.provider,
+                classes: {
+                  fast: classes.fast,
+                  balanced: classes.balanced,
+                  deep: classes.deep,
+                },
+              },
+            ]
+          : [],
+      refused: [...(state.refused ?? [])],
+      dispatchBlocked: state.dispatchBlocked,
+    };
+  }
   const launch = createKeyPublisher<string>(
     sm,
     LAUNCH_KEY,
-    () => buildLaunch(deps.launch(), launchNonce),
+    () => {
+      const state = launchState();
+      const html = buildLaunch(state, launchNonce);
+      launchInputs = JSON.stringify(state);
+      return html;
+    },
     (data: unknown) => {
       if (typeof data !== "string" || data.length === 0) {
         throw new Error(`${LAUNCH_KEY} expects a non-empty html page`);
@@ -180,6 +213,10 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     },
     windowMs,
   );
+  deps.views.push({ key: LAUNCH_KEY, canvasKind: "html", title: "Start a swarm" });
+  function refreshLaunch(): void {
+    if (!disposed && JSON.stringify(launchState()) !== launchInputs) launch.schedule();
+  }
   const server = createKeyPublisher<CanvasView>(
     sm,
     SERVER_KEY,
@@ -414,6 +451,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   }
 
   return {
+    acceptsLaunchNonce: (nonce) => !disposed && nonce === launchNonce,
     track,
     select(id) {
       selected = id;
@@ -477,6 +515,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       });
     },
     changed(id, kind) {
+      refreshLaunch();
       track([id]);
       for (const publisher of Object.values(inspectors.get(id) ?? {})) publisher.schedule();
       if (kind === "message") {
@@ -492,10 +531,8 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       if (DOC_KINDS.has(kind)) entry?.doc.schedule();
       if (RECORD_KINDS.has(kind)) records.get(id)?.schedule();
       if (kind === "end") history.schedule();
-      if (kind === "start" || kind === "end") launch.schedule();
       if (kind === "gate" || kind === "start" || kind === "end") {
         server.schedule();
-        launch.schedule();
       }
     },
     forget(ids) {
@@ -505,7 +542,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       index.schedule();
       badge.schedule();
       history.schedule();
-      launch.schedule();
+      refreshLaunch();
     },
     refresh() {
       for (const entry of inspectors.values()) {
@@ -514,7 +551,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       index.schedule();
       badge.schedule();
       history.schedule();
-      launch.schedule();
+      refreshLaunch();
       server.schedule();
     },
     logOpened() {
@@ -531,6 +568,8 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       log.release();
       const at = deps.views.findIndex((v) => v.key === SERVER_LOG_KEY);
       if (at >= 0) deps.views.splice(at, 1);
+      const launcherAt = deps.views.findIndex((v) => v.key === LAUNCH_KEY);
+      if (launcherAt >= 0) deps.views.splice(launcherAt, 1);
     },
   };
 }

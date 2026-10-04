@@ -60,7 +60,12 @@ import {
   SERVER_LOG_KEY,
   swarmKey,
 } from "../src/surface/keys.ts";
-import { buildLaunch, powerField, TASK_PLACEHOLDER } from "../src/surface/launch-board.ts";
+import {
+  buildLaunch,
+  type LaunchState,
+  powerField,
+  TASK_PLACEHOLDER,
+} from "../src/surface/launch-board.ts";
 import {
   askText,
   dismissAskAction,
@@ -5031,11 +5036,15 @@ describe("publishing", () => {
     }
     surface.track([...ended.keys()]);
     expect(refreshes).toBe(1);
-    expect(views[0]).toEqual({ key: SERVER_LOG_KEY, canvasKind: "log", title: "ClickClack log" });
+    expect(views.find((v) => v.key === SERVER_LOG_KEY)).toEqual({
+      key: SERVER_LOG_KEY,
+      canvasKind: "log",
+      title: "ClickClack log",
+    });
     expect(views.filter((v) => v.canvasKind === "markdown")).toHaveLength(MAX_SWARM_KEYS);
-    expect(views.filter((v) => v.canvasKind === "html")).toHaveLength(MAX_SWARM_KEYS);
+    expect(views.filter((v) => v.canvasKind === "html")).toHaveLength(MAX_SWARM_KEYS + 1);
     expect(sm.keys()).not.toContain(recordKey("s0000"));
-    expect(views[1]).toEqual({
+    expect(views.find((v) => v.key === docKey("s0005"))).toEqual({
       key: docKey("s0005"),
       canvasKind: "markdown",
       title: "Swarm s0005",
@@ -5655,6 +5664,7 @@ describe("actions", () => {
     const s = inspectorSummary();
     const calls: unknown[][] = [];
     const surface: SwarmsSurface = {
+      acceptsLaunchNonce: () => false,
       track: () => {},
       select: () => {},
       selectAgent: async () => {},
@@ -6350,6 +6360,7 @@ describe("actions", () => {
   test("select-swarm selects a live swarm without opening a drawer or showing a toast", async () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
+      acceptsLaunchNonce: () => false,
       selectAgent: async () => {},
       selectAsk: async () => {},
       selectGate: async () => {},
@@ -6469,6 +6480,122 @@ describe("actions", () => {
 
 describe("launching from the tab", () => {
   const projects = [{ id: "p1", name: "keelson-sample", rootPath: "/tmp/keelson-sample" }];
+  const launcherHarness = (inputs: LaunchState = { projects: [] }) => {
+    const sm = new FakeSnapshots();
+    const views: RibViewDescriptor[] = [];
+    const surface = createSwarmsSurface({
+      sm,
+      views,
+      launch: () => inputs,
+      state: () => state({ live: [fixtures.running!] }),
+      find: actionDeps.find,
+      launchOf: () => oldLaunch,
+      server: () => ({ live: 1 }),
+      readLog: async () => "",
+      report: () => undefined,
+      windowMs: 1,
+    });
+    const page = () => String(sm.frames.get(LAUNCH_KEY)?.at(-1));
+    const nonce = () => page().match(/data-nonce="([^"]+)"/)![1]!;
+    return { sm, views, surface, inputs, page, nonce };
+  };
+
+  test("publishing declares HTML, validates strings and owns a nonce per surface instance", async () => {
+    const h = launcherHarness();
+    await Bun.sleep(5);
+    expect(h.views).toContainEqual({ key: LAUNCH_KEY, canvasKind: "html", title: "Start a swarm" });
+    const validate = h.sm.composers.get(LAUNCH_KEY)!.validate!;
+    expect(validate(h.page())).toBe(h.page());
+    for (const invalid of ["", null, {}, 123]) {
+      expect(() => validate(invalid)).toThrow("expects a non-empty html page");
+    }
+    const nonce = h.nonce();
+    expect(nonce).toMatch(/^[a-f0-9-]{36}$/);
+    expect(h.surface.acceptsLaunchNonce(nonce)).toBe(true);
+    await h.sm.recompose(LAUNCH_KEY);
+    expect(h.nonce()).toBe(nonce);
+    h.surface.dispose();
+    expect(h.surface.acceptsLaunchNonce(nonce)).toBe(false);
+    expect(h.views).toEqual([]);
+    const next = launcherHarness();
+    try {
+      await Bun.sleep(5);
+      expect(next.nonce()).not.toBe(nonce);
+      expect(next.surface.acceptsLaunchNonce(nonce)).toBe(false);
+    } finally {
+      next.surface.dispose();
+    }
+  });
+
+  test("ordinary refreshes and swarm changes leave the launcher unchanged", async () => {
+    const h = launcherHarness({ projects, provider: "copilot" });
+    try {
+      await Bun.sleep(5);
+      const page = h.page();
+      for (const kind of ["message", "start", "end", "gate", "turn"] as const) {
+        h.surface.changed(fixtures.running!.id, kind);
+        h.surface.refresh();
+      }
+      h.surface.select(fixtures.running!.id);
+      h.surface.forget([fixtures.done!.id]);
+      await Bun.sleep(10);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
+      const frame = await h.sm.recompose(LAUNCH_KEY);
+      expect(frame?.data).toBe(page);
+      h.inputs.classes = [{ provider: "other", classes: { fast: "x", balanced: "y", deep: "z" } }];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(2);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("relevant launcher changes coalesce and survive in-flight updates and failed composition", async () => {
+    const h = launcherHarness({ projects: [...projects], provider: "copilot" });
+    try {
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      h.inputs.projects = [{ ...projects[0]!, name: "New name" }];
+      for (let i = 0; i < 10; i++) h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(2);
+      expect(h.page()).toContain("New name");
+      expect(h.nonce()).toBe(nonce);
+
+      let unblock!: () => void;
+      h.sm.gate = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      h.inputs.provider = "claude";
+      h.surface.refresh();
+      await Bun.sleep(5);
+      h.inputs.classes = [
+        { provider: "claude", classes: { fast: "a", balanced: "latest-model", deep: "c" } },
+      ];
+      h.surface.refresh();
+      unblock();
+      h.sm.gate = undefined;
+      await Bun.sleep(10);
+      expect(h.page()).toContain("claude: latest-model");
+      expect(h.nonce()).toBe(nonce);
+
+      const prior = h.page();
+      h.sm.failures.set(LAUNCH_KEY, new Error("compose failed"));
+      h.inputs.projects = [];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.page()).toBe(prior);
+      expect(h.surface.acceptsLaunchNonce(nonce)).toBe(true);
+      h.sm.failures.clear();
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.page()).not.toContain("New name");
+      expect(h.nonce()).toBe(nonce);
+    } finally {
+      h.surface.dispose();
+    }
+  });
 
   test("the launcher is a themed HTML form with only task and project controls", () => {
     for (const st of [
