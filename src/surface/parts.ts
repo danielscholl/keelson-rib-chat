@@ -101,6 +101,10 @@ export function modelRow(s: SwarmSummary): string {
   return power ? `${power} on ${provider}${on}` : `${provider} · the provider's default model${on}`;
 }
 
+function limitDuration(ms: number): string {
+  return ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`;
+}
+
 function detailedSetupRows(s: SwarmSummary): Row[] {
   const l = s.limits;
   const defaultModel = s.power
@@ -112,7 +116,7 @@ function detailedSetupRows(s: SwarmSummary): Row[] {
       text: `Effective limits: ${l.maxAgents} agents · ${l.maxTurns} total turns · ${l.maxTurnsPerAgent} turns per worker · ${l.maxConcurrent} concurrent turns`,
     },
     {
-      text: `Wall-clock limit: ${l.wallClockMs} ms · Turn timeout: ${l.turnTimeoutMs} ms · Idle nudge limit: ${l.maxNudges}`,
+      text: `Wall-clock limit: ${limitDuration(l.wallClockMs)} · Turn timeout: ${limitDuration(l.turnTimeoutMs)} · Idle nudge limit: ${l.maxNudges}`,
     },
     { text: `Requested provider: ${s.provider ?? "host default; no explicit provider recorded"}` },
     { text: `Requested lead model: ${s.model ?? defaultModel}` },

@@ -1304,7 +1304,7 @@ describe("the details inspector", () => {
     expect(setup).toEqual([
       "Size: small, adjusted",
       "Effective limits: 7 agents · 31 total turns · 9 turns per worker · 2 concurrent turns",
-      "Wall-clock limit: 1234567 ms · Turn timeout: 654321 ms · Idle nudge limit: 4",
+      "Wall-clock limit: 1234.567 s · Turn timeout: 654.321 s · Idle nudge limit: 4",
       "Requested provider: requested-provider",
       "Requested lead model: requested-lead",
       "Requested worker model: requested-worker (worker role override)",
@@ -1316,6 +1316,35 @@ describe("the details inspector", () => {
       "Served model for @w1 (worker): served-worker · provider: worker-provider",
       "100 in · 20 out tokens",
     ]);
+  });
+
+  test("formats default Details durations as minutes without changing compact setup", () => {
+    const s = swarm("sduration");
+    const setup = rows(inspect(s), "Setup");
+    expect(setup.find((row) => row.text.startsWith("Wall-clock limit:"))?.text).toBe(
+      "Wall-clock limit: 30 min · Turn timeout: 5 min · Idle nudge limit: 2",
+    );
+    expect(setupRows(s)[0]?.text).toBe(sizeDetail(s));
+  });
+
+  test.each([
+    [45_000, "45 s"],
+    [60_000, "1 min"],
+    [90_000, "90 s"],
+    [1_800_000, "30 min"],
+    [300_000, "5 min"],
+    [45_001, "45.001 s"],
+    [500, "0.5 s"],
+    [1_234_567, "1234.567 s"],
+  ])("retains the exact Details limit of %i milliseconds as %s", (ms, text) => {
+    const s = swarm("sduration", {
+      limits: { ...SIZE_PRESETS.medium, wallClockMs: ms, turnTimeoutMs: ms },
+    });
+    const setup = rows(inspect(s), "Setup");
+    expect(setup.find((row) => row.text.startsWith("Wall-clock limit:"))?.text).toBe(
+      `Wall-clock limit: ${text} · Turn timeout: ${text} · Idle nudge limit: 2`,
+    );
+    expect(setup.map((row) => row.text).join("\n")).not.toContain(" ms");
   });
 
   test("legacy missing settings and power requests never masquerade as served evidence", () => {
