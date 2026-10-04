@@ -120,11 +120,19 @@ describe("contributed docs", () => {
         "distinct URLs across runs and writers",
         "M with CI passing",
         "every recorded owner explicitly reports pass",
+        "The Pull requests tile appears when workflows were named, writeEnabled is true, a legacy writer has a worktree, or any run or writer PR exists.",
+        'Eligible write or dispatch swarms with no PRs show 0 with "0 with CI passing".',
+        "A chat-only swarm with no runs and no PRs omits the tile.",
+        "Run CI must also identify the same PR URL",
+        "Live boards omit the Pull requests tile",
         "Only the operator merges",
         "board never removes worktrees",
       ])
         expect(text).toContain(phrase);
       expect(text).not.toContain("only when the launch named workflows");
+      expect(text).not.toContain("Live and zero-PR boards omit it");
+      expect(text).not.toContain("zero-PR boards omit this tile");
+      expect(text).not.toContain("adds Pull requests when any exist");
     }
     const write = normalized(topics(content).find((t) => t.title === "Write mode")?.body ?? "");
     for (const text of [write, normalized(page)]) {
@@ -229,9 +237,22 @@ describe("contributed docs", () => {
         "retention trimming and disposal release inspector keys",
         "times, health and one transcript link",
         "separate row outside About",
+        "Ended section order: Outcome, Result, actions, Agents, Produced so far when applicable, Activity when events exist, About, then the separate Ended swarms back-link.",
+        "The ended Result orders Turns, Time, Tokens, Pull requests when eligible, then Runs verified only when runs exist.",
+        "There is no Agents tile",
+        "unavailable, not an invented zero",
+        "The actions strip is Run again, Open the record, Details",
+        "Run again is omitted when retained launch inputs are unavailable",
+        "Outcome has no channel field",
+        "For ended swarms, Spend by agent is on the record only, with fresh and cached tokens apart",
+        "Ended Activity shows at most the newest 12 events, with actor, time and repeats, and no Read the full log row",
+        "Only live Activity adds Read the full log when earlier events exist",
+        "Open the record reaches Activity as well as the timeline and spend",
+        "The transcript link is omitted when its address is unavailable",
         "latest 200 retained entries, newest first",
         "not a complete transcript",
         "applicable conclusion or refused draft and the full task, not questions, gates, context, runs or activity",
+        "The conclusion's copy button copies all of it, not the board preview.",
         "Legacy summaries cannot recover question text already truncated",
       ]) {
         expect(text).toContain(phrase);
@@ -241,6 +262,9 @@ describe("contributed docs", () => {
         "cockpit task disclosure shows at most",
         "1,000 task characters",
         "last 200 events are in the reading pane",
+        "Both retain Spend",
+        "agent bench, Spend, Produced so far",
+        "The remaining details follow in both",
       ]) {
         expect(text).not.toContain(obsolete);
       }
