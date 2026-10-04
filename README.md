@@ -47,15 +47,19 @@ The rib manages a server only when `CLICKCLACK_URL` is unset and no owner sessio
 In the **Swarms** tab, describe the task in **Start a swarm**, choose a project
 if agents should read its checkout, and press **Start swarm**. **No project ·
 chat only** is the default. Projects show their name and path (`~` for home).
-The footer shows fixed medium limits (5 agents, up to 40 turns, about 30 minutes)
-and the effective provider's balanced models; there are no size or model
-controls. Selecting a project reveals **Write**, **Run workflows** and **Use
-the tracker**, all off. Write permits branch-isolated writers. Run workflows
-adds up to 10 removable workflow-name chips with Enter, comma or paste, still
-subject to `ribWorkflowGrants`. Use the tracker sends only host-reported
-reachable beads tools, still subject to `crossRibGrants`; a host without a
-reachability hook disables it. The scope footer reflects the selected access.
-Changing or clearing the project resets the switches and chips, not the task.
+Choose **Quick look**, **Working session** (the default: 5 agents, up to 40
+turns, about 30 minutes), or **Deep dig**. **Customize** opens **Effort** (size
+budgets, not reasoning effort) and **Model**, grouped by provider with **Other…**
+for a typed name. The live footer follows the choice. The plan's pair stays
+unless a model is named for all agents. **Run again** has Effort and Model
+only and reuses saved plan power unless a model is named. Selecting a project
+reveals **Write**, **Run workflows** and **Use the tracker**, all off. Write
+permits branch-isolated writers. Run workflows adds up to 10 removable
+workflow-name chips with Enter, comma or paste, still subject to
+`ribWorkflowGrants`. Use the tracker sends only host-reported reachable beads
+tools, still subject to `crossRibGrants`; a host without a reachability hook
+disables it. The scope footer reflects the selected access. Changing or
+clearing the project resets the switches and chips, not the task.
 Paste issue or PR text instead of a URL
 or `#N`, or use **Prepare in chat** to attach the evidence. Refusals appear as
 host toasts. **Starting…** guards duplicate clicks for about two seconds and

@@ -40,10 +40,10 @@ describe("contributed docs", () => {
       "themed HTML launcher",
       "No project · chat only",
       "name · path",
-      "5 agents",
-      "up to 40 turns",
-      "balanced",
-      "no size, power or model overrides",
+      "Working session is selected by default",
+      "Customize",
+      "Effort and Model",
+      "Untouched Working session sends no size, power or model overrides",
       "host toast",
       "about two seconds",
       "fold it by hand",
@@ -117,6 +117,53 @@ describe("contributed docs", () => {
     expect(normalize(readme)).not.toContain("no size, model, write or workflow controls");
     for (const name of ["Write", "Run workflows", "Use the tracker"])
       expect(normalize(readme)).toContain(name);
+  });
+
+  test("packaged and both guides agree on plans, Customize, sparse defaults and Run again", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    const guides = ["swarms-tab", "run-a-swarm"].map((name) =>
+      readFileSync(new URL(`../docs/src/content/docs/guides/${name}.md`, import.meta.url), "utf8"),
+    );
+    const normalize = (text: string) => text.replace(/[`*"]/g, "").replace(/\s+/g, " ");
+    for (const text of [swarms, ...guides].map(normalize)) {
+      for (const phrase of [
+        "Working session is selected by default",
+        "Effort changes size budgets, not reasoning effort",
+        "the plan's models",
+        "default model, class models and pinned models, without duplicates within a group",
+        "Other… accepts a model name and uses the effective default provider",
+        "Changing Effort keeps the plan's pair",
+        "Naming a model runs every agent on it",
+        "Picking a card clears the named model and restores that plan",
+        "The live footer follows the choice",
+        "Untouched Working session sends no size, power or model overrides",
+        "Quick look records small/fast; Deep dig records large/deep",
+        "A named model records size, model and provider, with no power",
+        "Effort and Model only",
+        "Run again reuses saved plan power unless a model is named",
+        "there is no Power field",
+        "context is not refreshed",
+        "Accepting an unchanged plan-derived lead keeps the pair",
+      ])
+        expect(text).toContain(phrase);
+      for (const [name, size, blurb] of [
+        ["Quick look", "small", "A narrow question, or a first pass before a bigger run."],
+        ["Working session", "medium", "Most tasks: investigate, debate, and decide."],
+        ["Deep dig", "large", "Wide or hard problems that are worth the spend."],
+      ] as const) {
+        const l = SIZE_PRESETS[size];
+        expect(text).toContain(
+          `| ${name} | ${blurb} | ${l.maxAgents} | ${l.maxTurns} | ${l.wallClockMs / 60_000} |`,
+        );
+      }
+      for (const obsolete of [
+        "fixed medium limits",
+        "no size, model, write",
+        "size, power and model; its hover",
+      ]) {
+        expect(text).not.toContain(obsolete);
+      }
+    }
   });
 
   test("the rib contributes one valid, inline docs source", () => {

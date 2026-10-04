@@ -140,6 +140,7 @@ function startInput(
   // says what was chosen and Run again repeats a choice rather than a default.
   const adjusted = text(payload, "setup") !== "defaults";
   const size = adjusted ? sizeOf(payload) : undefined;
+  const models = adjusted ? modelOf(payload) : {};
   const power = adjusted ? powerOf(payload) : undefined;
   const input: StartSwarmInput = {
     task,
@@ -148,7 +149,7 @@ function startInput(
     ...(size ? { size } : {}),
     ...(power ? { power } : {}),
     ...(project ? { project } : {}),
-    ...(adjusted ? modelOf(payload) : {}),
+    ...models,
   };
   const names = [
     ...new Set(
@@ -185,17 +186,20 @@ function againInput(
   const { model, provider, workerModel, size, power, ...rest } = old;
   const picked = modelOf(payload);
   const same = picked.model === was.model && picked.provider === was.provider;
+  const models = same
+    ? {
+        ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
+        ...(workerModel ? { workerModel } : {}),
+      }
+    : picked;
+  const pickedSize = sizeOf(payload);
+  const nextSize = pickedSize === "medium" && size === undefined ? undefined : (pickedSize ?? size);
   return {
     ...rest,
-    size: sizeOf(payload) ?? size ?? "medium",
-    power: powerOf(payload) ?? power ?? "balanced",
-    ...(same
-      ? {
-          ...(model ? { model } : {}),
-          ...(provider ? { provider } : {}),
-          ...(workerModel ? { workerModel } : {}),
-        }
-      : picked),
+    ...(nextSize ? { size: nextSize } : {}),
+    ...(power && (same || !picked.model) ? { power } : {}),
+    ...models,
   };
 }
 
@@ -531,7 +535,10 @@ export async function handleSwarmsAction(
               tools: !project && payload.tools !== "write" ? "none" : payload.tools,
               workflows: payload.workflows,
               lead_tools: payload.lead_tools,
-              setup: "defaults",
+              size: payload.size,
+              power: payload.power,
+              model: payload.model,
+              provider: payload.provider,
             }
           : payload,
         deps,

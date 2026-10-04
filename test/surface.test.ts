@@ -67,7 +67,7 @@ import {
   buildLaunch,
   type LaunchState,
   launchByline,
-  powerField,
+  runAgainItem,
   TASK_PLACEHOLDER,
   TRACKER_TOOLS,
 } from "../src/surface/launch-board.ts";
@@ -118,6 +118,7 @@ import {
   MESSAGE_CHARS,
   MESSAGES_KEPT,
   type OperatorAsk,
+  pinnedModels,
   SIZE_PRESETS,
   type StartingSwarm,
   type SwarmAgent,
@@ -6520,7 +6521,11 @@ describe("launching from the tab", () => {
     return { sm, views, surface, inputs, page, nonce };
   };
 
-  const frameHarness = (page: string) => {
+  const frameHarness = (
+    source: LaunchState | string = { projects, provider: "copilot" },
+    nonce = "instance-nonce",
+  ) => {
+    const page = typeof source === "string" ? source : buildLaunch(source, nonce);
     type Event = {
       preventDefault(): void;
       key?: string;
@@ -6635,18 +6640,17 @@ describe("launching from the tab", () => {
       }
       return root;
     };
-    const elements: Record<string, Element> = {
-      "launch-form": new Element(),
-      "launch-task": new Element(),
-      "launch-project": new Element(),
-      "launch-start": new Element("button", "Start swarm"),
-      "launch-prepare": new Element(),
-      "project-note": new Element("p", "Chat mode note"),
-      "project-row": new Element(),
-      "launch-mode": new Element("p", "Chat mode · nothing on disk"),
-      "launch-access": new Element(),
-    };
-    elements["launch-form"]!.dataset.nonce = page.match(/data-nonce="([^"]+)"/)![1]!;
+    const outside = page.replace(/<template id="access-template">[\s\S]*?<\/template>/, "");
+    const elements: Record<string, Element> = {};
+    for (const match of outside.matchAll(/<([a-z]+)\b([^>]*\bid="([^"]+)"[^>]*)>([^<]*)/g)) {
+      const [, tag, attrs, id, text] = match;
+      const element = new Element(tag, decode(text!));
+      element.hidden = /(^|\s)hidden(\s|=|$)/.test(attrs!);
+      for (const attr of attrs!.matchAll(/([\w-]+)="([^"]*)"/g)) {
+        if (attr[1] !== "hidden") element.setAttribute(attr[1]!, decode(attr[2]!));
+      }
+      elements[id!] = element;
+    }
     const get = (id: string) =>
       elements[id] ??
       elements["launch-access"]!.all().find((node) => node.attributes.get("id") === id);
@@ -6686,18 +6690,32 @@ describe("launching from the tab", () => {
       elements["launch-project"]!.selectedOptions = [{ dataset: { name, path: "~/sample" } }];
       fire("launch-project", "change");
     };
-    return { elements, get, fire, select, calls, timers, focused: () => focused };
-  };
-
-  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
-    const page = buildLaunch({ projects }, "instance-nonce");
-    const { elements, calls, timers } = frameHarness(page);
     let prevented = 0;
     const event = {
       preventDefault: () => {
         prevented++;
       },
     };
+    const trigger = (id: string, type = "click") => get(id)!.listeners.get(type)!(event);
+    const release = () => timers.at(-1)!.callback();
+    return {
+      page,
+      elements,
+      get,
+      fire,
+      select,
+      calls,
+      timers,
+      event,
+      trigger,
+      release,
+      prevented: () => prevented,
+      focused: () => focused,
+    };
+  };
+
+  test("frame script posts exact payloads, changes project copy locally and guards duplicate starts for two seconds", () => {
+    const { page, elements, calls, timers, event, prevented } = frameHarness();
     const task = elements["launch-task"]!;
     const start = elements["launch-start"]!;
     const project = elements["launch-project"]!;
@@ -6707,7 +6725,7 @@ describe("launching from the tab", () => {
     task.value = "Keep my typed draft";
     submit();
     submit();
-    expect(prevented).toBe(0);
+    expect(prevented()).toBe(0);
     expect(calls).toEqual([
       {
         type: "start-swarm",
@@ -6749,7 +6767,9 @@ describe("launching from the tab", () => {
     expect(task.value).toBe("Keep my typed draft");
     project.value = "";
     project.listeners.get("change")!(event);
-    expect(elements["project-note"]!.textContent).toBe("Chat mode note");
+    expect(elements["project-note"]!.textContent).toBe(
+      "Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.",
+    );
     expect(elements["launch-mode"]!.textContent).toBe("Chat mode · nothing on disk");
     expect(elements["project-row"]!.classes.has("has-project")).toBe(false);
     expect(page).not.toContain("fetch(");
@@ -7201,6 +7221,165 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("frame plan transitions capture sparse payloads and restore Working session without losing drafts", () => {
+    const h = frameHarness();
+    const { elements: e, trigger, release, calls } = h;
+    e["launch-task"]!.value = "Investigate the build";
+    const common = {
+      nonce: "instance-nonce",
+      task: "Investigate the build",
+      project: "",
+      tools: "none",
+    };
+    const capture = (extra: Record<string, unknown>) => {
+      trigger("launch-start");
+      expect(calls.at(-1)).toEqual({ type: "start-swarm", payload: { ...common, ...extra } });
+      release();
+    };
+    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["custom-chip"]!.hidden).toBe(true);
+    expect(e["launch-drawer"]!.hidden).toBe(true);
+    capture({});
+    trigger("launch-customize");
+    expect(e["launch-drawer"]!.hidden).toBe(false);
+    expect(e["launch-customize"]!.attributes.get("aria-expanded")).toBe("true");
+    expect(e["customize-label"]!.textContent).toBe("Hide");
+    capture({});
+    trigger("plan-small");
+    expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["working-chip"]!.textContent).toBe("default");
+    expect(e["launch-summary"]!.textContent).toBe(
+      "3 agents · up to 20 turns · about 15 min · quick models",
+    );
+    expect(e["launch-models"]!.textContent).toBe("claude-sonnet-5.5 · lead and workers");
+    capture({ size: "small", power: "fast" });
+    trigger("plan-large");
+    expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["launch-summary"]!.textContent).toBe(
+      "8 agents · up to 80 turns · about 60 min · strongest models",
+    );
+    expect(e["effort-detail"]!.textContent).toBe(
+      "8 agents, 4 at once · 80 turns in all, 16 per worker · stops after 60 min",
+    );
+    capture({ size: "large", power: "deep" });
+    e["launch-model"]!.value = JSON.stringify({ model: "claude-opus-5.5", provider: "copilot" });
+    trigger("launch-model", "change");
+    expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("false");
+    expect(e["custom-chip"]!.hidden).toBe(false);
+    expect(e["model-detail"]!.textContent).toBe(
+      "Every agent runs claude-opus-5.5, lead and workers alike.",
+    );
+    expect(e["launch-models"]!.textContent).toBe("claude-opus-5.5 · lead and workers");
+    expect(e["launch-summary"]!.textContent).toEndWith(" · one model");
+    capture({ size: "large", model: "claude-opus-5.5", provider: "copilot" });
+    trigger("launch-customize");
+    expect(e["launch-drawer"]!.hidden).toBe(true);
+    expect(e["customize-label"]!.textContent).toBe("Customize");
+    capture({ size: "large", model: "claude-opus-5.5", provider: "copilot" });
+    trigger("plan-medium");
+    expect(e["custom-chip"]!.hidden).toBe(true);
+    expect(e["working-chip"]!.textContent).toBe("selected");
+    expect(e["launch-model"]!.value).toBe("");
+    capture({});
+    e["launch-project"]!.value = "p1";
+    trigger("launch-project", "change");
+    trigger("effort-large");
+    expect(e["custom-chip"]!.hidden).toBe(false);
+    expect(e["effort-large"]!.attributes.get("aria-pressed")).toBe("true");
+    trigger("launch-start");
+    expect(calls.at(-1)?.payload).toEqual({
+      ...common,
+      project: "p1",
+      tools: "read",
+      size: "large",
+    });
+    release();
+    trigger("effort-medium");
+    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["launch-task"]!.value).toBe("Investigate the build");
+    expect(e["launch-project"]!.value).toBe("p1");
+  });
+
+  test("frame effort changes retain plan power and Model clearing restores the pair", () => {
+    const { elements: e, trigger, release, calls } = frameHarness();
+    trigger("plan-small");
+    trigger("effort-large");
+    expect(e["custom-chip"]!.hidden).toBe(false);
+    expect(e["launch-summary"]!.textContent).toEndWith(" · quick models");
+    trigger("launch-start");
+    expect(calls.at(-1)?.payload).toMatchObject({ size: "large", power: "fast" });
+    release();
+    e["launch-model"]!.value = JSON.stringify({ model: "same-name", provider: "second-provider" });
+    trigger("launch-model", "change");
+    trigger("launch-start");
+    expect(calls.at(-1)?.payload).toMatchObject({
+      size: "large",
+      model: "same-name",
+      provider: "second-provider",
+    });
+    expect(calls.at(-1)?.payload).not.toHaveProperty("power");
+    release();
+    e["launch-model"]!.value = "";
+    trigger("launch-model", "change");
+    expect(e["model-detail"]!.textContent).toBe(
+      "Keeps the plan's pair: claude-sonnet-5.5 · lead and workers.",
+    );
+    trigger("effort-small");
+    expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
+    trigger("effort-medium");
+    trigger("launch-start");
+    expect(calls.at(-1)?.payload).toMatchObject({ size: "medium", power: "fast" });
+    expect(calls.at(-1)?.payload).not.toHaveProperty("model");
+  });
+
+  test("frame Other trims input, uses only the serving provider, and resets on card selection", () => {
+    for (const provider of ["copilot", undefined]) {
+      const {
+        elements: e,
+        trigger,
+        release,
+        calls,
+      } = frameHarness({ projects, ...(provider ? { provider } : {}) });
+      e["launch-model"]!.value = "other";
+      trigger("launch-model", "change");
+      expect(e["other-model-row"]!.hidden).toBe(false);
+      expect(e["custom-chip"]!.hidden).toBe(true);
+      e["launch-other-model"]!.value = "  other-vendor/model <name>  ";
+      trigger("launch-other-model", "input");
+      expect(e["model-detail"]!.textContent).toBe(
+        "Every agent runs other-vendor/model <name>, lead and workers alike.",
+      );
+      trigger("launch-start");
+      expect(calls.at(-1)?.payload).toEqual({
+        nonce: "instance-nonce",
+        task: "",
+        project: "",
+        tools: "none",
+        size: "medium",
+        model: "other-vendor/model <name>",
+        ...(provider ? { provider } : {}),
+      });
+      release();
+      e["launch-other-model"]!.value = "   ";
+      trigger("launch-other-model", "input");
+      trigger("launch-start");
+      expect(calls.at(-1)?.payload).toEqual({
+        nonce: "instance-nonce",
+        task: "",
+        project: "",
+        tools: "none",
+      });
+      release();
+      e["launch-other-model"]!.value = "old-name";
+      trigger("launch-other-model", "input");
+      trigger("plan-large");
+      expect(e["launch-other-model"]!.value).toBe("");
+      expect(e["launch-model"]!.value).toBe("");
+      expect(e["other-model-row"]!.hidden).toBe(true);
+      expect(e["custom-chip"]!.hidden).toBe(true);
+    }
+  });
+
   test("publishing declares HTML, validates strings and owns a nonce per surface instance", async () => {
     const h = launcherHarness();
     await Bun.sleep(5);
@@ -7309,7 +7488,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("HTML launches admit access and workflows but ignore model and setup overrides", async () => {
+  test("HTML launches admit access, workflows and plan choices but ignore worker, effort and setup overrides", async () => {
     const h = launcherHarness({ projects });
     try {
       await Bun.sleep(5);
@@ -7333,6 +7512,12 @@ describe("launching from the tab", () => {
                     power: "deep",
                     model: "gpt-6-astra",
                     provider: "copilot",
+                    workerModel: "not-for-workers",
+                    worker_model: "not-for-workers",
+                    effort: "xhigh",
+                    lead_tools: ["beads_close"],
+                    work_tools: "write",
+                    context: [{ kind: "issue", text: "invented" }],
                   },
                 },
                 { ...actionDeps, surface: h.surface },
@@ -7343,6 +7528,10 @@ describe("launching from the tab", () => {
             task: "Fix issue",
             workTools: "write",
             project,
+            size: "large",
+            power: "deep",
+            model: "gpt-6-astra",
+            provider: "copilot",
             workflows: [{ name: "fix-issue", isolated: true }],
           });
         }
@@ -7368,6 +7557,59 @@ describe("launching from the tab", () => {
       }
     } finally {
       h.surface.dispose();
+    }
+  });
+
+  test("HTML plan and custom frame inputs reach begin and persist without added defaults", async () => {
+    const h = launcherHarness({ projects, provider: "copilot" });
+    const dir = mkdtempSync(join(tmpdir(), "chat-plan-launches-"));
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const store = launchStore(dir);
+      for (const project of ["", "p1"]) {
+        for (const choice of ["small", "medium", "large", "custom"] as const) {
+          const frame = frameHarness(h.inputs, h.nonce());
+          frame.elements["launch-task"]!.value = "Investigate the build";
+          frame.elements["launch-project"]!.value = project;
+          if (choice === "custom") {
+            frame.trigger("effort-large");
+            frame.elements["launch-model"]!.value = JSON.stringify({
+              model: "claude-opus-5.5",
+              provider: "copilot",
+            });
+            frame.trigger("launch-model", "change");
+          } else frame.trigger(`plan-${choice}`);
+          frame.trigger("launch-start");
+          const action = frame.calls.at(-1)!;
+          expect(
+            (
+              await handleSwarmsAction(
+                { ...action, origin: "canvas-html" },
+                { ...actionDeps, surface: h.surface },
+              )
+            ).ok,
+          ).toBe(true);
+          const expected: StartSwarmInput = {
+            task: "Investigate the build",
+            workTools: project ? "read" : "none",
+            ...(project ? { project } : {}),
+            ...(choice === "small" ? { size: "small", power: "fast" } : {}),
+            ...(choice === "large" ? { size: "large", power: "deep" } : {}),
+            ...(choice === "custom"
+              ? { size: "large", model: "claude-opus-5.5", provider: "copilot" }
+              : {}),
+          };
+          expect(begun.at(-1)).toEqual(expected);
+          const id = `s${project || "chat"}${choice}`;
+          store.save(id, begun.at(-1)!);
+          expect(launchStore(dir).load(id)).toEqual(expected);
+        }
+      }
+      expect(begun).toHaveLength(8);
+    } finally {
+      h.surface.dispose();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -7679,10 +7921,29 @@ describe("launching from the tab", () => {
       expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(1);
       const frame = await h.sm.recompose(LAUNCH_KEY);
       expect(frame?.data).toBe(page);
+      const frames = h.sm.frames.get(LAUNCH_KEY)!.length;
       h.inputs.classes = [{ provider: "other", classes: { fast: "x", balanced: "y", deep: "z" } }];
       h.surface.refresh();
       await Bun.sleep(5);
-      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(2);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 1);
+      h.inputs.classes = [
+        { provider: "other", classes: { fast: "x", balanced: "updated", deep: "z" } },
+        { provider: "default-only", defaultModel: "default-one" },
+      ];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 2);
+      h.inputs.classes = h.inputs.classes.map((c) => ({ ...c }));
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 2);
+      h.inputs.classes = [
+        h.inputs.classes[0]!,
+        { provider: "default-only", defaultModel: "default-two" },
+      ];
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(frames + 3);
     } finally {
       h.surface.dispose();
     }
@@ -7734,7 +7995,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("the themed launcher keeps model defaults and offers access only in a project template", () => {
+  test("the themed launcher offers plans, a hidden Customize drawer, and access only in a project template", () => {
     for (const st of [{ projects }, { projects: [] }]) {
       const page = buildLaunch(st, "nonce");
       for (const copy of [
@@ -7742,6 +8003,18 @@ describe("launching from the tab", () => {
         "Describe the problem. Agents investigate, debate, and bring back a conclusion.",
         "Prepare in chat · attach an issue or PR",
         "TASK",
+        "HOW HARD IT WORKS",
+        "Quick look",
+        "A narrow question, or a first pass before a bigger run.",
+        "Working session",
+        "Most tasks: investigate, debate, and decide.",
+        "Deep dig",
+        "Wide or hard problems that are worth the spend.",
+        "Customize",
+        "EFFORT",
+        "MODEL",
+        "the plan's models",
+        "Other…",
         "PROJECT",
         TASK_PLACEHOLDER,
         "Agents can't open links. Paste the text, or use Prepare in chat to attach the issue or PR.",
@@ -7758,8 +8031,27 @@ describe("launching from the tab", () => {
       expect(page).toContain('<option value="" selected>No project · chat only</option>');
       expect(page).toContain(':root[data-theme="light"]');
       expect(page).toContain(":focus-visible");
-      for (const name of ["setup", "tools", "workflows", "size", "power", "model", "provider"]) {
+      for (const name of ["setup", "tools", "workflows", "size", "power", "provider"]) {
         expect(page).not.toContain(`name="${name}"`);
+      }
+      expect(page).toContain('id="launch-model" name="model"');
+      expect(page).toContain('aria-expanded="false" aria-controls="launch-drawer"');
+      expect(page).toContain('id="launch-drawer" hidden');
+      expect(page).toContain('id="other-model-row" hidden');
+      expect(page).toContain('id="custom-chip" hidden>custom');
+      expect(page).toContain('id="working-chip">selected');
+      expect(page).toContain(
+        'id="plan-medium" type="button" data-size="medium" data-power="balanced" aria-pressed="true"',
+      );
+      expect(page).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
+      expect(page).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+      expect(page).toContain("box-shadow: 0 0 0 1px var(--accent)");
+      for (const size of ["small", "medium", "large"] as const) {
+        const l = SIZE_PRESETS[size];
+        const card = page.match(new RegExp(`id="plan-${size}"[\\s\\S]*?</button>`))![0];
+        expect(card).toContain(`<strong>${l.maxAgents}</strong>agents`);
+        expect(card).toContain(`<strong>${l.maxTurns}</strong>turns`);
+        expect(card).toContain(`<strong>${l.wallClockMs / 60_000}</strong>min`);
       }
       expect(page).not.toContain("--brand");
       if (st.projects.length) {
@@ -7814,7 +8106,9 @@ describe("launching from the tab", () => {
       "nonce",
     );
     expect(fallback).toContain("claude: sonnet-9");
-    expect(fallback).not.toContain("gpt-6");
+    expect(fallback.match(/id="plan-medium"[\s\S]*?<\/button>/)![0]).not.toContain("gpt-6");
+    expect(fallback).toContain("claude: haiku-9");
+    expect(fallback).toContain("claude: opus-9");
   });
 
   test("all launcher text pairings meet 4.5:1 in both themes", () => {
@@ -7833,21 +8127,67 @@ describe("launching from the tab", () => {
     expect(page).toContain("--button-ink: var(--card)");
   });
 
-  test("each power's hover names the model every provider runs at it", () => {
-    const power = powerField("balanced", [
-      { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
-      { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
-    ]);
-    expect(power?.defaultValue).toBe("balanced");
-    expect(power?.options?.find((o) => o.value === "deep")?.hint).toBe(
-      "claude: opus-9 · copilot: lead claude-opus-5.5 · workers claude-sonnet-5",
+  test("plan lines use equal or split pins and provider class/default fallbacks", () => {
+    const pinned = buildLaunch({ projects: [], provider: "copilot" }, "nonce");
+    expect(pinned).toContain("claude-sonnet-5.5 · lead and workers");
+    expect(pinned).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
+    expect(pinned).toContain("lead claude-opus-5.5 · workers claude-sonnet-5");
+    const flat = buildLaunch(
+      {
+        projects: [],
+        provider: "claude",
+        classes: [
+          { provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } },
+        ],
+      },
+      "nonce",
     );
-    const flatPower = powerField("balanced", [
-      { provider: "claude", classes: { fast: "auto", balanced: "auto", deep: "auto" } },
-    ]);
-    expect(flatPower?.options?.find((o) => o.value === "fast")?.hint).toBe(
-      "claude: auto (every power)",
+    expect(flat.match(/class="models plan-models">claude: auto/g)).toHaveLength(3);
+    const defaults = buildLaunch(
+      {
+        projects: [],
+        provider: "default-only",
+        classes: [{ provider: "default-only", defaultModel: "default-model" }],
+      },
+      "nonce",
     );
+    expect(defaults.match(/class="models plan-models">default-only: default-model/g)).toHaveLength(
+      3,
+    );
+  });
+
+  test("Model groups union defaults, classes and pins once per provider and escape metadata", () => {
+    const page = buildLaunch(
+      {
+        projects: [],
+        provider: "copilot",
+        classes: [
+          {
+            provider: "copilot",
+            defaultModel: "claude-sonnet-5",
+            classes: { fast: "class-only", balanced: "claude-sonnet-5", deep: "class-only" },
+          },
+          { provider: "second", defaultModel: "claude-sonnet-5" },
+          { provider: 'a"<provider>', defaultModel: 'x"</script>&' },
+          { provider: "empty" },
+        ],
+      },
+      "nonce",
+    );
+    const group = page.match(/<optgroup label="copilot">([\s\S]*?)<\/optgroup>/)![1]!;
+    for (const model of ["claude-sonnet-5", "claude-sonnet-5.5", "claude-opus-5.5", "class-only"]) {
+      expect(
+        group.match(new RegExp(`>${model.replaceAll(".", "\\.")}</option>`, "g")),
+      ).toHaveLength(1);
+    }
+    expect(page).toContain('<optgroup label="second">');
+    expect(page).toContain("&quot;provider&quot;:&quot;second&quot;");
+    expect(page).toContain('<optgroup label="a&quot;&lt;provider&gt;">');
+    expect(page).toContain("x&quot;&lt;/script&gt;&amp;</option>");
+    expect(page).not.toContain('<optgroup label="empty">');
+    expect(page.match(/<script>/g)).toHaveLength(1);
+    expect(page.match(/<\/script>/g)).toHaveLength(1);
+    expect(buildLaunch({ projects: [] }, "nonce")).not.toContain("<optgroup");
   });
 
   test("an ended swarm offers Run again, seeded with its size and model, only when its launch is kept", () => {
@@ -7867,11 +8207,23 @@ describe("launching from the tab", () => {
       "Starts a new swarm with the same task, project, workflows (fix-issue), 1 context item. Context is not refreshed.",
     );
     expect(again?.fields?.find((f) => f.name === "size")?.defaultValue).toBe("medium");
+    expect(again?.fields?.map((f) => [f.name, f.label])).toEqual([
+      ["size", "Effort"],
+      ["model", "Model"],
+    ]);
     expect(again?.fields?.find((f) => f.name === "model")).toMatchObject({
       defaultValue: "gpt-6-astra",
       modelPicker: { providerField: "provider", providerDefault: "copilot" },
+      placeholder: "the plan's models",
     });
     board(swarmKey("s8pln"), buildSwarmBoard(fixtures.done!, { launch: oldLaunch }));
+    const captured = buildSwarmBoard(fixtures.done!, {
+      launch: { ...oldLaunch, context: [{ ...oldLaunch.context![0]!, retrievedAt: T0 }] },
+    })
+      .sections.filter((x) => x.kind === "actions")
+      .flatMap((x) => (x.kind === "actions" ? x.items : []))[0]!;
+    expect(captured.hint).toContain(`captured ${day(T0)} ${hhmm(T0)}`);
+    expect(captured.hint).toEndWith("Context is not refreshed.");
   });
 });
 
@@ -8054,6 +8406,53 @@ describe("start and run again", () => {
     expect(begun).toHaveLength(1);
   });
 
+  test("a named model preserves explicit power for new starts", async () => {
+    begun.length = 0;
+    const result = await act("start-swarm", {
+      task: "Fix the README node count",
+      project: "p1",
+      tools: "read",
+      power: "deep",
+      model: "gpt-6-astra",
+      provider: "copilot",
+    });
+    expect(result.ok).toBe(true);
+    expect(begun).toEqual([
+      {
+        task: "Fix the README node count",
+        project: "p1",
+        workTools: "read",
+        power: "deep",
+        model: "gpt-6-astra",
+        provider: "copilot",
+      },
+    ]);
+  });
+
+  test("the HTML launcher keeps explicit power with a named model", () => {
+    const html = buildLaunch(
+      {
+        projects: [],
+        provider: "copilot",
+        classes: [{ provider: "copilot" }],
+      },
+      "nonce-1",
+    );
+    expect(html).toContain('if (power !== "balanced") payload.power = power;');
+  });
+
+  test("Run again omits the saved power field for explicit model choices", () => {
+    const item = runAgainItem(fixtures.done!, {
+      task: "Investigate",
+      workTools: "none",
+      model: "gpt-6-astra",
+      provider: "copilot",
+      power: "deep",
+    });
+    expect(item.fields?.map((field) => field.name)).toEqual(["size", "model"]);
+    expect(item.fields?.find((field) => field.name === "power")).toBeUndefined();
+  });
+
   test("workflows named grant them to the lead, and refusals come back to the form", async () => {
     begun.length = 0;
     const ok = await act("start-swarm", {
@@ -8071,8 +8470,8 @@ describe("start and run again", () => {
       task: "Fix the README node count",
       workTools: "read",
       size: "large",
-      power: "deep",
       project: "p1",
+      power: "deep",
       model: "gpt-6-astra",
       provider: "copilot",
       workflows: [
@@ -8121,7 +8520,7 @@ describe("start and run again", () => {
       effect: "open-canvas",
       key: swarmKey("s0new1"),
     });
-    expect(begun[0]).toEqual({ ...oldLaunch, size: "large", power: "balanced" });
+    expect(begun[0]).toEqual({ ...oldLaunch, size: "large" });
     expect(origins.at(-1)).toEqual({ rerunOf: "s8pln" });
     begun.length = 0;
     await act("run-again", {
@@ -8134,12 +8533,147 @@ describe("start and run again", () => {
     const { workerModel: _dropped, ...rest } = oldLaunch;
     expect(begun[0]).toEqual({
       ...rest,
-      power: "fast",
       model: "gpt-5.6-sol",
       provider: "copilot",
     });
     expect((await act("run-again", { id: "s9hjx", size: "small" })).ok).toBe(false);
     expect((await act("run-again", { id: "s5tcx", size: "small" })).ok).toBe(false);
+  });
+
+  test("Run again repeats omitted/default and saved plan power, not the summary's effective lead", async () => {
+    for (const power of [undefined, "fast", "deep"] as const) {
+      const old: StartSwarmInput = {
+        task: "Investigate",
+        workTools: "none",
+        ...(power ? { power, size: power === "fast" ? "small" : "large" } : {}),
+      };
+      const ended: SwarmSummary = {
+        ...fixtures.done!,
+        sizeBase: old.size ?? "medium",
+        power: power ?? "balanced",
+        model: pinnedModels("copilot", power ?? "balanced")!.lead,
+        provider: "copilot",
+      };
+      const deps = { ...actionDeps, launchOf: () => old, find: () => ({ ended }) };
+      begun.length = 0;
+      for (const incomingPower of [undefined, "fast", "balanced", "deep"]) {
+        const result = await handleSwarmsAction(
+          {
+            type: "run-again",
+            payload: {
+              id: ended.id,
+              size: ended.sizeBase,
+              model: ended.model,
+              provider: ended.provider,
+              power: incomingPower,
+            },
+          },
+          deps,
+        );
+        expect(result.ok).toBe(true);
+        expect(begun.at(-1)).toEqual(old);
+        expect(origins.at(-1)).toEqual({ rerunOf: ended.id });
+      }
+      await handleSwarmsAction(
+        {
+          type: "run-again",
+          payload: { id: ended.id, size: "large", model: "named-model", provider: "copilot" },
+        },
+        deps,
+      );
+      expect(begun.at(-1)).toEqual({
+        task: old.task,
+        workTools: old.workTools,
+        size: "large",
+        model: "named-model",
+        provider: "copilot",
+      });
+      await handleSwarmsAction(
+        {
+          type: "run-again",
+          payload: { id: ended.id, size: ended.sizeBase, model: "", provider: "" },
+        },
+        deps,
+      );
+      expect(begun.at(-1)).toEqual(old);
+    }
+  });
+
+  test("a named model preserves explicit power from a saved launch", async () => {
+    const old: StartSwarmInput = {
+      task: "Investigate",
+      workTools: "none",
+      model: "gpt-6-astra",
+      provider: "copilot",
+      power: "deep",
+    };
+    const ended = { ...fixtures.done!, model: old.model, provider: old.provider };
+    begun.length = 0;
+    const result = await handleSwarmsAction(
+      {
+        type: "run-again",
+        payload: { id: ended.id, model: old.model, provider: old.provider },
+      },
+      { ...actionDeps, launchOf: () => old, find: () => ({ ended }) },
+    );
+    expect(result.ok).toBe(true);
+    expect(begun).toEqual([old]);
+  });
+
+  test("Run again preserves deliberate model pairs and power, and drops workers and power for a newly named model", async () => {
+    const old: StartSwarmInput = { ...oldLaunch, power: "deep" };
+    const ended = { ...fixtures.done!, model: old.model, provider: old.provider };
+    const deps = { ...actionDeps, launchOf: () => old, find: () => ({ ended }) };
+    begun.length = 0;
+    await handleSwarmsAction(
+      {
+        type: "run-again",
+        payload: {
+          id: ended.id,
+          size: "large",
+          model: old.model,
+          provider: old.provider,
+          power: "fast",
+        },
+      },
+      deps,
+    );
+    const {
+      power: _power,
+      workerModel: _worker,
+      model: _model,
+      provider: _provider,
+      ...rest
+    } = old;
+    expect(begun.at(-1)).toEqual({
+      ...rest,
+      size: "large",
+      power: "deep",
+      model: old.model,
+      provider: old.provider,
+      workerModel: old.workerModel,
+    });
+    await handleSwarmsAction(
+      {
+        type: "run-again",
+        payload: { id: ended.id, size: "small", model: "new-model", provider: "second" },
+      },
+      deps,
+    );
+    expect(begun.at(-1)).toEqual({
+      ...rest,
+      size: "small",
+      model: "new-model",
+      provider: "second",
+    });
+    await handleSwarmsAction(
+      {
+        type: "run-again",
+        payload: { id: ended.id, size: old.size, model: "", provider: "", power: "fast" },
+      },
+      deps,
+    );
+    expect(begun.at(-1)).toEqual({ ...rest, power: "deep" });
   });
 });
 
@@ -8759,13 +9293,18 @@ describe("the rib's surface", () => {
           {
             id: "claude",
             displayName: "Claude",
+            defaultModel: "claude-default",
             modelClasses: { fast: "a", balanced: "b", deep: "c" },
           },
           {
             id: "copilot",
             displayName: "Copilot",
+            defaultModel: "copilot-default",
             modelClasses: { fast: "x", balanced: "y", deep: "z" },
           },
+          { id: "default-only", displayName: "Default only", defaultModel: "default-only-model" },
+          { id: "workflow", displayName: "Workflow", defaultModel: "not-an-agent" },
+          { id: "stub", displayName: "Stub", defaultModel: "also-not-an-agent" },
         ],
       });
       const page = await sm.composers.get(LAUNCH_KEY)!.compose();
@@ -8776,6 +9315,10 @@ describe("the rib's surface", () => {
       expect(json).toContain("/tmp/sample");
       expect(json).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
       expect(json).not.toContain("claude: b");
+      for (const model of ["claude-default", "copilot-default", "default-only-model"]) {
+        expect(json).toContain(model);
+      }
+      expect(json).not.toContain("not-an-agent");
       const nonce = String(page).match(/data-nonce="([^"]+)"/)![1]!;
       expect(
         await rib.onAction?.(
@@ -8790,7 +9333,8 @@ describe("the rib's surface", () => {
       delete process.env.KEELSON_WORKFLOW_PROVIDER;
       const hostDefaultPage = String(await sm.composers.get(LAUNCH_KEY)!.compose());
       expect(hostDefaultPage).toContain("claude: b");
-      expect(hostDefaultPage).not.toContain("lead claude-sonnet-5");
+      expect(hostDefaultPage.match(/id="launch-models">([^<]*)/)![1]).toBe("claude: b");
+      expect(hostDefaultPage).toContain("default-only-model");
     } finally {
       if (saved === undefined) delete process.env.KEELSON_WORKFLOW_PROVIDER;
       else process.env.KEELSON_WORKFLOW_PROVIDER = saved;

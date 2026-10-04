@@ -28,10 +28,36 @@ the checkout goes in [task context](../supply-task-context/), not in the task.
 In the **Swarms** tab, type the task into **Start a swarm**, then press
 **Start swarm**. **No project · chat only** is selected by default, so agents
 read nothing on disk. Pick a project to grant read access; each option shows
-its name and path, with the home directory shortened to `~`. The footer shows
-the fixed medium limits (5 agents, up to 40 turns, about 30 minutes) and the
-effective provider's balanced models. This launcher has no size or model
-controls.
+its name and path, with the home directory shortened to `~`.
+
+Choose a plan under **How hard it works**. **Working session is selected by
+default**. Each card shows its agents, turns, minutes and the effective
+provider's models. Providers without pins use the matching class model.
+
+| Plan | For | Agents | Turns | Minutes |
+| --- | --- | --- | --- | --- |
+| Quick look | A narrow question, or a first pass before a bigger run. | 3 | 20 | 15 |
+| Working session | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
+| Deep dig | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
+
+**Customize** opens a drawer with **Effort** and **Model**; **Hide** keeps your
+choices. Effort changes size budgets, not reasoning effort. Choose small,
+medium or large to change agents, concurrent turns, total turns, turns per
+worker and the time limit.
+
+Model starts on **the plan's models**. Provider groups contain each provider's
+default model, class models and pinned models, without duplicates within a
+group. **Other…** accepts a model name and uses the effective default provider.
+Changing Effort keeps the plan's pair. Naming a model runs every agent on it.
+A choice that no longer matches a card shows **custom**. Picking a card clears
+the named model and restores that plan.
+
+The live footer follows the choice: agents, up to N turns, about N min, then
+**quick models**, **balanced models**, **strongest models** or **one model**.
+The models line below shows the pair, or the named model for lead and workers.
+Untouched Working session sends no size, power or model overrides. Opening
+Customize alone does not change that. Quick look records small/fast; Deep dig
+records large/deep. A named model records size, model and provider, with no power.
 
 With no project selected, the **ALSO ALLOW** group is absent. Selecting a
 project reveals **Write**, **Run workflows** and **Use the tracker**, all off.
@@ -165,6 +191,19 @@ what a workflow wants; from chat, poll `chat_swarm_status`.
 The run completes only when the swarm concluded or was stopped. Any other
 ending fails it with the status and reason, and the summary is its last
 progress frame.
+
+## Run it again
+
+An ended swarm's **Run again** form has **Effort and Model only**. It keeps the
+same task, project, workflows and context, with the previous size and effective
+model/provider seeded. The hint names the evidence and when it was captured;
+context is not refreshed.
+
+Run again reuses saved plan power unless a model is named; there is no Power
+field. Accepting an unchanged plan-derived lead keeps the pair, not one model
+for everyone. Deliberately saved model/worker overrides are retained unchanged.
+Choosing another model drops the old worker override; clearing the model
+restores saved power or its omitted default.
 
 ## Measuring swarms
 

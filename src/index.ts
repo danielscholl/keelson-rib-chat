@@ -358,11 +358,13 @@ function launchProjects(): LaunchState["projects"] {
 
 function launchState(): LaunchState {
   const provider = servingProvider(undefined);
-  const classes = (getProviders?.() ?? []).flatMap((p) =>
-    p.modelClasses && !NOT_AGENT_PROVIDERS.has(p.id)
-      ? [{ provider: p.id, classes: p.modelClasses }]
-      : [],
-  );
+  const classes = (getProviders?.() ?? [])
+    .filter((p) => !NOT_AGENT_PROVIDERS.has(p.id))
+    .map((p) => ({
+      provider: p.id,
+      ...(p.defaultModel ? { defaultModel: p.defaultModel } : {}),
+      ...(p.modelClasses ? { classes: p.modelClasses } : {}),
+    }));
   let toolReachability: LaunchState["toolReachability"];
   let toolReachabilityError: string | undefined;
   try {

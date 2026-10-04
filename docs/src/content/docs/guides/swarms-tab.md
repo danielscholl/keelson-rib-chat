@@ -568,10 +568,37 @@ The scope footer follows your choices: **Reads \<name\>**, optionally
 **· beads**. The beads suffix records switch intent, not a promise that every
 tracker tool was granted.
 
-The footer shows **5 agents · up to 40 turns · about 30 min · balanced models**,
-with the lead and worker models below it. These are the fixed medium limits
-and the effective provider's balanced models, not launcher controls. The
-launcher sends no size, power or model overrides. For advanced inputs, use
+**How hard it works** offers three plans. **Working session is selected by
+default**. Each card shows its agents, turns, minutes and the effective
+provider's models. Matching lead and worker models read as one model for lead
+and workers; split pairs name both. Providers without pins use the matching
+class model.
+
+| Plan | For | Agents | Turns | Minutes |
+| --- | --- | --- | --- | --- |
+| Quick look | A narrow question, or a first pass before a bigger run. | 3 | 20 | 15 |
+| Working session | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
+| Deep dig | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
+
+**Customize** opens a drawer with **Effort** and **Model**; **Hide** keeps your
+choices. Effort changes size budgets, not reasoning effort. Small, medium and
+large show agents, concurrent turns, total turns, turns per worker and the
+time limit.
+
+Model starts on **the plan's models**. Provider groups contain each provider's
+default model, class models and pinned models, without duplicates within a
+group. **Other…** accepts a model name and uses the effective default provider.
+Changing Effort keeps the plan's pair. Naming a model runs every agent on it.
+A choice that no longer matches a card shows **custom**. Picking a card clears
+the named model and restores that plan.
+
+The live footer follows the choice: agents, up to N turns, about N min, then
+**quick models**, **balanced models**, **strongest models** or **one model**.
+The models line below shows the pair, or the named model for lead and workers.
+Untouched Working session sends no size, power or model overrides. Opening
+Customize alone does not change that. Quick look records small/fast; Deep dig
+records large/deep. A named model records size, model and provider, with no
+power. For advanced inputs, use
 [`chat_swarm_start`](../../reference/tools-and-commands/#chat_swarm_start).
 
 **Prepare in chat · attach an issue or PR** opens a chat that gathers the issue or PR context, picks a
@@ -595,12 +622,18 @@ appears in the same live area.
 ## Running a swarm again
 
 An ended swarm's board offers **Run again**. It starts a new swarm with the
-same task, project, workflows, and context, and a form seeded with the old
-swarm's size, power and model; its hover names what it reuses, including how
-many context items and when they were captured, since the context is not
-refreshed. Changing the model there sets it for every agent. The rib keeps each
-launch in its data directory next to the history, and a server reset forgets
-them with it. Run again rechecks retained lead tools against the host's current
+same task, project, workflows, and context. **Run again** has **Effort and Model
+only**, seeded with the old swarm's size and effective model/provider. Its
+hover names what it reuses, including how many context items and when they
+were captured; context is not refreshed.
+
+Run again reuses saved plan power unless a model is named; there is no Power
+field. Accepting an unchanged plan-derived lead keeps the pair, not one model
+for everyone. Deliberately saved model/worker overrides are retained unchanged.
+Choosing another model drops the old worker override; clearing the model
+restores saved power or its omitted default. The rib keeps each launch in its
+data directory next to the history, and a server reset forgets them with it.
+Run again rechecks retained lead tools against the host's current
 reachability, so revoked grants are dropped.
 
 ## The server line
