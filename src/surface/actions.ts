@@ -475,7 +475,11 @@ export async function handleSwarmsAction(
       return done(`Stopping swarm ${id}: cancelling its runs and revoking its bots`);
     }
     case "start-swarm": {
-      const input = startInput(payload);
+      const input = startInput(
+        action.origin === "canvas-html"
+          ? { task: payload.task, project: payload.project, setup: "defaults" }
+          : payload,
+      );
       return typeof input === "string" ? fail(input) : started(deps, input, "index");
     }
     case "run-again": {

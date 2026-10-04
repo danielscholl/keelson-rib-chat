@@ -6726,7 +6726,50 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("HTML launches retain task, link, access and workflow validation before admission", async () => {
+  test("HTML launches ignore crafted access, workflows and setup", async () => {
+    const h = launcherHarness({ projects });
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      for (const project of ["p1", "", undefined]) {
+        for (const setup of [undefined, "defaults", "adjust"]) {
+          expect(
+            (
+              await handleSwarmsAction(
+                {
+                  type: "start-swarm",
+                  origin: "canvas-html",
+                  payload: {
+                    nonce: h.nonce(),
+                    task: "Fix issue",
+                    project,
+                    tools: "write",
+                    workflows: "fix-issue",
+                    setup,
+                    size: "large",
+                    power: "deep",
+                    model: "gpt-6-astra",
+                    provider: "copilot",
+                  },
+                },
+                { ...actionDeps, surface: h.surface },
+              )
+            ).ok,
+          ).toBe(true);
+          expect(begun.at(-1)).toEqual({
+            task: "Fix issue",
+            workTools: project ? "read" : "none",
+            ...(project ? { project } : {}),
+          });
+        }
+      }
+      expect(begun).toHaveLength(9);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("HTML launches retain task and link validation before admission", async () => {
     const h = launcherHarness({ projects });
     try {
       await Bun.sleep(5);
@@ -6755,20 +6798,6 @@ describe("launching from the tab", () => {
       ]) {
         expect(await act({ task })).toEqual({ ok: false, error: LINK_REFUSAL });
       }
-      for (const payload of [
-        { task: "t", tools: "write" },
-        { task: "t", workflows: "fix-issue" },
-        { task: "t", project: "p1", workflows: "../bad" },
-        { task: "t", project: "p1", workflows: "a".repeat(101) },
-        {
-          task: "t",
-          project: "p1",
-          workflows: Array.from({ length: START_BOUNDS.maxWorkflows + 1 }, (_, n) => `w${n}`).join(
-            ",",
-          ),
-        },
-      ])
-        expect((await act(payload)).ok).toBe(false);
       expect(begun).toHaveLength(0);
       expect((await act({ task: `  ${"x".repeat(BODY_MAX)}  ` })).ok).toBe(true);
       expect(begun).toEqual([{ task: "x".repeat(BODY_MAX), workTools: "none" }]);
