@@ -6518,7 +6518,15 @@ describe("launching from the tab", () => {
       selectedOptions: [{ dataset: { name: "A <name>", path: "~/A <path>" } }],
       attributes: new Map<string, string>(),
       classes: new Set<string>(),
-      listeners: new Map<string, (event: { preventDefault(): void }) => void>(),
+      listeners: new Map<
+        string,
+        (event: {
+          preventDefault(): void;
+          key?: string;
+          metaKey?: boolean;
+          ctrlKey?: boolean;
+        }) => void
+      >(),
       addEventListener(type: string, listener: (event: { preventDefault(): void }) => void) {
         this.listeners.set(type, listener);
       },
