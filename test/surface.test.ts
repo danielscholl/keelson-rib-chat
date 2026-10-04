@@ -3187,25 +3187,48 @@ describe("the details", () => {
     expect(JSON.stringify(rowsTitled(report, "Produced so far"))).not.toContain("none");
   });
 
-  test("activity shows the newest twelve and points at the full log", () => {
-    const s = swarm("s7log", {
-      activity: Array.from({ length: 15 }, (_, i) => ({ at: T0, text: `event ${i}` })),
-    });
-    const view = buildSwarmBoard(s);
-    board(swarmKey(s.id), view);
-    const rows = rowsTitled(view, "Activity");
-    expect(rows).toHaveLength(13);
-    expect(rows[0]?.text).toBe("event 14");
-    expect(rows.at(-1)).toMatchObject({
-      text: "Read the full log · 3 earlier events",
-      action: { type: "open-record", payload: { id: "s7log" } },
-    });
-    const record = buildRecord(s, new Date(T0));
-    expect(record).toContain("<h2>Activity</h2>");
-    expect(record).toContain("<td>event 0</tbody>");
-    const short = buildSwarmBoard(swarm("s7few", { activity: [{ at: T0, text: "one" }] }));
-    expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
-  });
+  test.each(["running", "stopping", "done", "stopped"] as const)(
+    "activity shows the newest twelve and points at the full log only while live (%s)",
+    (status) => {
+      const s = swarm("s7log", {
+        status,
+        endedAt: status === "running" || status === "stopping" ? undefined : T0,
+        activity: Array.from({ length: 15 }, (_, i) => ({ at: T0, text: `event ${i}` })),
+      });
+      const view = buildSwarmBoard(s);
+      board(swarmKey(s.id), view);
+      const rows = rowsTitled(view, "Activity");
+      const live = status === "running" || status === "stopping";
+      expect(rows).toHaveLength(live ? 13 : 12);
+      expect(rows[0]?.text).toBe("event 14");
+      expect(rows.slice(0, 12).map((row) => row.text)).toEqual(
+        Array.from({ length: 12 }, (_, i) => `event ${14 - i}`),
+      );
+      if (live)
+        expect(rows.at(-1)).toMatchObject({
+          text: "Read the full log · 3 earlier events",
+          action: { type: "open-record", payload: { id: "s7log" } },
+        });
+      else {
+        expect(rows.every((row) => !row.action)).toBe(true);
+        expect(JSON.stringify(view)).not.toContain("Read the full log");
+      }
+      const record = buildRecord(s, new Date(T0));
+      expect(record).toContain("<h2>Activity</h2>");
+      expect(record).toContain("<td>event 0</tbody>");
+      const short = buildSwarmBoard({ ...s, activity: [{ at: T0, text: "one" }] });
+      expect(rowsTitled(short, "Activity").map((r) => r.text)).toEqual(["one"]);
+      expect(rowsTitled(buildSwarmBoard({ ...s, activity: [] }), "Activity")).toHaveLength(0);
+      const cockpitRows = leaves(buildCockpit(s, [], { titled: false })).find(
+        (section) => section.title === "Activity",
+      );
+      if (live) expect(cockpitRows?.kind === "rows" ? cockpitRows.items : []).toEqual(rows);
+      const action = leaves(view.sections)
+        .flatMap((section) => (section.kind === "actions" ? section.items : []))
+        .find((item) => item.type === "open-record");
+      expect(action?.hint).toContain("Activity");
+    },
+  );
 
   test("ended About contains only times, health and one transcript with navigation separate", () => {
     for (const s of [fixtures.done!, { ...fixtures.done!, health: { socketDrops: 2 } }]) {
@@ -3313,30 +3336,46 @@ describe("the details", () => {
     expect(buildDoc(s, s.id)).not.toContain("## Runs");
   });
 
-  test("spend bars each agent's fresh tokens against the swarm's", () => {
-    const s = swarm("s8spd", {
-      agents: [
-        agent("s8spd", 0, { usage: { input: 3000, output: 1000, cached: 9000 } }),
-        agent("s8spd", 1, { usage: { input: 900, output: 100, cached: 0 } }),
-        agent("s8spd", 2),
-      ],
-    });
-    const view = buildSwarmBoard(s);
-    board(swarmKey(s.id), view);
-    expect(view.sections.find((x) => x.kind === "bars")).toEqual({
-      kind: "bars",
-      title: "Spend",
-      inline: true,
-      items: [
-        { label: "lead", value: 4000, total: 5000, trailing: "4k · 80%" },
-        { label: "w1", value: 1000, total: 5000, trailing: "1k · 20%" },
-      ],
-    });
-    const one = swarm("s8one", {
-      agents: [agent("s8one", 0, { usage: { input: 10, output: 1, cached: 0 } })],
-    });
-    expect(buildSwarmBoard(one).sections.some((x) => x.kind === "bars")).toBe(false);
-  });
+  test.each(["running", "stopping", "done", "stopped"] as const)(
+    "spend bars each agent's fresh tokens against the swarm's only while live (%s)",
+    (status) => {
+      const s = swarm("s8spd", {
+        status,
+        endedAt: status === "running" || status === "stopping" ? undefined : T0,
+        agents: [
+          agent("s8spd", 0, { usage: { input: 3000, output: 1000, cached: 9000 } }),
+          agent("s8spd", 1, { usage: { input: 900, output: 100, cached: 0 } }),
+          agent("s8spd", 2),
+        ],
+      });
+      const view = buildSwarmBoard(s);
+      board(swarmKey(s.id), view);
+      const expected = {
+        kind: "bars",
+        title: "Spend",
+        inline: true,
+        items: [
+          { label: "lead", value: 4000, total: 5000, trailing: "4k · 80%" },
+          { label: "w1", value: 1000, total: 5000, trailing: "1k · 20%" },
+        ],
+      } satisfies CanvasBoardView["sections"][number];
+      if (status === "running" || status === "stopping") {
+        expect(view.sections.find((x) => x.kind === "bars")).toEqual(expected);
+        expect(
+          leaves(buildCockpit(s, [], { titled: false })).find((x) => x.kind === "bars"),
+        ).toEqual(expected);
+      } else {
+        expect(view.sections.some((x) => x.title === "Spend")).toBe(false);
+        expect(buildRecord(s, new Date(T0))).toContain("Spend by agent");
+        expect(buildRecord(s, new Date(T0))).toContain("4k fresh · 9k cached");
+        expect(buildRecord(s, new Date(T0))).toContain("1k fresh · 0 cached");
+      }
+      const one = swarm("s8one", {
+        agents: [agent("s8one", 0, { usage: { input: 10, output: 1, cached: 0 } })],
+      });
+      expect(buildSwarmBoard(one).sections.some((x) => x.kind === "bars")).toBe(false);
+    },
+  );
 
   test("activity rows chip their actor, and the bench names each agent's last event", () => {
     const at = (m: number) => `2026-09-22T14:0${m}:00.000Z`;

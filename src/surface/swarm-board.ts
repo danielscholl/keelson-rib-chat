@@ -266,7 +266,7 @@ export const openRecord = (s: SwarmSummary) => ({
   type: "open-record",
   label: "Open the record",
   glyph: "◷",
-  hint: "The swarm's timeline, who woke whom, spend, runs and evidence.",
+  hint: "The swarm's timeline, who woke whom, spend, runs, evidence and Activity.",
   payload: { id: s.id },
 });
 
@@ -729,7 +729,7 @@ function activity(s: SwarmSummary): Leaf[] {
             trailing: hhmm(e.at),
           };
         }),
-        ...(earlier > 0
+        ...(live(s) && earlier > 0
           ? [
               {
                 icon: "▤",
@@ -867,7 +867,7 @@ export interface BoardOptions {
 export function liveDetails(s: SwarmSummary, selectedAgentId?: string): Leaf[] {
   return [
     ...(!live(s) ? [bench(s, selectedAgentId)] : []),
-    ...spend(s),
+    ...(live(s) ? spend(s) : []),
     ...produced(s),
     ...activity(s),
     ...(!live(s)
