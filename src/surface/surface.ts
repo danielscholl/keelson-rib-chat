@@ -59,6 +59,7 @@ export interface SurfaceDeps {
   sm: SnapshotManager;
   state: () => SurfaceState;
   find: (id: string) => SwarmRecord;
+  projects: () => LaunchState["projects"];
   launch: () => LaunchState;
   server: () => ServerPanelState;
   readLog: () => Promise<string>;
@@ -189,6 +190,9 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
                 "unregistered",
             })),
           }
+        : {}),
+      ...(state.toolReachabilityError
+        ? { toolReachabilityError: state.toolReachabilityError }
         : {}),
       refused: [...new Set(state.refused ?? [])].sort(),
       ...(state.dispatchBlocked ? { dispatchBlocked: state.dispatchBlocked } : {}),
@@ -463,7 +467,8 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
 
   return {
     acceptsLaunchNonce: (nonce) => !disposed && nonce === launchNonce,
-    offersLaunchProject: (id) => !disposed && launchState().projects.some((p) => p.id === id),
+    offersLaunchProject: (id) =>
+      !disposed && deps.projects().some((p) => p.id === id && p.name !== DEFAULT_PROJECT_NAME),
     track,
     select(id) {
       selected = id;

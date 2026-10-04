@@ -18,6 +18,7 @@ import {
 } from "@keelson/shared";
 import { CONTEXT_BOUNDS, type ContextIndexEntry, EXCERPT_CHARS } from "../src/context.ts";
 import { applyStatus } from "../src/dispatch.ts";
+import { historyPath, loadHistory } from "../src/history.ts";
 import rib from "../src/index.ts";
 import { needsYou } from "../src/needs.ts";
 import { createSwarmFileStore } from "../src/store.ts";
@@ -4324,6 +4325,7 @@ describe("publishing", () => {
             ? { live: s }
             : { ended: s };
       },
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
@@ -4909,6 +4911,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ live }),
       find: (id) => ({ live: live.find((s) => s.id === id) }),
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: live.length }),
@@ -4947,6 +4950,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ live }),
       find: (id) => ({ live: live.find((s) => s.id === id) }),
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: live.length }),
@@ -5026,6 +5030,7 @@ describe("publishing", () => {
       sm,
       state: () => state({ ended: [...ended.values()] }),
       find: (id): SwarmRecord => (ended.has(id) ? { ended: ended.get(id) as SwarmSummary } : {}),
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
@@ -5169,6 +5174,7 @@ describe("the record page", () => {
         sm,
         state: () => state({ live: [live] }),
         find: () => ({ live }),
+        projects: () => [],
         launch: () => ({ projects: [] }),
         launchOf: () => undefined,
         server: () => ({ live: 1 }),
@@ -5469,6 +5475,7 @@ describe("the record page", () => {
       state: () => state({ live: [live], ended: [done] }),
       find: (id): SwarmRecord =>
         id === live.id ? { live } : id === done.id ? { ended: done } : {},
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 0 }),
@@ -5588,6 +5595,7 @@ describe("actions", () => {
       views: [],
       state: () => state({ live: [current] }),
       find,
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
@@ -6136,6 +6144,7 @@ describe("actions", () => {
       views: [],
       state: () => state({ live: [fixtures.running!], ended: [fixtures.done!] }),
       find: deps.find,
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ live: 1 }),
@@ -6493,6 +6502,7 @@ describe("launching from the tab", () => {
     const surface = createSwarmsSurface({
       sm,
       views,
+      projects: () => inputs.projects,
       launch: () => inputs,
       state: () => state({ live: [fixtures.running!] }),
       find: actionDeps.find,
@@ -8109,6 +8119,7 @@ describe("the server line and inspector", () => {
       sm,
       state: () => state({ server }),
       find: () => ({}),
+      projects: () => [],
       launch: () => ({ projects: [] }),
       launchOf: () => undefined,
       server: () => ({ server, live: 0, ...(op ? { op } : {}) }),
@@ -8491,6 +8502,78 @@ describe("the launch store", () => {
 });
 
 describe("the rib's surface", () => {
+  test("project launches without tracker tools survive a failed capability probe", async () => {
+    const sm = new FakeSnapshots();
+    const dir = mkdtempSync(join(tmpdir(), "chat-launch-probe-"));
+    const savedUrl = process.env.CLICKCLACK_URL;
+    const savedToken = process.env.CLICKCLACK_TOKEN;
+    process.env.CLICKCLACK_URL = "http://127.0.0.1:1";
+    delete process.env.CLICKCLACK_TOKEN;
+    let probeFailed = false;
+    try {
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getDataDir: () => dir,
+        getCredential: async () => {
+          throw new Error("test boot stopped before contacting ClickClack");
+        },
+        runAgentTurn: () => {
+          throw new Error("no agent turn should run");
+        },
+        getProjects: () => [{ id: "p1", name: "sample", rootPath: "/tmp/sample", createdAt: T0 }],
+        getSnapshotManager: () => sm,
+        getToolReachability: () => {
+          if (probeFailed) throw new Error("tracker lookup failed");
+          return [];
+        },
+      });
+      const page = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+      const action = {
+        type: "start-swarm",
+        origin: "canvas-html" as const,
+        payload: {
+          nonce: page.match(/data-nonce="([^"]+)"/)![1]!,
+          task: "Investigate",
+          project: "p1",
+        },
+      };
+      probeFailed = true;
+      expect(await rib.onAction?.(action, { getExec: () => ({}) as never })).toMatchObject({
+        ok: true,
+      });
+      expect(
+        await rib.onAction?.(
+          { ...action, payload: { ...action.payload, lead_tools: ["beads_ready"] } },
+          { getExec: () => ({}) as never },
+        ),
+      ).toEqual({
+        ok: false,
+        error: "Could not check lead tool reachability: tracker lookup failed",
+      });
+      const failedPage = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+      expect(failedPage).toContain(
+        "Could not check tracker tool reachability: tracker lookup failed",
+      );
+      expect(failedPage.match(/<button[^>]+id="allow-tracker"[^>]*>/)![0]).toContain(" disabled");
+      await Bun.sleep(0);
+      expect(loadHistory(historyPath(dir)).ended).toMatchObject([
+        {
+          task: "Investigate",
+          project: { id: "p1", name: "sample" },
+          error: "test boot stopped before contacting ClickClack",
+        },
+      ]);
+    } finally {
+      await Bun.sleep(0);
+      await rib.dispose?.();
+      if (savedUrl === undefined) delete process.env.CLICKCLACK_URL;
+      else process.env.CLICKCLACK_URL = savedUrl;
+      if (savedToken === undefined) delete process.env.CLICKCLACK_TOKEN;
+      else process.env.CLICKCLACK_TOKEN = savedToken;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("registration displays dispatch prerequisites and passes live reachability into HTML actions", async () => {
     const project = { id: "p1", name: "sample", rootPath: "/tmp/sample", createdAt: T0 };
     const unused = async () => {
@@ -8563,7 +8646,7 @@ describe("the rib's surface", () => {
           ),
         ).toEqual({
           ok: false,
-          error: "Could not check launcher availability: snapshot lookup failed",
+          error: "Could not check lead tool reachability: snapshot lookup failed",
         });
       } finally {
         await rib.dispose?.();

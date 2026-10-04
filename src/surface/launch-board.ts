@@ -38,6 +38,7 @@ export interface LaunchState {
   // Each provider's class map, for the hover on each power.
   classes?: readonly { provider: string; classes: ModelClassMap }[];
   toolReachability?: readonly ToolReachability[];
+  toolReachabilityError?: string;
   refused?: readonly string[];
   dispatchBlocked?: string;
 }
@@ -362,9 +363,11 @@ function accessTemplate(state: LaunchState): string {
     (state.dispatchBlocked ??
       "The lead can hand the work to a workflow once the swarm agrees on it. You answer its approvals in Workflows.") +
     approvals;
-  const trackerMeaning = state.toolReachability
-    ? "The lead reads and updates beads for the project, and says in the channel what it changed."
-    : "This host does not say which tools a lead may hold.";
+  const trackerMeaning =
+    state.toolReachabilityError ??
+    (state.toolReachability
+      ? "The lead reads and updates beads for the project, and says in the channel what it changed."
+      : "This host does not say which tools a lead may hold.");
   const rows = [
     {
       key: "write",
@@ -387,7 +390,7 @@ function accessTemplate(state: LaunchState): string {
       name: "Use the tracker",
       tag: "elevated · needs your grant",
       meaning: trackerMeaning,
-      disabled: !state.toolReachability,
+      disabled: !state.toolReachability || Boolean(state.toolReachabilityError),
       details: `<div class="access-details chips" id="tracker-details" hidden>${TRACKER_TOOLS.map(
         (name) => {
           const reachable =

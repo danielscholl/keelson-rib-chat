@@ -350,21 +350,32 @@ function pruneLaunches(): void {
   reports.keepOnly(known);
 }
 
-function launchState(): LaunchState {
-  const projects = (getProjects?.() ?? [])
+function launchProjects(): LaunchState["projects"] {
+  return (getProjects?.() ?? [])
     .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
     .map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath }));
+}
+
+function launchState(): LaunchState {
   const provider = servingProvider(undefined);
   const classes = (getProviders?.() ?? []).flatMap((p) =>
     p.modelClasses && !NOT_AGENT_PROVIDERS.has(p.id)
       ? [{ provider: p.id, classes: p.modelClasses }]
       : [],
   );
+  let toolReachability: LaunchState["toolReachability"];
+  let toolReachabilityError: string | undefined;
+  try {
+    toolReachability = getToolReachability?.(TRACKER_TOOLS);
+  } catch (e) {
+    toolReachabilityError = `Could not check tracker tool reachability: ${errText(e)}`;
+  }
   return {
-    projects,
+    projects: launchProjects(),
     ...(provider ? { provider } : {}),
     ...(classes.length > 0 ? { classes } : {}),
-    ...(getToolReachability ? { toolReachability: getToolReachability(TRACKER_TOOLS) } : {}),
+    ...(toolReachability ? { toolReachability } : {}),
+    ...(toolReachabilityError ? { toolReachabilityError } : {}),
     refused: [...refusedApprovals].sort(),
     ...(!startWorkflow || !getRunStatus || !cancelRun
       ? { dispatchBlocked: "This Keelson host can't start workflows for a rib." }
@@ -766,6 +777,7 @@ const rib: Rib = {
         sm,
         state: surfaceState,
         find: findSwarm,
+        projects: launchProjects,
         launch: launchState,
         launchOf: (id) => (ended.has(id) ? launches.load(id) : undefined),
         server: serverPanel,
