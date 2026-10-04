@@ -57,7 +57,6 @@ import {
   sizeWord,
   stateLine,
   stopAction,
-  verifiedText,
 } from "./parts.ts";
 import { buildAgentEdges } from "./record.ts";
 
@@ -220,23 +219,17 @@ function stats(s: SwarmSummary, now: Date): Leaf {
   const items: Stat[] = [
     turnsTile(s, now),
     timeTile(s),
-    {
-      label: "Agents",
-      value: `${s.agents.length} of ${s.limits.maxAgents}`,
-      ...(isLiveNow && seats.length > 0 ? { sub: seats.join(" · ") } : {}),
-    },
-    ...(s.usage ? [tokensTile(s)] : []),
+    ...(isLiveNow
+      ? [
+          {
+            label: "Agents",
+            value: `${s.agents.length} of ${s.limits.maxAgents}`,
+            ...(seats.length > 0 ? { sub: seats.join(" · ") } : {}),
+          },
+        ]
+      : []),
+    ...(!isLiveNow || s.usage ? [tokensTile(s)] : []),
   ];
-  const verified = verifiedText(s);
-  if (!isLiveNow && verified) {
-    const runs = s.runs ?? [];
-    const n = runs.filter((r) => r.verified).length;
-    items.push({
-      label: "Runs verified",
-      value: `${n} of ${runs.length}`,
-      tone: n === runs.length ? "ok" : "warn",
-    });
-  }
   if (!isLiveNow) {
     const prs = new Map<string, boolean>();
     const record = (url: string, passing: boolean) =>
@@ -247,11 +240,20 @@ function stats(s: SwarmSummary, now: Date): Leaf {
       }
     }
     for (const pr of s.prs ?? []) record(pr.url, pr.ci?.verdict === "pass");
-    if (prs.size > 0) {
+    if (s.workflows?.length || s.writeEnabled || s.agents.some((a) => a.worktree) || prs.size > 0) {
       items.push({
         label: "Pull requests",
         value: prs.size,
         sub: `${[...prs.values()].filter(Boolean).length} with CI passing`,
+      });
+    }
+    const runs = s.runs ?? [];
+    if (runs.length > 0) {
+      const n = runs.filter((r) => r.verified).length;
+      items.push({
+        label: "Runs verified",
+        value: `${n} of ${runs.length}`,
+        tone: n === runs.length ? "ok" : "warn",
       });
     }
   }

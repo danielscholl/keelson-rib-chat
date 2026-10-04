@@ -2521,6 +2521,74 @@ describe("Swarms boards", () => {
     expect(tile).toEqual({ label: "Pull requests", value: 2, sub: "1 with CI passing" });
   });
 
+  test("ended Result orders tiles and shows zero PRs only when the swarm could open them", () => {
+    const id = "sresult";
+    const base = swarm(id, {
+      status: "done",
+      endedAt: "2026-09-22T14:05:00.000Z",
+      pace: [1, 2, 3],
+    });
+    const tiles = (s: SwarmSummary) => {
+      const view = buildSwarmBoard(s, { now: new Date(T0) });
+      board(swarmKey(id), view);
+      const result = view.sections.find((section) => section.kind === "stats");
+      if (result?.kind !== "stats") throw new Error("missing Result");
+      expect(result.title).toBe("Result");
+      return result.items;
+    };
+    const chat = tiles(base);
+    expect(chat.map((tile) => tile.label)).toEqual(["Turns", "Time", "Tokens"]);
+    expect(chat[0]).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: [1, 2, 3] });
+    expect(chat[1]).toEqual({ label: "Time", value: "5 min", sub: "of 30 min" });
+    expect(chat[2]).toEqual({ label: "Tokens", value: null, sub: "the provider reported none" });
+    expect(tiles({ ...base, turnsUsed: 0 })[2]).toEqual({
+      label: "Tokens",
+      value: 0,
+      sub: "fresh · none yet",
+    });
+    expect(tiles({ ...base, usage: { input: 200, output: 50, cached: 100 } })[2]).toEqual({
+      label: "Tokens",
+      value: "250",
+      sub: "fresh · 100 cached",
+    });
+    expect(tiles({ ...base, workflows: [], runs: [], prs: [], writeEnabled: false })).toEqual(chat);
+    for (const patch of [
+      { writeEnabled: true },
+      { workflows: ["fix-issue"] },
+      {
+        agents: [
+          agent(id, 0),
+          agent(id, 1, { worktree: { path: "/wt/w1", branch: "writer", base: "main" } }),
+        ],
+      },
+      { writeEnabled: true, runs: [] },
+      { workflows: ["fix-issue"], runs: [] },
+    ] satisfies Partial<SwarmSummary>[]) {
+      const result = tiles({ ...base, ...patch });
+      expect(result.map((tile) => tile.label)).toEqual([
+        "Turns",
+        "Time",
+        "Tokens",
+        "Pull requests",
+      ]);
+      expect(result[3]).toEqual({ label: "Pull requests", value: 0, sub: "0 with CI passing" });
+    }
+    const dispatch = tiles({
+      ...base,
+      workflows: ["fix-issue"],
+      runs: [run("empty", { status: "succeeded", verified: true })],
+    });
+    expect(dispatch.map((tile) => tile.label)).toEqual([
+      "Turns",
+      "Time",
+      "Tokens",
+      "Pull requests",
+      "Runs verified",
+    ]);
+    expect(dispatch[3]).toEqual({ label: "Pull requests", value: 0, sub: "0 with CI passing" });
+    expect(dispatch[4]).toEqual({ label: "Runs verified", value: "1 of 1", tone: "ok" });
+  });
+
   test("ended PR totals count distinct URLs and require every owner to explicitly pass", () => {
     const id = "s8cnt";
     const url = (n: number) => `https://github.com/o/r/pull/${n}`;
@@ -2534,9 +2602,19 @@ describe("Swarms boards", () => {
     const tile = (s: SwarmSummary) => {
       const view = buildSwarmBoard(s);
       board(swarmKey(id), view);
-      return view.sections
-        .flatMap((section) => (section.kind === "stats" ? section.items : []))
-        .find((item) => item.label === "Pull requests");
+      const items = view.sections.flatMap((section) =>
+        section.kind === "stats" ? section.items : [],
+      );
+      if (s.status !== "running" && s.status !== "stopping") {
+        expect(items.map((item) => item.label)).toEqual([
+          "Turns",
+          "Time",
+          "Tokens",
+          ...(s.prs?.length || s.runs?.some((r) => r.prUrls.length) ? ["Pull requests"] : []),
+          ...(s.runs?.length ? ["Runs verified"] : []),
+        ]);
+      }
+      return items.find((item) => item.label === "Pull requests");
     };
     const base = swarm(id, { status: "done", endedAt: T0 });
     const writers = [
