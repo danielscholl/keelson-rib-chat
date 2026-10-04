@@ -47,9 +47,13 @@ The rib manages a server only when `CLICKCLACK_URL` is unset and no owner sessio
 In the **Swarms** tab, describe the task in **Start a swarm**, choose a project
 if agents should read its checkout, and press **Start swarm**. **No project ·
 chat only** is the default. Projects show their name and path (`~` for home).
-The footer shows fixed medium limits (5 agents, up to 40 turns, about 30 minutes)
-and the effective provider's balanced models; there are no size, model, write
-or workflow controls in this launcher. Paste issue or PR text instead of a URL
+Choose **Quick look**, **Working session** (the default: 5 agents, up to 40
+turns, about 30 minutes), or **Deep dig**. **Customize** opens **Effort** (size
+budgets, not reasoning effort) and **Model**, grouped by provider with **Other…**
+for a typed name. The live footer follows the choice. The plan's pair stays
+unless a model is named for all agents. **Run again** has Effort and Model
+only and reuses saved plan power unless a model is named. This launcher has
+no write or workflow controls. Paste issue or PR text instead of a URL
 or `#N`, or use **Prepare in chat** to attach the evidence. Refusals appear as
 host toasts. **Starting…** guards duplicate clicks for about two seconds and
 leaves the task intact. Ordinary refreshes preserve drafts; project-list or
