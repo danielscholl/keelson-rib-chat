@@ -432,27 +432,20 @@ export function buildAgentMap(s: SwarmSummary, selectedAgentId?: string): Canvas
   };
 }
 
-function mapConversation(s: SwarmSummary, selectedAgentId?: string): Section {
-  return {
-    kind: "columns",
-    columns: [
-      { sections: [buildAgentMap(s, selectedAgentId)] },
-      {
-        sections: [
-          ...conversation(s),
-          ...(s.status === "running" && s.conclusion === undefined
-            ? [
-                {
-                  kind: "actions" as const,
-                  wrap: true,
-                  items: [{ ...messageLead(s), expanded: true }],
-                },
-              ]
-            : []),
-        ],
-      },
-    ],
-  };
+function mapConversation(s: SwarmSummary, selectedAgentId?: string): Leaf[] {
+  return [
+    buildAgentMap(s, selectedAgentId),
+    ...conversation(s),
+    ...(s.status === "running" && s.conclusion === undefined
+      ? [
+          {
+            kind: "actions" as const,
+            wrap: true,
+            items: [{ ...messageLead(s), expanded: true }],
+          },
+        ]
+      : []),
+  ];
 }
 
 // ---- Spend: each agent's fresh tokens against the swarm's. ----
@@ -936,7 +929,7 @@ export function buildCockpit(
       title: "Budget",
       items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s)],
     },
-    mapConversation(s, opts.selectedAgentId),
+    ...mapConversation(s, opts.selectedAgentId),
     ...liveDetails(s, opts.selectedAgentId),
     { kind: "actions", wrap: true, items },
   ];
@@ -971,7 +964,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
           ...requests(s, needs, opts.server),
           ...outcome(s),
           stats(s, now),
-          mapConversation(s, opts.selectedAgentId),
+          ...mapConversation(s, opts.selectedAgentId),
           ...controls(s),
           ...details,
         ]

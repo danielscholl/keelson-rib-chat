@@ -1723,10 +1723,10 @@ describe("the live cockpit", () => {
   const sections = (s: SwarmSummary, now?: Date) => {
     const sections = buildCockpit(s, needsYou(s), { titled: true, now });
     board(INDEX_KEY, { view: "board", title: "Swarms", sections });
-    return leaves(sections);
+    return sections;
   };
 
-  test("the head, state, agent strip and budget precede conversation, composer, details and verbs", () => {
+  test("the head, state, agent strip and budget precede Map, conversation, composer, details and verbs", () => {
     const s = fixtures.running!;
     const cockpit = sections(s);
     expect(cockpit.map((x) => x.kind)).toEqual([
@@ -1750,10 +1750,7 @@ describe("the live cockpit", () => {
     expect(head).not.toHaveProperty("chip");
     expect(head?.footnote).toBeUndefined();
     expect(head?.fields?.[0]?.people).toHaveLength(2);
-    const columns = buildCockpit(s, [], { titled: true }).find((x) => x.kind === "columns");
-    expect(
-      columns?.kind === "columns" ? columns.columns.map((c) => c.sections[0]?.kind) : [],
-    ).toEqual(["graph", "rows"]);
+    expect(cockpit.some((x) => x.kind === "columns")).toBe(false);
     expect(cockpit.at(-1)).toMatchObject({
       kind: "actions",
       wrap: true,
@@ -1764,6 +1761,45 @@ describe("the live cockpit", () => {
       ],
     });
     expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
+  });
+
+  test("Map owns a top-level row before Conversation and the eligible composer on every live surface", () => {
+    for (const status of ["running", "stopping"] as const) {
+      for (const conclusion of [undefined, "Done"]) {
+        for (const recent of [undefined, [], fixtures.running!.recent]) {
+          const s = { ...fixtures.running!, status, conclusion, recent };
+          const selectedAgentId = s.agents[1]!.id;
+          const index = buildIndex(
+            state({ live: [s], selectedAgents: new Map([[s.id, selectedAgentId]]) }),
+          );
+          const perSwarm = buildSwarmBoard(s, { selectedAgentId });
+          board(INDEX_KEY, index);
+          board(swarmKey(s.id), perSwarm);
+          for (const raw of [
+            buildCockpit(s, needsYou(s), { titled: true, selectedAgentId }),
+            index.sections,
+            perSwarm.sections,
+          ]) {
+            expect(raw.some((section) => section.kind === "columns")).toBe(false);
+            const mapAt = raw.findIndex((section) => section.kind === "graph");
+            expect(mapAt).toBeGreaterThanOrEqual(0);
+            expect(raw[mapAt]).toEqual(buildAgentMap(s, selectedAgentId));
+            const conversationAt = raw.findIndex((section) => section.title === "Conversation");
+            expect(conversationAt).toBe(recent?.length ? mapAt + 1 : -1);
+            const composerAt = raw.findIndex(
+              (section) =>
+                section.kind === "actions" &&
+                section.items.some((item) => item.type === "message-lead" && item.expanded),
+            );
+            expect(composerAt).toBe(
+              status === "running" && conclusion === undefined
+                ? mapAt + (recent?.length ? 2 : 1)
+                : -1,
+            );
+          }
+        }
+      }
+    }
   });
 
   test("report, concluding and stopping verbs match their lifecycle", () => {
@@ -2791,12 +2827,14 @@ describe("Swarms boards", () => {
     expect(JSON.stringify(out)).toContain('"title":"Out of turns at 40"');
   });
 
-  test("a live board runs requests, budget, conversation, controls, then the details", () => {
+  test("a live board runs requests, budget, Map, conversation, controls, then the details", () => {
     const view = buildSwarmBoard({ ...fixtures.review!, recent: fixtures.running!.recent });
     expect(view.sections.map((x) => x.kind)).toEqual([
       "cards",
       "stats",
-      "columns",
+      "graph",
+      "rows",
+      "actions",
       "actions",
       "rows",
     ]);
