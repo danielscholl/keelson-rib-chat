@@ -288,8 +288,7 @@ function spanTitle(s: SwarmSummary, t: TurnSpan): string {
 
 function mark(x: number, y: number, glyph: string, title: string, descriptionId?: string): string {
   if (!ok(x, y)) return "";
-  // Event marks reuse the log row's accessible description instead of duplicating its prose.
-  return `<text x="${num(x)}" y="${num(y)}"${descriptionId ? ` aria-describedby="${descriptionId}"` : ""}>${descriptionId ? "" : `<title>${esc(cut(title, 80))}</title>`}${glyph}</text>`;
+  return `<text x="${num(x)}" y="${num(y)}"${descriptionId ? ` aria-describedby="${descriptionId}"` : ""}><title>${esc(cut(title, 40))}</title>${glyph}</text>`;
 }
 
 function timeline(s: SwarmSummary, composedAt: Date): string {
@@ -743,10 +742,10 @@ function activity(s: SwarmSummary): string {
     return `<section><h2>Activity</h2>${note}<p>No retained events.</p></section>`;
   const rows = entries.map((event, index) => {
     const actor = event.actor ? handleOf(s, event.actor) : "rib";
-    const text = firstLine(activityText(s.id, event.text), 160);
+    const text = firstLine(activityText(s.id, event.text), 100);
     const repeats = event.count && event.count > 1 ? ` ×${event.count}` : "";
     // HTML table cells and rows have optional end tags; omit them to keep all 200 entries.
-    return `<tr id="e${entries.length - index - 1}"><td>${esc(`${day(event.at)} ${hhmm(event.at)} · ${actor}`)}<td>${esc(text)}${repeats}`;
+    return `<tr id=e${entries.length - index - 1}><td>${esc(`${day(event.at)} ${hhmm(event.at)} · ${actor}`)}<td>${esc(text)}${repeats}`;
   });
   return `<section><h2>Activity</h2>${note}<table><thead><tr><th>When · Actor</th><th>Event</th></tr></thead><tbody>${rows.join("")}</tbody></table></section>`;
 }

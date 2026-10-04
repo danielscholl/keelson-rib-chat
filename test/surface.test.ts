@@ -4321,7 +4321,7 @@ describe("the record page", () => {
       const section = activitySection(html);
       expect(section).toContain("not a complete transcript");
       expect(html.indexOf(section)).toBeLessThan(html.indexOf("<footer>"));
-      const rows = section.split(/<tr id="e\d+"><td>/).slice(1);
+      const rows = section.split(/<tr id=e\d+><td>/).slice(1);
       expect(rows).toHaveLength(Math.min(count, 200));
       expect(rows.map((row) => Number(row.match(/retained event (\d+)/)?.[1]))).toEqual(
         activity
@@ -4353,8 +4353,8 @@ describe("the record page", () => {
       " · &lt;unknown&gt;<td>&lt;script&gt; &amp; &#39; &quot; &lt;img&gt;",
     );
     expect(section).not.toContain("<script>");
-    expect(section).toContain(` · unknown-agent<td>${"x".repeat(159)}…`);
-    expect(section).not.toContain("x".repeat(160));
+    expect(section).toContain(` · unknown-agent<td>${"x".repeat(99)}…`);
+    expect(section).not.toContain("x".repeat(100));
   });
 
   test.each(["activity", "health"] as const)(
@@ -4520,9 +4520,13 @@ describe("the record page", () => {
 
   test("the timeline draws a lane per agent in turn order, the operator above and runs below", () => {
     const html = buildRecord(traced(), new Date(at(30)));
-    for (const reference of html.matchAll(/aria-describedby="(e\d+)"/g)) {
-      expect(html).toContain(`<tr id="${reference[1]}">`);
+    const eventMarks = [...html.matchAll(/<text[^>]* aria-describedby="(e\d+)"[^>]*>.*?<\/text>/g)];
+    expect(eventMarks).toHaveLength(3);
+    for (const mark of eventMarks) {
+      expect(mark[0]).toMatch(/<title>[^<]+<\/title>/);
+      expect(html).toContain(`<tr id=${mark[1]}>`);
     }
+    expect(eventMarks[0]?.[0]).toContain(`<title>${hhmm(at(7))} @w1 asked the operator</title>?`);
     const labels = [...html.matchAll(/<text class="lbl[^"]*"[^>]*>([^<]*)<\/text>/g)].map(
       (m) => m[1],
     );
@@ -4639,7 +4643,16 @@ describe("the record page", () => {
     });
     const record = buildRecord(big, new Date(at(300)));
     expect(record.length).toBeLessThan(128_000);
-    expect(activitySection(record).match(/<tr id="e\d+">/g)).toHaveLength(200);
+    expect(activitySection(record).match(/<tr id=e\d+>/g)).toHaveLength(200);
+    const eventMarks = [
+      ...record.matchAll(/aria-describedby="(e\d+)"><title>([^<]+)<\/title>\?<\/text>/g),
+    ];
+    expect(eventMarks).toHaveLength(200);
+    for (const mark of eventMarks) {
+      expect(mark[2]).toHaveLength(40);
+      expect(mark[2]).toEndWith("…");
+      expect(record).toContain(`<tr id=${mark[1]}>`);
+    }
     console.info(`Record (200 events, 200 turns, 12 runs): ${record.length} characters`);
   });
 
