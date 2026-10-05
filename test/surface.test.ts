@@ -9744,6 +9744,22 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("initialization capability alone replaces the normalized launcher document", async () => {
+    const h = launcherHarness({ projects: [], canCreateProject: true, canInitTracker: false });
+    try {
+      await Bun.sleep(5);
+      const before = h.page();
+      expect(before).toContain('data-can-init-tracker="false"');
+      h.inputs.canInitTracker = true;
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.page()).not.toBe(before);
+      expect(h.page()).toContain('data-can-init-tracker="true"');
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
   test("creation capability changes recompose the real launcher and reconcile saved creation intent", async () => {
     const h = launcherHarness({ projects: [], canCreateProject: false });
     try {
@@ -11693,6 +11709,31 @@ describe("the rib's surface", () => {
     }
   });
 
+  test("initialization capability follows live registration and missing reachability", async () => {
+    const sm = new FakeSnapshots();
+    try {
+      for (const status of ["reachable", "cross-rib-denied", "unregistered"] as const) {
+        rib.registerTools?.({
+          getExec: () => ({}) as never,
+          getSnapshotManager: () => sm,
+          getToolReachability: () => [{ name: "beads_init", status }],
+        });
+        const page = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+        expect(page).toContain(`data-can-init-tracker="${status === "reachable"}"`);
+        expect(page).not.toContain('data-tool="beads_init"');
+      }
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getSnapshotManager: () => sm,
+      });
+      expect(String(await sm.composers.get(LAUNCH_KEY)!.compose())).toContain(
+        'data-can-init-tracker="false"',
+      );
+    } finally {
+      await rib.dispose?.();
+    }
+  });
+
   test("queries tracker capabilities and cannot reuse a previous host after re-registration", async () => {
     const queries: string[][] = [];
     const sm = new FakeSnapshots();
@@ -11718,6 +11759,7 @@ describe("the rib's surface", () => {
               "beads_update",
               "beads_close",
               "beads_dep",
+              "beads_init",
             ]),
         ),
       ).toBe(true);

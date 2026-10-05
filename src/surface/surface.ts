@@ -179,6 +179,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     return {
       hasSwarms: swarms.live.length > 0 || swarms.ended.length > 0,
       canCreateProject: Boolean(state.canCreateProject),
+      canInitTracker: Boolean(state.canInitTracker),
       projects: state.projects
         .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
         .map(({ id, name, rootPath }) => ({ id, name, rootPath })),

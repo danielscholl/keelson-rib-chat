@@ -66,6 +66,7 @@ export interface ActionDeps {
   probe?: () => Promise<void>;
   getToolReachability?: RibContext["getToolReachability"];
   createProject?: RibContext["createProject"];
+  callTool?: RibContext["callTool"];
 }
 
 export const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
