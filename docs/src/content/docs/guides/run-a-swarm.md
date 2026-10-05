@@ -74,17 +74,53 @@ git identity can cause a host initialization error. Host refusal messages
 appear unchanged in a toast, with no swarm started. If creation succeeds but
 swarm admission fails, the registered project remains available for retry.
 
-For New project…, **Write is off and disabled**. The swarm uses the returned
-registered project ID and starts with read access. Writers can work locally
-without origin after the project has a branch and a first commit.
-Then select the registered project and enable Write for
-a new swarm. The scope footer reads `Creates <name>`, followed by selected
-workflow names only when present, then ` · beads` when tracker intent is on.
-**Use the tracker** is shown only when at least one tracker tool is reachable.
-It defaults off with "no tracker yet in a new project". Reachability is not
-proof of an initialized tracker: beads tools require an initialized `.beads/`.
-The rib never runs `bd init`. Explicit tracker opt-in still needs host grants,
-rechecked after asynchronous creation before admission.
+For New project…, **Write is on and locked on** (checked and disabled). The swarm
+uses the returned registered project ID and starts with write access. Writers
+can work locally without origin after the project has a branch and a first
+commit. Each writer uses a branch-isolated worktree. An existing repository
+supplied as Folder follows the engine's remote or local write rules.
+The scope footer reads `Creates <name> · writes on a branch`, followed by
+selected workflow names only when present, then ` · beads` when tracker intent is on.
+
+**Use the tracker** defaults on when `beads_init` is reachable, even with no
+reachable lead tools. You can switch it off. After creation, the rib rechecks
+initialization reachability and awaits
+`callTool("beads", "beads_init", { project: created.name })` before admitting
+the write swarm. Only successful initialization enables the requested,
+currently reachable tracker lead tools, rechecked after initialization.
+The launcher-only `beads_init` call is not a lead tool. Tracker off,
+unreachable initialization or a missing reachability hook skips initialization
+and starts without tracker tools. Without reachable initialization, the switch
+is off and disabled with "no tracker yet in a new project"; the row is hidden
+when no tracker lead tool is reachable either. A failed initialization
+(including a missing cross-rib caller) still starts a write swarm without
+tracker tools and reports `beads_init` with the original error in a toast.
+An explicit reachability-probe error or admission refusal still refuses Start.
+There is no automatic retry or project rollback.
+
+Grant initialization and the six lead tools in `config.json`:
+
+```json
+{
+  "crossRibGrants": {
+    "chat": {
+      "beads": [
+        "beads_init",
+        "beads_ready",
+        "beads_show",
+        "beads_create",
+        "beads_update",
+        "beads_close",
+        "beads_dep"
+      ]
+    }
+  }
+}
+```
+
+The switch and initialization create no grants. The rib never runs `bd init`
+itself; the host-owned beads tool initializes and refreshes the tracker.
+Existing-project starts and Run again do not initialize a tracker.
 
 With no project selected, the **ALSO ALLOW** group is absent. Selecting an
 existing project reveals **Write**, **Run workflows** and **Use the tracker**,
@@ -115,7 +151,7 @@ The rib rechecks lead-tool reachability on Start and Run again.
 
 Turning switches off omits their grants; workflow chips stay for that project.
 Changing or clearing the project resets all switches and chips, not the task.
-New project… always keeps Write disabled and keeps local Name and Folder edits.
+Returning to New project… reapplies its defaults and keeps local Name and Folder edits.
 The scope footer follows your choices: **Reads \<name\>**, optionally
 **· writes on a branch**, workflow names or **· no workflows**, then optionally
 **· beads**. The beads suffix records switch intent, not a promise that every
@@ -130,6 +166,8 @@ instead of compact defaults.
 New project… selection, Name and Folder restore verbatim while creation remains
 available, even after the project list grows. Losing creation capability
 restores chat-only with elevated access and workflow chips cleared.
+Replacement documents force Write on for creation and preserve explicit
+tracker opt-out. Losing initialization capability clears tracker consent.
 Projects restore by ID for existing projects; a removed or hidden project
 becomes chat-only and clears its switches and workflow chips. Current capability
 restrictions still apply. A changed project root clears elevated consent until

@@ -53,7 +53,9 @@ budgets, not reasoning effort) and **Model**, grouped by provider with **Other�
 for a typed name. The live footer follows the choice. The plan's pair stays
 unless a model is named for all agents. **Run again** has Effort and Model
 only and reuses saved plan power unless a model is named. Selecting a project
-reveals **Write**, **Run workflows** and **Use the tracker**, all off. Write
+reveals **Write**, **Run workflows** and **Use the tracker**, all off for an
+existing project. **New project…** locks Write on and defaults the tracker on
+when `beads_init` is reachable; you can switch the tracker off. Write
 permits branch-isolated writers. Run workflows adds up to 10 removable
 workflow-name chips with Enter, comma or paste, still subject to
 `ribWorkflowGrants`. Use the tracker sends only host-reported reachable beads
@@ -132,8 +134,9 @@ abort. Later writers inherit merges. Local mode never fetches, pushes, calls
 Merges are recorded as ordinary activity and included in the lead's conclusion.
 Cleanup removes clean writers only when their commits are pushed (origin) or
 reachable from the local base; otherwise `worktrees` records why they remain,
-including "not merged into <base>". **New project…** still starts read-only;
-select its registered project and explicitly enable Write in a subsequent swarm.
+including "not merged into <base>". **New project…** starts with Write locked
+on; newly initialized repositories use this local mode without an origin.
+An existing repository supplied as Folder keeps its remote or local write rules.
 
 ## Other ribs' tools
 
@@ -141,6 +144,11 @@ The launcher's **Use the tracker** switch requests `beads_ready`, `beads_show`,
 `beads_create`, `beads_update`, `beads_close` and `beads_dep`. Unreachable chips
 are muted and say `needs your grant: crossRibGrants`. The rib rechecks lead tools
 at Start and Run again, so revoked grants are dropped.
+For **New project…**, tracker consent invokes the host's governed `beads_init`
+after creation and awaits it before write admission. Initialization needs its
+own `crossRibGrants` entry and is not a lead tool. Failed initialization starts
+without tracker tools and reports the original error. Neither the switch nor
+initialization creates grants; existing-project starts and Run again never initialize.
 
 `lead_tools` hands the lead tools that other ribs register, such as the beads rib's `beads_ready`, `beads_show`, and `beads_close`, so a swarm that works a backlog can read the live queue and close a bead once its pull request merges. Keelson projects a tool onto the lead's turns only when `config.json` grants it to the chat rib under `crossRibGrants` (`"chat": { "beads": ["beads_ready", "beads_close"] }`). Workers never hold them.
 
