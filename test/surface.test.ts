@@ -6615,6 +6615,7 @@ describe("launching from the tab", () => {
     source: LaunchState | string = { projects, provider: "copilot" },
     nonce = "instance-nonce",
     bridge?: ReturnType<typeof fakeStateBridge>,
+    methods: "both" | "save-only" | "restore-only" = "both",
   ) => {
     const page = typeof source === "string" ? source : buildLaunch(source, nonce);
     type Event = {
@@ -6781,7 +6782,8 @@ describe("launching from the tab", () => {
         createElement: (tag: string) => new Element(tag),
       },
       keelson: {
-        ...(stateApi ? { saveState: stateApi.saveState, onRestore: stateApi.onRestore } : {}),
+        ...(stateApi && methods !== "restore-only" ? { saveState: stateApi.saveState } : {}),
+        ...(stateApi && methods !== "save-only" ? { onRestore: stateApi.onRestore } : {}),
         action: (type: string, payload: Record<string, unknown>) => {
           bridge?.operations.push("action");
           calls.push({ type, payload });
@@ -7321,6 +7323,156 @@ describe("launching from the tab", () => {
     expect(off.get("allow-workflows")!.attributes.get("aria-checked")).toBe("false");
     expect(off.get("workflow-chips")!.children).toHaveLength(2);
     expect(off.get("workflow-entry")!.value).toBe("pending-workflow");
+  });
+
+  test("missing, empty, malformed and unknown-version drafts do not replace initialization or save defaults", () => {
+    const seed = fakeStateBridge();
+    const first = frameHarness(undefined, "first", seed);
+    first.get("launch-task")!.value = "Saved";
+    first.fire("launch-task", "input");
+    const valid = seed.stored!;
+    for (const invalid of [
+      undefined,
+      {},
+      { version: 99 },
+      { ...valid, version: 2 },
+      { ...valid, task: 42 },
+      { ...valid, size: "enormous" },
+      { ...valid, power: "infinite" },
+      { ...valid, customize: "yes" },
+      { ...valid, permissions: { write: "true" } },
+      { ...valid, workflows: ["../bad"] },
+      { ...valid, workflows: ["one", "one"] },
+      { ...valid, workflows: Array.from({ length: 11 }, (_, index) => `w${index}`) },
+      { ...valid, modelSelection: { model: 3, provider: "copilot" } },
+      { ...valid, modelProvider: null },
+      { ...valid, workflowEntry: [] },
+    ]) {
+      const bridge = fakeStateBridge(invalid);
+      const next = frameHarness(undefined, "next", bridge);
+      expect(next.get("launch-task")!.value).toBe("");
+      expect(next.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
+      expect(next.get("launch-project")!.value).toBe("");
+      expect(next.calls).toEqual([]);
+      expect(bridge.saves).toEqual([]);
+    }
+  });
+
+  test("older hosts and independently missing state methods keep launcher actions working", () => {
+    const seed = fakeStateBridge();
+    const first = frameHarness(undefined, "first", seed);
+    first.get("launch-task")!.value = "Retained elsewhere";
+    first.fire("launch-task", "input");
+    for (const methods of ["both", "save-only", "restore-only"] as const) {
+      const bridge = methods === "both" ? undefined : fakeStateBridge(seed.stored);
+      const next = frameHarness(undefined, "next", bridge, methods);
+      expect(next.get("launch-task")!.value).toBe(
+        methods === "restore-only" ? "Retained elsewhere" : "",
+      );
+      next.get("launch-task")!.value = "Working on this host";
+      next.fire("launch-task", "input");
+      next.fire("launch-start", "click");
+      expect(next.calls[0]!.payload.task).toBe("Working on this host");
+      if (methods === "save-only") expect(bridge!.stored).toEqual({});
+      if (methods === "restore-only") expect(bridge!.saves).toEqual([]);
+    }
+  });
+
+  test("repeated replacement keeps raw drafts without saving nonces, grants or derived metadata", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness(undefined, "first", bridge);
+    first.get("launch-task")!.value = "  Multiple replacements\nretain all lines  ";
+    first.fire("launch-task", "input");
+    first.select("p1");
+    first.fire("allow-write", "click");
+    first.fire("plan-large", "click");
+    const saved = bridge.stored;
+    for (let index = 0; index < 4; index++) {
+      const next = frameHarness(
+        { projects, provider: "copilot", hasSwarms: index % 2 === 0 },
+        `new-nonce-${index}`,
+        bridge,
+      );
+      expect(next.get("launch-task")!.value).toBe("  Multiple replacements\nretain all lines  ");
+      expect(next.get("launch-project")!.value).toBe("p1");
+      expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+      expect(next.calls).toEqual([]);
+      expect(next.focused()).toBeUndefined();
+      expect(bridge.stored).toEqual(saved);
+    }
+    expect(bridge.saves).toHaveLength(4);
+    expect(Object.keys(saved!).sort()).toEqual([
+      "customize",
+      "expanded",
+      "modelProvider",
+      "modelSelection",
+      "otherModel",
+      "permissions",
+      "power",
+      "project",
+      "size",
+      "task",
+      "version",
+      "workflowEntry",
+      "workflows",
+    ]);
+    const compactBridge = fakeStateBridge();
+    const compact = frameHarness({ projects, hasSwarms: true }, "compact", compactBridge);
+    compact.get("compact-task")!.value = "Compact to expanded markup";
+    compact.fire("compact-task", "input");
+    const expanded = frameHarness({ projects }, "expanded", compactBridge);
+    expect(expanded.get("launch-task")!.value).toBe("Compact to expanded markup");
+    expect(expanded.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
+    expect(compactBridge.saves).toHaveLength(1);
+  });
+
+  test("maximum task escaping and multibyte drafts fit the bridge cap without truncation", () => {
+    for (const task of ["\u0001".repeat(8_000), "\u754c".repeat(8_000), '"\\\nA'.repeat(2_000)]) {
+      const bridge = fakeStateBridge();
+      const first = frameHarness(undefined, "first", bridge);
+      first.get("launch-task")!.value = task;
+      first.fire("launch-task", "input");
+      first.select("p1");
+      first.fire("allow-workflows", "click");
+      first.get("workflow-entry")!.value = Array.from(
+        { length: 10 },
+        (_, index) => `w${index}${"x".repeat(98)}`,
+      ).join(", ");
+      first.fire("workflow-entry", "keydown", { key: "Enter" });
+      first.get("workflow-entry")!.value = "x".repeat(1_000);
+      first.fire("workflow-entry", "input");
+      first.get("launch-model")!.value = "other";
+      first.fire("launch-model", "change");
+      first.get("launch-other-model")!.value = "custom".repeat(100);
+      first.fire("launch-other-model", "input");
+      const bytes = Buffer.byteLength(JSON.stringify(bridge.stored), "utf8");
+      expect(bytes).toBeLessThanOrEqual(65_536);
+      expect(bridge.diagnostics).toEqual([]);
+      const next = frameHarness({ projects, provider: "copilot", hasSwarms: true }, "next", bridge);
+      expect(next.get("compact-task")).toBeUndefined();
+      expect(next.get("launch-task")!.value).toBe(task);
+      expect(next.get("workflow-entry")!.value).toHaveLength(1_000);
+      expect(next.get("workflow-chips")!.children).toHaveLength(10);
+      expect(next.calls).toEqual([]);
+    }
+  });
+
+  test("oversized saves retain the last accepted snapshot and leave visible edits intact", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness(undefined, "first", bridge);
+    first.get("launch-task")!.value = "Last accepted draft";
+    first.fire("launch-task", "input");
+    const accepted = bridge.stored;
+    const oversized = "\u754c".repeat(30_000);
+    first.get("launch-task")!.value = oversized;
+    first.fire("launch-task", "input");
+    expect(bridge.saves.at(-1)?.task).toBe(oversized);
+    expect(bridge.stored).toEqual(accepted);
+    expect(bridge.diagnostics).toEqual(["HTML state exceeds 65,536 UTF-8 bytes"]);
+    expect(first.get("launch-task")!.value).toBe(oversized);
+    const next = frameHarness(undefined, "next", bridge);
+    expect(next.get("launch-task")!.value).toBe("Last accepted draft");
+    expect(next.calls).toEqual([]);
   });
 
   test("compact initial markup renders only a one-line launcher outside inert templates", () => {
@@ -8585,7 +8737,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("capability, dispatch and refusal changes can discard drafts but equivalent snapshots preserve them", async () => {
+  test("capability, dispatch and refusal replacement documents restore drafts using current access", async () => {
     const h = launcherHarness({
       projects,
       toolReachability: [
@@ -8598,11 +8750,13 @@ describe("launching from the tab", () => {
       await Bun.sleep(5);
       const nonce = h.nonce();
       const page = h.page();
-      const frame = frameHarness(page);
+      const bridge = fakeStateBridge();
+      const frame = frameHarness(page, nonce, bridge);
       frame.select("p1");
       frame.get("launch-task")!.value = "Typed draft";
       frame.fire("allow-write", "click");
       frame.fire("allow-workflows", "click");
+      frame.fire("allow-tracker", "click");
       frame.get("workflow-entry")!.value = "fix-issue";
       frame.fire("workflow-entry", "keydown", { key: "Enter" });
       h.inputs.toolReachability = [
@@ -8644,12 +8798,37 @@ describe("launching from the tab", () => {
         expect(h.page()).not.toBe(previous);
         expect(h.nonce()).toBe(nonce);
         previous = h.page();
+        const next = frameHarness(previous, nonce, bridge);
+        expect(next.get("launch-task")!.value).toBe("Typed draft");
+        expect(next.get("launch-project")!.value).toBe("p1");
+        expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+        expect(next.get("allow-workflows")!.attributes.get("aria-checked")).toBe(
+          String(!h.inputs.dispatchBlocked),
+        );
+        expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe(
+          String(Boolean(h.inputs.toolReachability)),
+        );
+        expect(next.get("workflow-chips")!.children[0]!.children[0]!.textContent).toBe("fix-issue");
+        expect(next.get("launch-mode")!.textContent).toBe(
+          "Reads keelson-sample · writes on a branch" +
+            (h.inputs.dispatchBlocked ? " · no workflows" : " · fix-issue") +
+            (h.inputs.toolReachability ? " · beads" : ""),
+        );
+        expect(next.calls).toEqual([]);
       }
+      const final = frameHarness(h.page(), nonce, bridge);
+      final.fire("launch-start", "click");
+      expect(final.calls[0]!.payload).toEqual({
+        nonce,
+        task: "Typed draft",
+        project: "p1",
+        tools: "write",
+      });
     } finally {
       h.surface.dispose();
     }
   });
-  test("actual project/provider configuration changes can still discard launcher drafts", async () => {
+  test("project/provider replacement documents reconcile IDs, hidden projects and model identities", async () => {
     const h = launcherHarness({
       projects,
       provider: "claude",
@@ -8659,17 +8838,64 @@ describe("launching from the tab", () => {
       await Bun.sleep(5);
       const nonce = h.nonce();
       let previous = h.page();
-      for (const project of [
-        { ...projects[0]!, id: "p2" },
-        { ...projects[0]!, rootPath: "/another/root" },
-        { ...projects[0]!, name: "Another name" },
+      const bridge = fakeStateBridge();
+      const first = frameHarness(previous, nonce, bridge);
+      first.get("launch-task")!.value = "  Keep the project draft\nand model  ";
+      first.fire("launch-task", "input");
+      first.select("p1");
+      first.fire("allow-write", "click");
+      first.fire("allow-workflows", "click");
+      first.get("workflow-entry")!.value = "fix-issue";
+      first.fire("workflow-entry", "keydown", { key: "Enter" });
+      first.get("launch-model")!.value = JSON.stringify({ model: "b", provider: "claude" });
+      first.fire("launch-model", "change");
+      const saved = bridge.stored;
+      for (const offered of [
+        [{ ...projects[0]!, id: "p2" }, projects[0]!],
+        [{ ...projects[0]!, rootPath: "/another/root" }],
+        [{ ...projects[0]!, name: "Another name" }],
+        [{ ...projects[0]!, id: "p2" }],
+        [],
+        [{ ...projects[0]!, name: DEFAULT_PROJECT_NAME }],
       ]) {
-        h.inputs.projects = [project];
+        h.inputs.projects = offered;
         h.surface.refresh();
         await Bun.sleep(5);
-        expect(h.page()).not.toBe(previous);
+        if (offered.length && offered.every((project) => project.name === DEFAULT_PROJECT_NAME)) {
+          expect(h.page()).toBe(previous);
+        } else expect(h.page()).not.toBe(previous);
         expect(h.nonce()).toBe(nonce);
         previous = h.page();
+        const next = frameHarness(previous, nonce, fakeStateBridge(saved));
+        const retained = offered.find(
+          (project) => project.id === "p1" && project.name !== DEFAULT_PROJECT_NAME,
+        );
+        expect(next.get("launch-task")!.value).toBe("  Keep the project draft\nand model  ");
+        expect(next.get("launch-project")!.value).toBe(retained ? "p1" : "");
+        if (retained) {
+          expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+          expect(next.get("workflow-chips")!.children).toHaveLength(1);
+          expect(next.get("launch-mode")!.textContent).toBe(
+            `Reads ${retained.name} · writes on a branch · fix-issue`,
+          );
+          expect(next.get("project-note")!.textContent).toContain(retained.rootPath);
+        } else {
+          expect(next.get("allow-write")).toBeUndefined();
+          expect(next.get("workflow-entry")).toBeUndefined();
+          expect(next.get("launch-mode")!.textContent).toBe("Chat mode · nothing on disk");
+        }
+        expect(next.calls).toEqual([]);
+        next.fire("launch-start", "click");
+        expect(next.calls[0]!.payload).toEqual({
+          nonce,
+          task: "  Keep the project draft\nand model  ",
+          project: retained ? "p1" : "",
+          tools: retained ? "write" : "none",
+          ...(retained ? { workflows: "fix-issue" } : {}),
+          model: "b",
+          provider: "claude",
+          size: "medium",
+        });
       }
       h.inputs.classes = [
         { provider: "claude", classes: { fast: "a", balanced: "changed-model", deep: "c" } },
@@ -8679,6 +8905,17 @@ describe("launching from the tab", () => {
       expect(h.page()).not.toBe(previous);
       previous = h.page();
       expect(h.nonce()).toBe(nonce);
+      h.inputs.provider = "new-default";
+      h.inputs.projects = projects;
+      h.surface.refresh();
+      await Bun.sleep(5);
+      const next = frameHarness(h.page(), nonce, fakeStateBridge(saved));
+      expect(next.get("launch-models")!.textContent).toBe("b · lead and workers");
+      expect(next.get("launch-model")!.value).toBe(
+        JSON.stringify({ model: "b", provider: "claude" }),
+      );
+      next.fire("launch-start", "click");
+      expect(next.calls[0]!.payload).toMatchObject({ model: "b", provider: "claude" });
     } finally {
       h.surface.dispose();
     }
@@ -8902,8 +9139,11 @@ describe("launching from the tab", () => {
         await Bun.sleep(5);
         const emptyPage = h.page();
         const nonce = h.nonce();
-        const draft = frameHarness(emptyPage);
-        draft.get("launch-task")!.value = "Lost when presence changes";
+        const bridge = fakeStateBridge();
+        const draft = frameHarness(emptyPage, nonce, bridge);
+        draft.get("launch-task")!.value = "  Kept when presence\nchanges  ";
+        draft.fire("launch-task", "input");
+        draft.fire("plan-small", "click");
         h.swarms.starting = [starting];
         h.surface.changed(starting.id, "start");
         h.surface.refresh();
@@ -8920,6 +9160,12 @@ describe("launching from the tab", () => {
         const compactPage = h.page();
         expect(compactPage).not.toBe(emptyPage);
         expect(frameHarness(compactPage).get("compact-task")!.value).toBe("");
+        const restored = frameHarness(compactPage, nonce, bridge);
+        expect(restored.get("compact-task")).toBeUndefined();
+        expect(restored.get("launch-task")!.value).toBe("  Kept when presence\nchanges  ");
+        expect(restored.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
+        expect(restored.get("launch-summary")!.textContent).toContain("quick models");
+        expect(restored.calls).toEqual([]);
         expect(h.nonce()).toBe(nonce);
         if (first === "live") {
           h.swarms.live = [];
@@ -8936,7 +9182,19 @@ describe("launching from the tab", () => {
         expect(h.sm.frames.get(LAUNCH_KEY)).toHaveLength(3);
         expect(h.page()).toBe(emptyPage);
         expect(frameHarness(h.page()).get("launch-task")!.value).toBe("");
+        const returned = frameHarness(h.page(), nonce, bridge);
+        expect(returned.get("launch-task")!.value).toBe("  Kept when presence\nchanges  ");
+        expect(returned.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
         expect(h.nonce()).toBe(nonce);
+        returned.fire("launch-start", "click");
+        expect(returned.calls[0]!.payload).toEqual({
+          nonce,
+          task: "  Kept when presence\nchanges  ",
+          project: "",
+          tools: "none",
+          size: "small",
+          power: "fast",
+        });
         h.swarms.live = [fixtures.running!];
         h.swarms.ended = [fixtures.done!];
         h.surface.refresh();
