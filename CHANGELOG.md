@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/danielscholl/keelson-rib-chat/compare/v0.18.0...v0.18.1) (2026-10-05)
+
+
+### Fixed
+
+* **prompts:** forbid write leads from requesting AI attribution ([#109](https://github.com/danielscholl/keelson-rib-chat/issues/109)) ([bf89c38](https://github.com/danielscholl/keelson-rib-chat/commit/bf89c38b77e09e524c944afba62d5c0d8530d5b2))
+
 ## [0.18.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.17.0...v0.18.0) (2026-10-05)
 
 
