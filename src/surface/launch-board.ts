@@ -304,6 +304,8 @@ const PAGE_SCRIPT = `
   };
   const dispatch = (payload) => {
     if (busy) return;
+    dispatched = true;
+    keelson.saveState?.({});
     keelson.action("start-swarm", payload);
     busy = true;
     updateStart();

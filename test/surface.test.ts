@@ -7130,6 +7130,119 @@ describe("launching from the tab", () => {
     expect(frameHarness().stateApi).toBeUndefined();
   });
 
+  test("every Start path clears saved state before dispatch but retains current fields for retry", () => {
+    for (const path of [
+      "expanded-click",
+      "cmd-enter",
+      "ctrl-enter",
+      "compact-click",
+      "compact-enter",
+    ]) {
+      const compact = path.startsWith("compact");
+      const bridge = fakeStateBridge();
+      const source = { projects, provider: "copilot", hasSwarms: compact };
+      const frame = frameHarness(source, "current", bridge);
+      const taskId = compact ? "compact-task" : "launch-task";
+      const startId = compact ? "compact-start" : "launch-start";
+      frame.get(taskId)!.value = "  Keep this retry draft  ";
+      frame.fire(taskId, "input");
+      const start = () => {
+        if (path.endsWith("click")) frame.fire(startId, "click");
+        else
+          frame.fire(taskId, "keydown", {
+            key: "Enter",
+            ...(path === "cmd-enter"
+              ? { metaKey: true }
+              : path === "ctrl-enter"
+                ? { ctrlKey: true }
+                : {}),
+          });
+      };
+      start();
+      expect(bridge.operations).toEqual(["save", "save", "action"]);
+      expect(bridge.stored).toEqual({});
+      expect(frame.calls).toEqual([
+        {
+          type: "start-swarm",
+          payload: {
+            nonce: "current",
+            task: "  Keep this retry draft  ",
+            project: "",
+            tools: "none",
+          },
+        },
+      ]);
+      start();
+      expect(bridge.operations).toEqual(["save", "save", "action"]);
+      frame.release();
+      expect(bridge.stored).toEqual({});
+      expect(bridge.operations).toEqual(["save", "save", "action"]);
+      expect(frame.get(taskId)!.value).toBe("  Keep this retry draft  ");
+      const next = frameHarness(source, "replacement", bridge);
+      expect(next.get(taskId)!.value).toBe("");
+      expect(next.calls).toEqual([]);
+      start();
+      expect(frame.calls).toHaveLength(2);
+      expect(bridge.operations.slice(-2)).toEqual(["save", "action"]);
+      frame.get(taskId)!.value = "A fresh draft";
+      frame.fire(taskId, "change");
+      expect(bridge.stored?.task).toBe("A fresh draft");
+    }
+  });
+
+  test("workflow validation, Prepare, busy clicks and IME confirmations do not clear saved drafts", () => {
+    const bridge = fakeStateBridge();
+    const frame = frameHarness(undefined, "current", bridge);
+    frame.get("launch-task")!.value = "Keep draft";
+    frame.fire("launch-task", "input");
+    frame.select("p1");
+    frame.fire("allow-workflows", "click");
+    frame.get("workflow-entry")!.value = "../bad";
+    frame.fire("workflow-entry", "input");
+    const saved = bridge.stored;
+    const saves = bridge.saves.length;
+    frame.fire("launch-start", "click");
+    frame.fire("launch-task", "keydown", { key: "Enter", metaKey: true });
+    expect(frame.calls).toEqual([]);
+    expect(bridge.stored).toEqual(saved);
+    expect(bridge.saves).toHaveLength(saves);
+    frame.fire("launch-prepare", "click");
+    expect(frame.calls).toEqual([{ type: "start-in-chat", payload: { nonce: "current" } }]);
+    expect(bridge.stored).toEqual(saved);
+    for (const compact of [false, true]) {
+      const imeBridge = fakeStateBridge();
+      const ime = frameHarness({ projects, hasSwarms: compact }, "ime", imeBridge);
+      const taskId = compact ? "compact-task" : "launch-task";
+      ime.get(taskId)!.value = "Composing";
+      ime.fire(taskId, "input");
+      for (const extra of [{ isComposing: true }, { keyCode: 229 }]) {
+        ime.fire(taskId, "keydown", { key: "Enter", metaKey: true, ...extra });
+      }
+      expect(ime.calls).toEqual([]);
+      expect(imeBridge.stored?.task).toBe("Composing");
+      expect(imeBridge.saves).toHaveLength(1);
+    }
+  });
+
+  test("a late restore after Start cannot resurrect a dispatched draft even without prior edits", () => {
+    const saved = fakeStateBridge();
+    const first = frameHarness(undefined, "first", saved);
+    first.get("launch-task")!.value = "Previously saved task";
+    first.fire("launch-task", "input");
+    for (const hasSwarms of [false, true]) {
+      const bridge = fakeStateBridge(saved.stored, true);
+      const next = frameHarness({ projects, hasSwarms }, "next", bridge);
+      const taskId = hasSwarms ? "compact-task" : "launch-task";
+      next.fire(hasSwarms ? "compact-start" : "launch-start", "click");
+      next.release();
+      next.restore();
+      expect(next.get(taskId)!.value).toBe("");
+      expect(bridge.stored).toEqual({});
+      expect(bridge.operations).toEqual(["save", "action"]);
+      expect(next.calls).toHaveLength(1);
+    }
+  });
+
   test("compact initial markup renders only a one-line launcher outside inert templates", () => {
     const page = buildLaunch({ projects, hasSwarms: true }, "nonce");
     const initial = page
