@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ClickClackClient } from "../src/clickclack.ts";
 import { Swarm } from "../src/swarm.ts";
 import { makeChatTools } from "../src/tools.ts";
@@ -13,13 +16,29 @@ import {
   releaseWorktree,
   resolveWriteTarget,
   unsavedWork,
+  type WorktreeDeps,
 } from "../src/worktree.ts";
-import { FakeClickClack, fakeGit, OWNER_TOKEN, scriptedProvider, WORKSPACE } from "./fakes.ts";
+import {
+  FakeClickClack,
+  fakeGit,
+  OWNER_TOKEN,
+  type Script,
+  scriptedProvider,
+  WORKSPACE,
+} from "./fakes.ts";
 
 const ROOT = "/repo";
 const HEAD = "a".repeat(40);
 
-async function localHarness(git = fakeGit({ origin: false })) {
+async function localHarness(
+  git: {
+    deps: WorktreeDeps;
+    calls: ReturnType<typeof fakeGit>["calls"];
+    ran: ReturnType<typeof fakeGit>["ran"];
+  } = fakeGit({ origin: false }),
+  root = ROOT,
+  script: Script = async () => {},
+) {
   const server = new FakeClickClack();
   const swarms = new Map<string, Swarm>();
   const tools = makeChatTools({
@@ -29,16 +48,16 @@ async function localHarness(git = fakeGit({ origin: false })) {
       throw new Error("not used");
     },
   });
-  const provider = scriptedProvider(tools, async () => {});
+  const provider = scriptedProvider(tools, script);
   const swarm = await Swarm.start({
     id: "s1",
     task: "Change code locally",
     owner: new ClickClackClient("http://fake", OWNER_TOKEN, server.transport),
     workspaceId: WORKSPACE,
     runAgentTurn: provider.run,
-    cwd: ROOT,
+    cwd: root,
     workTools: ["Read", "Grep", "Glob"],
-    write: { root: ROOT, git: git.deps },
+    write: { root, git: git.deps },
     quiesceMs: 60_000,
     onCreated: (s) => swarms.set(s.id, s),
   });
@@ -46,7 +65,7 @@ async function localHarness(git = fakeGit({ origin: false })) {
     const tool = tools.find((tool) => tool.name === name)!;
     let result = { content: "", isError: false };
     await tool.execute(input, {
-      cwd: ROOT,
+      cwd: root,
       abortSignal: new AbortController().signal,
       ...(agentId ? { turnContext: { swarmId: swarm.id, agentId } } : {}),
       emit: (chunk) => {
@@ -281,4 +300,152 @@ describe("local merge tool", () => {
       await h.swarm.stop();
     }
   });
+});
+
+test("real local swarm merges, inherits the base, and aborts a conflict cleanly", async () => {
+  const root = mkdtempSync(join(tmpdir(), "chat-local-write-"));
+  const calls: ReturnType<typeof fakeGit>["calls"] = [];
+  const run: WorktreeDeps["run"] = async (cmd, args, options) => {
+    calls.push({ cmd, args, cwd: options?.cwd ?? "", timeoutMs: options?.timeoutMs });
+    const result = Bun.spawnSync([cmd, ...args], {
+      cwd: options?.cwd,
+      env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return result.exitCode === 0
+      ? { ok: true, data: result.stdout.toString() }
+      : { ok: false, error: `${result.stdout}${result.stderr}`, code: result.exitCode };
+  };
+  const git = async (cwd: string, ...args: string[]) => {
+    const result = await run("git", args, { cwd });
+    if (!result.ok) throw new Error(result.error);
+    return result.data.trim();
+  };
+  let swarm: Swarm | undefined;
+  try {
+    await git(root, "init", "--initial-branch=main");
+    for (const [key, value] of [
+      ["user.name", "Test"],
+      ["user.email", "test@example.com"],
+      ["commit.gpgsign", "false"],
+      ["core.hooksPath", "/dev/null"],
+    ])
+      await git(root, "config", "--local", key!, value!);
+    await git(root, "commit", "--allow-empty", "-m", "Initialize project");
+    expect(await git(root, "remote")).toBe("");
+    let reviewed = { content: "", isError: false };
+    let inherited = "";
+    const h = await localHarness(
+      {
+        deps: { run },
+        calls,
+        ran: (prefix) => calls.filter((c) => `${c.cmd} ${c.args.join(" ")}`.startsWith(prefix)),
+      },
+      root,
+      async ({ agentId, turn, call }) => {
+        if (turn !== 1 || agentId === "s1-lead") return;
+        if (agentId === "s1-reviewer") {
+          reviewed = await call("chat_diff", { writer: "coder" });
+          return;
+        }
+        const name = agentId.slice("s1-".length);
+        const path = join(root, ".worktrees", `swarm-s1-${name}`);
+        if (name === "second") inherited = await Bun.file(join(path, "notes.txt")).text();
+        await Bun.write(join(path, "notes.txt"), `${name}\n`);
+        await git(path, "add", "notes.txt");
+        await git(path, "commit", "-m", `feat: write ${name} notes`);
+      },
+    );
+    swarm = h.swarm;
+    const lead = swarm.summary().agents[0]!;
+    const spawn = async (handle: string, writes = true) => {
+      const result = await h.call(
+        "chat_spawn",
+        {
+          handle,
+          role: writes ? "writer" : "reviewer",
+          brief: "Complete your piece",
+          writes,
+        },
+        lead.id,
+      );
+      expect(result.isError).toBe(false);
+      const agent = swarm!.summary().agents.find((a) => a.handle === `s1-${handle}`)!;
+      await idle(swarm!, agent.id);
+      return agent;
+    };
+    const first = await spawn("coder");
+    const firstHead = await git(first.worktree!.path, "rev-parse", "HEAD");
+    const reviewer = await spawn("reviewer", false);
+    expect(reviewed.isError).toBe(false);
+    expect(reviewed.content).toContain(`Head: ${firstHead}`);
+    expect(reviewed.content).toContain("refs/heads/main");
+    expect(reviewed.content).toContain("+coder");
+    const landed = await h.call("chat_merge", { writer: "coder", head_sha: firstHead }, lead.id);
+    expect(landed.isError).toBe(false);
+    const firstMerge = await git(root, "rev-parse", "HEAD");
+    expect((await git(root, "rev-list", "--parents", "-n", "1", "HEAD")).split(" ")).toHaveLength(
+      3,
+    );
+    expect(await git(root, "show", "-s", "--format=%B", "HEAD")).toBe(
+      `Merge writer @s1-coder branch ${first.worktree!.branch} into main`,
+    );
+    expect(await git(root, "rev-parse", first.worktree!.branch)).toBe(firstHead);
+    expect(landed.content).toContain(firstMerge);
+    const second = await spawn("second");
+    expect(inherited).toBe("coder\n");
+    const conflicting = await spawn("conflicting");
+    const secondHead = await git(second.worktree!.path, "rev-parse", "HEAD");
+    const secondDiff = await h.call("chat_diff", { writer: "second" }, reviewer.id);
+    expect(secondDiff.content).toContain(secondHead);
+    expect(
+      (await h.call("chat_merge", { writer: "second", head_sha: secondHead }, lead.id)).isError,
+    ).toBe(false);
+    const beforeHead = await git(root, "rev-parse", "HEAD");
+    const beforeIndex = await git(root, "ls-files", "--stage");
+    const beforeFile = readFileSync(join(root, "notes.txt"), "utf8");
+    const conflictHead = await git(conflicting.worktree!.path, "rev-parse", "HEAD");
+    const conflict = await h.call(
+      "chat_merge",
+      { writer: "conflicting", head_sha: conflictHead },
+      lead.id,
+    );
+    expect(conflict.content).toContain("Merge conflicted and was aborted");
+    expect(conflict.content).toContain("Conflicting files:\nnotes.txt\n");
+    expect(await git(root, "rev-parse", "HEAD")).toBe(beforeHead);
+    expect(await git(root, "ls-files", "--stage")).toBe(beforeIndex);
+    expect(readFileSync(join(root, "notes.txt"), "utf8")).toBe(beforeFile);
+    expect(await git(root, "status", "--porcelain=v1", "--untracked-files=all")).toBe("");
+    expect(existsSync(join(root, await git(root, "rev-parse", "--git-path", "MERGE_HEAD")))).toBe(
+      false,
+    );
+    const summary = await swarm.stop();
+    expect(summary.prs ?? []).toHaveLength(0);
+    expect(summary.activity).toContainEqual(
+      expect.objectContaining({
+        text: expect.stringContaining(firstMerge),
+      }),
+    );
+    expect(summary.worktrees).toEqual([
+      {
+        agent: conflicting.handle,
+        path: conflicting.worktree!.path,
+        branch: conflicting.worktree!.branch,
+        reason: "not merged into main",
+      },
+    ]);
+    expect(existsSync(first.worktree!.path)).toBe(false);
+    expect(existsSync(second.worktree!.path)).toBe(false);
+    expect(existsSync(conflicting.worktree!.path)).toBe(true);
+    expect(calls.some((c) => c.cmd !== "git" || ["fetch", "push"].includes(c.args[0]!))).toBe(
+      false,
+    );
+    expect(calls.filter((c) => c.args[0] === "remote").every((c) => c.args.length === 1)).toBe(
+      true,
+    );
+  } finally {
+    await swarm?.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
