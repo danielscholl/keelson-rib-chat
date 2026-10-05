@@ -3442,7 +3442,15 @@ ${"detail ".repeat(1000)}`,
         (x) => x.kind === "rows" && x.title === "Produced so far",
       );
       expect(produced?.kind === "rows" ? produced.items.length : 0).toBe(12);
-      expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
+      expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(96_000);
+      expect(
+        Buffer.byteLength(
+          JSON.stringify({
+            ...view,
+            sections: view.sections.filter((section) => section.kind !== "timeline"),
+          }),
+        ),
+      ).toBeLessThan(48_000);
       console.info(
         `Conversation index (six live, selected ${selected ?? "default"}): ${Buffer.byteLength(JSON.stringify(view))} bytes`,
       );
@@ -3467,7 +3475,15 @@ ${"detail ".repeat(1000)}`,
     );
     expect(inventory?.kind === "rows" ? inventory.items.length : 0).toBe(14);
     const bytes = Buffer.byteLength(JSON.stringify(single));
-    expect(bytes).toBeLessThan(48_000);
+    expect(bytes).toBeLessThan(96_000);
+    expect(
+      Buffer.byteLength(
+        JSON.stringify({
+          ...single,
+          sections: single.sections.filter((section) => section.kind !== "timeline"),
+        }),
+      ),
+    ).toBeLessThan(48_000);
     console.info(`Conversation index (one live, 20 recent messages): ${bytes} bytes`);
     const drawer = buildSwarmBoard(artifacts, { now });
     board(swarmKey(big.id), drawer);
@@ -5310,6 +5326,13 @@ describe("the record page", () => {
   });
 
   const at = (m: number) => new Date(Date.parse(T0) + m * 60_000).toISOString();
+  const nativeTimeline = (s: SwarmSummary) => {
+    const view = buildIndex(state({ live: [s] }));
+    board(INDEX_KEY, view);
+    const section = view.sections.find((item) => item.kind === "timeline");
+    if (!section) throw new Error("missing native timeline");
+    return section;
+  };
   const traced = (patch: Partial<SwarmSummary> = {}): SwarmSummary =>
     swarm("s6rec", {
       status: "done",
@@ -5418,6 +5441,7 @@ describe("the record page", () => {
     const s = traced();
     const model = buildTimelineModel(s);
     const html = buildRecord(s, new Date(at(30)));
+    const native = nativeTimeline({ ...s, status: "running" });
     expect(model.lanes.map((lane) => lane.id)).toEqual([
       "operator",
       "s6rec-lead",
@@ -5430,12 +5454,111 @@ describe("the record page", () => {
     expect(model.spans[4]).toMatchObject({ tone: "ok", to: at(15) });
     expect(model.marks.map((mark) => mark.glyph)).toEqual(["◇", "◆", "✓", "○", "○", "?", "▲", "●"]);
     for (const lane of model.lanes) expect(html).toContain(`>${esc(lane.label)}</text>`);
+    expect(native.lanes).toEqual(
+      model.lanes.map(({ id, label, tone, group }) => ({
+        id,
+        label,
+        tone,
+        ...(group ? { group } : {}),
+      })),
+    );
+    expect(native.spans).toEqual(
+      model.spans
+        .slice()
+        .sort((a, b) => Date.parse(a.from) - Date.parse(b.from))
+        .map(({ lane, from, to, tone, hatched, title }) => ({
+          lane,
+          from,
+          ...(to ? { to } : {}),
+          ...(tone ? { tone } : {}),
+          ...(hatched ? { hatched } : {}),
+          title,
+        })),
+    );
+    expect(native.marks).toEqual(
+      model.marks
+        .slice()
+        .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+        .map(({ lane, at, glyph, title }) => ({ lane, at, glyph, title })),
+    );
     for (const item of [...model.spans, ...model.marks]) {
       expect(html).toContain(`<title>${esc(item.title)}</title>`);
     }
     for (const mark of model.marks.filter((item) => item.descriptionId)) {
       expect(html).toContain(`aria-describedby="${mark.descriptionId}"`);
     }
+  });
+
+  test.each([12, 13])(
+    "the native timeline bounds %i lanes including the operator and runs",
+    (count) => {
+      const agents = Array.from({ length: count - 2 }, (_, i) => agent("slanes", i));
+      const s = swarm("slanes", {
+        agents,
+        spans: agents.map((agent, i) => ({
+          agentId: agent.id,
+          n: 1,
+          startedAt: at(i),
+          messages: 1,
+          wokeBy: ["rib"],
+        })),
+        runs: [
+          run("rlanes", {
+            gates: [{ nodeId: "approve-plan", openedAt: at(1), closedAt: at(2), by: "operator" }],
+          }),
+        ],
+      });
+      const native = nativeTimeline(s);
+      expect(native.lanes).toHaveLength(12);
+      expect(native.lanes.map((lane) => lane.id)).toEqual(
+        ["operator", ...agents.map((agent) => agent.id), s.runs![0]!.runId].slice(0, 12),
+      );
+      expect(native.title).toBe(
+        count === 12 ? "Timeline" : "Timeline · 12/13 lanes · 11/12 spans · 0/2 marks",
+      );
+      const ids = new Set(native.lanes.map((lane) => lane.id));
+      for (const item of [...native.spans, ...native.marks]) expect(ids.has(item.lane)).toBe(true);
+      expect(native.spans).toHaveLength(11);
+      expect(native.marks).toHaveLength(count === 12 ? 2 : 0);
+    },
+  );
+
+  test.each([400, 401])("the native timeline keeps the newest of %i spans", (count) => {
+    const s = swarm("sspans", {
+      agents: [agent("sspans", 0)],
+      spans: turnSpans(
+        "sspans",
+        Array.from({ length: count }, (_, i) => i / 100),
+      ),
+    });
+    const native = nativeTimeline(s);
+    expect(native.spans).toHaveLength(400);
+    expect(native.spans[0]?.from).toBe(at((count - 400) / 100));
+    expect(native.spans.at(-1)?.from).toBe(at((count - 1) / 100));
+    expect(native.title).toBe(count === 400 ? "Timeline" : "Timeline · 400/401 spans");
+    expect(buildTimelineModel(s).spans).toHaveLength(count);
+  });
+
+  test.each([200, 201])("the native timeline keeps the newest of %i combined marks", (count) => {
+    const s = swarm("smarks", {
+      agents: [
+        agent("smarks", 0),
+        agent("smarks", 1, { joinedAt: at(0), spawnedBy: "smarks-lead" }),
+      ],
+      activity: Array.from({ length: count - 1 }, (_, i) => ({
+        at: at((i + 1) / 100),
+        text: `you posted ${i + 1}`,
+        kind: "operator",
+        actor: "operator",
+      })),
+    });
+    const native = nativeTimeline(s);
+    expect(native.marks).toHaveLength(200);
+    expect(native.marks[0]?.glyph).toBe(count === 200 ? "○" : "▲");
+    expect(native.marks[0]?.at).toBe(at(count === 200 ? 0 : 0.01));
+    expect(native.marks.at(-1)?.at).toBe(at((count - 1) / 100));
+    expect(native.title).toBe(count === 200 ? "Timeline" : "Timeline · 200/201 marks");
+    expect(buildTimelineModel(s).marks).toHaveLength(count);
   });
 
   test("an ended record is the same whenever it is composed; a live one runs to now", () => {
@@ -5535,6 +5658,23 @@ describe("the record page", () => {
       usage: { input: 9_000_000, output: 400_000, cached: 7_000_000 },
     });
     const record = buildRecord(big, new Date(at(300)));
+    const model = buildTimelineModel(big);
+    const native = nativeTimeline({ ...big, status: "running", endedAt: undefined });
+    expect(model.lanes).toHaveLength(25);
+    expect(model.spans).toHaveLength(212);
+    expect(model.marks).toHaveLength(259);
+    expect(native.lanes.map((lane) => lane.id)).toEqual([
+      "operator",
+      ...agents.slice(0, 11).map((agent) => agent.id),
+    ]);
+    expect(native.spans).toHaveLength(184);
+    expect(native.marks).toHaveLength(192);
+    expect(native.title).toBe("Timeline · 12/25 lanes · 184/212 spans · 192/259 marks");
+    const ids = new Set(native.lanes.map((lane) => lane.id));
+    for (const item of [...native.spans, ...native.marks]) {
+      expect(ids.has(item.lane)).toBe(true);
+      expect(record).toContain(`<title>${esc(item.title)}</title>`);
+    }
     expect(record.length).toBeLessThan(128_000);
     expect(activitySection(record).match(/<tr id=e\d+>/g)).toHaveLength(200);
     const eventMarks = [
