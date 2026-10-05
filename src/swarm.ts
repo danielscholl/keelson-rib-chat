@@ -1557,7 +1557,7 @@ export class Swarm {
     const writer = this.findWriter(writerHandle);
     if (
       writer.status === "busy" ||
-      writer.status === "waiting" ||
+      (this.inboxes.get(writer.id)?.length ?? 0) > 0 ||
       this.inFlight.get(writer.id)?.size
     )
       throw new Error(`@${writer.handle} has not settled; wait for its turn before merging`);

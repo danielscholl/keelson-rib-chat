@@ -304,6 +304,12 @@ describe("local merge tool", () => {
       const pr = await h.call("chat_pr_open", { title: "fix: x", body: "b" }, writer.id);
       expect(pr.isError).toBe(true);
       expect(pr.content).toContain("chat_merge");
+      const inbox = (h.swarm as unknown as { inboxes: Map<string, unknown[]> }).inboxes.get(
+        writer.id,
+      )!;
+      inbox.push({ id: "queued" });
+      expect((await h.call("chat_merge", args, lead.id)).content).toContain("has not settled");
+      inbox.length = 0;
       const result = await h.call("chat_merge", args, lead.id);
       expect(result.isError).toBe(false);
       expect(result.content).toContain("c".repeat(40));
