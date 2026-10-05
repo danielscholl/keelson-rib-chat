@@ -435,6 +435,9 @@ Missing legacy times fall back to the swarm start. Run gate answers stay
 immediately under their parent run. Kept worktrees follow the artifact rows
 only after the swarm ends, never while running or stopping.
 
+Local merges appear as ordinary activity lines naming writer, branch, and merge
+commit, not as PR rows or CI evidence. The lead describes them in its conclusion.
+
 | Row | Shows |
 |---|---|
 | Report | Title, KB size, and **Open the report** |
@@ -564,9 +567,9 @@ appear unchanged in a toast, with no swarm started. If creation succeeds but
 swarm admission fails, the registered project remains available for retry.
 
 For New project…, **Write is off and disabled**. The swarm uses the returned
-registered project ID and starts with read access. Writers need a usable
-`origin` remote with a default branch, which project creation does not set up.
-Configure it first, then select the registered project and enable Write for
+registered project ID and starts with read access. Writers can work locally
+without origin after the project has a branch and a first commit.
+Then select the registered project and enable Write for
 a new swarm. The scope footer reads `Creates <name>`, followed by selected
 workflow names only when present, then ` · beads` when tracker intent is on.
 **Use the tracker** is shown only when at least one tracker tool is reachable.

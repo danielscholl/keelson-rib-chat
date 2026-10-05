@@ -190,7 +190,7 @@ describe("contributed docs", () => {
         "Write is off and disabled",
         "returned registered project ID",
         "starts with read access",
-        "Writers need a usable origin remote with a default branch, which project creation does not set up",
+        "Writers can work locally without origin after the project has a branch and a first commit",
         "select the registered project and enable Write for a new swarm",
         "The scope footer reads Creates <name>",
         "Use the tracker is shown only when at least one tracker tool is reachable",
@@ -464,6 +464,7 @@ describe("contributed docs", () => {
         "Live boards omit the Pull requests tile",
         "Only the operator merges",
         "board never removes worktrees",
+        "Local merges appear as ordinary activity lines naming writer, branch, and merge commit",
       ])
         expect(text).toContain(phrase);
       expect(text).not.toContain("only when the launch named workflows");
@@ -489,6 +490,44 @@ describe("contributed docs", () => {
         expect(text.toLowerCase()).toContain(phrase);
     }
     expect(write).toContain("writeEnabled");
+  });
+
+  test("packaged write contract and guide agree on simple local delivery", () => {
+    const write = topics(content).find((t) => t.title === "Write mode")!.body;
+    const guide = readFileSync(
+      new URL("../docs/src/content/docs/guides/let-agents-write.md", import.meta.url),
+      "utf8",
+    );
+    const normalize = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
+    for (const text of [write, guide].map(normalize)) {
+      for (const phrase of [
+        "Mode is decided once at boot by git remote",
+        "only a list without origin selects local mode",
+        "root's current branch (symbolic HEAD)",
+        "current tip of refs/heads/<base>",
+        "later writers inherit local merges",
+        "full head SHA",
+        "read-only peer review",
+        "writer's turn to settle",
+        "40- or 64-character hexadecimal",
+        "dirty root or writer",
+        "changed head",
+        "AI attribution",
+        "git merge --no-ff --no-edit --no-autostash",
+        "git merge --abort",
+        "ordinary activity lines naming writer, branch, and merge commit",
+        'reason "not merged into <base>"',
+        "no local PRs or CI verdicts",
+        "Only the operator merges pull requests",
+      ])
+        expect(text).toContain(phrase);
+    }
+    const merge = tools.find((t) => t.name === "chat_merge")!;
+    expect(merge.inputSchema.safeParse({ writer: "coder", head_sha: "a".repeat(40) }).success).toBe(
+      true,
+    );
+    expect(merge.inputSchema.safeParse({ writer: "coder", head_sha: "HEAD" }).success).toBe(false);
+    expect(guide).not.toContain("only starts read-only swarms");
   });
 
   test("packaged and site docs agree on the map, inspector and targeted messaging", () => {

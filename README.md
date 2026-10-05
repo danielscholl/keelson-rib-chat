@@ -113,7 +113,27 @@ Unless a swarm is started with `work_tools: "write"` (see below), its agents nev
 
 Select a project and enable **Write** in the launcher for this mode.
 
-A swarm started with a `project` and `work_tools: "write"` changes code itself. Its lead spawns writers with `chat_spawn` and `writes: true`; every other agent stays read-only on the project root. Each writer gets its own git worktree at `<project>/.worktrees/swarm-<id>-<name>` on branch `keelson/swarm/<id>/<name>`, cut from the remote default branch after a `git fetch`, and its turns hold `Read`, `Grep`, `Glob`, `Edit`, `Write`, and `Bash` there. `Bash` is not sandboxed: it can reach anything the operator's user can. A writer opens a draft pull request with `chat_pr_open`, which refuses commits carrying AI attribution; any agent reads a writer's diff with `chat_diff`. Nothing in the swarm merges. When the swarm ends, clean worktrees with everything pushed are removed and the rest are listed in the summary's `worktrees`.
+A swarm started with a `project` and `work_tools: "write"` changes code itself.
+Its lead spawns writers with `chat_spawn` and `writes: true`; every other agent
+keeps read-only file tools on the project root. Each writer gets a git worktree
+at `<project>/.worktrees/swarm-<id>-<name>` on branch
+`keelson/swarm/<id>/<name>`, with `Read`, `Grep`, `Glob`, `Edit`, `Write`, and
+`Bash` there. `Bash` is not sandboxed: it can reach anything the operator's user can.
+
+Mode is decided once at boot by `git remote`. With origin, writers branch from
+the fetched remote default and open draft PRs with `chat_pr_open`; only the
+operator merges PRs. Without origin, the base is the root's symbolic HEAD branch,
+which needs a first commit. Writers branch from its current tip without fetching.
+After read-only peer review with `chat_diff`, the lead calls
+`chat_merge({ writer, head_sha })` with the full reviewed SHA. Dirty checkouts,
+changed heads, and AI-attributed commits are refused; conflicts list paths and
+abort. Later writers inherit merges. Local mode never fetches, pushes, calls
+`gh`, or changes remotes, and `chat_pr_open` points local writers to `chat_merge`.
+Merges are recorded as ordinary activity and included in the lead's conclusion.
+Cleanup removes clean writers only when their commits are pushed (origin) or
+reachable from the local base; otherwise `worktrees` records why they remain,
+including "not merged into <base>". **New project…** still starts read-only;
+select its registered project and explicitly enable Write in a subsequent swarm.
 
 ## Other ribs' tools
 
