@@ -409,6 +409,44 @@ describe("contributed docs", () => {
     expect(swarms).toContain('An ended Turns tile has no forecast and its sub stays "of N".');
   });
 
+  test("packaged and site docs agree on native Timeline and the full record", () => {
+    const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
+    const page = readFileSync(
+      new URL("../docs/src/content/docs/guides/swarms-tab.md", import.meta.url),
+      "utf8",
+    );
+    for (const raw of [swarms, page]) {
+      const text = raw.replace(/[`*]/g, "").replace(/\s+/g, " ");
+      for (const phrase of [
+        "native section between Budget and Map",
+        "on the live cockpit only",
+        "not the per-swarm drawer or ended board",
+        "Keelson v0.120.0 or later",
+        "operator's lane comes first, then agents in first-worked order, then runs",
+        "agent's identity color",
+        "hatching for timeouts or errors",
+        "open endpoints for unfinished work",
+        "spawns (○), questions (?), operator posts and answers (▲), reports (▪), conclusions (●)",
+        "gates opened and answered (◇ ◆), and verified runs (✓)",
+        "starts at startedAt and its clock ends at startedAt + wallClockMs",
+        "When endedAt is recorded, the window is fixed at that end with no live clock",
+        "UTC axis and a shared 30-second clock without new frames",
+        "On narrow sections, lane lists replace the plot",
+        "12 lanes, 400 spans and 200 marks",
+        "newest eligible spans and marks with stable timestamp sorts",
+        "title names shown/total counts for each clipped dimension",
+        "including items lost with omitted lanes",
+        "Open the record shows additional lanes and events",
+        "full retained timeline, with its own snapshot window and drawing",
+        "Native clipping does not remove its lanes or events",
+        "not its deadline window or native rendering",
+      ]) {
+        expect(text).toContain(phrase);
+      }
+      expect(text).not.toMatch(/cockpit timeline (?:is )?(?:deferred|still deferred)/i);
+    }
+  });
+
   test("packaged and site docs agree on full-width Map, compact Turns and readable Details", () => {
     const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
     const page = readFileSync(

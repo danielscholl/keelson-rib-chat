@@ -6,7 +6,13 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { CanvasBoardView, CanvasGraphSection, CanvasTone } from "@keelson/shared";
+import type {
+  CanvasBoardView,
+  CanvasGraphSection,
+  CanvasTimelineSection,
+  CanvasTimelineWindow,
+  CanvasTone,
+} from "@keelson/shared";
 import { missingEvidence } from "../dispatch.ts";
 import { freshTokens, modelLabel, tokenCount } from "../labels.ts";
 import { type Need, needsYou } from "../needs.ts";
@@ -58,7 +64,7 @@ import {
   stateLine,
   stopAction,
 } from "./parts.ts";
-import { buildAgentEdges } from "./record.ts";
+import { buildAgentEdges, buildTimelineModel } from "./record.ts";
 
 type Section = CanvasBoardView["sections"][number];
 type Leaf = Exclude<Section, { kind: "columns" }>;
@@ -895,6 +901,57 @@ function agentStrip(s: SwarmSummary): Leaf {
   return { kind: "segments", title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`, items };
 }
 
+function nativeTimeline(s: SwarmSummary): CanvasTimelineSection {
+  const model = buildTimelineModel(s);
+  const lanes = model.lanes.slice(0, 12).map(({ id, label, tone, group }) => ({
+    id,
+    label,
+    tone,
+    ...(group ? { group } : {}),
+  }));
+  const ids = new Set(lanes.map((lane) => lane.id));
+  const spans = model.spans
+    .filter((item) => ids.has(item.lane))
+    .sort((a, b) => Date.parse(a.from) - Date.parse(b.from))
+    .slice(-400)
+    .map(({ lane, from, to, tone, hatched, title }) => ({
+      lane,
+      from,
+      ...(to ? { to } : {}),
+      ...(tone ? { tone } : {}),
+      ...(hatched ? { hatched } : {}),
+      title,
+    }));
+  const marks = model.marks
+    .filter((item) => ids.has(item.lane))
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+    .slice(-200)
+    .map(({ lane, at, glyph, title }) => ({ lane, at, glyph, title }));
+  const clipped = [
+    ...(lanes.length < model.lanes.length ? [`${lanes.length}/${model.lanes.length} lanes`] : []),
+    ...(spans.length < model.spans.length ? [`${spans.length}/${model.spans.length} spans`] : []),
+    ...(marks.length < model.marks.length ? [`${marks.length}/${model.marks.length} marks`] : []),
+  ];
+  const window: CanvasTimelineWindow = s.endedAt
+    ? { from: s.startedAt, to: s.endedAt }
+    : {
+        from: s.startedAt,
+        clock: {
+          until: new Date(Date.parse(s.startedAt) + s.limits.wallClockMs).toISOString(),
+        },
+      };
+  return {
+    kind: "timeline",
+    title: ["Timeline", ...clipped].join(" · "),
+    window,
+    lanes,
+    spans,
+    marks,
+    legend:
+      "Bars are turns in each agent's color, hatched when timed out or failed, open while unfinished. ○ spawned · ? asked you · ▲ you · ▪ report · ● conclusion · ◇ gate opened · ◆ gate answered · ✓ verified. Open the record for the full retained timeline.",
+  };
+}
+
 export function buildCockpit(
   s: SwarmSummary,
   needs: readonly Need[],
@@ -931,6 +988,7 @@ export function buildCockpit(
       title: "Budget",
       items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s)],
     },
+    ...(live(s) ? [nativeTimeline(s)] : []),
     ...mapConversation(s, opts.selectedAgentId),
     ...liveDetails(s, opts.selectedAgentId),
     { kind: "actions", wrap: true, items },
