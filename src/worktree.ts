@@ -12,10 +12,9 @@ import type { RibExec } from "@keelson/shared";
 import { z } from "zod";
 import type { AgentWorktree, WriterPr } from "./types.ts";
 
-// A writer's own checkout: a git worktree under the project's `.worktrees/`,
-// on a branch cut from the remote default branch after a fetch.
-
 export type RunText = RibExec["runText"];
+
+export type WriteTarget = { mode: "origin" } | { mode: "local"; base: string };
 
 export interface WorktreeDeps {
   run: RunText;
@@ -69,6 +68,19 @@ export async function remoteDefaultBranch(deps: WorktreeDeps, root: string): Pro
   throw new Error("the project has no origin default branch to cut a writer's branch from");
 }
 
+export async function resolveWriteTarget(deps: WorktreeDeps, root: string): Promise<WriteTarget> {
+  const remotes = (await git(deps, root, ["remote"])).trim().split(/\s+/);
+  if (remotes.includes("origin")) return { mode: "origin" };
+  const ref = (await git(deps, root, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+  if (!ref.startsWith("refs/heads/")) throw new Error("local write mode needs a branch HEAD");
+  await git(deps, root, ["rev-parse", "--verify", `${ref}^{commit}`]);
+  return { mode: "local", base: ref.slice("refs/heads/".length) };
+}
+
+function comparisonRef(wt: AgentWorktree): string {
+  return wt.local ? `refs/heads/${wt.base}` : `origin/${wt.base}`;
+}
+
 function appendLine(file: string, line: string): void {
   mkdirSync(dirname(file), { recursive: true });
   let current = "";
@@ -108,12 +120,15 @@ export function createWorktree(
   root: string,
   swarmId: string,
   name: string,
+  target?: WriteTarget,
 ): Promise<AgentWorktree> {
   return serially(root, async () => {
-    await git(deps, root, ["fetch", "origin"]);
-    const base = await remoteDefaultBranch(deps, root);
+    const selected = target ?? (await resolveWriteTarget(deps, root));
+    if (selected.mode === "origin") await git(deps, root, ["fetch", "origin"]);
+    const base = selected.mode === "local" ? selected.base : await remoteDefaultBranch(deps, root);
     await ensureIgnored(deps, root);
     const wt = worktreeFor(root, swarmId, name, base);
+    if (selected.mode === "local") wt.local = true;
     await git(deps, root, [
       "worktree",
       "add",
@@ -121,7 +136,7 @@ export function createWorktree(
       "-b",
       wt.branch,
       wt.path,
-      `origin/${base}`,
+      comparisonRef(wt),
     ]);
     return wt;
   });
@@ -203,11 +218,12 @@ export interface BranchCommit {
 export async function branchCommits(
   deps: WorktreeDeps,
   wt: AgentWorktree,
+  head = "HEAD",
 ): Promise<BranchCommit[]> {
   const out = await git(deps, wt.path, [
     "log",
     "--format=%H%x1f%s%x1f%B%x1e",
-    `origin/${wt.base}..HEAD`,
+    `${comparisonRef(wt)}..${head}`,
   ]);
   return out
     .split("\x1e")
@@ -359,16 +375,20 @@ export async function readWriterCi(
 // A writer's change as a reviewer reads it: its commits, what is not committed,
 // and the diff against the remote default branch.
 export async function branchDiff(deps: WorktreeDeps, wt: AgentWorktree): Promise<string> {
-  const base = `origin/${wt.base}`;
+  const base = comparisonRef(wt);
+  const head = wt.local
+    ? (await git(deps, wt.path, ["rev-parse", "--verify", "HEAD^{commit}"])).trim()
+    : "HEAD";
   const [log, status, diff] = await Promise.all([
-    git(deps, wt.path, ["log", "--oneline", `${base}..HEAD`]),
-    git(deps, wt.path, ["status", "--short"]),
-    git(deps, wt.path, ["diff", `${base}...HEAD`]),
+    git(deps, wt.path, ["log", "--oneline", `${base}..${head}`]),
+    git(deps, wt.path, ["status", "--short", ...(wt.local ? ["--untracked-files=all"] : [])]),
+    git(deps, wt.path, ["diff", `${base}...${head}`]),
   ]);
   return [
     `Branch ${wt.branch} against ${base}, in ${wt.path}.`,
+    ...(wt.local ? [`Head: ${head}`] : []),
     `Commits:\n${log.trim() || "(none)"}`,
     `Not committed:\n${status.trim() || "(nothing)"}`,
-    `Diff (git diff ${base}...HEAD):\n${diff.trim() || "(empty)"}`,
+    `Diff (git diff ${base}...${head}):\n${diff.trim() || "(empty)"}`,
   ].join("\n\n");
 }
