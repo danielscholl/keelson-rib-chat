@@ -6,7 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import type { RibExec } from "@keelson/shared";
 import { z } from "zod";
@@ -231,7 +231,7 @@ export interface BranchCommit {
   message: string;
 }
 
-// The commits on a writer's branch that the remote default branch lacks, newest first.
+// The commits on a writer's branch that its base lacks, newest first.
 export async function branchCommits(
   deps: WorktreeDeps,
   wt: AgentWorktree,
@@ -256,7 +256,75 @@ export async function uncommitted(deps: WorktreeDeps, wt: AgentWorktree): Promis
   return (await git(deps, wt.path, ["status", "--porcelain"])).trim();
 }
 
+async function mergeReady(deps: WorktreeDeps, cwd: string, branch: string): Promise<void> {
+  const ref = (await git(deps, cwd, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+  if (ref !== `refs/heads/${branch}`) throw new Error(`expected branch ${branch} in ${cwd}`);
+  if ((await git(deps, cwd, ["status", "--porcelain=v1", "--untracked-files=all"])).trim())
+    throw new Error(`worktree is dirty: ${cwd}`);
+  for (const marker of ["MERGE_HEAD", "rebase-merge", "rebase-apply"]) {
+    const path = (await git(deps, cwd, ["rev-parse", "--git-path", marker])).trim();
+    if (existsSync(isAbsolute(path) ? path : join(cwd, path)))
+      throw new Error(`a merge or rebase is already in progress in ${cwd}`);
+  }
+}
+
+export function mergeWorktree(
+  deps: WorktreeDeps,
+  root: string,
+  wt: AgentWorktree,
+  handle: string,
+  head: string,
+): Promise<{ message: string; commit?: string; conflicts?: string[] }> {
+  return serially(root, async () => {
+    if (!wt.local) throw new Error("chat_merge is only available for local writers");
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(head))
+      throw new Error("head_sha must be a full commit SHA");
+    head = head.toLowerCase();
+    await mergeReady(deps, root, wt.base);
+    await mergeReady(deps, wt.path, wt.branch);
+    const writerHead = (
+      await git(deps, wt.path, ["rev-parse", "--verify", "HEAD^{commit}"])
+    ).trim();
+    if (writerHead !== head)
+      throw new Error("writer HEAD changed; review its new head before merging");
+    const before = (await git(deps, root, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
+    const commits = await branchCommits(deps, wt, head);
+    const attributed = commits.filter((commit) => attributionIn(commit.message));
+    if (attributed.length)
+      throw new Error(
+        `commits carry AI attribution:\n${attributed.map((commit) => `${commit.sha} ${commit.subject}`).join("\n")}`,
+      );
+    const message = `Merge writer @${handle.replace(/^@/, "")} branch ${wt.branch} into ${wt.base}`;
+    if (attributionIn(message)) throw new Error("merge message carries AI attribution");
+    const result = await deps.run(
+      "git",
+      ["merge", "--no-ff", "--no-edit", "--no-autostash", "-m", message, head],
+      { cwd: root, timeoutMs: GIT_TIMEOUT_MS },
+    );
+    if (!result.ok) {
+      const conflicts = (await git(deps, root, ["diff", "--name-only", "--diff-filter=U", "-z"]))
+        .split("\0")
+        .filter(Boolean);
+      if (
+        conflicts.length ||
+        (await gitOk(deps, root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]))
+      ) {
+        await git(deps, root, ["merge", "--abort"]);
+        const restored = (await git(deps, root, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
+        if (restored !== before)
+          throw new Error(`merge abort did not restore HEAD: ${result.error}`);
+        await mergeReady(deps, root, wt.base);
+      }
+      if (conflicts.length) return { message: result.error, conflicts };
+      throw new Error(`git merge failed: ${result.error}`);
+    }
+    const commit = (await git(deps, root, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
+    return { message: result.data.trim(), ...(commit !== before ? { commit } : {}) };
+  });
+}
+
 export async function pushBranch(deps: WorktreeDeps, wt: AgentWorktree): Promise<string> {
+  if (wt.local) throw new Error("local writers cannot push; ask the lead to use chat_merge");
   const head = (await git(deps, wt.path, ["rev-parse", "HEAD"])).trim();
   if (!/^[a-f0-9]{40,64}$/i.test(head)) throw new Error("git rev-parse HEAD printed no commit SHA");
   await git(deps, wt.path, ["push", "-u", "origin", wt.branch]);
@@ -270,6 +338,7 @@ export async function openDraftPr(
   title: string,
   body: string,
 ): Promise<string> {
+  if (wt.local) throw new Error("local writers cannot open a PR; ask the lead to use chat_merge");
   const out = await deps.run(
     "gh",
     [
@@ -390,7 +459,7 @@ export async function readWriterCi(
 }
 
 // A writer's change as a reviewer reads it: its commits, what is not committed,
-// and the diff against the remote default branch.
+// and the diff against its base branch.
 export async function branchDiff(deps: WorktreeDeps, wt: AgentWorktree): Promise<string> {
   const base = comparisonRef(wt);
   const head = wt.local

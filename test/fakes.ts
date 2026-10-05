@@ -442,7 +442,13 @@ export function fakeGit(
         : ok(`refs/remotes/origin/${opts.defaultBranch ?? "main"}\n`);
     }
     if (sub.startsWith("rev-parse --verify")) {
+      if (args.at(-1) === "MERGE_HEAD") return fail("no merge in progress");
       return opts.origin === false ? ok(heads.get(cwd) ?? "a".repeat(40)) : fail("");
+    }
+    if (sub.startsWith("rev-parse --git-path")) return ok(`.git/${args.at(-1)}`);
+    if (sub.startsWith("merge --no-ff")) {
+      heads.set(cwd, "c".repeat(40));
+      return ok("Merge made by the 'ort' strategy.");
     }
     if (sub.startsWith("check-ignore")) return opts.ignored ? ok() : fail("exit 1");
     if (sub === "rev-parse --git-common-dir") return ok(".git\n");

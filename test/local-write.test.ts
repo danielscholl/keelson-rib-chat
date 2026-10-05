@@ -3,6 +3,9 @@ import {
   branchCommits,
   branchDiff,
   createWorktree,
+  mergeWorktree,
+  openDraftPr,
+  pushBranch,
   releaseWorktree,
   resolveWriteTarget,
   unsavedWork,
@@ -82,5 +85,50 @@ describe("local cleanup", () => {
         : run(cmd, args, opts);
     expect(await releaseWorktree(git.deps, ROOT, wt)).toContain("unknown revision");
     expect(git.ran("git worktree remove")).toHaveLength(0);
+  });
+});
+
+describe("local merge helper", () => {
+  test("merges the reviewed head with an engine-owned message and no network", async () => {
+    const git = fakeGit({ origin: false });
+    const wt = await createWorktree(git.deps, ROOT, "s1", "coder");
+    expect(await mergeWorktree(git.deps, ROOT, wt, "coder", HEAD)).toEqual({
+      commit: "c".repeat(40),
+      message: "Merge made by the 'ort' strategy.",
+    });
+    expect(git.ran("git merge")[0]?.args).toEqual([
+      "merge",
+      "--no-ff",
+      "--no-edit",
+      "--no-autostash",
+      "-m",
+      `Merge writer @coder branch ${wt.branch} into main`,
+      HEAD,
+    ]);
+    await expect(pushBranch(git.deps, wt)).rejects.toThrow("chat_merge");
+    await expect(openDraftPr(git.deps, wt, "title", "body")).rejects.toThrow("chat_merge");
+    expect(git.calls.some((c) => c.cmd === "gh" || ["fetch", "push"].includes(c.args[0]!))).toBe(
+      false,
+    );
+  });
+
+  test("refuses dirty checkouts, stale heads, and attributed incoming commits", async () => {
+    const git = fakeGit({ origin: false });
+    const wt = await createWorktree(git.deps, ROOT, "s1", "coder");
+    for (const path of [ROOT, wt.path]) {
+      git.dirty.set(path, "?? new");
+      await expect(mergeWorktree(git.deps, ROOT, wt, "coder", HEAD)).rejects.toThrow("dirty");
+      git.dirty.delete(path);
+    }
+    await expect(mergeWorktree(git.deps, ROOT, wt, "coder", "b".repeat(40))).rejects.toThrow(
+      "HEAD changed",
+    );
+    git.commits.set(wt.path, [
+      { sha: HEAD, subject: "fix", message: "fix\n\nCo-Authored-By: Copilot" },
+    ]);
+    await expect(mergeWorktree(git.deps, ROOT, wt, "coder", HEAD)).rejects.toThrow(
+      "AI attribution",
+    );
+    expect(git.ran("git merge")).toHaveLength(0);
   });
 });
