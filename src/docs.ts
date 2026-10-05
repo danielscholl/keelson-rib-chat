@@ -178,6 +178,7 @@ costs one turn, not one per participant, and the others still see it.
 | \`chat_done\` | Lead only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. Refused while a worker is mid-turn or has messages waiting, while a run is live, or while the lead's question to the operator is open; the draft is kept. |
 | \`chat_pr_open\` | Writers only, in a write swarm. Push the writer's branch and open a draft pull request. See Write mode. |
 | \`chat_diff\` | Any agent of a write swarm. Read a writer's commits and diff against the remote default branch. See Write mode. |
+| \`chat_merge\` | Local write lead only. Merge a settled writer after peer review, with \`writer\` and the full reviewed \`head_sha\`. Refuses dirty checkouts, changed heads, and AI attribution; aborts conflicts. See Write mode. |
 | \`chat_report\` | Lead only. Publish the swarm's report: a designed, self-contained HTML page the operator opens from the Swarms tab. Calling it again replaces the page. |
 
 These refuse any caller that is not inside a swarm turn. The calling agent is

@@ -219,6 +219,15 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .describe("Character offset to continue a long diff from."),
     })
     .strict();
+  const mergeSchema = z
+    .object({
+      writer: z.string().min(1).describe("The writer's handle, with or without the swarm prefix."),
+      head_sha: z
+        .string()
+        .regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i)
+        .describe("The full 40- or 64-character commit SHA reviewed with chat_diff."),
+    })
+    .strict();
   const doneSchema = z
     .object({
       summary: z
@@ -522,7 +531,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     {
       name: "chat_pr_open",
       description:
-        "Writers only. Push your branch and open a DRAFT pull request against the project's default branch. Refuses uncommitted changes, and commits or text that carry AI attribution such as a Co-Authored-By: Claude trailer. A second call pushes your new commits and returns the pull request already open. It never merges.",
+        "Writers only. Push your branch and open a DRAFT pull request against the project's default branch. Refuses local writers (ask the lead to use chat_merge), uncommitted changes, and commits or text that carry AI attribution such as a Co-Authored-By: Claude trailer. A second call pushes your new commits and returns the pull request already open. It never merges.",
       inputSchema: prOpenSchema,
       state_changing: true,
       execute: guarded(async (input, ctx) => {
@@ -539,7 +548,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     },
     {
       name: "chat_diff",
-      description: `Swarm agents only, in a write swarm. Read a writer's change: its commits, what it has not committed, and git diff against the remote default branch. Pages by ${DIFF_PAGE} characters. For reviewing a writer's work.`,
+      description: `Swarm agents only, in a write swarm. Read a writer's change: its commits, what it has not committed, and git diff against the remote default or captured local base branch. Local results include the full head SHA. Pages by ${DIFF_PAGE} characters. For reviewing a writer's work.`,
       inputSchema: diffSchema,
       execute: guarded(async (input, ctx) => {
         const args = diffSchema.parse(input);
@@ -556,6 +565,18 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         const end = Math.min(text.length, offset + DIFF_PAGE);
         const more = end < text.length ? `\n\nMore: call again with offset ${end}.` : "";
         emitText(ctx, `${text.slice(offset, end)}${more}`);
+      }),
+    },
+    {
+      name: "chat_merge",
+      description:
+        "Lead only, in a local write swarm without origin. Merge a settled writer's reviewed head into the captured local base with --no-ff. Refuses dirty checkouts, changed heads, and AI-attributed commits. Conflicts are aborted and returned; never pushes or opens a PR.",
+      inputSchema: mergeSchema,
+      state_changing: true,
+      execute: guarded(async (input, ctx) => {
+        const args = mergeSchema.parse(input);
+        const { swarm, agentId } = caller(ctx);
+        emitText(ctx, await swarm.merge(agentId, args.writer, args.head_sha));
       }),
     },
     {
