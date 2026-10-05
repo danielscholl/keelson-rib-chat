@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.17.0...v0.18.0) (2026-10-05)
+
+
+### Added
+
+* **launcher:** enable Write and initialize new project trackers ([#107](https://github.com/danielscholl/keelson-rib-chat/issues/107)) ([79d5428](https://github.com/danielscholl/keelson-rib-chat/commit/79d5428a5e83df4932fc55e7f5340e15b069cfad))
+
 ## [0.17.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.16.0...v0.17.0) (2026-10-05)
 
 
