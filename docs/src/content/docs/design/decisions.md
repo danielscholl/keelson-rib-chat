@@ -105,12 +105,21 @@ agent's prompt and both arrive from forge text.
 Write mode exists to compare agents that change code themselves with the
 workflow path. The lead chooses its writers, and each gets a worktree and a
 branch of its own, so no two agents edit one checkout and the others keep the
-read-only boundary. The worktree is cut from the fetched remote default branch,
+read-only file-tool boundary. With origin, the worktree is cut from the fetched remote default branch,
 because a branch cut from a stale local one conflicts with origin by the time it
 is a pull request. `Bash` is what makes a writer able to build and test, and the
 host confines no shell command to a directory, so the docs say that plainly
 instead of implying one. The rib opens only draft pull requests, checks their
-commits for AI attribution before it pushes, and never merges.
+commits for AI attribution before it pushes, and never merges pull requests.
+
+Without origin, write mode captures the root's symbolic HEAD branch once and
+cuts each writer from its current tip without fetching. A narrow lead-only
+`chat_merge` lands the reviewed SHA on the existing root queue after checking
+cleanliness, branch/head identity, and incoming attribution. Conflicts abort;
+writers repair in their own worktrees and get another review. Later writers
+inherit local merges. Ordinary activity and the lead's conclusion carry merge
+evidence without pretending it is a PR or CI result. Cleanup retains commits
+until the local base holds them. This needs no forge or new workspace lease.
 
 ## The operating contract ships inside the package
 

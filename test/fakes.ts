@@ -381,6 +381,8 @@ export function fakeGit(
     ignored?: boolean;
     holdAdd?: Promise<void>;
     failBranchDelete?: boolean;
+    origin?: boolean;
+    localBase?: string | null;
   } = {},
 ) {
   const calls: { cmd: string; args: string[]; cwd: string; timeoutMs?: number }[] = [];
@@ -388,6 +390,7 @@ export function fakeGit(
   const ahead = new Map<string, number>();
   const commits = new Map<string, { sha: string; subject: string; message: string }[]>();
   const heads = new Map<string, string>();
+  const branches = new Map<string, string>();
   const prChecks = new Map<string, string | Error | (() => Promise<string>)>();
   const prPaths = new Map<string, string>();
   let prs = 0;
@@ -420,6 +423,7 @@ export function fakeGit(
       return fail(`unsupported gh command: ${sub}`);
     }
     if (cmd !== "git") return ok();
+    if (sub === "remote") return ok(opts.origin === false ? "" : "origin\n");
     if (sub.startsWith("log --format=")) {
       return ok(
         (commits.get(cwd) ?? [])
@@ -428,17 +432,33 @@ export function fakeGit(
       );
     }
     if (sub.startsWith("symbolic-ref")) {
+      if (args.at(-1) === "HEAD") {
+        return opts.localBase === null
+          ? fail("not a symbolic ref")
+          : ok(`refs/heads/${branches.get(cwd) ?? opts.localBase ?? "main"}\n`);
+      }
       return opts.defaultBranch === null
         ? fail("not a symbolic ref")
         : ok(`refs/remotes/origin/${opts.defaultBranch ?? "main"}\n`);
     }
-    if (sub.startsWith("rev-parse --verify")) return fail("");
+    if (sub.startsWith("rev-parse --verify")) {
+      if (args.at(-1) === "MERGE_HEAD") return fail("no merge in progress");
+      return opts.origin === false ? ok(heads.get(cwd) ?? "a".repeat(40)) : fail("");
+    }
+    if (sub.startsWith("rev-parse --git-path")) return ok(`.git/${args.at(-1)}`);
+    if (sub.startsWith("merge --no-ff")) {
+      heads.set(cwd, "c".repeat(40));
+      return ok("Merge made by the 'ort' strategy.");
+    }
     if (sub.startsWith("check-ignore")) return opts.ignored ? ok() : fail("exit 1");
     if (sub === "rev-parse --git-common-dir") return ok(".git\n");
     if (sub === "rev-parse HEAD") return ok(heads.get(cwd) ?? "a".repeat(40));
-    if (sub.startsWith("worktree add")) await opts.holdAdd;
+    if (sub.startsWith("worktree add")) {
+      await opts.holdAdd;
+      branches.set(args[5] ?? "", args[4] ?? "");
+    }
     if (sub.startsWith("branch -D") && opts.failBranchDelete) return fail("cannot lock ref");
-    if (sub === "status --porcelain") return ok(dirty.get(cwd) ?? "");
+    if (sub.startsWith("status --porcelain")) return ok(dirty.get(cwd) ?? "");
     if (sub.startsWith("rev-list --count")) return ok(`${ahead.get(cwd) ?? 0}\n`);
     return ok();
   };
@@ -448,6 +468,7 @@ export function fakeGit(
     ahead,
     commits,
     heads,
+    branches,
     prChecks,
     appended,
     deps: { run, append: (file: string, line: string) => appended.push({ file, line }) },

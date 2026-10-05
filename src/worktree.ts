@@ -6,16 +6,15 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import type { RibExec } from "@keelson/shared";
 import { z } from "zod";
 import type { AgentWorktree, WriterPr } from "./types.ts";
 
-// A writer's own checkout: a git worktree under the project's `.worktrees/`,
-// on a branch cut from the remote default branch after a fetch.
-
 export type RunText = RibExec["runText"];
+
+export type WriteTarget = { mode: "origin" } | { mode: "local"; base: string };
 
 export interface WorktreeDeps {
   run: RunText;
@@ -69,6 +68,19 @@ export async function remoteDefaultBranch(deps: WorktreeDeps, root: string): Pro
   throw new Error("the project has no origin default branch to cut a writer's branch from");
 }
 
+export async function resolveWriteTarget(deps: WorktreeDeps, root: string): Promise<WriteTarget> {
+  const remotes = (await git(deps, root, ["remote"])).trim().split(/\s+/);
+  if (remotes.includes("origin")) return { mode: "origin" };
+  const ref = (await git(deps, root, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+  if (!ref.startsWith("refs/heads/")) throw new Error("local write mode needs a branch HEAD");
+  await git(deps, root, ["rev-parse", "--verify", `${ref}^{commit}`]);
+  return { mode: "local", base: ref.slice("refs/heads/".length) };
+}
+
+function comparisonRef(wt: AgentWorktree): string {
+  return wt.local ? `refs/heads/${wt.base}` : `origin/${wt.base}`;
+}
+
 function appendLine(file: string, line: string): void {
   mkdirSync(dirname(file), { recursive: true });
   let current = "";
@@ -108,12 +120,15 @@ export function createWorktree(
   root: string,
   swarmId: string,
   name: string,
+  target?: WriteTarget,
 ): Promise<AgentWorktree> {
   return serially(root, async () => {
-    await git(deps, root, ["fetch", "origin"]);
-    const base = await remoteDefaultBranch(deps, root);
+    const selected = target ?? (await resolveWriteTarget(deps, root));
+    if (selected.mode === "origin") await git(deps, root, ["fetch", "origin"]);
+    const base = selected.mode === "local" ? selected.base : await remoteDefaultBranch(deps, root);
     await ensureIgnored(deps, root);
     const wt = worktreeFor(root, swarmId, name, base);
+    if (selected.mode === "local") wt.local = true;
     await git(deps, root, [
       "worktree",
       "add",
@@ -121,25 +136,42 @@ export function createWorktree(
       "-b",
       wt.branch,
       wt.path,
-      `origin/${base}`,
+      comparisonRef(wt),
     ]);
     return wt;
   });
 }
 
-// What would be lost by removing a worktree: uncommitted changes, and commits
-// no remote branch holds. Undefined when there is nothing.
+// What would be lost by removing a worktree. Undefined when there is nothing.
 export async function unsavedWork(
   deps: WorktreeDeps,
   wt: AgentWorktree,
 ): Promise<string | undefined> {
-  const status = (await git(deps, wt.path, ["status", "--porcelain"])).trim();
+  const status = (
+    await git(deps, wt.path, [
+      "status",
+      "--porcelain",
+      ...(wt.local ? ["--untracked-files=all"] : []),
+    ])
+  ).trim();
   const ahead = Number(
-    (await git(deps, wt.path, ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"])).trim(),
+    (
+      await git(deps, wt.path, [
+        "rev-list",
+        "--count",
+        "HEAD",
+        "--not",
+        wt.local ? comparisonRef(wt) : "--remotes=origin",
+      ])
+    ).trim(),
   );
+  if (!Number.isSafeInteger(ahead) || ahead < 0)
+    throw new Error("git returned an invalid commit count");
   const why = [
     ...(status ? [`${status.split("\n").length} uncommitted change(s)`] : []),
-    ...(ahead > 0 ? [`${ahead} commit(s) not pushed`] : []),
+    ...(ahead > 0
+      ? [wt.local ? `not merged into ${wt.base}` : `${ahead} commit(s) not pushed`]
+      : []),
   ];
   return why.length > 0 ? why.join(", ") : undefined;
 }
@@ -199,15 +231,16 @@ export interface BranchCommit {
   message: string;
 }
 
-// The commits on a writer's branch that the remote default branch lacks, newest first.
+// The commits on a writer's branch that its base lacks, newest first.
 export async function branchCommits(
   deps: WorktreeDeps,
   wt: AgentWorktree,
+  head = "HEAD",
 ): Promise<BranchCommit[]> {
   const out = await git(deps, wt.path, [
     "log",
     "--format=%H%x1f%s%x1f%B%x1e",
-    `origin/${wt.base}..HEAD`,
+    `${comparisonRef(wt)}..${head}`,
   ]);
   return out
     .split("\x1e")
@@ -223,7 +256,86 @@ export async function uncommitted(deps: WorktreeDeps, wt: AgentWorktree): Promis
   return (await git(deps, wt.path, ["status", "--porcelain"])).trim();
 }
 
+async function mergeReady(deps: WorktreeDeps, cwd: string, branch: string): Promise<void> {
+  const ref = (await git(deps, cwd, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+  if (ref !== `refs/heads/${branch}`) throw new Error(`expected branch ${branch} in ${cwd}`);
+  if ((await git(deps, cwd, ["status", "--porcelain=v1", "--untracked-files=all"])).trim())
+    throw new Error(`worktree is dirty: ${cwd}`);
+  for (const marker of ["MERGE_HEAD", "rebase-merge", "rebase-apply"]) {
+    const path = (await git(deps, cwd, ["rev-parse", "--git-path", marker])).trim();
+    if (existsSync(isAbsolute(path) ? path : join(cwd, path)))
+      throw new Error(`a merge or rebase is already in progress in ${cwd}`);
+  }
+}
+
+export function mergeWorktree(
+  deps: WorktreeDeps,
+  root: string,
+  wt: AgentWorktree,
+  handle: string,
+  head: string,
+): Promise<{ message: string; commit?: string; conflicts?: string[] }> {
+  return serially(root, async () => {
+    if (!wt.local) throw new Error("chat_merge is only available for local writers");
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(head))
+      throw new Error("head_sha must be a full commit SHA");
+    head = head.toLowerCase();
+    await mergeReady(deps, root, wt.base);
+    await mergeReady(deps, wt.path, wt.branch);
+    const writerHead = (
+      await git(deps, wt.path, ["rev-parse", "--verify", "HEAD^{commit}"])
+    ).trim();
+    if (writerHead !== head)
+      throw new Error("writer HEAD changed; review its new head before merging");
+    const before = (await git(deps, root, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
+    const commits = await branchCommits(deps, wt, head);
+    const attributed = commits.filter((commit) => attributionIn(commit.message));
+    if (attributed.length)
+      throw new Error(
+        `commits carry AI attribution:\n${attributed.map((commit) => `${commit.sha} ${commit.subject}`).join("\n")}`,
+      );
+    const message = `Merge writer @${handle.replace(/^@/, "")} branch ${wt.branch} into ${wt.base}`;
+    if (attributionIn(message)) throw new Error("merge message carries AI attribution");
+    const result = await deps.run(
+      "git",
+      ["merge", "--no-ff", "--no-edit", "--no-autostash", "-m", message, head],
+      { cwd: root, timeoutMs: GIT_TIMEOUT_MS },
+    );
+    if (!result.ok) {
+      let conflicts: string[] = [];
+      await git(deps, root, ["diff", "--name-only", "--diff-filter=U", "-z"])
+        .then((out) => {
+          conflicts = out.split("\0").filter(Boolean);
+        })
+        .finally(async () => {
+          if (
+            conflicts.length ||
+            (await gitOk(deps, root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]))
+          ) {
+            await git(deps, root, ["merge", "--abort"]).catch((error: unknown) => {
+              throw new Error(
+                `git merge --abort failed: ${error instanceof Error ? error.message : String(error)}`,
+                { cause: error },
+              );
+            });
+            const restored = (
+              await git(deps, root, ["rev-parse", "--verify", "HEAD^{commit}"])
+            ).trim();
+            if (restored !== before)
+              throw new Error(`merge abort did not restore HEAD: ${result.error}`);
+            await mergeReady(deps, root, wt.base);
+          }
+        });
+      if (conflicts.length) return { message: result.error, conflicts };
+      throw new Error(`git merge failed: ${result.error}`);
+    }
+    const commit = (await git(deps, root, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
+    return { message: result.data.trim(), ...(commit !== before ? { commit } : {}) };
+  });
+}
+
 export async function pushBranch(deps: WorktreeDeps, wt: AgentWorktree): Promise<string> {
+  if (wt.local) throw new Error("local writers cannot push; ask the lead to use chat_merge");
   const head = (await git(deps, wt.path, ["rev-parse", "HEAD"])).trim();
   if (!/^[a-f0-9]{40,64}$/i.test(head)) throw new Error("git rev-parse HEAD printed no commit SHA");
   await git(deps, wt.path, ["push", "-u", "origin", wt.branch]);
@@ -237,6 +349,7 @@ export async function openDraftPr(
   title: string,
   body: string,
 ): Promise<string> {
+  if (wt.local) throw new Error("local writers cannot open a PR; ask the lead to use chat_merge");
   const out = await deps.run(
     "gh",
     [
@@ -357,18 +470,22 @@ export async function readWriterCi(
 }
 
 // A writer's change as a reviewer reads it: its commits, what is not committed,
-// and the diff against the remote default branch.
+// and the diff against its base branch.
 export async function branchDiff(deps: WorktreeDeps, wt: AgentWorktree): Promise<string> {
-  const base = `origin/${wt.base}`;
+  const base = comparisonRef(wt);
+  const head = wt.local
+    ? (await git(deps, wt.path, ["rev-parse", "--verify", "HEAD^{commit}"])).trim()
+    : "HEAD";
   const [log, status, diff] = await Promise.all([
-    git(deps, wt.path, ["log", "--oneline", `${base}..HEAD`]),
-    git(deps, wt.path, ["status", "--short"]),
-    git(deps, wt.path, ["diff", `${base}...HEAD`]),
+    git(deps, wt.path, ["log", "--oneline", `${base}..${head}`]),
+    git(deps, wt.path, ["status", "--short", ...(wt.local ? ["--untracked-files=all"] : [])]),
+    git(deps, wt.path, ["diff", `${base}...${head}`]),
   ]);
   return [
     `Branch ${wt.branch} against ${base}, in ${wt.path}.`,
+    ...(wt.local ? [`Head: ${head}`] : []),
     `Commits:\n${log.trim() || "(none)"}`,
     `Not committed:\n${status.trim() || "(nothing)"}`,
-    `Diff (git diff ${base}...HEAD):\n${diff.trim() || "(empty)"}`,
+    `Diff (git diff ${base}...${head}):\n${diff.trim() || "(empty)"}`,
   ].join("\n\n");
 }

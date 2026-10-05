@@ -176,8 +176,9 @@ costs one turn, not one per participant, and the others still see it.
 | \`chat_context\` | List the task context items, or read one verbatim with its attribution. |
 | \`chat_spawn\` | Add a worker with a handle, a role, and a narrow brief. Fails at the agent cap. In a write swarm the lead passes \`writes: true\` for a writer. |
 | \`chat_done\` | Lead only. Conclude the swarm with its final answer, at most ${CONCLUSION_MAX} characters. Refused while a worker is mid-turn or has messages waiting, while a run is live, or while the lead's question to the operator is open; the draft is kept. |
-| \`chat_pr_open\` | Writers only, in a write swarm. Push the writer's branch and open a draft pull request. See Write mode. |
-| \`chat_diff\` | Any agent of a write swarm. Read a writer's commits and diff against the remote default branch. See Write mode. |
+| \`chat_pr_open\` | Origin-backed writers only. Push the writer's branch and open a draft pull request. Local writers are refused with an instruction to use \`chat_merge\`. See Write mode. |
+| \`chat_diff\` | Any agent of a write swarm. Read a writer's commits and diff against the remote default or captured local base branch. Local results include the full head SHA. See Write mode. |
+| \`chat_merge\` | Local write lead only. Merge a settled writer after peer review, with \`writer\` and the full reviewed \`head_sha\`. Refuses dirty checkouts, changed heads, and AI attribution; aborts conflicts. See Write mode. |
 | \`chat_report\` | Lead only. Publish the swarm's report: a designed, self-contained HTML page the operator opens from the Swarms tab. Calling it again replaces the page. |
 
 These refuse any caller that is not inside a swarm turn. The calling agent is
@@ -326,10 +327,19 @@ in a swarm that is not a write swarm, is refused.
 
 Each writer gets its own git worktree at
 \`<project>/.worktrees/swarm-<swarm id>-<name>\` on a new branch
-\`keelson/swarm/<swarm id>/<name>\`. The rib runs \`git fetch origin\` first and
+\`keelson/swarm/<swarm id>/<name>\`. Mode is decided once at boot by \`git remote\`:
+only a list without origin selects local mode. An existing but unusable origin
+never falls back locally.
+
+With origin, the rib runs \`git fetch origin\` first and
 cuts the branch from the remote default branch (\`origin/HEAD\`, else
 \`origin/main\` or \`origin/master\`), never from a local branch that may be
-stale. When the project does not already ignore \`.worktrees/\`, the rib adds it
+stale. Without origin, the base is the root's current branch (symbolic HEAD),
+which must already have a commit. Each writer branches from the current tip of
+\`refs/heads/<base>\`, without fetching, so later writers inherit local merges.
+The captured base branch stays the same for the swarm.
+
+When the project does not already ignore \`.worktrees/\`, the rib adds it
 to \`.git/info/exclude\`, which is local and never committed. Worktrees on one
 repository are made one at a time.
 
@@ -347,10 +357,30 @@ project and a machine where that is acceptable.
 
 | Tool | For |
 | --- | --- |
-| \`chat_pr_open\` | Writers only. Push the branch and open a draft pull request against the default branch, with a \`title\` (at most ${PR_BOUNDS.title} characters) and a \`body\` (at most ${PR_BOUNDS.body}). |
-| \`chat_diff\` | Every agent of a write swarm. A writer's commits, what it has not committed, and \`git diff origin/<default>...HEAD\` in its worktree, paged by ${DIFF_PAGE} characters. |
+| \`chat_pr_open\` | Origin-backed writers only. Push the branch and open a draft pull request against the default branch, with a \`title\` (at most ${PR_BOUNDS.title} characters) and a \`body\` (at most ${PR_BOUNDS.body}). Local writers are refused and told to ask the lead to use \`chat_merge\`. |
+| \`chat_diff\` | Every agent of a write swarm. A writer's commits, what it has not committed, and \`git diff origin/<default>...HEAD\` or local \`git diff refs/heads/<base>...<head>\`, paged by ${DIFF_PAGE} characters. Local results include the full head SHA. |
+| \`chat_merge\` | Local write lead only. Takes \`writer\` and \`head_sha\`, a full 40- or 64-character hexadecimal commit SHA reviewed by a read-only peer. Lands that head into the captured local base with \`--no-ff\`. |
 
-\`chat_pr_open\` refuses a worktree with uncommitted changes, a branch with no
+In local mode the writer commits, runs the project's existing checks, and
+reports its branch and full head to the lead. The lead arranges read-only peer
+review with \`chat_diff\`, waits for the writer's turn to settle, and calls
+\`chat_merge\` with the reviewed head. The tool refuses a dirty root or writer,
+a changed head, an unexpected root or writer branch, an existing merge/rebase,
+and any incoming commit carrying AI attribution. The lead's file tools remain
+read-only; only the narrow merge tool modifies the root.
+
+Merges run on the existing per-root queue, with
+\`git merge --no-ff --no-edit --no-autostash -m "Merge writer @<handle> branch <branch> into <base>" <head_sha>\`.
+On conflict, the tool lists conflicting files, runs \`git merge --abort\`, and
+returns their paths. Have the writer rebase or fix in its own worktree, rerun
+checks, and get a new review before retrying. A changed head also needs a new
+review. Keep the root clean and do not edit it during a merge.
+Successful merges are ordinary activity lines naming writer, branch, and merge
+commit; the lead includes them in its conclusion. Local mode never fetches,
+pushes, calls \`gh\`, adds remotes, or creates a forge repository. There are no
+local PRs or CI verdicts.
+
+With origin, \`chat_pr_open\` refuses a worktree with uncommitted changes, a branch with no
 commits ahead of the default branch, and any commit, title, or body that credits
 an AI: a \`Co-Authored-By\` trailer naming Claude or another assistant, a
 "Generated with" line, a \`Claude-Session\` link, or Anthropic's noreply
@@ -358,7 +388,7 @@ address. It lists the offending commits so the writer can rewrite them, and
 pushes nothing until they are clean. It then runs \`git push -u origin <branch>\`
 and \`gh pr create --draft\` with the project's \`gh\` login. Each writer opens
 one pull request: a second call pushes the branch again and returns the one
-already open. Nothing in the swarm merges; merging stays with the operator.
+already open. Only the operator merges pull requests.
 
 The summary's \`prs\` records each one with its writer, branch, opening time,
 and optional \`ci\` verdict and detail. The lead's turns list them for its report.
@@ -386,6 +416,9 @@ When the swarm ends, each writer's worktree is checked. One with no
 uncommitted changes and no commit missing from the remote is removed, with its
 local branch. Any other is kept, and the summary's \`worktrees\` lists its
 agent, path, branch, and why it was kept.
+For local writers, removal instead requires every commit to be reachable from
+\`refs/heads/<base>\`. Unmerged writers stay with reason "not merged into <base>".
+Dirty or unsettled writers also stay; an unreadable base is a retention error.
 
 # Operator tools
 
@@ -746,6 +779,8 @@ draft PR link, and CI pass, fail, unknown, running, or not reported, with observ
 detail under a disclosure. Missing evidence never implies pass. Kept-worktree
 rows show the recorded path and retention reason, not a claim about the current
 filesystem.
+Local merges appear as ordinary activity lines naming writer, branch, and merge
+commit, not as PR rows or CI evidence. The lead describes them in its conclusion.
 
 While empty, the section names permitted workflows and eligible writers. Before
 its first writer, a write-enabled swarm says the lead may spawn writers. Ended
@@ -830,9 +865,9 @@ appear unchanged in a toast, with no swarm started. If creation succeeds but
 swarm admission fails, the registered project remains available for retry.
 
 For New project…, Write is off and disabled. The swarm uses the returned
-registered project ID and starts with read access. Writers need a usable
-\`origin\` remote with a default branch, which project creation does not set up.
-Configure it first, then select the registered project and enable Write for
+registered project ID and starts with read access. Writers can work locally
+without origin after the project has a branch and a first commit.
+Then select the registered project and enable Write for
 a new swarm. The scope footer reads \`Creates <name>\`, followed by selected
 workflow names only when present, then \` · beads\` when tracker intent is on.
 Use the tracker is shown only when at least one tracker tool is reachable.

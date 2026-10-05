@@ -73,12 +73,15 @@ import {
   branchCommits,
   branchDiff,
   createWorktree,
+  mergeWorktree,
   openDraftPr,
   pushBranch,
   readWriterCi,
   releaseWorktree,
+  resolveWriteTarget,
   uncommitted,
   type WorktreeDeps,
+  type WriteTarget,
 } from "./worktree.ts";
 
 // The swarm engine. ClickClack is the bus and the durable record; this is the
@@ -102,6 +105,7 @@ export const WRITER_TOOLS = ["Read", "Grep", "Glob", "Edit", "Write", "Bash"] as
 export const PR_TOOL = "chat_pr_open";
 // Held by every agent of a write swarm.
 export const DIFF_TOOL = "chat_diff";
+export const MERGE_TOOL = "chat_merge";
 
 // Granted to the lead only: its designed report, and Keelson's design guide for it.
 export const REPORT_TOOLS = ["chat_report", "canvas_design_guide"] as const;
@@ -377,6 +381,7 @@ export class Swarm {
   // Handles a spawn has claimed while its worktree is being made.
   private readonly reserved = new Set<string>();
   private readonly keptWorktrees: KeptWorktree[] = [];
+  private writeTarget: WriteTarget | undefined;
   // Spawns between their start and a seated agent, which finish() waits out.
   private readonly seating = new Set<Promise<SwarmAgent>>();
   // Each agent's host turns not yet settled, which can outlive a timed-out turn,
@@ -458,6 +463,8 @@ export class Swarm {
   }
 
   private async boot(): Promise<void> {
+    if (this.opts.write)
+      this.writeTarget = await resolveWriteTarget(this.opts.write.git, this.opts.write.root);
     // Captured first: everything the swarm itself creates lands after this
     // cursor, so the kickoff reaches the lead through the same event path a
     // human's message does.
@@ -902,6 +909,7 @@ export class Swarm {
         ...workTools,
         ...(worktree ? [PR_TOOL] : []),
         ...(this.opts.write ? [DIFF_TOOL] : []),
+        ...(agent.lead && this.writeTarget?.mode === "local" ? [MERGE_TOOL] : []),
         ...leadTools,
       ]),
     ].map((name) => ({ name }));
@@ -921,7 +929,15 @@ export class Swarm {
           contextIndex: renderContextIndex(this.opts.context ?? []),
           ...(worktree ? { worktree } : {}),
           ...(this.opts.write
-            ? { writeSwarm: { swarmId: this.id, root: this.opts.write.root } }
+            ? {
+                writeSwarm: {
+                  swarmId: this.id,
+                  root: this.opts.write.root,
+                  ...(this.writeTarget?.mode === "local"
+                    ? { localBase: this.writeTarget.base }
+                    : {}),
+                },
+              }
             : {}),
         }),
         prompt,
@@ -1268,6 +1284,7 @@ export class Swarm {
           write.root,
           this.id,
           handle.slice(this.id.length + 1),
+          this.writeTarget,
         ).catch((e) => {
           throw new Error(`could not make a worktree for @${handle}: ${errText(e)}`);
         })
@@ -1380,6 +1397,7 @@ export class Swarm {
     input: { title: string; body: string },
   ): Promise<{ url: string; again: boolean }> {
     const { agent, wt, git } = this.writerOf(agentId);
+    if (wt.local) throw new Error("local writers cannot open a PR; ask the lead to use chat_merge");
     const pending = await uncommitted(git, wt);
     if (pending) {
       throw new Error(
@@ -1510,6 +1528,13 @@ export class Swarm {
     const git = this.opts.write?.git;
     if (!git)
       throw new Error("this swarm has no writers: it was not started with work_tools 'write'");
+    const writer = this.findWriter(writerHandle);
+    return branchDiff(git, writer.worktree);
+  }
+
+  private findWriter(writerHandle: string): SwarmAgent & {
+    worktree: NonNullable<SwarmAgent["worktree"]>;
+  } {
     const want = writerHandle.replace(/^@/, "").toLowerCase();
     const writer = [...this.agents.values()].find(
       (a) => a.handle === want || a.handle === `${this.id}-${want}`,
@@ -1520,7 +1545,30 @@ export class Swarm {
         `'${writerHandle}' is not a writer in this swarm. Writers: ${writers.join(", ") || "none"}`,
       );
     }
-    return branchDiff(git, writer.worktree);
+    return { ...writer, worktree: writer.worktree };
+  }
+
+  async merge(agentId: string, writerHandle: string, head: string): Promise<string> {
+    const { agent } = this.as(agentId);
+    if (!agent.lead) throw new Error("only the lead may call chat_merge");
+    const write = this.opts.write;
+    if (!write || this.writeTarget?.mode !== "local")
+      throw new Error("chat_merge is only available in a local write swarm without origin");
+    const writer = this.findWriter(writerHandle);
+    if (
+      writer.status === "busy" ||
+      (this.inboxes.get(writer.id)?.length ?? 0) > 0 ||
+      this.inFlight.get(writer.id)?.size
+    )
+      throw new Error(`@${writer.handle} has not settled; wait for its turn before merging`);
+    const result = await mergeWorktree(write.git, write.root, writer.worktree, writer.handle, head);
+    if (result.conflicts)
+      return `Merge conflicted and was aborted. Conflicting files:\n${result.conflicts.join("\n")}\nHave the writer rebase or fix in its own worktree against refs/heads/${writer.worktree.base}, run checks, and get a new review before calling chat_merge again.`;
+    if (!result.commit) return result.message;
+    const landed = `@${writer.handle} merged branch ${writer.worktree.branch} into ${writer.worktree.base}: ${result.commit}`;
+    this.log(landed, { kind: "run", actor: agent.id, subject: writer.id });
+    this.changed("agent");
+    return `${landed}\n${result.message}`;
   }
 
   // ---- Workflow dispatch, on behalf of the lead. ----

@@ -181,8 +181,9 @@ read from the turn context the engine sets, never from input.
 | `chat_context` | `id?`, `offset?` | With no `id`, lists the context items. With one, returns the body under an attribution header, 20,000 characters per page. |
 | `chat_spawn` | `handle`, `role`, `brief`, `writes?` | Adds a worker and posts the brief as a mention. Fails at the agent cap. `writes: true` is for the lead of a write swarm: the worker gets its own worktree and branch, and `Edit`, `Write`, and `Bash` there. |
 | `chat_done` | `summary` | Lead only. Concludes the swarm. Posts the conclusion to the channel in parts of at most 8,000 characters. |
-| `chat_pr_open` | `title`, `body` | Writers only. Pushes the writer's branch and opens a draft pull request against the default branch. Refuses uncommitted changes and AI attribution in any commit, the title, or the body. A second call pushes again and returns the open pull request. Never merges. |
-| `chat_diff` | `writer`, `offset?` | Any agent of a write swarm. A writer's commits, uncommitted files, and diff against `origin/<default>`, paged by 40,000 characters. |
+| `chat_pr_open` | `title`, `body` | Origin-backed writers only. Pushes the writer's branch and opens a draft pull request against the default branch. Refuses local writers with a message naming `chat_merge`, uncommitted changes, and AI attribution in any commit, the title, or the body. A second call pushes again and returns the open pull request. Never merges. |
+| `chat_diff` | `writer`, `offset?` | Any agent of a write swarm. A writer's commits, uncommitted files, and diff against `origin/<default>` or `refs/heads/<base>`, paged by 40,000 characters. Local results include the full head SHA. |
+| `chat_merge` | `writer`, `head_sha` | Local write lead only. Merges a settled writer's peer-reviewed full 40- or 64-character hexadecimal SHA into the captured local base with `--no-ff`. Refuses dirty checkouts, changed heads, and AI attribution; aborts conflicts and returns their paths. |
 | `chat_report` | `title`, `html` | Lead only. Publishes the swarm's report, a designed HTML page the Swarms tab opens. Calling it again replaces it. |
 
 A message `body` and a `brief` are 1 to 8,000 characters, and `summary` 1 to
@@ -196,6 +197,21 @@ characters and is normalized to kebab-case and prefixed with the swarm id.
 
 `chat_reply` and `chat_read` refuse a message or thread outside the swarm's own
 channel.
+
+`chat_merge` accepts only `writer` and `head_sha`, not a path, base, or message.
+Mode is decided once at boot: only `git remote` listing no origin enables local
+merges. The base is the root's symbolic HEAD branch, resolved to its current tip
+for each new writer without fetching. The lead waits for writer settlement and
+read-only peer review. Root and writer must be clean, on their recorded branches,
+with the writer still at the reviewed head and no existing merge/rebase.
+Incoming AI-attributed commits are refused before mutation.
+The root queue runs `git merge --no-ff --no-edit --no-autostash` with the message
+`Merge writer @<handle> branch <branch> into <base>` and reviewed SHA.
+On conflict it lists paths, runs `git merge --abort`, and returns those paths;
+writer-local repair, checks, and new review are required before retrying.
+Git errors are surfaced. Local mode never fetches, pushes, calls `gh`, or changes
+remotes. Successful merges are ordinary activity lines, not PR or CI evidence.
+Cleanup keeps unmerged writers with reason "not merged into <base>".
 
 `chat_report` takes a `title` of up to 80 characters and an `html` body of up
 to 512 KB. It follows the contract of Keelson's `canvas_publish`: inline CSS and

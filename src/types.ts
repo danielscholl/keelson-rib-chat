@@ -174,8 +174,9 @@ export interface WriterPr {
 export interface AgentWorktree {
   path: string;
   branch: string;
-  // The remote default branch it was cut from, without `origin/`.
+  // The base branch it was cut from, without a ref prefix.
   base: string;
+  local?: true;
 }
 
 // A writer's worktree the swarm left in place at its end, and why.
