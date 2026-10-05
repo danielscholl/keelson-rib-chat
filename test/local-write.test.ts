@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { branchCommits, branchDiff, createWorktree, resolveWriteTarget } from "../src/worktree.ts";
+import {
+  branchCommits,
+  branchDiff,
+  createWorktree,
+  releaseWorktree,
+  resolveWriteTarget,
+  unsavedWork,
+} from "../src/worktree.ts";
 import { fakeGit } from "./fakes.ts";
 
 const ROOT = "/repo";
@@ -17,6 +24,7 @@ describe("local write target", () => {
       base: "trunk",
       local: true,
     });
+
     expect(git.ran("git worktree add")[0]?.args.at(-1)).toBe("refs/heads/trunk");
     expect(git.ran("git fetch")).toHaveLength(0);
     const diff = await branchDiff(git.deps, wt);
@@ -43,5 +51,36 @@ describe("local write target", () => {
     await expect(resolveWriteTarget(git.deps, ROOT)).rejects.toThrow("symbolic-ref");
     git.deps.run = async () => ({ ok: false, error: "not a repository", code: 1 });
     await expect(resolveWriteTarget(git.deps, ROOT)).rejects.toThrow("not a repository");
+  });
+});
+
+describe("local cleanup", () => {
+  test("retains unmerged and dirty work, releasing only preserved commits", async () => {
+    const git = fakeGit({ origin: false });
+    const wt = await createWorktree(git.deps, ROOT, "s1", "coder");
+    git.ahead.set(wt.path, 1);
+    expect(await releaseWorktree(git.deps, ROOT, wt)).toBe("not merged into main");
+    expect(git.ran("git worktree remove")).toHaveLength(0);
+    git.dirty.set(wt.path, " M file\n?? dir/new\n?? dir/other");
+    expect(await unsavedWork(git.deps, wt)).toBe("3 uncommitted change(s), not merged into main");
+    git.ahead.set(wt.path, 0);
+    expect(await releaseWorktree(git.deps, ROOT, wt)).toBe("3 uncommitted change(s)");
+    git.dirty.delete(wt.path);
+    expect(await releaseWorktree(git.deps, ROOT, wt)).toBeUndefined();
+    expect(git.ran("git worktree remove")).toHaveLength(1);
+    expect(git.ran("git rev-list --count")[0]?.args).toContain("refs/heads/main");
+    expect(git.ran("git status --porcelain")[0]?.args).toContain("--untracked-files=all");
+  });
+
+  test("an unreadable base retains the worktree", async () => {
+    const git = fakeGit({ origin: false });
+    const wt = await createWorktree(git.deps, ROOT, "s1", "coder");
+    const run = git.deps.run;
+    git.deps.run = (cmd, args, opts) =>
+      args[0] === "rev-list"
+        ? Promise.resolve({ ok: false, error: "unknown revision refs/heads/main", code: 1 })
+        : run(cmd, args, opts);
+    expect(await releaseWorktree(git.deps, ROOT, wt)).toContain("unknown revision");
+    expect(git.ran("git worktree remove")).toHaveLength(0);
   });
 });

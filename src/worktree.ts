@@ -142,19 +142,36 @@ export function createWorktree(
   });
 }
 
-// What would be lost by removing a worktree: uncommitted changes, and commits
-// no remote branch holds. Undefined when there is nothing.
+// What would be lost by removing a worktree. Undefined when there is nothing.
 export async function unsavedWork(
   deps: WorktreeDeps,
   wt: AgentWorktree,
 ): Promise<string | undefined> {
-  const status = (await git(deps, wt.path, ["status", "--porcelain"])).trim();
+  const status = (
+    await git(deps, wt.path, [
+      "status",
+      "--porcelain",
+      ...(wt.local ? ["--untracked-files=all"] : []),
+    ])
+  ).trim();
   const ahead = Number(
-    (await git(deps, wt.path, ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"])).trim(),
+    (
+      await git(deps, wt.path, [
+        "rev-list",
+        "--count",
+        "HEAD",
+        "--not",
+        wt.local ? comparisonRef(wt) : "--remotes=origin",
+      ])
+    ).trim(),
   );
+  if (!Number.isSafeInteger(ahead) || ahead < 0)
+    throw new Error("git returned an invalid commit count");
   const why = [
     ...(status ? [`${status.split("\n").length} uncommitted change(s)`] : []),
-    ...(ahead > 0 ? [`${ahead} commit(s) not pushed`] : []),
+    ...(ahead > 0
+      ? [wt.local ? `not merged into ${wt.base}` : `${ahead} commit(s) not pushed`]
+      : []),
   ];
   return why.length > 0 ? why.join(", ") : undefined;
 }

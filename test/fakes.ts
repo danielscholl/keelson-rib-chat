@@ -452,7 +452,7 @@ export function fakeGit(
       branches.set(args[5] ?? "", args[4] ?? "");
     }
     if (sub.startsWith("branch -D") && opts.failBranchDelete) return fail("cannot lock ref");
-    if (sub === "status --porcelain") return ok(dirty.get(cwd) ?? "");
+    if (sub.startsWith("status --porcelain")) return ok(dirty.get(cwd) ?? "");
     if (sub.startsWith("rev-list --count")) return ok(`${ahead.get(cwd) ?? 0}\n`);
     return ok();
   };
