@@ -6897,6 +6897,7 @@ describe("launching from the tab", () => {
         size: "small",
         power: "deep",
         project: "p1",
+        projectRoot: "/tmp/keelson-sample",
         permissions: { write: true, workflows: true, tracker: true },
         workflows: ["Second", "first"],
         workflowEntry: "  pending-name  ",
@@ -7325,6 +7326,175 @@ describe("launching from the tab", () => {
     expect(off.get("workflow-entry")!.value).toBe("pending-workflow");
   });
 
+  test("unavailable projects persist chat-only drafts so returning projects cannot revive grants", () => {
+    for (const hasSwarms of [false, true]) {
+      for (const delayed of [false, true]) {
+        const bridge = fakeStateBridge(undefined, delayed);
+        const source: LaunchState = {
+          projects,
+          toolReachability: [{ name: "beads_ready", status: "reachable" }],
+          hasSwarms,
+        };
+        const first = frameHarness({ ...source, hasSwarms: false }, "first", bridge);
+        first.get("launch-task")!.value = "Keep this task";
+        first.fire("launch-task", "input");
+        first.select("p1");
+        for (const key of ["write", "workflows", "tracker"]) first.fire(`allow-${key}`, "click");
+        first.get("workflow-entry")!.value = "fix-issue";
+        first.fire("workflow-entry", "keydown", { key: "Enter" });
+        first.get("workflow-entry")!.value = "pending-workflow";
+        first.fire("workflow-entry", "input");
+        const saves = bridge.saves.length;
+        const missing = frameHarness({ ...source, projects: [] }, "missing", bridge);
+        missing.restore();
+        expect(missing.get("launch-project")!.value).toBe("");
+        expect(missing.get("allow-write")).toBeUndefined();
+        expect(bridge.stored).toMatchObject({
+          task: "Keep this task",
+          project: "",
+          projectRoot: "",
+          permissions: { write: false, workflows: false, tracker: false },
+          workflows: [],
+          workflowEntry: "",
+        });
+        expect(bridge.saves).toHaveLength(saves + 1);
+        expect(missing.calls).toEqual([]);
+
+        const returned = frameHarness(source, "returned", bridge);
+        returned.restore();
+        expect(returned.get("launch-project")!.value).toBe("");
+        expect(returned.get("allow-write")).toBeUndefined();
+        expect(bridge.saves).toHaveLength(saves + 1);
+        returned.fire("launch-start", "click");
+        expect(returned.calls[0]!.payload).toEqual({
+          nonce: "returned",
+          task: "Keep this task",
+          project: "",
+          tools: "none",
+        });
+        returned.select("p1");
+        for (const key of ["write", "workflows", "tracker"]) {
+          expect(returned.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+        }
+        expect(returned.get("workflow-chips")!.children).toHaveLength(0);
+        expect(returned.get("workflow-entry")!.value).toBe("");
+      }
+    }
+  });
+
+  test("changed project roots clear and persist elevated grants until fresh consent", () => {
+    for (const hasSwarms of [false, true]) {
+      for (const delayed of [false, true]) {
+        const bridge = fakeStateBridge(undefined, delayed);
+        const oldSource: LaunchState = {
+          projects: [{ ...projects[0]!, rootPath: "/tmp/old" }],
+          toolReachability: [{ name: "beads_ready", status: "reachable" }],
+          hasSwarms,
+        };
+        const first = frameHarness({ ...oldSource, hasSwarms: false }, "first", bridge);
+        first.get("launch-task")!.value = "Keep this task";
+        first.fire("launch-task", "input");
+        first.select("p1");
+        for (const key of ["write", "workflows", "tracker"]) first.fire(`allow-${key}`, "click");
+        first.get("workflow-entry")!.value = "fix-issue";
+        first.fire("workflow-entry", "keydown", { key: "Enter" });
+        first.get("workflow-entry")!.value = "pending-workflow";
+        first.fire("workflow-entry", "input");
+        expect(bridge.stored?.projectRoot).toBe("/tmp/old");
+        const saves = bridge.saves.length;
+
+        const newSource = {
+          ...oldSource,
+          projects: [{ ...projects[0]!, rootPath: "/tmp/new" }],
+        };
+        const changed = frameHarness(newSource, "changed", bridge);
+        changed.restore();
+        expect(changed.get("launch-project")!.value).toBe("p1");
+        expect(changed.get("project-note")!.textContent).toContain("/tmp/new");
+        for (const key of ["write", "workflows", "tracker"]) {
+          expect(changed.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+        }
+        expect(changed.get("workflow-chips")!.children).toHaveLength(0);
+        expect(changed.get("workflow-entry")!.value).toBe("");
+        expect(bridge.stored).toMatchObject({
+          task: "Keep this task",
+          project: "p1",
+          projectRoot: "/tmp/new",
+          permissions: { write: false, workflows: false, tracker: false },
+          workflows: [],
+          workflowEntry: "",
+        });
+        expect(bridge.saves).toHaveLength(saves + 1);
+        expect(changed.calls).toEqual([]);
+
+        const replaced = frameHarness(newSource, "replaced", bridge);
+        replaced.restore();
+        expect(replaced.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+        expect(bridge.saves).toHaveLength(saves + 1);
+        const reverted = frameHarness(oldSource, "reverted", bridge);
+        reverted.restore();
+        for (const key of ["write", "workflows", "tracker"]) {
+          expect(reverted.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+        }
+        expect(bridge.stored?.projectRoot).toBe("/tmp/old");
+        expect(bridge.saves).toHaveLength(saves + 2);
+
+        changed.fire("launch-start", "click");
+        expect(changed.calls[0]!.payload).toEqual({
+          nonce: "changed",
+          task: "Keep this task",
+          project: "p1",
+          tools: "read",
+        });
+        changed.release();
+        for (const key of ["write", "workflows", "tracker"]) changed.fire(`allow-${key}`, "click");
+        changed.get("workflow-entry")!.value = "fix-issue";
+        changed.fire("workflow-entry", "keydown", { key: "Enter" });
+        changed.fire("launch-start", "click");
+        expect(changed.calls[1]!.payload).toEqual({
+          nonce: "changed",
+          task: "Keep this task",
+          project: "p1",
+          tools: "write",
+          workflows: "fix-issue",
+          lead_tools: ["beads_ready"],
+        });
+      }
+    }
+  });
+
+  test("legacy project drafts without a root retain the task but require renewed elevated consent", () => {
+    const seed = fakeStateBridge();
+    const first = frameHarness(undefined, "first", seed);
+    first.get("launch-task")!.value = "Legacy task";
+    first.fire("launch-task", "input");
+    first.select("p1");
+    first.fire("allow-write", "click");
+    first.fire("allow-workflows", "click");
+    first.get("workflow-entry")!.value = "fix-issue";
+    first.fire("workflow-entry", "keydown", { key: "Enter" });
+    const legacy = seed.stored!;
+    delete legacy.projectRoot;
+    const bridge = fakeStateBridge(legacy);
+    const next = frameHarness(undefined, "next", bridge);
+    expect(next.get("launch-task")!.value).toBe("Legacy task");
+    expect(next.get("launch-project")!.value).toBe("p1");
+    expect(bridge.stored).toMatchObject({
+      projectRoot: "/tmp/keelson-sample",
+      permissions: { write: false, workflows: false, tracker: false },
+      workflows: [],
+      workflowEntry: "",
+    });
+    expect(bridge.saves).toHaveLength(1);
+    next.fire("launch-start", "click");
+    expect(next.calls[0]!.payload).toEqual({
+      nonce: "next",
+      task: "Legacy task",
+      project: "p1",
+      tools: "read",
+    });
+  });
+
   test("missing, empty, malformed and unknown-version drafts do not replace initialization or save defaults", () => {
     const seed = fakeStateBridge();
     const first = frameHarness(undefined, "first", seed);
@@ -7340,6 +7510,8 @@ describe("launching from the tab", () => {
       { ...valid, size: "enormous" },
       { ...valid, power: "infinite" },
       { ...valid, customize: "yes" },
+      { ...valid, projectRoot: null },
+      { ...valid, projectRoot: 42 },
       { ...valid, permissions: { write: "true" } },
       { ...valid, workflows: ["../bad"] },
       { ...valid, workflows: ["one", "one"] },
@@ -7410,6 +7582,7 @@ describe("launching from the tab", () => {
       "permissions",
       "power",
       "project",
+      "projectRoot",
       "size",
       "task",
       "version",
@@ -8912,13 +9085,18 @@ describe("launching from the tab", () => {
         const retained = offered.find(
           (project) => project.id === "p1" && project.name !== DEFAULT_PROJECT_NAME,
         );
+        const sameRoot = retained?.rootPath === projects[0]!.rootPath;
         expect(next.get("launch-task")!.value).toBe("  Keep the project draft\nand model  ");
         expect(next.get("launch-project")!.value).toBe(retained ? "p1" : "");
         if (retained) {
-          expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
-          expect(next.get("workflow-chips")!.children).toHaveLength(1);
+          expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe(String(sameRoot));
+          expect(next.get("allow-workflows")!.attributes.get("aria-checked")).toBe(
+            String(sameRoot),
+          );
+          expect(next.get("workflow-chips")!.children).toHaveLength(sameRoot ? 1 : 0);
           expect(next.get("launch-mode")!.textContent).toBe(
-            `Reads ${retained.name} · writes on a branch · fix-issue`,
+            `Reads ${retained.name}` +
+              (sameRoot ? " · writes on a branch · fix-issue" : " · no workflows"),
           );
           expect(next.get("project-note")!.textContent).toContain(retained.rootPath);
         } else {
@@ -8932,8 +9110,8 @@ describe("launching from the tab", () => {
           nonce,
           task: "  Keep the project draft\nand model  ",
           project: retained ? "p1" : "",
-          tools: retained ? "write" : "none",
-          ...(retained ? { workflows: "fix-issue" } : {}),
+          tools: retained ? (sameRoot ? "write" : "read") : "none",
+          ...(sameRoot ? { workflows: "fix-issue" } : {}),
           model: "b",
           provider: "claude",
           size: "medium",

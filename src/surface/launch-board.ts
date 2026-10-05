@@ -265,6 +265,7 @@ const PAGE_SCRIPT = `
     && ["small", "medium", "large"].includes(state.size)
     && ["fast", "balanced", "deep"].includes(state.power)
     && typeof state.project === "string"
+    && (state.projectRoot === undefined || typeof state.projectRoot === "string")
     && state.permissions && ["write", "workflows", "tracker"].every((key) =>
       typeof state.permissions[key] === "boolean")
     && Array.isArray(state.workflows) && state.workflows.length <= ${START_BOUNDS.maxWorkflows}
@@ -544,6 +545,7 @@ const PAGE_SCRIPT = `
   capture = () => ({
     version: 1, task: task.value, expanded: true, customize: !drawer.hidden,
     size, power, project: project.value, permissions: { ...permissions },
+    projectRoot: project.value ? project.selectedOptions[0].dataset.root : "",
     workflows: [...workflows], workflowEntry: controls?.entry.value ?? "",
     modelSelection: modelSelect.value === "other" ? "other"
       : model ? { model, provider } : "",
@@ -571,12 +573,16 @@ const PAGE_SCRIPT = `
     project.value = Array.from(project.options).some((option) => option.value === state.project)
       ? state.project : "";
     mountProject();
-    if (controls) {
+    const sameRoot = project.value && state.projectRoot === project.selectedOptions[0].dataset.root;
+    if (controls && sameRoot) {
       Object.keys(permissions).forEach((key) => { permissions[key] = state.permissions[key]; });
       workflows = [...state.workflows];
       controls.entry.value = state.workflowEntry;
       renderPermissions();
       renderWorkflows();
+    }
+    if (project.value !== state.project || (project.value && !sameRoot)) {
+      keelson.saveState?.(capture());
     }
   };
   // The host's frame sandbox grants allow-scripts only, never allow-forms, so a
@@ -628,7 +634,7 @@ const PAGE_SCRIPT = `
   watchText(task);
   capture = () => ({
     version: 1, task: task.value, expanded: false, customize: false,
-    size: "medium", power: "balanced", project: "",
+    size: "medium", power: "balanced", project: "", projectRoot: "",
     permissions: { write: false, workflows: false, tracker: false },
     workflows: [], workflowEntry: "", modelSelection: "", otherModel: "", modelProvider: ""
   });
@@ -775,7 +781,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
   const options = projects
     .map((p) => {
       const path = projectPath(p.rootPath);
-      return `<option value="${esc(p.id)}" data-name="${esc(p.name)}" data-path="${esc(path)}">${esc(`${p.name} · ${path}`)}</option>`;
+      return `<option value="${esc(p.id)}" data-name="${esc(p.name)}" data-path="${esc(path)}" data-root="${esc(p.rootPath)}">${esc(`${p.name} · ${path}`)}</option>`;
     })
     .join("");
   const expanded = `
