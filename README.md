@@ -64,8 +64,18 @@ Paste issue or PR text instead of a URL
 or `#N`, or use **Prepare in chat** to attach the evidence. Refusals appear as
 host toasts. **Starting…** guards duplicate clicks for about two seconds and
 leaves the task intact. Ordinary refreshes preserve drafts, switches and chips;
-project-list, provider, capability, dispatch or remembered-refusal configuration
-changes can discard them.
+on Keelson v0.119.0 or later, replacement documents restore them too, including
+plan/model choices, pending text and expanded/Customize presentation.
+Removed or hidden projects restore as chat-only with access and workflows
+cleared. Named models retain their provider; an unavailable provider requires
+reselection. Workflow chips restore exactly as typed, in order; the host refuses
+unknown workflows at Start, rather than the launcher detecting removed names.
+Each Start dispatch clears the saved draft, even on host refusal, but leaves
+visible fields available for retry. Local validation failures do not clear it.
+State lives only in browser-tab memory: a browser-page reload loses it.
+The host retains at most 64 view keys, with a 65,536 UTF-8 byte JSON limit per
+snapshot; oversized saves retain the last accepted snapshot without truncating
+visible text. Older hosts without the state bridge can lose drafts on replacement.
 
 From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swarm-<id>` channel in ClickClack to watch. Post in the channel to redirect it: an unaddressed message from a human goes to the lead.
 

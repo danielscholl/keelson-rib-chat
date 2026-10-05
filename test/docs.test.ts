@@ -48,7 +48,7 @@ describe("contributed docs", () => {
       "about two seconds",
       "compact New swarm line",
       "More options",
-      "discard it",
+      "replacement documents restore",
       "Prepare in chat",
       "ALSO ALLOW",
       "Write, Run workflows and Use the tracker",
@@ -83,7 +83,7 @@ describe("contributed docs", () => {
     const l = SIZE_PRESETS.medium;
     for (const text of [swarms, guide].map(normalize)) {
       for (const phrase of [
-        "With a live or retained ended swarm, it starts as one compact New swarm line",
+        "With a live or retained ended swarm and no restored expanded draft, it starts as one compact New swarm line",
         "What should the swarm work out?",
         "Working session chip",
         `${l.maxAgents} agents · ${l.wallClockMs / 60_000} min`,
@@ -96,9 +96,9 @@ describe("contributed docs", () => {
         "Starting-only entries do not compact it",
         "Ordinary refreshes preserve local expansion, the draft, plan and model choices, switches and chips while swarm presence stays unchanged",
         "Additional swarms and live-to-ended transitions keep the same launcher page",
-        "Crossing between no live or retained ended swarms and at least one can replace the page and discard it",
+        "Crossing between no live or retained ended swarms and at least one can replace the page",
         "project-list, provider, capability, dispatch or remembered-refusal configuration change",
-        "Reloading or replacing the page does not restore local edits",
+        "A restored expanded or multiline draft opens the full controls instead of compact defaults",
       ]) {
         expect(text).toContain(phrase);
       }
@@ -107,10 +107,63 @@ describe("contributed docs", () => {
         "opens expanded, including with retained swarms",
         "starting a swarm does not fold it automatically",
         "collapse back",
+        "replace the page and discard it",
+        "Reloading or replacing the page does not restore local edits",
       ]) {
         expect(text).not.toContain(obsolete);
       }
     }
+  });
+
+  test("launcher documentation agrees on transient restoration, dispatch clearing and operator workflow intent", () => {
+    const swarms = topics(content).find((topic) => topic.title === "Swarms tab")!.body;
+    const normalize = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
+    const pages = ["swarms-tab", "run-a-swarm"].map((name) =>
+      readFileSync(new URL(`../docs/src/content/docs/guides/${name}.md`, import.meta.url), "utf8"),
+    );
+    for (const text of [swarms, ...pages].map(normalize)) {
+      for (const phrase of [
+        "On Keelson v0.119.0 or later, replacement documents restore the task verbatim",
+        "plan and model choices, project, switches and chips, pending field text, and expanded/Customize presentation",
+        "Projects restore by ID",
+        "a removed or hidden project becomes chat-only and clears its switches and workflow chips",
+        "Current capability restrictions still apply",
+        "Named models keep their selected provider",
+        "an unavailable provider requires choosing a model or plan again",
+        "Workflow chips restore exactly as typed, in order",
+        "the host refuses unknown workflows at Start",
+        "The launcher does not detect removed workflows",
+        "Each Start dispatch clears the saved draft before sending the action, even if the host refuses it",
+        "Local validation failures do not clear it",
+        "The current document keeps its fields for retry; the next edit saves a fresh draft",
+        "state only in browser-tab memory, not durable storage",
+        "A browser-page reload loses saved drafts",
+        "at most 64 view keys",
+        "each JSON snapshot at 65,536 UTF-8 bytes",
+        "An oversized save leaves the last accepted snapshot intact without truncating visible text",
+        "Older hosts without the state bridge can discard local edits when the launcher page is replaced",
+      ])
+        expect(text).toContain(phrase);
+    }
+    const readme = normalize(readFileSync(new URL("../README.md", import.meta.url), "utf8"));
+    for (const phrase of [
+      "Keelson v0.119.0 or later",
+      "replacement documents restore",
+      "expanded/Customize presentation",
+      "Removed or hidden projects restore as chat-only",
+      "Workflow chips restore exactly as typed, in order",
+      "the host refuses unknown workflows at Start",
+      "Each Start dispatch clears the saved draft",
+      "Local validation failures do not clear it",
+      "browser-tab memory",
+      "browser-page reload loses it",
+      "64 view keys",
+      "65,536 UTF-8",
+      "last accepted snapshot",
+      "Older hosts without the state bridge",
+    ])
+      expect(readme).toContain(phrase);
+    expect(readme).not.toContain("changes can discard them");
   });
 
   test("packaged and site launcher docs agree on switches, chips, grants and fallbacks", () => {
