@@ -46,7 +46,7 @@ export function systemPrompt(opts: {
   // This agent's own checkout, when it is a writer.
   worktree?: AgentWorktree;
   // Set when the lead may spawn writers.
-  writeSwarm?: { swarmId: string; root: string };
+  writeSwarm?: { swarmId: string; root: string; localBase?: string };
 }): string {
   const { agent, task, channelName, limits, contextIndex } = opts;
   const workTools = [...(opts.workTools ?? []), ...(opts.leadTools ?? [])];
@@ -85,12 +85,20 @@ export function systemPrompt(opts: {
     ? [
         "",
         "Writing:",
-        `- You are a WRITER. Your own git worktree is ${wt.path}, on branch ${wt.branch}, cut from origin/${wt.base}. It is your working directory. Edit, build, and commit only there. No other agent writes in it.`,
+        `- You are a WRITER. Your own git worktree is ${wt.path}, on branch ${wt.branch}, cut from ${wt.local ? `refs/heads/${wt.base}` : `origin/${wt.base}`}. It is your working directory. Edit, build, and commit only there. No other agent writes in it.`,
         "- Never touch the project root or another agent's worktree. Bash runs as the operator's user and nothing but this rule confines it to your worktree.",
         "- Commit your work on your branch with conventional commit messages. Never add AI attribution to a commit: no Co-Authored-By trailer naming an AI, no 'Generated with' line, no session link.",
-        "- Before chat_pr_open, run the project's tests, typecheck, and lint in your worktree, and fix what fails. Report what you ran and its result.",
-        `- When the work is committed and checked, call chat_pr_open with a title and body. It pushes your branch and opens a draft pull request against ${wt.base}; it refuses commits that carry AI attribution. Calling it again pushes new commits to the same pull request. Report the link to the lead.`,
-        `- Do not push or open pull requests any other way. Never push to ${wt.base}, merge a branch into it, or merge a pull request. Merging is the operator's.`,
+        ...(wt.local
+          ? [
+              "- Run the project's existing tests, typecheck, and lint in your worktree, and fix what fails. Report the checks, your branch, and the full HEAD commit SHA to the lead for read-only peer review.",
+              `- This is local write mode. Never fetch, push, add a remote, create a forge repository, or merge directly. chat_pr_open is unavailable; only the lead uses chat_merge to land your reviewed head into ${wt.base}.`,
+              `- If a merge conflicts or your head changes, rebase or fix only in your worktree against refs/heads/${wt.base}, rerun checks, and ask for a new review of the full head.`,
+            ]
+          : [
+              "- Before chat_pr_open, run the project's tests, typecheck, and lint in your worktree, and fix what fails. Report what you ran and its result.",
+              `- When the work is committed and checked, call chat_pr_open with a title and body. It pushes your branch and opens a draft pull request against ${wt.base}; it refuses commits that carry AI attribution. Calling it again pushes new commits to the same pull request. Report the link to the lead.`,
+              `- Do not push or open pull requests any other way. Never push to ${wt.base}, merge a branch into it, or merge a pull request. Merging is the operator's.`,
+            ]),
       ]
     : [];
   const writeLead =
@@ -98,10 +106,18 @@ export function systemPrompt(opts: {
       ? [
           "",
           "Writers:",
-          "- This swarm may change the project. You and every agent without writes only read it. To have code changed, chat_spawn a worker with writes: true. Each writer gets its own git worktree and branch, cut from the remote default branch, and is the only agent that edits it.",
+          `- This swarm may change the project. You and every agent without writes only read it. To have code changed, chat_spawn a worker with writes: true. Each writer gets its own git worktree and branch, cut from ${opts.writeSwarm.localBase ? `the current tip of refs/heads/${opts.writeSwarm.localBase} without fetching` : "the remote default branch"}, and is the only agent that edits it.`,
           "- Give each writer one piece that does not touch another writer's files, with the acceptance criteria it must meet.",
-          `- Before you conclude, have an agent without writes review each writer's change: chat_diff shows a writer's commits and its diff against the remote default branch, and the reviewer can read the writer's files under ${opts.writeSwarm.root}/.worktrees/swarm-${opts.writeSwarm.swarmId}-<name>. Send the writer the reviewer's findings, and let it fix them.`,
-          "- Each writer opens a draft pull request with chat_pr_open. Nobody in the swarm merges one: list them in the report and the conclusion for the operator.",
+          `- Before you conclude, have an agent without writes review each writer's change: chat_diff shows a writer's commits and its diff against ${opts.writeSwarm.localBase ? `refs/heads/${opts.writeSwarm.localBase}, including its full head SHA` : "the remote default branch"}, and the reviewer can read the writer's files under ${opts.writeSwarm.root}/.worktrees/swarm-${opts.writeSwarm.swarmId}-<name>. Send the writer the reviewer's findings, and let it fix them.`,
+          ...(opts.writeSwarm.localBase
+            ? [
+                "- Wait for the writer's changes, checks, and turn to settle, then call chat_merge with writer and the peer-reviewed head_sha. Your file tools remain read-only; chat_merge is the only way you modify the root. Keep the root clean and do not ask the operator to edit it during a merge.",
+                "- On a conflict or changed head, have the writer rebase or fix in its own worktree, run checks, and get another read-only review before retrying. Later writers inherit completed local merges.",
+                "- Do not fetch, push, add a remote, create a forge repository, or use chat_pr_open for local writers. There are no local PRs or CI verdicts. List the merged writers, branches, and merge commits in your report and conclusion; successful merges are recorded in swarm activity.",
+              ]
+            : [
+                "- Each writer opens a draft pull request with chat_pr_open. Nobody in the swarm merges one: list them in the report and the conclusion for the operator.",
+              ]),
         ]
       : [];
   const granted =
@@ -150,6 +166,11 @@ export function systemPrompt(opts: {
     ...dispatch,
     ...writeLead,
     ...writing,
+    ...(opts.writeSwarm?.localBase && !agent.lead && !wt
+      ? [
+          `- For local writer review, use chat_diff against refs/heads/${opts.writeSwarm.localBase} and report the full reviewed head SHA with your findings. You remain read-only; only the lead calls chat_merge.`,
+        ]
+      : []),
     "",
     "Working norms:",
     turnLine,

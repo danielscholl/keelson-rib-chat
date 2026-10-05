@@ -929,7 +929,15 @@ export class Swarm {
           contextIndex: renderContextIndex(this.opts.context ?? []),
           ...(worktree ? { worktree } : {}),
           ...(this.opts.write
-            ? { writeSwarm: { swarmId: this.id, root: this.opts.write.root } }
+            ? {
+                writeSwarm: {
+                  swarmId: this.id,
+                  root: this.opts.write.root,
+                  ...(this.writeTarget?.mode === "local"
+                    ? { localBase: this.writeTarget.base }
+                    : {}),
+                },
+              }
             : {}),
         }),
         prompt,

@@ -234,6 +234,29 @@ describe("local merge tool", () => {
         .tools!;
       expect(leadTools.map((t) => t.name)).toContain("chat_merge");
       expect(writerTools.map((t) => t.name)).not.toContain("chat_merge");
+      const leadPrompt = h.provider.requests.find(
+        (req) => req.turnContext?.agentId === lead.id,
+      )!.system;
+      const writerPrompt = h.provider.requests.find(
+        (req) => req.turnContext?.agentId === writer.id,
+      )!.system;
+      expect(leadPrompt).toContain("peer-reviewed head_sha");
+      expect(leadPrompt).toContain("Later writers inherit completed local merges");
+      expect(leadPrompt).toContain("merge commits in your report and conclusion");
+      expect(writerPrompt).toContain("full HEAD commit SHA");
+      expect(writerPrompt).toContain("Never fetch, push, add a remote");
+      expect(writerPrompt).not.toContain("call chat_pr_open with a title");
+      const reviewer = await h.swarm.spawn(lead.id, {
+        handle: "reviewer",
+        role: "review",
+        brief: "review coder",
+      });
+      await idle(h.swarm, reviewer.id);
+      const reviewRequest = h.provider.requests.find(
+        (req) => req.turnContext?.agentId === reviewer.id,
+      )!;
+      expect(reviewRequest.system).toContain("full reviewed head SHA");
+      expect(reviewRequest.tools!.map((t) => t.name)).not.toContain("chat_merge");
       expect(h.git.ran("git remote")).toHaveLength(1);
       expect(
         h.git.calls.some((c) => c.cmd === "gh" || ["fetch", "push"].includes(c.args[0]!)),
@@ -252,6 +275,8 @@ describe("local merge tool", () => {
         (await h.call("chat_merge", { writer: "coder", head_sha: HEAD }, lead.id)).content,
       ).toContain("only available");
       expect(h.provider.requests[0]!.tools!.map((t) => t.name)).not.toContain("chat_merge");
+      expect(h.provider.requests[0]!.system).toContain("Nobody in the swarm merges one");
+      expect(h.provider.requests[0]!.system).not.toContain("peer-reviewed head_sha");
     } finally {
       await h.swarm.stop();
     }
