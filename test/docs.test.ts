@@ -187,28 +187,60 @@ describe("contributed docs", () => {
         "Missing git identity can cause a host initialization error",
         "Host refusal messages appear unchanged in a toast, with no swarm started",
         "swarm admission fails, the registered project remains available for retry",
-        "Write is off and disabled",
+        "Write is on and locked on (checked and disabled)",
         "returned registered project ID",
-        "starts with read access",
-        "Writers can work locally without origin after the project has a branch and a first commit",
-        "select the registered project and enable Write for a new swarm",
+        "starts with write access",
+        "can work locally without origin after the project has a branch and a first commit",
+        "An existing repository supplied as Folder follows the engine's remote or local write rules",
         "The scope footer reads Creates <name>",
-        "Use the tracker is shown only when at least one tracker tool is reachable",
-        'defaults off with "no tracker yet in a new project"',
-        "Reachability is not proof of an initialized tracker",
-        "require an initialized .beads/",
+        "Use the tracker defaults on when beads_init is reachable, even with no reachable lead tools",
+        "You can switch it off",
+        'callTool("beads", "beads_init", { project: created.name }) before admitting the write swarm',
+        "currently reachable tracker lead tools, rechecked after initialization",
+        "The launcher-only beads_init call is not a lead tool",
+        "Tracker off, unreachable initialization or a missing reachability hook skips initialization",
+        'off and disabled with "no tracker yet in a new project"',
+        "still starts a write swarm without tracker tools and reports beads_init with the original error",
+        "An explicit reachability-probe error or admission refusal still refuses Start",
+        "There is no automatic retry or project rollback",
+        "The switch and initialization create no grants",
+        "Existing-project starts and Run again do not initialize a tracker",
         "The rib never runs bd init",
-        "rechecked after asynchronous creation before admission",
         "Selecting an existing project reveals Write, Run workflows and Use the tracker, all off",
         "New project… selection, Name and Folder restore verbatim while creation remains available",
         "even after the project list grows",
         "Losing creation capability restores chat-only with elevated access and workflow chips cleared",
+        "Replacement documents force Write on for creation and preserve explicit tracker opt-out",
+        "Losing initialization capability clears tracker consent",
         "A changed project root clears elevated consent until you opt in again",
       ])
         expect(text).toContain(phrase);
-      expect(text).not.toContain("Write is on and locked on");
-      expect(text).not.toContain("starts with write access");
+      expect(text).not.toContain("Write is off and disabled");
+      expect(text).not.toContain("starts with read access");
     }
+    for (const page of [swarms, ...pages]) {
+      const grants = [...page.matchAll(/```json\n([\s\S]*?)\n```/g)]
+        .map((match) => JSON.parse(match[1]!))
+        .find((config) => config.crossRibGrants);
+      expect(grants).toEqual({
+        crossRibGrants: {
+          chat: {
+            beads: [
+              "beads_init",
+              "beads_ready",
+              "beads_show",
+              "beads_create",
+              "beads_update",
+              "beads_close",
+              "beads_dep",
+            ],
+          },
+        },
+      });
+    }
+    const readme = normalize(readFileSync(new URL("../README.md", import.meta.url), "utf8"));
+    expect(readme).toContain("New project… starts with Write locked on");
+    expect(readme).not.toContain("still starts read-only");
   });
 
   test("packaged and site launcher docs agree on switches, chips, grants and fallbacks", () => {

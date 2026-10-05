@@ -63,6 +63,7 @@ let runAgentTurn: RibContext["runAgentTurn"];
 let registerOp: RibContext["registerOp"];
 let getProjects: RibContext["getProjects"];
 let createProject: RibContext["createProject"];
+let callTool: RibContext["callTool"];
 let getCredential: RibContext["getCredential"];
 let getDataDir: RibContext["getDataDir"];
 let getProviders: RibContext["getProviders"];
@@ -369,13 +370,15 @@ function launchState(): LaunchState {
   let toolReachability: LaunchState["toolReachability"];
   let toolReachabilityError: string | undefined;
   try {
-    toolReachability = getToolReachability?.(TRACKER_TOOLS);
+    toolReachability = getToolReachability?.([...TRACKER_TOOLS, "beads_init"]);
   } catch (e) {
     toolReachabilityError = `Could not check tracker tool reachability: ${errText(e)}`;
   }
   return {
     projects: launchProjects(),
     canCreateProject: Boolean(createProject),
+    canInitTracker:
+      toolReachability?.find((tool) => tool.name === "beads_init")?.status === "reachable",
     ...(provider ? { provider } : {}),
     ...(classes.length > 0 ? { classes } : {}),
     ...(toolReachability ? { toolReachability } : {}),
@@ -746,6 +749,7 @@ const rib: Rib = {
       probe: refreshServer,
       getToolReachability,
       createProject,
+      callTool,
     }),
 
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
@@ -758,6 +762,7 @@ const rib: Rib = {
     registerOp = ctx.registerOp;
     getProjects = ctx.getProjects;
     createProject = ctx.createProject;
+    callTool = ctx.callTool;
     getCredential = ctx.getCredential;
     getDataDir = ctx.getDataDir;
     getProviders = ctx.getProviders;
@@ -867,6 +872,7 @@ const rib: Rib = {
     registerOp = undefined;
     getProjects = undefined;
     createProject = undefined;
+    callTool = undefined;
     getCredential = undefined;
     getDataDir = undefined;
     getProviders = undefined;
