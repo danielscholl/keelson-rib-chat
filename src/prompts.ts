@@ -108,6 +108,7 @@ export function systemPrompt(opts: {
           "Writers:",
           `- This swarm may change the project. You and every agent without writes only read it. To have code changed, chat_spawn a worker with writes: true. Each writer gets its own git worktree and branch, cut from ${opts.writeSwarm.localBase ? `the current tip of refs/heads/${opts.writeSwarm.localBase} without fetching` : "the remote default branch"}, and is the only agent that edits it.`,
           "- Give each writer one piece that does not touch another writer's files, with the acceptance criteria it must meet.",
+          "- Commits carry no AI attribution: never ask a writer to add a Co-Authored-By trailer naming an AI, a 'Generated with' line, or a session link. chat_merge and chat_pr_open refuse such commits.",
           `- Before you conclude, have an agent without writes review each writer's change: chat_diff shows a writer's commits and its diff against ${opts.writeSwarm.localBase ? `refs/heads/${opts.writeSwarm.localBase}, including its full head SHA` : "the remote default branch"}, and the reviewer can read the writer's files under ${opts.writeSwarm.root}/.worktrees/swarm-${opts.writeSwarm.swarmId}-<name>. Send the writer the reviewer's findings, and let it fix them.`,
           ...(opts.writeSwarm.localBase
             ? [
