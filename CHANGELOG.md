@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.16.0...v0.17.0) (2026-10-05)
+
+
+### Added
+
+* **launcher:** create a project from the launcher, then start a swarm on it ([#104](https://github.com/danielscholl/keelson-rib-chat/issues/104)) ([6cf9d97](https://github.com/danielscholl/keelson-rib-chat/commit/6cf9d97483fd4a8b72ee1e0d6593b53a4b1b0e38))
+* **write:** support reviewed local merges without origin ([#106](https://github.com/danielscholl/keelson-rib-chat/issues/106)) ([18a1ec1](https://github.com/danielscholl/keelson-rib-chat/commit/18a1ec112d838ed00097007a69ed4c31222e5820))
+
 ## [0.16.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.15.0...v0.16.0) (2026-10-05)
 
 
