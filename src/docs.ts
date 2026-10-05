@@ -539,11 +539,34 @@ the task and id with a lifecycle or needs-you pill and people dots; a state
 line; once the lead has concluded, the Outcome card; peer-review gate cards;
 an agent strip (busy, waiting, idle, capped, failed, with hatched open
 seats); three Budget tiles (Turns with its spark and a forecast as its delta,
-Time as a ticking time-left clock, fresh Tokens with cached in the sub); full-width Map, then Conversation and Message the lead;
+Time as a ticking time-left clock, fresh Tokens with cached in the sub); Timeline;
+full-width Map, then Conversation and Message the lead;
 Spend, Produced so far and Activity; then Open the report when one exists,
 Open the record, Details, and Stop swarm last. Message the lead is expanded directly under
 Conversation while running, unless the lead has concluded. Tokens says none yet
 before any turn, or that the provider reported none when turns ran without usage.
+
+Timeline is a native section between Budget and Map, on the live cockpit only,
+not the per-swarm drawer or ended board. It requires Keelson v0.120.0 or later.
+The operator's lane comes first, then agents in first-worked order, then runs.
+Turns use the agent's identity color, with hatching for timeouts or errors and
+open endpoints for unfinished work. Run bars use status colors.
+Marks show spawns (○), questions (?), operator posts and answers (▲), reports
+(▪), conclusions (●), gates opened and answered (◇ ◆), and verified runs (✓).
+Nudges, caps and retirements keep their existing marks.
+
+The live window starts at startedAt and its clock ends at startedAt + wallClockMs.
+When endedAt is recorded, the window is fixed at that end with no live clock.
+The host uses a UTC axis and a shared 30-second clock without new frames.
+On narrow sections, lane lists replace the plot.
+
+Timeline keeps at most 12 lanes, 400 spans and 200 marks. It keeps the operator,
+then first-worked agents, then runs; it retains the newest eligible spans and
+marks with stable timestamp sorts. Items on omitted lanes are removed.
+The title names shown/total counts for each clipped dimension, including items
+lost with omitted lanes. Open the record shows additional lanes and events.
+The record keeps the full retained timeline, with its own snapshot window and
+drawing. Native clipping does not remove its lanes or events.
 
 Map is a native graph with columns You, Lead, Workers, Runs at ranks 0, 1, 2, 3.
 Grandchildren remain in Workers. Agent tones show identity; run tones show status:
@@ -805,6 +828,9 @@ count. The operator reads as you, absent actors as rib, and unknown actors stay
 identified. Retained events are not a complete transcript. It has no buttons; the board keeps every
 verb. A live record redraws when the swarm's course changes, at most every five
 seconds.
+The record shares timeline lanes, spans, marks and their titles with the cockpit,
+not its deadline window or native rendering. Older swarms without recorded turns
+show their events and runs without turn bars.
 
 Read the conclusion and Read the draft open the reading pane. It contains the
 applicable conclusion or refused draft and the full task, not questions, gates,

@@ -51,14 +51,39 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    time-left clock; and fresh **Tokens** with cached tokens in the sub.
    Before a turn, Tokens says **none yet**; after turns without usage, it
    says **the provider reported none**.
-6. **Map**: the agents and runs as a full-width graph.
-7. **Conversation** follows Map when recent messages exist: the
+6. **Timeline**: turns and event marks on lanes over time.
+7. **Map**: the agents and runs as a full-width graph.
+8. **Conversation** follows Map when recent messages exist: the
    eight newest channel messages, then the count and **transcript ↗** link.
-8. **Message the lead**, expanded directly under Conversation for a running
+9. **Message the lead**, expanded directly under Conversation for a running
    swarm that has not concluded.
-9. Spend, Produced so far, and Activity.
-10. **Open the report** when one exists; **Open the record**; **Details**; and
+10. Spend, Produced so far, and Activity.
+11. **Open the report** when one exists; **Open the record**; **Details**; and
    **Stop swarm…** last.
+
+### Timeline
+
+Timeline is a native section between Budget and Map, on the live cockpit only,
+not the per-swarm drawer or ended board. It requires Keelson v0.120.0 or later.
+The operator's lane comes first, then agents in first-worked order, then runs.
+Turns use the agent's identity color, with hatching for timeouts or errors and
+open endpoints for unfinished work. Run bars use status colors.
+Marks show spawns (○), questions (?), operator posts and answers (▲), reports
+(▪), conclusions (●), gates opened and answered (◇ ◆), and verified runs (✓).
+Nudges, caps and retirements keep their existing marks.
+
+The live window starts at `startedAt` and its clock ends at `startedAt + wallClockMs`.
+When `endedAt` is recorded, the window is fixed at that end with no live clock.
+The host uses a UTC axis and a shared 30-second clock without new frames.
+On narrow sections, lane lists replace the plot.
+
+Timeline keeps at most **12 lanes, 400 spans and 200 marks**. It keeps the operator,
+then first-worked agents, then runs; it retains the newest eligible spans and
+marks with stable timestamp sorts. Items on omitted lanes are removed.
+The title names shown/total counts for each clipped dimension, including items
+lost with omitted lanes. **Open the record** shows additional lanes and events.
+The record keeps the full retained timeline, with its own snapshot window and
+drawing. Native clipping does not remove its lanes or events.
 
 ### Map
 
@@ -522,6 +547,8 @@ The page has no buttons: the board keeps every verb. A live record redraws
 when the swarm's course changes, at most every five seconds. Swarms that ended
 before this page existed show their events and runs but no turn bars, since
 their turns were not kept.
+The record shares timeline lanes, spans, marks and their titles with the cockpit,
+not its deadline window or native rendering.
 
 ## Starting a swarm
 
