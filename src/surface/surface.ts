@@ -178,6 +178,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     const swarms = deps.state();
     return {
       hasSwarms: swarms.live.length > 0 || swarms.ended.length > 0,
+      canCreateProject: Boolean(state.canCreateProject),
       projects: state.projects
         .filter((p) => p.name !== DEFAULT_PROJECT_NAME)
         .map(({ id, name, rootPath }) => ({ id, name, rootPath })),

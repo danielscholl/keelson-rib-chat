@@ -62,6 +62,7 @@ const SWARM_STOP_BUDGET_MS = 3_000;
 let runAgentTurn: RibContext["runAgentTurn"];
 let registerOp: RibContext["registerOp"];
 let getProjects: RibContext["getProjects"];
+let createProject: RibContext["createProject"];
 let getCredential: RibContext["getCredential"];
 let getDataDir: RibContext["getDataDir"];
 let getProviders: RibContext["getProviders"];
@@ -374,6 +375,7 @@ function launchState(): LaunchState {
   }
   return {
     projects: launchProjects(),
+    canCreateProject: Boolean(createProject),
     ...(provider ? { provider } : {}),
     ...(classes.length > 0 ? { classes } : {}),
     ...(toolReachability ? { toolReachability } : {}),
@@ -743,6 +745,7 @@ const rib: Rib = {
       hasReport: (id) => reports.has(id),
       probe: refreshServer,
       getToolReachability,
+      createProject,
     }),
 
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
@@ -754,6 +757,7 @@ const rib: Rib = {
     runAgentTurn = ctx.runAgentTurn;
     registerOp = ctx.registerOp;
     getProjects = ctx.getProjects;
+    createProject = ctx.createProject;
     getCredential = ctx.getCredential;
     getDataDir = ctx.getDataDir;
     getProviders = ctx.getProviders;
@@ -862,6 +866,7 @@ const rib: Rib = {
     runAgentTurn = undefined;
     registerOp = undefined;
     getProjects = undefined;
+    createProject = undefined;
     getCredential = undefined;
     getDataDir = undefined;
     getProviders = undefined;

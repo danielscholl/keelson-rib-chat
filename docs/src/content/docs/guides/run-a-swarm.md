@@ -59,8 +59,36 @@ Untouched Working session sends no size, power or model overrides. Opening
 Customize alone does not change that. Quick look records small/fast; Deep dig
 records large/deep. A named model records size, model and provider, with no power.
 
-With no project selected, the **ALSO ALLOW** group is absent. Selecting a
-project reveals **Write**, **Run workflows** and **Use the tracker**, all off.
+**New project…** appears last in Project only when the host exposes optional
+`createProject`, even with no registered projects. Older hosts omit it and
+refuse crafted creation requests. Enter a required **Name** and an optional
+**Folder**. The placeholder `~/keelson/<name>` is illustrative: a blank Folder
+uses the host's workspace root plus the name, not a universal home-directory
+path. The host expands a leading `~`; the rib passes it unchanged.
+
+Start asks the host to create and register the project before admitting the
+swarm. The host initializes a missing or empty folder with git and a first
+empty "Initialize project" commit. An existing git repository or a nonempty
+non-git folder is registered untouched; the rib does not repair it. Missing
+git identity can cause a host initialization error. Host refusal messages
+appear unchanged in a toast, with no swarm started. If creation succeeds but
+swarm admission fails, the registered project remains available for retry.
+
+For New project…, **Write is off and disabled**. The swarm uses the returned
+registered project ID and starts with read access. Writers need a usable
+`origin` remote with a default branch, which project creation does not set up.
+Configure it first, then select the registered project and enable Write for
+a new swarm. The scope footer reads `Creates <name>`, followed by selected
+workflow names only when present, then ` · beads` when tracker intent is on.
+**Use the tracker** is shown only when at least one tracker tool is reachable.
+It defaults off with "no tracker yet in a new project". Reachability is not
+proof of an initialized tracker: beads tools require an initialized `.beads/`.
+The rib never runs `bd init`. Explicit tracker opt-in still needs host grants,
+rechecked after asynchronous creation before admission.
+
+With no project selected, the **ALSO ALLOW** group is absent. Selecting an
+existing project reveals **Write**, **Run workflows** and **Use the tracker**,
+all off.
 
 **Write** permits code changes. The lead spawns writers, and only those writers
 receive their own worktrees and branches. Turning it off restores read access.
@@ -80,12 +108,14 @@ still applies to lead responses.
 `beads_update`, `beads_close` and `beads_dep`, in that order. Only host-reported
 reachable tools are sent. Muted chips say **needs your grant: crossRibGrants**.
 The switch does not create host grants. Without a reachability hook it is
-disabled: **This host does not say which tools a lead may hold.** A supported
-host reporting no reachable tools leaves it usable, with all chips muted.
+disabled: **This host does not say which tools a lead may hold.** For existing
+projects, a supported host reporting no reachable tools leaves it usable,
+with all chips muted.
 The rib rechecks lead-tool reachability on Start and Run again.
 
 Turning switches off omits their grants; workflow chips stay for that project.
 Changing or clearing the project resets all switches and chips, not the task.
+New project… always keeps Write disabled and keeps local Name and Folder edits.
 The scope footer follows your choices: **Reads \<name\>**, optionally
 **· writes on a branch**, workflow names or **· no workflows**, then optionally
 **· beads**. The beads suffix records switch intent, not a promise that every
@@ -97,9 +127,14 @@ project, switches and chips, pending field text, and expanded/Customize
 presentation. A restored expanded or multiline draft opens the full controls
 instead of compact defaults.
 
-Projects restore by ID; a removed or hidden project becomes chat-only and
-clears its switches and workflow chips. Current capability restrictions still
-apply. Named models keep their selected provider; an unavailable provider
+New project… selection, Name and Folder restore verbatim while creation remains
+available, even after the project list grows. Losing creation capability
+restores chat-only with elevated access and workflow chips cleared.
+Projects restore by ID for existing projects; a removed or hidden project
+becomes chat-only and clears its switches and workflow chips. Current capability
+restrictions still apply. A changed project root clears elevated consent until
+you opt in again.
+Named models keep their selected provider; an unavailable provider
 requires choosing a model or plan again. Workflow chips restore exactly as
 typed, in order; the host refuses unknown workflows at Start. The launcher
 does not detect removed workflows.

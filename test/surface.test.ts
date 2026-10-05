@@ -8,6 +8,7 @@ import {
   DEFAULT_PROJECT_NAME,
   DESIGN_TOKENS,
   expectView,
+  ProjectOperationError,
   type RibViewDescriptor,
   ribClientEffectSchema,
   ribSurfaceBadgeSchema,
@@ -16,6 +17,7 @@ import {
   type SnapshotManager,
   wcagContrast,
 } from "@keelson/shared";
+import { ClickClackClient } from "../src/clickclack.ts";
 import { CONTEXT_BOUNDS, type ContextIndexEntry, EXCERPT_CHARS } from "../src/context.ts";
 import { applyStatus } from "../src/dispatch.ts";
 import { historyPath, loadHistory } from "../src/history.ts";
@@ -109,7 +111,7 @@ import {
   CONVERSATION_SHOWN,
   tokensTile,
 } from "../src/surface/swarm-board.ts";
-import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
+import { ACTIVITY_KEPT, Swarm } from "../src/swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../src/tools.ts";
 import {
   BODY_MAX,
@@ -125,6 +127,8 @@ import {
   type TurnSpan,
   WORKER_TONES,
 } from "../src/types.ts";
+import type { WorktreeDeps } from "../src/worktree.ts";
+import { FakeClickClack, OWNER_TOKEN, scriptedProvider, WORKSPACE } from "./fakes.ts";
 
 const T0 = "2026-09-22T14:00:00.000Z";
 
@@ -6949,6 +6953,196 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("creation drafts restore raw fields after project growth in fresh expanded and compact documents", async () => {
+    const h = launcherHarness({
+      projects,
+      canCreateProject: true,
+      toolReachability: [{ name: "beads_ready", status: "reachable" }],
+    });
+    try {
+      await Bun.sleep(5);
+      const bridge = fakeStateBridge();
+      const first = frameHarness(h.page(), h.nonce(), bridge);
+      first.get("launch-task")!.value = " Build notes ";
+      first.fire("launch-task", "input");
+      first.select("new");
+      first.get("launch-project-name")!.value = ' notes <app> & "draft" ';
+      first.fire("launch-project-name", "input");
+      first.get("launch-project-folder")!.value = " ~/work/notes-app ";
+      first.fire("launch-project-folder", "change");
+      first.fire("allow-workflows", "click");
+      first.fire("allow-tracker", "click");
+      first.get("workflow-entry")!.value = "Second, first";
+      first.fire("workflow-entry", "keydown", { key: "Enter" });
+      first.get("workflow-entry")!.value = " pending-name ";
+      first.fire("workflow-entry", "input");
+      const saved = bridge.stored!;
+      expect(saved).toMatchObject({
+        project: "new",
+        projectRoot: "",
+        name: ' notes <app> & "draft" ',
+        rootPath: " ~/work/notes-app ",
+        permissions: { write: false, workflows: true, tracker: true },
+        workflows: ["Second", "first"],
+        workflowEntry: " pending-name ",
+      });
+      h.inputs.projects = [
+        ...projects,
+        { id: "p-created", name: 'notes <app> & "draft"', rootPath: "/resolved/notes-app" },
+      ];
+      for (const compact of [false, true]) {
+        h.swarms.live = compact ? [fixtures.running!] : [];
+        h.surface.refresh();
+        await Bun.sleep(5);
+        const nextBridge = fakeStateBridge(saved);
+        const next = frameHarness(h.page(), h.nonce(), nextBridge);
+        expect(next.get("launch-task")).not.toBe(first.get("launch-task"));
+        expect(next.get("launch-task")!.value).toBe(" Build notes ");
+        expect(next.get("launch-project")!.value).toBe("new");
+        expect(next.get("launch-project-name")!.value).toBe(' notes <app> & "draft" ');
+        expect(next.get("launch-project-folder")!.value).toBe(" ~/work/notes-app ");
+        expect(next.get("new-project-fields")!.hidden).toBe(false);
+        expect(next.get("allow-write")!.disabled).toBe(true);
+        expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+        expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("true");
+        expect(
+          next.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
+        ).toEqual(["Second", "first"]);
+        expect(next.get("workflow-entry")!.value).toBe(" pending-name ");
+        expect(next.get("launch-compact")).toBeUndefined();
+        expect(next.calls).toEqual([]);
+        expect(nextBridge.saves).toEqual([]);
+      }
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation draft reconciliation clears saved Write and applies current tracker restrictions", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness(
+      {
+        projects,
+        canCreateProject: true,
+        toolReachability: [{ name: "beads_ready", status: "reachable" }],
+      },
+      "first",
+      bridge,
+    );
+    first.select("new");
+    first.get("launch-project-name")!.value = " notes ";
+    first.fire("launch-project-name", "change");
+    first.get("launch-project-folder")!.value = " ~/work/notes ";
+    first.fire("launch-project-folder", "input");
+    first.fire("allow-tracker", "click");
+    first.fire("allow-workflows", "click");
+    first.get("workflow-entry")!.value = "fix-issue";
+    first.fire("workflow-entry", "keydown", { key: "Enter" });
+    const saved = {
+      ...bridge.stored!,
+      projectRoot: "/forged/root",
+      permissions: { write: true, tracker: true, workflows: true },
+    };
+    for (const toolReachability of [
+      undefined,
+      [],
+      [{ name: "beads_ready", status: "cross-rib-denied" as const }],
+    ]) {
+      const next = frameHarness(
+        { projects, canCreateProject: true, toolReachability },
+        "next",
+        fakeStateBridge(saved),
+      );
+      expect(next.get("launch-project")!.value).toBe("new");
+      expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+      expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+      expect(next.get("tracker-row")!.hidden).toBe(true);
+      expect(next.get("launch-mode")!.textContent).toBe("Creates notes · fix-issue");
+    }
+    const lostBridge = fakeStateBridge(saved);
+    const lost = frameHarness({ projects }, "lost", lostBridge);
+    expect(lost.get("launch-project")!.value).toBe("");
+    expect(lost.get("launch-access")!.children).toEqual([]);
+    expect(lostBridge.stored).toMatchObject({
+      project: "",
+      permissions: { write: false, tracker: false, workflows: false },
+      workflows: [],
+    });
+    const returned = frameHarness({ projects, canCreateProject: true }, "returned", lostBridge);
+    expect(returned.get("launch-project")!.value).toBe("");
+    returned.select("new");
+    expect(returned.get("allow-workflows")!.attributes.get("aria-checked")).toBe("false");
+  });
+
+  test("creation draft fields are optional for legacy snapshots and reject malformed saved values", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness({ projects, canCreateProject: true }, "first", bridge);
+    first.get("launch-task")!.value = "Saved task";
+    first.select("new");
+    const { name: _name, rootPath: _folder, ...legacy } = bridge.stored!;
+    const restored = frameHarness(
+      { projects, canCreateProject: true },
+      "legacy",
+      fakeStateBridge(legacy),
+    );
+    expect(restored.get("launch-task")!.value).toBe("Saved task");
+    expect(restored.get("launch-project")!.value).toBe("new");
+    expect(restored.get("launch-project-name")!.value).toBe("");
+    expect(restored.get("launch-project-folder")!.value).toBe("");
+    expect(restored.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+    restored.fire("launch-start", "click");
+    expect(restored.calls).toEqual([]);
+    for (const field of ["name", "rootPath"]) {
+      for (const value of [null, 42, {}, []]) {
+        const invalidBridge = fakeStateBridge({ ...legacy, [field]: value });
+        const invalid = frameHarness(
+          { projects, canCreateProject: true },
+          "invalid",
+          invalidBridge,
+        );
+        expect(invalid.get("launch-task")!.value).toBe("");
+        expect(invalid.get("launch-project")!.value).toBe("");
+        expect(invalidBridge.saves).toEqual([]);
+      }
+    }
+  });
+
+  test("late creation restore cannot overwrite Name or Folder edits and Start clears before replacement", () => {
+    const bridge = fakeStateBridge(undefined, true);
+    const source: LaunchState = { projects, canCreateProject: true };
+    const first = frameHarness(source, "first", bridge);
+    first.get("launch-task")!.value = "Build notes";
+    first.select("new");
+    first.get("launch-project-name")!.value = "Saved name";
+    first.fire("launch-project-name", "input");
+    first.get("launch-project-folder")!.value = "~/saved";
+    first.fire("launch-project-folder", "change");
+    for (const field of ["launch-project-name", "launch-project-folder"]) {
+      const next = frameHarness(source, field, bridge);
+      next.get(field)!.value = "Fresh edit";
+      next.fire(field, "input");
+      next.restore();
+      expect(next.get(field)!.value).toBe("Fresh edit");
+      expect(next.get("launch-project")!.value).toBe("");
+    }
+    first.fire("launch-start", "click");
+    expect(bridge.operations.slice(-2)).toEqual(["save", "action"]);
+    expect(bridge.stored).toEqual({});
+    const replacement = frameHarness(
+      {
+        ...source,
+        projects: [...projects, { id: "p-created", name: "Saved name", rootPath: "/resolved" }],
+      },
+      "replacement",
+      bridge,
+    );
+    replacement.restore();
+    expect(replacement.get("launch-project")!.value).toBe("");
+    expect(replacement.get("launch-task")!.value).toBe("");
+    expect(replacement.get("launch-project-name")!.value).toBe("");
+    expect(first.get("launch-project-name")!.value).toBe("Saved name");
+  });
+
   test("compact drafts save exact text and expansion persists without action traffic", () => {
     const bridge = fakeStateBridge();
     const source = { projects, provider: "copilot", hasSwarms: true };
@@ -8112,6 +8306,178 @@ describe("launching from the tab", () => {
     ).toEqual(["elevated", "elevated · needs your grant", "elevated · needs your grant"]);
   });
 
+  test("creation is the last capability-gated choice and works without selectable projects", () => {
+    for (const inventory of [
+      [],
+      projects,
+      [{ id: "fallback", name: DEFAULT_PROJECT_NAME, rootPath: "/tmp" }],
+    ]) {
+      for (const canCreateProject of [false, true]) {
+        const frame = frameHarness({ projects: inventory, canCreateProject });
+        const options = frame.get("launch-project")!.options;
+        expect(options.some((option) => option.value === "new")).toBe(canCreateProject);
+        expect(Boolean(frame.get("launch-project-name"))).toBe(canCreateProject);
+        if (!canCreateProject) continue;
+        expect(options.at(-1)!.textContent).toBe("New project…");
+        frame.select("new");
+        expect(frame.get("new-project-fields")!.hidden).toBe(false);
+        expect(frame.get("launch-project-name")!.attributes.has("required")).toBe(true);
+        expect(frame.get("launch-project-folder")!.attributes.get("placeholder")).toBe(
+          "~/keelson/<name>",
+        );
+        expect(frame.get("new-project-hint")!.textContent).toBe(
+          "Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with read access; writers need an origin remote with a default branch.",
+        );
+        expect(frame.get("allow-write")!.disabled).toBe(true);
+        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+        frame.fire("allow-write", "click");
+        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+        expect(frame.get("write-meaning")!.textContent).toContain(
+          "An origin remote with a default branch is required for writers.",
+        );
+        expect(frame.get("tracker-row")!.hidden).toBe(true);
+        expect(frame.get("launch-mode")!.textContent).toBe("Creates <name>");
+        frame.get("launch-task")!.value = "Build notes";
+        frame.fire("launch-start", "click");
+        expect(frame.calls).toEqual([]);
+        expect(frame.get("project-name-error")!.hidden).toBe(false);
+        expect(frame.get("launch-project-name")!.attributes.get("aria-invalid")).toBe("true");
+        expect(frame.focused()).toBe(frame.get("launch-project-name"));
+        frame.get("launch-project-name")!.value = " notes-app ";
+        frame.fire("launch-project-name", "input");
+        expect(frame.get("project-name-error")!.hidden).toBe(true);
+        expect(frame.get("launch-mode")!.textContent).toBe("Creates notes-app");
+        frame.fire("launch-start", "click");
+        frame.fire("launch-start", "click");
+        expect(frame.calls).toEqual([
+          {
+            type: "start-swarm",
+            payload: {
+              nonce: "instance-nonce",
+              task: "Build notes",
+              project: "new",
+              name: "notes-app",
+              tools: "read",
+            },
+          },
+        ]);
+      }
+    }
+  });
+
+  test("new-project tracker visibility uses reachable tracker tools without assuming initialization", () => {
+    for (const toolReachability of [
+      undefined,
+      [],
+      [{ name: "unrelated_tool", status: "reachable" as const }],
+      [{ name: "beads_ready", status: "cross-rib-denied" as const }],
+      [{ name: "beads_show", status: "unregistered" as const }],
+      [{ name: "beads_ready", status: "reachable" as const }],
+      TRACKER_TOOLS.map((name) => ({ name, status: "reachable" as const })),
+    ]) {
+      const frame = frameHarness({ projects, canCreateProject: true, toolReachability });
+      frame.select("new");
+      const reachable =
+        toolReachability?.some(
+          (tool) =>
+            (TRACKER_TOOLS as readonly string[]).includes(tool.name) && tool.status === "reachable",
+        ) ?? false;
+      expect(frame.get("tracker-row")!.hidden).toBe(!reachable);
+      expect(frame.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+      expect(frame.get("tracker-meaning")!.textContent).toBe("no tracker yet in a new project");
+      frame.get("launch-project-name")!.value = "notes";
+      frame.fire("launch-project-name", "change");
+      frame.fire("allow-tracker", "click");
+      frame.fire("allow-workflows", "click");
+      frame.get("workflow-entry")!.value = "fix-issue";
+      frame.fire("workflow-entry", "keydown", { key: "Enter" });
+      expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+      expect(frame.get("launch-mode")!.textContent).toBe(
+        `Creates notes · fix-issue${reachable ? " · beads" : ""}`,
+      );
+      frame.fire("launch-start", "click");
+      expect(frame.calls[0]!.payload).toEqual({
+        nonce: "instance-nonce",
+        task: "",
+        project: "new",
+        name: "notes",
+        tools: "read",
+        workflows: "fix-issue",
+        ...(reachable
+          ? {
+              lead_tools: toolReachability!
+                .filter((tool) => tool.status === "reachable")
+                .map((tool) => tool.name),
+            }
+          : {}),
+      });
+    }
+  });
+
+  test("creation fields survive local mode transitions while access resets and ordinary payloads omit them", () => {
+    const frame = frameHarness({
+      projects,
+      canCreateProject: true,
+      hasSwarms: true,
+      toolReachability: [{ name: "beads_ready", status: "reachable" }],
+    });
+    frame.get("compact-task")!.value = "Build notes";
+    frame.fire("compact-more", "click");
+    frame.select("new");
+    frame.get("launch-project-name")!.value = ' notes-<app> & "safe" ';
+    frame.fire("launch-project-name", "input");
+    frame.get("launch-project-folder")!.value = " ~/work/notes-app ";
+    frame.fire("launch-project-folder", "change");
+    frame.fire("allow-tracker", "click");
+    frame.fire("allow-workflows", "click");
+    frame.get("workflow-entry")!.value = "fix-issue";
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    frame.select("p1");
+    expect(frame.get("new-project-fields")!.hidden).toBe(true);
+    expect(frame.get("allow-write")!.disabled).toBe(false);
+    for (const key of ["write", "workflows", "tracker"])
+      expect(frame.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+    frame.fire("launch-start", "click");
+    expect(frame.calls.at(-1)!.payload).toEqual({
+      nonce: "instance-nonce",
+      task: "Build notes",
+      project: "p1",
+      tools: "read",
+    });
+    frame.release();
+    frame.select("");
+    expect(frame.get("launch-access")!.children).toEqual([]);
+    frame.fire("launch-start", "click");
+    expect(frame.calls.at(-1)!.payload).toEqual({
+      nonce: "instance-nonce",
+      task: "Build notes",
+      project: "",
+      tools: "none",
+    });
+    frame.release();
+    frame.select("new");
+    expect(frame.get("launch-project-name")!.value).toBe(' notes-<app> & "safe" ');
+    expect(frame.get("launch-project-folder")!.value).toBe(" ~/work/notes-app ");
+    expect(frame.get("launch-mode")!.children).toEqual([]);
+    expect(frame.get("workflow-chips")!.children).toEqual([]);
+    expect(frame.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+    frame.fire("launch-project-folder", "keydown", {
+      key: "Enter",
+      ctrlKey: true,
+      isComposing: true,
+    });
+    expect(frame.calls).toHaveLength(2);
+    frame.fire("launch-project-folder", "keydown", { key: "Enter", ctrlKey: true });
+    expect(frame.calls.at(-1)!.payload).toEqual({
+      nonce: "instance-nonce",
+      task: "Build notes",
+      project: "new",
+      name: 'notes-<app> & "safe"',
+      rootPath: "~/work/notes-app",
+      tools: "read",
+    });
+  });
+
   test("all eight switch combinations send only intended access fields in footer order", () => {
     for (let mask = 0; mask < 8; mask++) {
       const frame = frameHarness(
@@ -8866,6 +9232,542 @@ describe("launching from the tab", () => {
       h.inputs.projects = [];
       expect((await act("p1")).ok).toBe(false);
       expect(begun).toHaveLength(0);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("HTML creation calls the host once with exact fields and forces its returned project and read access", async () => {
+    const h = launcherHarness({ projects, canCreateProject: true });
+    const calls: unknown[] = [];
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      for (const rootPath of [undefined, "", " \n ", " ~/work/notes-app "]) {
+        for (const tools of [undefined, "none", "read", "write", "invented"]) {
+          calls.length = 0;
+          const result = await handleSwarmsAction(
+            {
+              type: "start-swarm",
+              origin: "canvas-html",
+              payload: {
+                nonce: h.nonce(),
+                task: " Build a small notes app ",
+                project: "new",
+                name: " notes-app ",
+                rootPath,
+                tools,
+                projectId: "forged",
+                work_tools: "none",
+                context: [{ kind: "issue", text: "forged" }],
+              },
+            },
+            {
+              ...actionDeps,
+              surface: h.surface,
+              createProject: async (input) => {
+                calls.push(input);
+                return {
+                  id: "p-created",
+                  name: input.name,
+                  rootPath: "/resolved/notes-app",
+                  createdAt: T0,
+                };
+              },
+            },
+          );
+          expect(result.ok).toBe(true);
+          expect(calls).toEqual([
+            { name: "notes-app", ...(rootPath?.trim() ? { rootPath: "~/work/notes-app" } : {}) },
+          ]);
+          expect(begun.at(-1)).toEqual({
+            task: "Build a small notes app",
+            project: "p-created",
+            workTools: "read",
+          });
+        }
+      }
+      expect(h.surface.offersLaunchProject("p-created")).toBe(false);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("blank-folder creation of a local git repository refuses writers before fetching origin", async () => {
+    const root = mkdtempSync(join(tmpdir(), "chat-new-project-"));
+    const h = launcherHarness({ projects: [], canCreateProject: true });
+    const commands: string[][] = [];
+    const run: WorktreeDeps["run"] = async (command, args, options) => {
+      commands.push([command, ...args]);
+      const result = Bun.spawnSync([command, ...args], {
+        cwd: options?.cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      return result.exitCode === 0
+        ? { ok: true, data: result.stdout.toString() }
+        : { ok: false, error: result.stderr.toString(), code: result.exitCode };
+    };
+    let swarm: Swarm | undefined;
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const frame = frameHarness(h.page(), h.nonce());
+      frame.select("new");
+      frame.get("launch-project-name")!.value = "notes-app";
+      frame.get("launch-task")!.value = "Build a small notes app";
+      expect(frame.get("launch-project-folder")!.value).toBe("");
+      frame.fire("launch-start", "click");
+      const result = await handleSwarmsAction(
+        { ...frame.calls[0]!, origin: "canvas-html" },
+        {
+          ...actionDeps,
+          surface: h.surface,
+          createProject: async (input) => {
+            expect(input).toEqual({ name: "notes-app" });
+            expect((await run("git", ["init", "--initial-branch=main"], { cwd: root })).ok).toBe(
+              true,
+            );
+            expect(
+              (
+                await run(
+                  "git",
+                  [
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    "Initialize project",
+                  ],
+                  { cwd: root },
+                )
+              ).ok,
+            ).toBe(true);
+            expect(await run("git", ["remote"], { cwd: root })).toEqual({ ok: true, data: "" });
+            return { id: "p-created", name: input.name, rootPath: root, createdAt: T0 };
+          },
+        },
+      );
+      expect(result.ok).toBe(true);
+      const input = begun.at(-1)!;
+      const server = new FakeClickClack();
+      swarm = await Swarm.start({
+        id: "snew",
+        task: input.task,
+        owner: new ClickClackClient("http://fake", OWNER_TOKEN, server.transport),
+        workspaceId: WORKSPACE,
+        runAgentTurn: scriptedProvider([], async () => {}).run,
+        cwd: root,
+        project: { id: "p-created", name: "notes-app" },
+        workTools: ["Read", "Grep", "Glob"],
+        ...(input.workTools === "write" ? { write: { root, git: { run } } } : {}),
+        quiesceMs: 60_000,
+      });
+      await expect(
+        swarm.spawn(swarm.summary().agents[0]!.id, {
+          handle: "coder",
+          role: "writer",
+          brief: "Build the app",
+          writes: true,
+        }),
+      ).rejects.toThrow("this one only reads. Spawn the agent without writes.");
+      expect(commands.some((command) => command[1] === "fetch")).toBe(false);
+      expect(swarm.summary().agents).toHaveLength(1);
+    } finally {
+      await swarm?.stop();
+      h.surface.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("creation refuses unauthorized, unsupported and invalid requests before host side effects", async () => {
+    const h = launcherHarness({ projects, canCreateProject: true });
+    let calls = 0;
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const deps: ActionDeps = {
+        ...actionDeps,
+        surface: h.surface,
+        createProject: async () => {
+          calls++;
+          throw new Error("creation should not be reached");
+        },
+      };
+      const payload = { nonce: h.nonce(), task: "Build notes", project: "new", name: "notes" };
+      for (const extra of [
+        { nonce: "old" },
+        { nonce: undefined },
+        { name: "" },
+        { name: " \n " },
+        { name: 123 },
+        { name: undefined },
+        { rootPath: {} },
+        { rootPath: null },
+        { task: "" },
+        { task: "x".repeat(BODY_MAX + 1) },
+        { task: "Review #12" },
+        { task: "See https://example.com" },
+        { workflows: "bad/name" },
+        { workflows: Array.from({ length: 11 }, (_, i) => `flow-${i}`).join(",") },
+        { lead_tools: "beads_ready" },
+        { lead_tools: ["chat_post"] },
+        { lead_tools: [7] },
+        { project: "arbitrary-unoffered-id" },
+      ]) {
+        expect(
+          (
+            await handleSwarmsAction(
+              { type: "start-swarm", origin: "canvas-html", payload: { ...payload, ...extra } },
+              deps,
+            )
+          ).ok,
+        ).toBe(false);
+      }
+      expect(
+        await handleSwarmsAction(
+          { type: "start-swarm", origin: "canvas-html", payload },
+          { ...deps, createProject: undefined },
+        ),
+      ).toEqual({ ok: false, error: "This Keelson host can't create projects." });
+      expect(
+        (await handleSwarmsAction({ type: "start-swarm", origin: "board", payload }, deps)).ok,
+      ).toBe(false);
+      expect(calls).toBe(0);
+      expect(begun).toEqual([]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation preserves every host refusal and never admits or tracks a failed creation", async () => {
+    const h = launcherHarness({ projects, canCreateProject: true });
+    const tracked: unknown[] = [];
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      for (const status of [400, 409, 500, 503]) {
+        let calls = 0;
+        const message = `host refusal ${status}: keep this message unchanged`;
+        expect(
+          await handleSwarmsAction(
+            {
+              type: "start-swarm",
+              origin: "canvas-html",
+              payload: { nonce: h.nonce(), task: "Build notes", project: "new", name: "notes" },
+            },
+            {
+              ...actionDeps,
+              surface: {
+                ...h.surface,
+                track: (ids) => {
+                  tracked.push(ids);
+                },
+              },
+              createProject: async () => {
+                calls++;
+                throw new ProjectOperationError(status, message);
+              },
+            },
+          ),
+        ).toEqual({ ok: false, error: message });
+        expect(calls).toBe(1);
+      }
+      expect(begun).toEqual([]);
+      expect(tracked).toEqual([]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation resolves before admission and freshly filters grants revoked during the wait", async () => {
+    const h = launcherHarness({ projects, canCreateProject: true });
+    let resolve!: (project: Awaited<ReturnType<NonNullable<ActionDeps["createProject"]>>>) => void;
+    let reachable = true;
+    const order: string[] = [];
+    const queries: string[][] = [];
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const deps: ActionDeps = {
+        ...actionDeps,
+        surface: h.surface,
+        createProject: () => {
+          order.push("create");
+          return new Promise((done) => {
+            resolve = done;
+          });
+        },
+        getToolReachability: (names) => {
+          queries.push([...names]);
+          return names.map((name) => ({
+            name,
+            status: reachable && name === "beads_ready" ? "reachable" : "cross-rib-denied",
+          }));
+        },
+        begin: (input) => {
+          order.push("begin");
+          begun.push(input);
+          return "snew";
+        },
+      };
+      const pending = handleSwarmsAction(
+        {
+          type: "start-swarm",
+          origin: "canvas-html",
+          payload: {
+            nonce: h.nonce(),
+            task: "Build notes",
+            project: "new",
+            name: "notes",
+            workflows: "fix-issue",
+            lead_tools: ["beads_ready", "beads_close"],
+          },
+        },
+        deps,
+      );
+      expect(order).toEqual(["create"]);
+      expect(begun).toEqual([]);
+      reachable = false;
+      resolve({ id: "p-created", name: "notes", rootPath: "/resolved/notes", createdAt: T0 });
+      expect((await pending).ok).toBe(true);
+      expect(order).toEqual(["create", "begin"]);
+      expect(queries).toEqual([
+        ["beads_ready", "beads_close"],
+        ["beads_ready", "beads_close"],
+      ]);
+      expect(begun).toEqual([
+        {
+          task: "Build notes",
+          project: "p-created",
+          workTools: "read",
+          workflows: [{ name: "fix-issue", isolated: true }],
+        },
+      ]);
+      const refused = await handleSwarmsAction(
+        {
+          type: "start-swarm",
+          origin: "canvas-html",
+          payload: { nonce: h.nonce(), task: "Build notes", project: "new", name: "notes" },
+        },
+        {
+          ...deps,
+          createProject: async () => ({
+            id: "p-created",
+            name: "notes",
+            rootPath: "/resolved/notes",
+            createdAt: T0,
+          }),
+          begin: () => {
+            throw new Error("admission refused after registration");
+          },
+        },
+      );
+      expect(refused).toEqual({ ok: false, error: "admission refused after registration" });
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation acceptance publishes real capability and admits exact frame traces after host registration", async () => {
+    for (const rootPath of [undefined, "~/work/notes-app"]) {
+      for (const tracker of [false, true]) {
+        const h = launcherHarness({
+          projects: [],
+          canCreateProject: true,
+          toolReachability: [
+            { name: "beads_ready", status: "reachable" },
+            { name: "beads_close", status: "reachable" },
+            { name: "beads_show", status: "reachable" },
+          ],
+        });
+        const bridge = fakeStateBridge();
+        const calls: Parameters<NonNullable<ActionDeps["createProject"]>>[0][] = [];
+        const admitted: StartSwarmInput[] = [];
+        const queries: string[][] = [];
+        const order: string[] = [];
+        try {
+          await Bun.sleep(5);
+          expect(h.page()).toContain('<option value="new">New project…</option>');
+          const frame = frameHarness(h.page(), h.nonce(), bridge);
+          frame.get("launch-task")!.value = "Build a small notes app";
+          frame.fire("launch-task", "input");
+          frame.select("new");
+          frame.get("launch-project-name")!.value = "notes-app";
+          frame.fire("launch-project-name", "input");
+          if (rootPath) {
+            frame.get("launch-project-folder")!.value = rootPath;
+            frame.fire("launch-project-folder", "input");
+          }
+          if (tracker) frame.fire("allow-tracker", "click");
+          frame.fire("launch-start", "click");
+          const action = frame.calls[0]!;
+          expect(action.payload).toEqual({
+            nonce: h.nonce(),
+            task: "Build a small notes app",
+            project: "new",
+            name: "notes-app",
+            tools: "read",
+            ...(rootPath ? { rootPath } : {}),
+            ...(tracker ? { lead_tools: ["beads_ready", "beads_show", "beads_close"] } : {}),
+          });
+          expect(bridge.operations.slice(-2)).toEqual(["save", "action"]);
+          const result = await handleSwarmsAction(
+            { ...action, origin: "canvas-html" },
+            {
+              ...actionDeps,
+              surface: h.surface,
+              createProject: async (input) => {
+                order.push("create");
+                expect(bridge.stored).toEqual({});
+                calls.push(input);
+                const project = {
+                  id: "p-created",
+                  name: input.name,
+                  rootPath: "/resolved/notes-app",
+                  createdAt: T0,
+                };
+                h.inputs.projects = [project];
+                h.surface.refresh();
+                await Bun.sleep(5);
+                const replacement = frameHarness(h.page(), h.nonce(), bridge);
+                expect(replacement.get("launch-task")!.value).toBe("");
+                expect(replacement.get("launch-project")!.value).toBe("");
+                order.push("registered");
+                return project;
+              },
+              getToolReachability: (names) => {
+                queries.push([...names]);
+                return [
+                  { name: "beads_ready", status: "reachable" },
+                  { name: "beads_close", status: "cross-rib-denied" },
+                  { name: "beads_show", status: "unregistered" },
+                  { name: "beads_dep", status: "reachable" },
+                ];
+              },
+              begin: (input) => {
+                order.push("begin");
+                expect(
+                  h.inputs.projects.find((project) => project.id === input.project),
+                ).toMatchObject({
+                  id: "p-created",
+                  rootPath: "/resolved/notes-app",
+                });
+                admitted.push(input);
+                return "s-created";
+              },
+            },
+          );
+          expect(result.ok).toBe(true);
+          expect(calls).toEqual([{ name: "notes-app", ...(rootPath ? { rootPath } : {}) }]);
+          expect(admitted).toEqual([
+            {
+              task: "Build a small notes app",
+              project: "p-created",
+              workTools: "read",
+              ...(tracker ? { leadTools: ["beads_ready"] } : {}),
+            },
+          ]);
+          expect(order).toEqual(["create", "registered", "begin"]);
+          expect(queries).toHaveLength(tracker ? 2 : 0);
+          console.info(
+            "creation acceptance trace",
+            JSON.stringify({
+              framePayload: action.payload,
+              createProject: calls,
+              begin: admitted,
+              order,
+            }),
+          );
+        } finally {
+          h.surface.dispose();
+        }
+      }
+    }
+  });
+
+  test("post-creation reachability errors preserve the registered project without admission", async () => {
+    const h = launcherHarness({ projects: [], canCreateProject: true });
+    const order: string[] = [];
+    let queries = 0;
+    try {
+      await Bun.sleep(5);
+      const result = await handleSwarmsAction(
+        {
+          type: "start-swarm",
+          origin: "canvas-html",
+          payload: {
+            nonce: h.nonce(),
+            task: "Build notes",
+            project: "new",
+            name: "notes",
+            lead_tools: ["beads_ready"],
+          },
+        },
+        {
+          ...actionDeps,
+          surface: h.surface,
+          createProject: async () => {
+            order.push("create");
+            const project = {
+              id: "p-created",
+              name: "notes",
+              rootPath: "/resolved/notes",
+              createdAt: T0,
+            };
+            h.inputs.projects = [project];
+            return project;
+          },
+          getToolReachability: () => {
+            if (++queries === 2) throw new Error("grant lookup unavailable");
+            return [{ name: "beads_ready", status: "reachable" }];
+          },
+          begin: () => {
+            order.push("begin");
+            return "unexpected";
+          },
+        },
+      );
+      expect(result).toEqual({
+        ok: false,
+        error: "Could not check lead tool reachability: grant lookup unavailable",
+      });
+      expect(order).toEqual(["create"]);
+      expect(h.inputs.projects.map((project) => project.id)).toEqual(["p-created"]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation capability changes recompose the real launcher and reconcile saved creation intent", async () => {
+    const h = launcherHarness({ projects: [], canCreateProject: false });
+    try {
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      expect(h.page()).not.toContain('<option value="new">');
+      h.inputs.canCreateProject = true;
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.nonce()).toBe(nonce);
+      const bridge = fakeStateBridge();
+      const frame = frameHarness(h.page(), nonce, bridge);
+      frame.select("new");
+      frame.get("launch-project-name")!.value = "notes";
+      frame.fire("launch-project-name", "input");
+      h.inputs.canCreateProject = false;
+      h.surface.refresh();
+      await Bun.sleep(5);
+      const next = frameHarness(h.page(), nonce, bridge);
+      expect(next.get("launch-project")!.value).toBe("");
+      expect(bridge.stored).toMatchObject({
+        project: "",
+        permissions: { write: false, workflows: false, tracker: false },
+      });
     } finally {
       h.surface.dispose();
     }
@@ -10607,6 +11509,38 @@ describe("the launch store", () => {
 });
 
 describe("the rib's surface", () => {
+  test("captures creation capability on every registration and clears it on disposal", async () => {
+    const sm = new FakeSnapshots();
+    let calls = 0;
+    const createProject: NonNullable<ActionDeps["createProject"]> = async () => {
+      calls++;
+      return { id: "created", name: "sample", rootPath: "/tmp/sample", createdAt: T0 };
+    };
+    try {
+      for (const creator of [createProject, undefined, createProject]) {
+        rib.registerTools?.({
+          getExec: () => ({}) as never,
+          getSnapshotManager: () => sm,
+          createProject: creator,
+        });
+        const page = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+        expect(page).toContain(`data-can-create-project="${Boolean(creator)}"`);
+      }
+      await rib.dispose?.();
+      const next = new FakeSnapshots();
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getSnapshotManager: () => next,
+      });
+      expect(String(await next.composers.get(LAUNCH_KEY)!.compose())).toContain(
+        'data-can-create-project="false"',
+      );
+      expect(calls).toBe(0);
+    } finally {
+      await rib.dispose?.();
+    }
+  });
+
   test("project launches without tracker tools survive a failed capability probe", async () => {
     const sm = new FakeSnapshots();
     const dir = mkdtempSync(join(tmpdir(), "chat-launch-probe-"));

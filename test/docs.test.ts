@@ -166,6 +166,51 @@ describe("contributed docs", () => {
     expect(readme).not.toContain("changes can discard them");
   });
 
+  test("packaged and both guides agree on host-owned creation and creation draft boundaries", () => {
+    const swarms = topics(content).find((topic) => topic.title === "Swarms tab")!.body;
+    const pages = ["swarms-tab", "run-a-swarm"].map((name) =>
+      readFileSync(new URL(`../docs/src/content/docs/guides/${name}.md`, import.meta.url), "utf8"),
+    );
+    const normalize = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
+    for (const text of [swarms, ...pages].map(normalize)) {
+      for (const phrase of [
+        "New project… appears last in Project only when the host exposes optional createProject",
+        "even with no registered projects",
+        "Older hosts omit it and refuse crafted creation requests",
+        "required Name and an optional Folder",
+        "placeholder ~/keelson/<name> is illustrative",
+        "host's workspace root plus the name, not a universal home-directory path",
+        "The host expands a leading ~; the rib passes it unchanged",
+        "create and register the project before admitting the swarm",
+        'initializes a missing or empty folder with git and a first empty "Initialize project" commit',
+        "An existing git repository or a nonempty non-git folder is registered untouched",
+        "Missing git identity can cause a host initialization error",
+        "Host refusal messages appear unchanged in a toast, with no swarm started",
+        "swarm admission fails, the registered project remains available for retry",
+        "Write is off and disabled",
+        "returned registered project ID",
+        "starts with read access",
+        "Writers need a usable origin remote with a default branch, which project creation does not set up",
+        "select the registered project and enable Write for a new swarm",
+        "The scope footer reads Creates <name>",
+        "Use the tracker is shown only when at least one tracker tool is reachable",
+        'defaults off with "no tracker yet in a new project"',
+        "Reachability is not proof of an initialized tracker",
+        "require an initialized .beads/",
+        "The rib never runs bd init",
+        "rechecked after asynchronous creation before admission",
+        "Selecting an existing project reveals Write, Run workflows and Use the tracker, all off",
+        "New project… selection, Name and Folder restore verbatim while creation remains available",
+        "even after the project list grows",
+        "Losing creation capability restores chat-only with elevated access and workflow chips cleared",
+        "A changed project root clears elevated consent until you opt in again",
+      ])
+        expect(text).toContain(phrase);
+      expect(text).not.toContain("Write is on and locked on");
+      expect(text).not.toContain("starts with write access");
+    }
+  });
+
   test("packaged and site launcher docs agree on switches, chips, grants and fallbacks", () => {
     const swarms = topics(content).find((topic) => topic.title === "Swarms tab")!.body;
     const normalize = (text: string) => text.replace(/[`*\\]/g, "").replace(/\s+/g, " ");
