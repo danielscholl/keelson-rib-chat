@@ -6563,9 +6563,58 @@ describe("launching from the tab", () => {
     }
   });
 
+  const fakeStateBridge = (initial?: Record<string, unknown>, delayed = false) => {
+    const clone = (value: Record<string, unknown>) => JSON.parse(JSON.stringify(value));
+    let stored = initial === undefined ? undefined : clone(initial);
+    const saves: Record<string, unknown>[] = [];
+    const operations: string[] = [];
+    const diagnostics: string[] = [];
+    const connect = () => {
+      const pending = stored === undefined ? undefined : clone(stored);
+      let handler: ((value: Record<string, unknown>) => void) | undefined;
+      let arrived = !delayed;
+      let consumed = false;
+      const deliver = () => {
+        if (!arrived || consumed || pending === undefined || !handler) return;
+        consumed = true;
+        handler(clone(pending));
+      };
+      return {
+        saveState: (value: Record<string, unknown>) => {
+          operations.push("save");
+          const copy = clone(value);
+          saves.push(copy);
+          if (Buffer.byteLength(JSON.stringify(copy), "utf8") > 65_536) {
+            diagnostics.push("HTML state exceeds 65,536 UTF-8 bytes");
+            return;
+          }
+          stored = copy;
+        },
+        onRestore: (callback: (value: Record<string, unknown>) => void) => {
+          handler = callback;
+          deliver();
+        },
+        restore: () => {
+          arrived = true;
+          deliver();
+        },
+      };
+    };
+    return {
+      connect,
+      saves,
+      operations,
+      diagnostics,
+      get stored(): Record<string, unknown> | undefined {
+        return stored === undefined ? undefined : clone(stored);
+      },
+    };
+  };
+
   const frameHarness = (
     source: LaunchState | string = { projects, provider: "copilot" },
     nonce = "instance-nonce",
+    bridge?: ReturnType<typeof fakeStateBridge>,
   ) => {
     const page = typeof source === "string" ? source : buildLaunch(source, nonce);
     type Event = {
@@ -6584,7 +6633,14 @@ describe("launching from the tab", () => {
         return this.rawValue;
       }
       set value(text: string) {
-        this.rawValue = this.tag === "input" ? text.replace(/[\r\n]/g, "") : text;
+        this.rawValue =
+          this.tag === "select"
+            ? this.options.some((option) => option.value === text)
+              ? text
+              : ""
+            : this.tag === "input"
+              ? text.replace(/[\r\n]/g, "")
+              : text;
       }
       focus() {
         focused = this;
@@ -6595,7 +6651,12 @@ describe("launching from the tab", () => {
       selectionStart = 0;
       selectionEnd = 0;
       dataset: Record<string, string> = {};
-      selectedOptions = [{ dataset: { name: "A <name>", path: "~/A <path>" } }];
+      get options(): Element[] {
+        return this.all().filter((node) => node.tag === "option");
+      }
+      get selectedOptions(): Element[] {
+        return this.options.filter((option) => option.value === this.value);
+      }
       attributes = new Map<string, string>();
       classes = new Set<string>();
       listeners = new Map<string, (event: Event) => void>();
@@ -6620,13 +6681,18 @@ describe("launching from the tab", () => {
       }
       addEventListener(type: string, listener: (event: Event) => void) {
         this.listenerCounts.set(type, (this.listenerCounts.get(type) ?? 0) + 1);
-        this.listeners.set(type, listener);
+        const previous = this.listeners.get(type);
+        this.listeners.set(type, (event) => {
+          previous?.(event);
+          listener(event);
+        });
       }
       setAttribute(name: string, value: string) {
         this.attributes.set(name, value);
         if (name === "disabled") this.disabled = true;
         if (name === "hidden") this.hidden = true;
         if (name === "class") this.className = value;
+        if (name === "value") this.value = value;
         if (name.startsWith("data-")) {
           this.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] =
             value;
@@ -6705,6 +6771,7 @@ describe("launching from the tab", () => {
     const get = (id: string) => elements()[id];
     const calls: { type: string; payload: Record<string, unknown> }[] = [];
     const timers: { callback: () => void; delay: number }[] = [];
+    const stateApi = bridge?.connect();
     runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)![1]!, {
       document: {
         getElementById: (id: string) =>
@@ -6714,7 +6781,9 @@ describe("launching from the tab", () => {
         createElement: (tag: string) => new Element(tag),
       },
       keelson: {
+        ...(stateApi ? { saveState: stateApi.saveState, onRestore: stateApi.onRestore } : {}),
         action: (type: string, payload: Record<string, unknown>) => {
+          bridge?.operations.push("action");
           calls.push({ type, payload });
         },
       },
@@ -6732,9 +6801,8 @@ describe("launching from the tab", () => {
       });
       return prevented;
     };
-    const select = (value: string, name = "keelson-sample") => {
+    const select = (value: string) => {
       get("launch-project")!.value = value;
-      get("launch-project")!.selectedOptions = [{ dataset: { name, path: "~/sample" } }];
       fire("launch-project", "change");
     };
     let prevented = 0;
@@ -6754,6 +6822,8 @@ describe("launching from the tab", () => {
       fire,
       select,
       calls,
+      stateApi,
+      restore: () => stateApi?.restore(),
       timers,
       event,
       trigger,
@@ -6763,6 +6833,53 @@ describe("launching from the tab", () => {
       mounted: () => root.all(),
     };
   };
+
+  test("fake state bridge replaces whole JSON objects outside fresh documents without actions", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness(undefined, "first", bridge);
+    const received: Record<string, unknown>[] = [];
+    first.stateApi!.onRestore((value) => received.push(value));
+    expect(received).toEqual([]);
+    const saved = { task: "draft", choices: ["one"], removed: true };
+    first.stateApi!.saveState(saved);
+    saved.choices.push("not saved");
+    expect(bridge.stored).toEqual({ task: "draft", choices: ["one"], removed: true });
+    first.stateApi!.saveState({ task: "replacement" });
+    const next = frameHarness(undefined, "next", bridge);
+    expect(next.get("launch-task")).not.toBe(first.get("launch-task"));
+    next.stateApi!.onRestore((value) => received.push(value));
+    next.stateApi!.onRestore((value) => received.push(value));
+    expect(received).toEqual([{ task: "replacement" }]);
+    next.stateApi!.saveState({});
+    const empty = frameHarness(undefined, "empty", bridge);
+    empty.stateApi!.onRestore((value) => received.push(value));
+    expect(received.at(-1)).toEqual({});
+    expect(first.calls).toEqual([]);
+    expect(next.calls).toEqual([]);
+    expect(bridge.operations).toEqual(["save", "save", "save"]);
+  });
+
+  test("fake state bridge delays one restore and models real select options and multiple listeners", () => {
+    const bridge = fakeStateBridge({ task: "saved" }, true);
+    const frame = frameHarness(undefined, "nonce", bridge);
+    const received: Record<string, unknown>[] = [];
+    frame.stateApi!.onRestore((value) => received.push(value));
+    expect(received).toEqual([]);
+    frame.restore();
+    frame.restore();
+    expect(received).toEqual([{ task: "saved" }]);
+    frame.select("p1");
+    expect(frame.get("launch-project")!.selectedOptions[0]!.dataset.name).toBe("keelson-sample");
+    frame.select("missing");
+    expect(frame.get("launch-project")!.value).toBe("");
+    const edits: string[] = [];
+    frame.get("launch-task")!.addEventListener("input", () => edits.push("first"));
+    frame.get("launch-task")!.addEventListener("input", () => edits.push("second"));
+    frame.fire("launch-task", "input");
+    expect(edits).toEqual(["first", "second"]);
+    expect(frame.calls).toEqual([]);
+    expect(frameHarness().stateApi).toBeUndefined();
+  });
 
   test("compact initial markup renders only a one-line launcher outside inert templates", () => {
     const page = buildLaunch({ projects, hasSwarms: true }, "nonce");
@@ -7033,9 +7150,9 @@ describe("launching from the tab", () => {
     project.value = "p1";
     project.listeners.get("change")!(event);
     expect(elements["project-note"]!.textContent).toBe(
-      "Agents read ~/A <path> and run read-only commands there. Nothing changes unless you allow more.",
+      "Agents read /tmp/keelson-sample and run read-only commands there. Nothing changes unless you allow more.",
     );
-    expect(elements["launch-mode"]!.textContent).toBe("Reads A <name> · no workflows");
+    expect(elements["launch-mode"]!.textContent).toBe("Reads keelson-sample · no workflows");
     expect(elements["project-row"]!.classes.has("has-project")).toBe(true);
     expect(calls).toHaveLength(1);
     submit();
@@ -7326,7 +7443,10 @@ describe("launching from the tab", () => {
   test("turning switches off retains same-project chips but project changes reset consent without clearing the task", () => {
     const frame = frameHarness(
       buildLaunch(
-        { projects: [...projects, { ...projects[0]!, id: "p2" }], toolReachability: [] },
+        {
+          projects: [...projects, { ...projects[0]!, id: "p2", name: "Another project" }],
+          toolReachability: [],
+        },
         "nonce",
       ),
     );
@@ -7348,7 +7468,7 @@ describe("launching from the tab", () => {
     frame.timers[0]!.callback();
     frame.fire("allow-workflows", "click");
     expect(frame.get("launch-mode")!.textContent).toBe("Reads keelson-sample · fix-issue");
-    frame.select("p2", "Another project");
+    frame.select("p2");
     for (const key of ["write", "workflows", "tracker"]) {
       expect(frame.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
     }
@@ -7588,7 +7708,16 @@ describe("launching from the tab", () => {
   });
 
   test("frame effort changes retain plan power and Model clearing restores the pair", () => {
-    const { elements: e, trigger, release, calls } = frameHarness();
+    const {
+      elements: e,
+      trigger,
+      release,
+      calls,
+    } = frameHarness({
+      projects,
+      provider: "copilot",
+      classes: [{ provider: "second-provider", defaultModel: "same-name" }],
+    });
     trigger("plan-small");
     trigger("effort-large");
     expect(e["custom-chip"]!.hidden).toBe(false);
