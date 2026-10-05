@@ -487,7 +487,8 @@ const PAGE_SCRIPT = `
   const renderPermissions = () => {
     Object.keys(permissions).forEach((key) => {
       const button = document.getElementById("allow-" + key);
-      permissions[key] = permissions[key] && !button.disabled;
+      permissions[key] = key === "write" && isNew()
+        ? true : permissions[key] && !button.disabled;
       button.setAttribute("aria-checked", String(permissions[key]));
       document.getElementById(key + "-row").classList.toggle("is-on", permissions[key]);
       if (key !== "write") document.getElementById(key + "-details").hidden = !permissions[key];
@@ -501,7 +502,7 @@ const PAGE_SCRIPT = `
     const creating = isNew();
     if (newFields) newFields.hidden = !creating;
     row.classList.toggle("has-project", hasProject);
-    note.textContent = creating ? "The swarm starts with read access. An origin remote with a default branch is required for writers." : hasProject
+    note.textContent = creating ? "Write is on. Agents write in branch-isolated worktrees; a new repository without origin uses local writing." : hasProject
       ? "Agents read " + selected.dataset.path + " and run read-only commands there. Nothing changes unless you allow more."
       : chatNote;
     Object.keys(permissions).forEach((key) => { permissions[key] = false; });
@@ -511,12 +512,17 @@ const PAGE_SCRIPT = `
     if (hasProject && template) {
       access.append(template.content.cloneNode(true));
       if (creating) {
+        permissions.write = true;
         document.getElementById("allow-write").disabled = true;
-        document.getElementById("write-meaning").textContent = "An origin remote with a default branch is required for writers. Set it up, then select the registered project to enable writing.";
+        document.getElementById("write-meaning").textContent = "Write stays on for creation. Writers use their own branches and worktrees, with local writing when there is no origin.";
+        const canInitTracker = form.dataset.canInitTracker === "true";
+        permissions.tracker = canInitTracker;
         const trackerAvailable = access.querySelectorAll('[data-tool][data-reachable="true"]').length > 0;
-        document.getElementById("tracker-row").hidden = !trackerAvailable;
-        document.getElementById("allow-tracker").disabled = !trackerAvailable;
-        document.getElementById("tracker-meaning").textContent = "no tracker yet in a new project";
+        document.getElementById("tracker-row").hidden = !canInitTracker && !trackerAvailable;
+        document.getElementById("allow-tracker").disabled = !canInitTracker;
+        document.getElementById("tracker-meaning").textContent = canInitTracker
+          ? "Initialize the project's beads tracker before starting the swarm. If initialization fails, it starts without tracker tools. No grants are created."
+          : "no tracker yet in a new project";
       }
       controls = {
         entry: document.getElementById("workflow-entry"),
@@ -610,7 +616,8 @@ const PAGE_SCRIPT = `
       renderPermissions();
       renderWorkflows();
     }
-    if (project.value !== state.project || (project.value && !sameScope)) {
+    if (project.value !== state.project || (project.value && !sameScope)
+      || (isNew() && state.permissions.tracker && !permissions.tracker)) {
       keelson.saveState?.(capture());
     }
   };
@@ -634,6 +641,7 @@ const PAGE_SCRIPT = `
     };
     if (isNew()) {
       payload.name = name.value.trim();
+      payload.tracker = permissions.tracker;
       if (folder.value.trim()) payload.rootPath = folder.value.trim();
     }
     if (permissions.workflows && workflows.length) payload.workflows = workflows.join(", ");
@@ -845,7 +853,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
       </section>
       <div class="project">
         <label for="launch-project">PROJECT</label>
-        <p class="hint" id="project-hint">Picking one lets agents read it. Anything more is a switch.</p>
+        <p class="hint" id="project-hint">Existing projects start with read access. New project starts with Write on.</p>
         <div class="project-row" id="project-row">
           <select id="launch-project" name="project" aria-describedby="project-hint project-note">
             <option value="" selected>No project · chat only</option>${options}${state.canCreateProject ? '<option value="new">New project…</option>' : ""}
@@ -857,7 +865,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
             ? `<div class="new-project" id="new-project-fields" hidden>
           <div><label for="launch-project-name">Name</label><input id="launch-project-name" type="text" required autocomplete="off" aria-describedby="project-name-error new-project-hint"><p class="hint detail" id="project-name-error" role="alert" hidden></p></div>
           <div><label for="launch-project-folder">Folder (optional)</label><input id="launch-project-folder" type="text" autocomplete="off" placeholder="${esc("~/keelson/<name>")}" aria-describedby="new-project-hint"></div>
-          <p class="hint" id="new-project-hint">Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with read access; writers need an origin remote with a default branch.</p>
+          <p class="hint" id="new-project-hint">Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. Write stays on; without origin, writers work locally. An existing repository supplied as Folder is registered untouched and keeps its remote or local write mode.</p>
         </div>`
             : ""
         }

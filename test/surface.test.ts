@@ -6957,6 +6957,7 @@ describe("launching from the tab", () => {
     const h = launcherHarness({
       projects,
       canCreateProject: true,
+      canInitTracker: true,
       toolReachability: [{ name: "beads_ready", status: "reachable" }],
     });
     try {
@@ -6971,7 +6972,6 @@ describe("launching from the tab", () => {
       first.get("launch-project-folder")!.value = " ~/work/notes-app ";
       first.fire("launch-project-folder", "change");
       first.fire("allow-workflows", "click");
-      first.fire("allow-tracker", "click");
       first.get("workflow-entry")!.value = "Second, first";
       first.fire("workflow-entry", "keydown", { key: "Enter" });
       first.get("workflow-entry")!.value = " pending-name ";
@@ -6982,7 +6982,7 @@ describe("launching from the tab", () => {
         projectRoot: "",
         name: ' notes <app> & "draft" ',
         rootPath: " ~/work/notes-app ",
-        permissions: { write: false, workflows: true, tracker: true },
+        permissions: { write: true, workflows: true, tracker: true },
         workflows: ["Second", "first"],
         workflowEntry: " pending-name ",
       });
@@ -7003,7 +7003,7 @@ describe("launching from the tab", () => {
         expect(next.get("launch-project-folder")!.value).toBe(" ~/work/notes-app ");
         expect(next.get("new-project-fields")!.hidden).toBe(false);
         expect(next.get("allow-write")!.disabled).toBe(true);
-        expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+        expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
         expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("true");
         expect(
           next.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
@@ -7018,12 +7018,13 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("creation draft reconciliation clears saved Write and applies current tracker restrictions", () => {
+  test("creation draft reconciliation locks Write and applies current tracker restrictions", () => {
     const bridge = fakeStateBridge();
     const first = frameHarness(
       {
         projects,
         canCreateProject: true,
+        canInitTracker: true,
         toolReachability: [{ name: "beads_ready", status: "reachable" }],
       },
       "first",
@@ -7041,7 +7042,7 @@ describe("launching from the tab", () => {
     const saved = {
       ...bridge.stored!,
       projectRoot: "/forged/root",
-      permissions: { write: true, tracker: true, workflows: true },
+      permissions: { write: false, tracker: true, workflows: true },
     };
     for (const toolReachability of [
       undefined,
@@ -7054,10 +7055,12 @@ describe("launching from the tab", () => {
         fakeStateBridge(saved),
       );
       expect(next.get("launch-project")!.value).toBe("new");
-      expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+      expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
       expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
       expect(next.get("tracker-row")!.hidden).toBe(true);
-      expect(next.get("launch-mode")!.textContent).toBe("Creates notes · fix-issue");
+      expect(next.get("launch-mode")!.textContent).toBe(
+        "Creates notes · writes on a branch · fix-issue",
+      );
     }
     const lostBridge = fakeStateBridge(saved);
     const lost = frameHarness({ projects }, "lost", lostBridge);
@@ -7072,6 +7075,40 @@ describe("launching from the tab", () => {
     expect(returned.get("launch-project")!.value).toBe("");
     returned.select("new");
     expect(returned.get("allow-workflows")!.attributes.get("aria-checked")).toBe("false");
+  });
+
+  test("creation drafts preserve tracker opt-out and remove consent when initialization disappears", () => {
+    for (const hasSwarms of [false, true]) {
+      const source: LaunchState = {
+        projects,
+        canCreateProject: true,
+        canInitTracker: true,
+        toolReachability: [],
+      };
+      const bridge = fakeStateBridge();
+      const first = frameHarness(source, "first", bridge);
+      first.select("new");
+      expect(first.get("allow-tracker")!.attributes.get("aria-checked")).toBe("true");
+      first.fire("allow-tracker", "click");
+      const saved = {
+        ...bridge.stored!,
+        permissions: { write: false, tracker: false, workflows: false },
+      };
+      bridge.connect().saveState(saved);
+      const next = frameHarness({ ...source, hasSwarms }, "next", bridge);
+      expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+      expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+      expect(next.get("allow-tracker")!.disabled).toBe(false);
+      next.fire("allow-tracker", "click");
+      const unavailable = frameHarness({ ...source, canInitTracker: false }, "lost", bridge);
+      expect(unavailable.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+      expect(bridge.stored).toMatchObject({ permissions: { write: true, tracker: false } });
+      const returned = frameHarness(source, "returned", bridge);
+      expect(returned.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+      returned.select("p1");
+      returned.select("new");
+      expect(returned.get("allow-tracker")!.attributes.get("aria-checked")).toBe("true");
+    }
   });
 
   test("creation draft fields are optional for legacy snapshots and reject malformed saved values", () => {
@@ -7089,7 +7126,7 @@ describe("launching from the tab", () => {
     expect(restored.get("launch-project")!.value).toBe("new");
     expect(restored.get("launch-project-name")!.value).toBe("");
     expect(restored.get("launch-project-folder")!.value).toBe("");
-    expect(restored.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+    expect(restored.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
     restored.fire("launch-start", "click");
     expect(restored.calls).toEqual([]);
     for (const field of ["name", "rootPath"]) {
@@ -8326,17 +8363,17 @@ describe("launching from the tab", () => {
           "~/keelson/<name>",
         );
         expect(frame.get("new-project-hint")!.textContent).toBe(
-          "Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with read access; writers need an origin remote with a default branch.",
+          "Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. Write stays on; without origin, writers work locally. An existing repository supplied as Folder is registered untouched and keeps its remote or local write mode.",
         );
         expect(frame.get("allow-write")!.disabled).toBe(true);
-        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
         frame.fire("allow-write", "click");
-        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
         expect(frame.get("write-meaning")!.textContent).toContain(
-          "An origin remote with a default branch is required for writers.",
+          "local writing when there is no origin.",
         );
         expect(frame.get("tracker-row")!.hidden).toBe(true);
-        expect(frame.get("launch-mode")!.textContent).toBe("Creates <name>");
+        expect(frame.get("launch-mode")!.textContent).toBe("Creates <name> · writes on a branch");
         frame.get("launch-task")!.value = "Build notes";
         frame.fire("launch-start", "click");
         expect(frame.calls).toEqual([]);
@@ -8346,7 +8383,9 @@ describe("launching from the tab", () => {
         frame.get("launch-project-name")!.value = " notes-app ";
         frame.fire("launch-project-name", "input");
         expect(frame.get("project-name-error")!.hidden).toBe(true);
-        expect(frame.get("launch-mode")!.textContent).toBe("Creates notes-app");
+        expect(frame.get("launch-mode")!.textContent).toBe(
+          "Creates notes-app · writes on a branch",
+        );
         frame.fire("launch-start", "click");
         frame.fire("launch-start", "click");
         expect(frame.calls).toEqual([
@@ -8357,7 +8396,8 @@ describe("launching from the tab", () => {
               task: "Build notes",
               project: "new",
               name: "notes-app",
-              tools: "read",
+              tools: "write",
+              tracker: false,
             },
           },
         ]);
@@ -8365,7 +8405,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("new-project tracker visibility uses reachable tracker tools without assuming initialization", () => {
+  test("new-project tracker stays disabled without initialization even with reachable lead tools", () => {
     for (const toolReachability of [
       undefined,
       [],
@@ -8384,6 +8424,7 @@ describe("launching from the tab", () => {
         ) ?? false;
       expect(frame.get("tracker-row")!.hidden).toBe(!reachable);
       expect(frame.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+      expect(frame.get("allow-tracker")!.disabled).toBe(true);
       expect(frame.get("tracker-meaning")!.textContent).toBe("no tracker yet in a new project");
       frame.get("launch-project-name")!.value = "notes";
       frame.fire("launch-project-name", "change");
@@ -8391,9 +8432,9 @@ describe("launching from the tab", () => {
       frame.fire("allow-workflows", "click");
       frame.get("workflow-entry")!.value = "fix-issue";
       frame.fire("workflow-entry", "keydown", { key: "Enter" });
-      expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+      expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
       expect(frame.get("launch-mode")!.textContent).toBe(
-        `Creates notes · fix-issue${reachable ? " · beads" : ""}`,
+        "Creates notes · writes on a branch · fix-issue",
       );
       frame.fire("launch-start", "click");
       expect(frame.calls[0]!.payload).toEqual({
@@ -8401,16 +8442,49 @@ describe("launching from the tab", () => {
         task: "",
         project: "new",
         name: "notes",
-        tools: "read",
+        tools: "write",
+        tracker: false,
         workflows: "fix-issue",
-        ...(reachable
-          ? {
-              lead_tools: toolReachability!
-                .filter((tool) => tool.status === "reachable")
-                .map((tool) => tool.name),
-            }
-          : {}),
       });
+    }
+  });
+
+  test("new-project tracker defaults on for initialization-only or partial grants and supports opt-out", () => {
+    for (const toolReachability of [
+      [],
+      [{ name: "beads_ready", status: "reachable" as const }],
+      TRACKER_TOOLS.map((name) => ({ name, status: "reachable" as const })),
+    ]) {
+      for (const tracker of [false, true]) {
+        const frame = frameHarness({
+          projects,
+          canCreateProject: true,
+          canInitTracker: true,
+          toolReachability,
+        });
+        frame.select("new");
+        expect(frame.get("tracker-row")!.hidden).toBe(false);
+        expect(frame.get("allow-tracker")!.disabled).toBe(false);
+        expect(frame.get("allow-tracker")!.attributes.get("aria-checked")).toBe("true");
+        expect(frame.get("tracker-meaning")!.textContent).toContain("before starting the swarm");
+        expect(frame.get("tracker-details")!.children.map((chip) => chip.textContent)).toEqual([
+          ...TRACKER_TOOLS,
+        ]);
+        if (!tracker) frame.fire("allow-tracker", "click");
+        frame.get("launch-project-name")!.value = "notes";
+        frame.fire("launch-start", "click");
+        expect(frame.calls[0]!.payload).toEqual({
+          nonce: "instance-nonce",
+          task: "",
+          project: "new",
+          name: "notes",
+          tools: "write",
+          tracker,
+          ...(tracker && toolReachability.length
+            ? { lead_tools: toolReachability.map((tool) => tool.name) }
+            : {}),
+        });
+      }
     }
   });
 
@@ -8418,6 +8492,7 @@ describe("launching from the tab", () => {
     const frame = frameHarness({
       projects,
       canCreateProject: true,
+      canInitTracker: true,
       hasSwarms: true,
       toolReachability: [{ name: "beads_ready", status: "reachable" }],
     });
@@ -8460,7 +8535,7 @@ describe("launching from the tab", () => {
     expect(frame.get("launch-project-folder")!.value).toBe(" ~/work/notes-app ");
     expect(frame.get("launch-mode")!.children).toEqual([]);
     expect(frame.get("workflow-chips")!.children).toEqual([]);
-    expect(frame.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+    expect(frame.get("allow-tracker")!.attributes.get("aria-checked")).toBe("true");
     frame.fire("launch-project-folder", "keydown", {
       key: "Enter",
       ctrlKey: true,
@@ -8474,7 +8549,9 @@ describe("launching from the tab", () => {
       project: "new",
       name: 'notes-<app> & "safe"',
       rootPath: "~/work/notes-app",
-      tools: "read",
+      tools: "write",
+      tracker: true,
+      lead_tools: ["beads_ready"],
     });
   });
 
