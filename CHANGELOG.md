@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.18.1...v0.19.0) (2026-10-05)
+
+
+### Added
+
+* **surface:** show a native timeline on the live cockpit ([0a6ab99](https://github.com/danielscholl/keelson-rib-chat/commit/0a6ab991ee6e7c4c8818acc8f799c9ca3963340d))
+
 ## [0.18.1](https://github.com/danielscholl/keelson-rib-chat/compare/v0.18.0...v0.18.1) (2026-10-05)
 
 
