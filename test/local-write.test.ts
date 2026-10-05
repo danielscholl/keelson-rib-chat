@@ -335,6 +335,9 @@ describe("local merge tool", () => {
       expect(leadPrompt).toContain("peer-reviewed head_sha");
       expect(leadPrompt).toContain("Later writers inherit completed local merges");
       expect(leadPrompt).toContain("merge commits in your report and conclusion");
+      expect(leadPrompt).toContain(
+        "- Commits carry no AI attribution: never ask a writer to add a Co-Authored-By trailer naming an AI, a 'Generated with' line, or a session link. chat_merge and chat_pr_open refuse such commits.",
+      );
       expect(writerPrompt).toContain("full HEAD commit SHA");
       expect(writerPrompt).toContain("Never fetch, push, add a remote");
       expect(writerPrompt).not.toContain("call chat_pr_open with a title");
