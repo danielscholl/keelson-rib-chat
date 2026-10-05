@@ -36,6 +36,7 @@ type Field = NonNullable<Item["fields"]>[number];
 export interface LaunchState {
   projects: readonly { id: string; name: string; rootPath: string }[];
   hasSwarms?: boolean;
+  canCreateProject?: boolean;
   provider?: string;
   classes?: readonly { provider: string; defaultModel?: string; classes?: ModelClassMap }[];
   toolReachability?: readonly ToolReachability[];
@@ -790,7 +791,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
     <div class="intro"><h1>Start a swarm</h1><p class="hint">Describe the problem. Agents investigate, debate, and bring back a conclusion.</p></div>
     <button class="prepare" id="launch-prepare" type="button">Prepare in chat · attach an issue or PR</button>
   </header>
-  <form id="launch-form" data-nonce="${esc(nonce)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-models="${esc(JSON.stringify(models))}" data-details="${esc(JSON.stringify(details))}" data-budgets="${esc(JSON.stringify(budgets))}">
+  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-models="${esc(JSON.stringify(models))}" data-details="${esc(JSON.stringify(details))}" data-budgets="${esc(JSON.stringify(budgets))}">
     <div class="fields">
       <label for="launch-task">TASK</label>
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>

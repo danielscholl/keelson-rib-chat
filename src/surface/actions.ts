@@ -65,6 +65,7 @@ export interface ActionDeps {
   // Probes the ClickClack server again and refreshes the server line and inspector.
   probe?: () => Promise<void>;
   getToolReachability?: RibContext["getToolReachability"];
+  createProject?: RibContext["createProject"];
 }
 
 export const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;

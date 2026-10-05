@@ -10607,6 +10607,38 @@ describe("the launch store", () => {
 });
 
 describe("the rib's surface", () => {
+  test("captures creation capability on every registration and clears it on disposal", async () => {
+    const sm = new FakeSnapshots();
+    let calls = 0;
+    const createProject: NonNullable<ActionDeps["createProject"]> = async () => {
+      calls++;
+      return { id: "created", name: "sample", rootPath: "/tmp/sample", createdAt: T0 };
+    };
+    try {
+      for (const creator of [createProject, undefined, createProject]) {
+        rib.registerTools?.({
+          getExec: () => ({}) as never,
+          getSnapshotManager: () => sm,
+          createProject: creator,
+        });
+        const page = String(await sm.composers.get(LAUNCH_KEY)!.compose());
+        expect(page).toContain(`data-can-create-project="${Boolean(creator)}"`);
+      }
+      await rib.dispose?.();
+      const next = new FakeSnapshots();
+      rib.registerTools?.({
+        getExec: () => ({}) as never,
+        getSnapshotManager: () => next,
+      });
+      expect(String(await next.composers.get(LAUNCH_KEY)!.compose())).toContain(
+        'data-can-create-project="false"',
+      );
+      expect(calls).toBe(0);
+    } finally {
+      await rib.dispose?.();
+    }
+  });
+
   test("project launches without tracker tools survive a failed capability probe", async () => {
     const sm = new FakeSnapshots();
     const dir = mkdtempSync(join(tmpdir(), "chat-launch-probe-"));
