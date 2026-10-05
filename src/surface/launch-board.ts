@@ -250,16 +250,63 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-
 const PAGE_SCRIPT = `
 (() => {
   let busy = false;
+  let modelBlocked = false;
+  let dirty = false;
+  let dispatched = false;
+  let ready = false;
+  let pending;
+  let capture;
+  let restoreDraft;
   let activeStart;
   let startLabel;
+  const validDraft = (state) => state && state.version === 1
+    && typeof state.task === "string" && typeof state.expanded === "boolean"
+    && typeof state.customize === "boolean"
+    && ["small", "medium", "large"].includes(state.size)
+    && ["fast", "balanced", "deep"].includes(state.power)
+    && typeof state.project === "string"
+    && (state.projectRoot === undefined || typeof state.projectRoot === "string")
+    && state.permissions && ["write", "workflows", "tracker"].every((key) =>
+      typeof state.permissions[key] === "boolean")
+    && Array.isArray(state.workflows) && state.workflows.length <= ${START_BOUNDS.maxWorkflows}
+    && state.workflows.every((name) => typeof name === "string" && ${WORKFLOW}.test(name))
+    && new Set(state.workflows).size === state.workflows.length
+    && typeof state.workflowEntry === "string" && typeof state.otherModel === "string"
+    && typeof state.modelProvider === "string"
+    && (state.modelSelection === "" || state.modelSelection === "other"
+      || (state.modelSelection && typeof state.modelSelection.model === "string"
+        && Boolean(state.modelSelection.model)
+        && typeof state.modelSelection.provider === "string"));
+  keelson.onRestore?.((state) => {
+    if (dirty || dispatched || !validDraft(state)) return;
+    if (ready) restoreDraft(state);
+    else pending = state;
+  });
+  const saveEdit = () => {
+    dirty = true;
+    keelson.saveState?.(capture());
+  };
+  const watchText = (field, update = () => {}) => {
+    ["input", "change"].forEach((event) => field.addEventListener(event, () => {
+      update();
+      saveEdit();
+    }));
+  };
+  const finishInitialization = () => {
+    ready = true;
+    if (pending) restoreDraft(pending);
+    pending = undefined;
+  };
   const updateStart = () => {
-    activeStart.disabled = busy;
+    activeStart.disabled = busy || modelBlocked;
     activeStart.textContent = busy ? "Starting…" : startLabel;
     if (busy) activeStart.setAttribute("aria-busy", "true");
     else activeStart.removeAttribute("aria-busy");
   };
   const dispatch = (payload) => {
     if (busy) return;
+    dispatched = true;
+    keelson.saveState?.({});
     keelson.action("start-swarm", payload);
     busy = true;
     updateStart();
@@ -286,6 +333,7 @@ const PAGE_SCRIPT = `
   const permissions = { write: false, workflows: false, tracker: false };
   let workflows = [];
   let controls;
+  let mountedProject = "";
   const updateMode = () => {
     mode.textContent = project.value
       ? "Reads " + project.selectedOptions[0].dataset.name
@@ -315,6 +363,7 @@ const PAGE_SCRIPT = `
       remove.addEventListener("click", () => {
         workflows = workflows.filter((value) => value !== name);
         renderWorkflows();
+        saveEdit();
         (removeButtons[Math.min(index, removeButtons.length - 1)] ?? controls.entry).focus();
       });
       removeButtons.push(remove);
@@ -324,7 +373,7 @@ const PAGE_SCRIPT = `
     controls.count.textContent = workflows.length + " / ${START_BOUNDS.maxWorkflows} workflows";
     updateMode();
   };
-  const addWorkflows = () => {
+  const addWorkflows = (save = true) => {
     const names = controls.entry.value.trim().split(/[\\s,]+/).filter(Boolean);
     const bad = names.find((name) => !${WORKFLOW}.test(name));
     if (bad) {
@@ -340,6 +389,7 @@ const PAGE_SCRIPT = `
     controls.entry.value = "";
     workflowError("");
     renderWorkflows();
+    if (save) saveEdit();
     return true;
   };
   const sizes = ["small", "medium", "large"];
@@ -357,7 +407,16 @@ const PAGE_SCRIPT = `
   let power = "balanced";
   let model = "";
   let provider = "";
+  let otherProvider = form.dataset.provider;
+  const providers = JSON.parse(form.dataset.providers);
+  const modelError = document.getElementById("model-error");
   const updateChoice = () => {
+    modelBlocked = Boolean(model && provider && !providers.includes(provider));
+    modelError.textContent = modelBlocked
+      ? "Provider " + provider + " is unavailable. Choose a model or plan again."
+      : "";
+    modelError.hidden = !modelBlocked;
+    updateStart();
     let matches = false;
     cards.forEach((card) => {
       const selected = !model && size === card.dataset.size && power === card.dataset.power;
@@ -385,32 +444,53 @@ const PAGE_SCRIPT = `
     provider = "";
     modelSelect.value = "";
     otherModel.value = "";
+    otherProvider = form.dataset.provider;
     updateChoice();
+    saveEdit();
   }));
   efforts.forEach((effort) => effort.addEventListener("click", () => {
     size = effort.dataset.size;
     updateChoice();
+    saveEdit();
   }));
   const updateModel = () => {
     const choice = modelSelect.value === "other"
-      ? { model: otherModel.value.trim(), provider: form.dataset.provider }
+      ? { model: otherModel.value.trim(), provider: otherProvider }
       : modelSelect.value ? JSON.parse(modelSelect.value) : { model: "", provider: "" };
     model = choice.model;
     provider = model ? choice.provider : "";
     updateChoice();
   };
-  modelSelect.addEventListener("change", updateModel);
-  otherModel.addEventListener("input", updateModel);
-  customize.addEventListener("click", () => {
-    drawer.hidden = !drawer.hidden;
+  watchText(modelSelect, () => {
+    otherProvider = form.dataset.provider;
+    updateModel();
+  });
+  watchText(otherModel, updateModel);
+  const renderDrawer = () => {
     customize.setAttribute("aria-expanded", String(!drawer.hidden));
     document.getElementById("customize-label").textContent = drawer.hidden ? "Customize" : "Hide";
+  };
+  customize.addEventListener("click", () => {
+    drawer.hidden = !drawer.hidden;
+    renderDrawer();
+    saveEdit();
   });
   updateChoice();
   document.getElementById("launch-prepare").addEventListener("click", () => {
     keelson.action("start-in-chat", { nonce: form.dataset.nonce });
   });
-  project.addEventListener("change", () => {
+  const renderPermissions = () => {
+    Object.keys(permissions).forEach((key) => {
+      const button = document.getElementById("allow-" + key);
+      permissions[key] = permissions[key] && !button.disabled;
+      button.setAttribute("aria-checked", String(permissions[key]));
+      document.getElementById(key + "-row").classList.toggle("is-on", permissions[key]);
+      if (key !== "write") document.getElementById(key + "-details").hidden = !permissions[key];
+    });
+    updateMode();
+  };
+  const mountProject = () => {
+    mountedProject = project.value;
     const selected = project.selectedOptions[0];
     const hasProject = Boolean(project.value);
     row.classList.toggle("has-project", hasProject);
@@ -434,10 +514,8 @@ const PAGE_SCRIPT = `
         button.addEventListener("click", () => {
           if (button.disabled || !project.value) return;
           permissions[key] = !permissions[key];
-          button.setAttribute("aria-checked", String(permissions[key]));
-          document.getElementById(key + "-row").classList.toggle("is-on", permissions[key]);
-          if (key !== "write") document.getElementById(key + "-details").hidden = !permissions[key];
-          updateMode();
+          renderPermissions();
+          saveEdit();
         });
       });
       controls.entry.addEventListener("keydown", (event) => {
@@ -452,17 +530,66 @@ const PAGE_SCRIPT = `
         const from = controls.entry.selectionStart;
         const to = controls.entry.selectionEnd;
         controls.entry.value = controls.entry.value.slice(0, from) + text + controls.entry.value.slice(to);
-        addWorkflows();
+        addWorkflows(false);
+        saveEdit();
       });
+      watchText(controls.entry);
       renderWorkflows();
     }
     updateMode();
+  };
+  watchText(project, () => {
+    if (project.value !== mountedProject) mountProject();
   });
+  watchText(task);
+  capture = () => ({
+    version: 1, task: task.value, expanded: true, customize: !drawer.hidden,
+    size, power, project: project.value, permissions: { ...permissions },
+    projectRoot: project.value ? project.selectedOptions[0].dataset.root : "",
+    workflows: [...workflows], workflowEntry: controls?.entry.value ?? "",
+    modelSelection: modelSelect.value === "other" ? "other"
+      : model ? { model, provider } : "",
+    otherModel: otherModel.value, modelProvider: otherProvider
+  });
+  restoreDraft = (state) => {
+    task.value = state.task;
+    size = state.size;
+    power = state.power;
+    otherModel.value = state.otherModel;
+    otherProvider = state.modelProvider;
+    if (state.modelSelection && state.modelSelection !== "other") {
+      const value = JSON.stringify(state.modelSelection);
+      if (!Array.from(modelSelect.options).some((option) => option.value === value)) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = state.modelSelection.model + " · " + state.modelSelection.provider;
+        modelSelect.append(option);
+      }
+      modelSelect.value = value;
+    } else modelSelect.value = state.modelSelection;
+    updateModel();
+    drawer.hidden = !state.customize && !modelBlocked;
+    renderDrawer();
+    project.value = Array.from(project.options).some((option) => option.value === state.project)
+      ? state.project : "";
+    mountProject();
+    const sameRoot = project.value && state.projectRoot === project.selectedOptions[0].dataset.root;
+    if (controls && sameRoot) {
+      Object.keys(permissions).forEach((key) => { permissions[key] = state.permissions[key]; });
+      workflows = [...state.workflows];
+      controls.entry.value = state.workflowEntry;
+      renderPermissions();
+      renderWorkflows();
+    }
+    if (project.value !== state.project || (project.value && !sameRoot)) {
+      keelson.saveState?.(capture());
+    }
+  };
   // The host's frame sandbox grants allow-scripts only, never allow-forms, so a
   // form never fires submit here; Start is a plain click.
   const startSwarm = () => {
-    if (busy) return;
-    if (permissions.workflows && !addWorkflows()) return;
+    if (busy || modelBlocked) return;
+    if (permissions.workflows && !addWorkflows(false)) return;
     const payload = {
       nonce: form.dataset.nonce,
       task: task.value,
@@ -487,7 +614,8 @@ const PAGE_SCRIPT = `
   };
   start.addEventListener("click", startSwarm);
   task.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229
+      && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       startSwarm();
     }
@@ -496,12 +624,20 @@ const PAGE_SCRIPT = `
   const compact = document.getElementById("launch-compact");
   if (!compact) {
     initializeExpanded();
+    finishInitialization();
     return;
   }
   const task = document.getElementById("compact-task");
   activeStart = document.getElementById("compact-start");
   startLabel = "Start";
   updateStart();
+  watchText(task);
+  capture = () => ({
+    version: 1, task: task.value, expanded: false, customize: false,
+    size: "medium", power: "balanced", project: "", projectRoot: "",
+    permissions: { write: false, workflows: false, tracker: false },
+    workflows: [], workflowEntry: "", modelSelection: "", otherModel: "", modelProvider: ""
+  });
   const startCompact = () => dispatch({
     nonce: compact.dataset.nonce,
     task: task.value,
@@ -516,7 +652,7 @@ const PAGE_SCRIPT = `
     }
   });
   let expanded = false;
-  const expand = () => {
+  const expand = (focus = false) => {
     if (expanded) return;
     expanded = true;
     const draft = task.value;
@@ -525,10 +661,25 @@ const PAGE_SCRIPT = `
     initializeExpanded();
     const textarea = document.getElementById("launch-task");
     textarea.value = draft;
-    textarea.focus();
+    if (focus) textarea.focus();
   };
-  document.getElementById("compact-plan").addEventListener("click", expand);
-  document.getElementById("compact-more").addEventListener("click", expand);
+  restoreDraft = (state) => {
+    if (state.expanded || /[\\r\\n]/.test(state.task) || state.customize
+      || state.size !== "medium" || state.power !== "balanced" || state.project
+      || state.modelSelection || state.otherModel || state.workflows.length
+      || state.workflowEntry || Object.values(state.permissions).some(Boolean)) {
+      expand();
+      restoreDraft(state);
+    } else task.value = state.task;
+  };
+  const expandFromClick = () => {
+    if (expanded) return;
+    expand(true);
+    saveEdit();
+  };
+  document.getElementById("compact-plan").addEventListener("click", expandFromClick);
+  document.getElementById("compact-more").addEventListener("click", expandFromClick);
+  finishInitialization();
 })();
 `;
 
@@ -630,7 +781,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
   const options = projects
     .map((p) => {
       const path = projectPath(p.rootPath);
-      return `<option value="${esc(p.id)}" data-name="${esc(p.name)}" data-path="${esc(path)}">${esc(`${p.name} · ${path}`)}</option>`;
+      return `<option value="${esc(p.id)}" data-name="${esc(p.name)}" data-path="${esc(path)}" data-root="${esc(p.rootPath)}">${esc(`${p.name} · ${path}`)}</option>`;
     })
     .join("");
   const expanded = `
@@ -639,7 +790,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
     <div class="intro"><h1>Start a swarm</h1><p class="hint">Describe the problem. Agents investigate, debate, and bring back a conclusion.</p></div>
     <button class="prepare" id="launch-prepare" type="button">Prepare in chat · attach an issue or PR</button>
   </header>
-  <form id="launch-form" data-nonce="${esc(nonce)}" data-provider="${esc(state.provider ?? "")}" data-models="${esc(JSON.stringify(models))}" data-details="${esc(JSON.stringify(details))}" data-budgets="${esc(JSON.stringify(budgets))}">
+  <form id="launch-form" data-nonce="${esc(nonce)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-models="${esc(JSON.stringify(models))}" data-details="${esc(JSON.stringify(details))}" data-budgets="${esc(JSON.stringify(budgets))}">
     <div class="fields">
       <label for="launch-task">TASK</label>
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
@@ -649,7 +800,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
         <div class="plan-cards">${cards}</div>
         <div class="drawer" id="launch-drawer" hidden>
           <div><label id="effort-label">EFFORT</label><div class="effort-pills" role="group" aria-labelledby="effort-label">${SWARM_SIZES.map((s) => `<button id="effort-${s}" type="button" data-size="${s}" aria-pressed="${s === "medium"}">${s}</button>`).join("")}</div><p class="hint detail" id="effort-detail">${esc(details.medium!)}</p></div>
-          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-detail">Keeps the plan's pair: ${esc(models.balanced!)}.</p></div>
+          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-detail">Keeps the plan's pair: ${esc(models.balanced!)}.</p><p class="hint detail" id="model-error" role="alert" hidden></p></div>
         </div>
       </section>
       <div class="project">

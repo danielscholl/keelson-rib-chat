@@ -91,12 +91,33 @@ The scope footer follows your choices: **Reads \<name\>**, optionally
 **· beads**. The beads suffix records switch intent, not a promise that every
 tracker tool was granted. Ordinary refreshes preserve your draft, switches and
 chips. Project-list, provider, capability, dispatch or remembered-refusal
-configuration changes can replace the page and discard it.
+configuration changes can replace the page. On Keelson v0.119.0 or later,
+replacement documents restore the task verbatim, plan and model choices,
+project, switches and chips, pending field text, and expanded/Customize
+presentation. A restored expanded or multiline draft opens the full controls
+instead of compact defaults.
+
+Projects restore by ID; a removed or hidden project becomes chat-only and
+clears its switches and workflow chips. Current capability restrictions still
+apply. Named models keep their selected provider; an unavailable provider
+requires choosing a model or plan again. Workflow chips restore exactly as
+typed, in order; the host refuses unknown workflows at Start. The launcher
+does not detect removed workflows.
 
 For an issue or PR, paste its text or use **Prepare in chat** to gather and
 attach the evidence. A task naming a URL or `#N` is refused with a host toast.
 **Starting…** is a two-second duplicate-click guard, not a completion signal;
 the task stays in place and a successful start opens the swarm on the index.
+Each Start dispatch clears the saved draft before sending the action, even if
+the host refuses it. Local validation failures do not clear it. The current
+document keeps its fields for retry; the next edit saves a fresh draft.
+
+The bridge keeps state only in browser-tab memory, not durable storage.
+A browser-page reload loses saved drafts. The host retains at most 64 view
+keys and caps each JSON snapshot at 65,536 UTF-8 bytes. An oversized save
+leaves the last accepted snapshot intact without truncating visible text.
+Older hosts without the state bridge can discard local edits when the
+launcher page is replaced.
 See [the launcher](../swarms-tab/#starting-a-swarm) for draft retention and
 retry behavior.
 

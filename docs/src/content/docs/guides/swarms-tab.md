@@ -523,7 +523,8 @@ their turns were not kept.
 ## Starting a swarm
 
 The **Start a swarm** header above the index is a themed HTML launcher. With a
-live or retained ended swarm, it starts as one compact **New swarm** line.
+live or retained ended swarm and no restored expanded draft, it starts as
+one compact **New swarm** line.
 Type in **What should the swarm work out?** The **Working session** chip sits
 beside **5 agents · 30 min**.
 
@@ -628,9 +629,30 @@ Ordinary refreshes preserve local expansion, the draft, plan and model
 choices, switches and chips while swarm presence stays unchanged. Additional
 swarms and live-to-ended transitions keep the same launcher page. Crossing
 between no live or retained ended swarms and at least one can replace the
-page and discard it. A project-list, provider, capability, dispatch or
-remembered-refusal configuration change can also replace the page. Reloading
-or replacing the page does not restore local edits.
+page. A project-list, provider, capability, dispatch or remembered-refusal
+configuration change can also replace the page. On Keelson v0.119.0 or later,
+replacement documents restore the task verbatim, plan and model choices,
+project, switches and chips, pending field text, and expanded/Customize
+presentation. A restored expanded or multiline draft opens the full controls
+instead of compact defaults.
+
+Projects restore by ID; a removed or hidden project becomes chat-only and
+clears its switches and workflow chips. Current capability restrictions still
+apply. Named models keep their selected provider; an unavailable provider
+requires choosing a model or plan again. Workflow chips restore exactly as
+typed, in order; the host refuses unknown workflows at Start. The launcher
+does not detect removed workflows.
+
+Each Start dispatch clears the saved draft before sending the action, even if
+the host refuses it. Local validation failures do not clear it. The current
+document keeps its fields for retry; the next edit saves a fresh draft.
+
+The bridge keeps state only in browser-tab memory, not durable storage.
+A browser-page reload loses saved drafts. The host retains at most 64 view
+keys and caps each JSON snapshot at 65,536 UTF-8 bytes. An oversized save
+leaves the last accepted snapshot intact without truncating visible text.
+Older hosts without the state bridge can discard local edits when the
+launcher page is replaced.
 
 A swarm started any other way, over MCP or from the `chat-swarm` workflow,
 appears in the same live area.
