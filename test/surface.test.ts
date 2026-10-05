@@ -9480,6 +9480,205 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("creation acceptance publishes real capability and admits exact frame traces after host registration", async () => {
+    for (const rootPath of [undefined, "~/work/notes-app"]) {
+      for (const tracker of [false, true]) {
+        const h = launcherHarness({
+          projects: [],
+          canCreateProject: true,
+          toolReachability: [
+            { name: "beads_ready", status: "reachable" },
+            { name: "beads_close", status: "reachable" },
+            { name: "beads_show", status: "reachable" },
+          ],
+        });
+        const bridge = fakeStateBridge();
+        const calls: Parameters<NonNullable<ActionDeps["createProject"]>>[0][] = [];
+        const admitted: StartSwarmInput[] = [];
+        const queries: string[][] = [];
+        const order: string[] = [];
+        try {
+          await Bun.sleep(5);
+          expect(h.page()).toContain('<option value="new">New project…</option>');
+          const frame = frameHarness(h.page(), h.nonce(), bridge);
+          frame.get("launch-task")!.value = "Build a small notes app";
+          frame.fire("launch-task", "input");
+          frame.select("new");
+          frame.get("launch-project-name")!.value = "notes-app";
+          frame.fire("launch-project-name", "input");
+          if (rootPath) {
+            frame.get("launch-project-folder")!.value = rootPath;
+            frame.fire("launch-project-folder", "input");
+          }
+          if (tracker) frame.fire("allow-tracker", "click");
+          frame.fire("launch-start", "click");
+          const action = frame.calls[0]!;
+          expect(action.payload).toEqual({
+            nonce: h.nonce(),
+            task: "Build a small notes app",
+            project: "new",
+            name: "notes-app",
+            tools: "write",
+            ...(rootPath ? { rootPath } : {}),
+            ...(tracker ? { lead_tools: ["beads_ready", "beads_show", "beads_close"] } : {}),
+          });
+          expect(bridge.operations.slice(-2)).toEqual(["save", "action"]);
+          const result = await handleSwarmsAction(
+            { ...action, origin: "canvas-html" },
+            {
+              ...actionDeps,
+              surface: h.surface,
+              createProject: async (input) => {
+                order.push("create");
+                expect(bridge.stored).toEqual({});
+                calls.push(input);
+                const project = {
+                  id: "p-created",
+                  name: input.name,
+                  rootPath: "/resolved/notes-app",
+                  createdAt: T0,
+                };
+                h.inputs.projects = [project];
+                h.surface.refresh();
+                await Bun.sleep(5);
+                const replacement = frameHarness(h.page(), h.nonce(), bridge);
+                expect(replacement.get("launch-task")!.value).toBe("");
+                expect(replacement.get("launch-project")!.value).toBe("");
+                order.push("registered");
+                return project;
+              },
+              getToolReachability: (names) => {
+                queries.push([...names]);
+                return [
+                  { name: "beads_ready", status: "reachable" },
+                  { name: "beads_close", status: "cross-rib-denied" },
+                  { name: "beads_show", status: "unregistered" },
+                  { name: "beads_dep", status: "reachable" },
+                ];
+              },
+              begin: (input) => {
+                order.push("begin");
+                expect(
+                  h.inputs.projects.find((project) => project.id === input.project),
+                ).toMatchObject({
+                  id: "p-created",
+                  rootPath: "/resolved/notes-app",
+                });
+                admitted.push(input);
+                return "s-created";
+              },
+            },
+          );
+          expect(result.ok).toBe(true);
+          expect(calls).toEqual([{ name: "notes-app", ...(rootPath ? { rootPath } : {}) }]);
+          expect(admitted).toEqual([
+            {
+              task: "Build a small notes app",
+              project: "p-created",
+              workTools: "write",
+              ...(tracker ? { leadTools: ["beads_ready"] } : {}),
+            },
+          ]);
+          expect(order).toEqual(["create", "registered", "begin"]);
+          expect(queries).toHaveLength(tracker ? 2 : 0);
+          console.info(
+            "creation acceptance trace",
+            JSON.stringify({
+              framePayload: action.payload,
+              createProject: calls,
+              begin: admitted,
+              order,
+            }),
+          );
+        } finally {
+          h.surface.dispose();
+        }
+      }
+    }
+  });
+
+  test("post-creation reachability errors preserve the registered project without admission", async () => {
+    const h = launcherHarness({ projects: [], canCreateProject: true });
+    const order: string[] = [];
+    let queries = 0;
+    try {
+      await Bun.sleep(5);
+      const result = await handleSwarmsAction(
+        {
+          type: "start-swarm",
+          origin: "canvas-html",
+          payload: {
+            nonce: h.nonce(),
+            task: "Build notes",
+            project: "new",
+            name: "notes",
+            lead_tools: ["beads_ready"],
+          },
+        },
+        {
+          ...actionDeps,
+          surface: h.surface,
+          createProject: async () => {
+            order.push("create");
+            const project = {
+              id: "p-created",
+              name: "notes",
+              rootPath: "/resolved/notes",
+              createdAt: T0,
+            };
+            h.inputs.projects = [project];
+            return project;
+          },
+          getToolReachability: () => {
+            if (++queries === 2) throw new Error("grant lookup unavailable");
+            return [{ name: "beads_ready", status: "reachable" }];
+          },
+          begin: () => {
+            order.push("begin");
+            return "unexpected";
+          },
+        },
+      );
+      expect(result).toEqual({
+        ok: false,
+        error: "Could not check lead tool reachability: grant lookup unavailable",
+      });
+      expect(order).toEqual(["create"]);
+      expect(h.inputs.projects.map((project) => project.id)).toEqual(["p-created"]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation capability changes recompose the real launcher and reconcile saved creation intent", async () => {
+    const h = launcherHarness({ projects: [], canCreateProject: false });
+    try {
+      await Bun.sleep(5);
+      const nonce = h.nonce();
+      expect(h.page()).not.toContain('<option value="new">');
+      h.inputs.canCreateProject = true;
+      h.surface.refresh();
+      await Bun.sleep(5);
+      expect(h.nonce()).toBe(nonce);
+      const bridge = fakeStateBridge();
+      const frame = frameHarness(h.page(), nonce, bridge);
+      frame.select("new");
+      frame.get("launch-project-name")!.value = "notes";
+      frame.fire("launch-project-name", "input");
+      h.inputs.canCreateProject = false;
+      h.surface.refresh();
+      await Bun.sleep(5);
+      const next = frameHarness(h.page(), nonce, bridge);
+      expect(next.get("launch-project")!.value).toBe("");
+      expect(bridge.stored).toMatchObject({
+        project: "",
+        permissions: { write: false, workflows: false, tracker: false },
+      });
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
   test("HTML launches retain task and link validation before admission", async () => {
     const h = launcherHarness({ projects });
     try {
