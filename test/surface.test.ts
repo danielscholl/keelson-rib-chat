@@ -7243,6 +7243,86 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("operator-amended workflow restoration keeps verbatim order without catalog or grant inference", async () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness({ projects, toolReachability: [] }, "first", bridge);
+    first.get("launch-task")!.value = "Investigate workflow work";
+    first.fire("launch-task", "input");
+    first.select("p1");
+    first.fire("allow-workflows", "click");
+    first.get("workflow-entry")!.value = "Unknown.Workflow_v2, fix-issue";
+    first.fire("workflow-entry", "keydown", { key: "Enter" });
+    first.get("workflow-entry")!.value = "pending-workflow";
+    first.fire("workflow-entry", "input");
+    const saved = bridge.stored;
+    for (const blocked of [false, true]) {
+      const h = launcherHarness({
+        projects,
+        refused: ["Unknown.Workflow_v2", "fix-issue"],
+        toolReachability: [{ name: "beads_ready", status: "cross-rib-denied" }],
+        ...(blocked ? { dispatchBlocked: "Workflow dispatch is unavailable" } : {}),
+      });
+      try {
+        await Bun.sleep(5);
+        const restoredBridge = fakeStateBridge(saved);
+        const next = frameHarness(h.page(), "ignored", restoredBridge);
+        expect(
+          next.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
+        ).toEqual(["Unknown.Workflow_v2", "fix-issue"]);
+        expect(next.get("workflow-entry")!.value).toBe("pending-workflow");
+        expect(next.get("allow-workflows")!.disabled).toBe(blocked);
+        expect(next.get("allow-workflows")!.attributes.get("aria-checked")).toBe(String(!blocked));
+        expect(next.get("workflows-details")!.hidden).toBe(blocked);
+        expect(next.get("workflows-meaning")!.textContent).toContain(
+          "Unknown.Workflow_v2, fix-issue approvals: you answer them in Workflows",
+        );
+        expect(next.calls).toEqual([]);
+        expect(restoredBridge.saves).toEqual([]);
+        next.fire("launch-start", "click");
+        if (blocked) {
+          expect(next.calls[0]!.payload).not.toHaveProperty("workflows");
+        } else {
+          expect(next.calls[0]!.payload.workflows).toBe(
+            "Unknown.Workflow_v2, fix-issue, pending-workflow",
+          );
+          let starts = 0;
+          const refusal = await handleSwarmsAction(
+            { ...next.calls[0]!, origin: "canvas-html" },
+            {
+              ...actionDeps,
+              surface: h.surface,
+              begin: (input) => {
+                starts++;
+                expect(input.workflows?.map((workflow) => workflow.name)).toEqual([
+                  "Unknown.Workflow_v2",
+                  "fix-issue",
+                  "pending-workflow",
+                ]);
+                throw new Error("Host refuses unknown workflow 'Unknown.Workflow_v2'");
+              },
+            },
+          );
+          expect(starts).toBe(1);
+          expect(refusal).toEqual({
+            ok: false,
+            error: "Host refuses unknown workflow 'Unknown.Workflow_v2'",
+          });
+          expect(restoredBridge.stored).toEqual({});
+          next.release();
+          expect(next.get("launch-task")!.value).toBe("Investigate workflow work");
+          expect(next.get("workflow-chips")!.children).toHaveLength(3);
+        }
+      } finally {
+        h.surface.dispose();
+      }
+    }
+    first.fire("allow-workflows", "click");
+    const off = frameHarness({ projects }, "off", bridge);
+    expect(off.get("allow-workflows")!.attributes.get("aria-checked")).toBe("false");
+    expect(off.get("workflow-chips")!.children).toHaveLength(2);
+    expect(off.get("workflow-entry")!.value).toBe("pending-workflow");
+  });
+
   test("compact initial markup renders only a one-line launcher outside inert templates", () => {
     const page = buildLaunch({ projects, hasSwarms: true }, "nonce");
     const initial = page
