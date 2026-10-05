@@ -487,12 +487,19 @@ describe("write mode", () => {
     for (const extra of [{}, { write: undefined }, { write: undefined, workTools: undefined }]) {
       const h = harness(async () => {}, { quiesceMs: 60_000, ...extra });
       const swarm = await h.start();
+      await until(() => turnsOf(h, "s1-lead").length > 0);
       const summary = swarm.summary();
       expect(summary.writeEnabled).toBe(
         extra.write === undefined && "write" in extra ? undefined : true,
       );
       expect(summary.prs).toBeUndefined();
       expect(summary.agents.some((a) => a.worktree)).toBe(false);
+      const leadPrompt = turnsOf(h, "s1-lead")[0]!.system;
+      expect(
+        leadPrompt?.includes(
+          "- Commits carry no AI attribution: never ask a writer to add a Co-Authored-By trailer naming an AI, a 'Generated with' line, or a session link. chat_merge and chat_pr_open refuse such commits.",
+        ),
+      ).toBe(summary.writeEnabled === true);
       await swarm.stop();
     }
   });
