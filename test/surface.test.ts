@@ -8,6 +8,7 @@ import {
   DEFAULT_PROJECT_NAME,
   DESIGN_TOKENS,
   expectView,
+  ProjectOperationError,
   type RibViewDescriptor,
   ribClientEffectSchema,
   ribSurfaceBadgeSchema,
@@ -8866,6 +8867,251 @@ describe("launching from the tab", () => {
       h.inputs.projects = [];
       expect((await act("p1")).ok).toBe(false);
       expect(begun).toHaveLength(0);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("HTML creation calls the host once with exact fields and forces its returned project and Write", async () => {
+    const h = launcherHarness({ projects, canCreateProject: true });
+    const calls: unknown[] = [];
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      for (const rootPath of [undefined, "", " \n ", " ~/work/notes-app "]) {
+        for (const tools of [undefined, "none", "read", "write", "invented"]) {
+          calls.length = 0;
+          const result = await handleSwarmsAction(
+            {
+              type: "start-swarm",
+              origin: "canvas-html",
+              payload: {
+                nonce: h.nonce(),
+                task: " Build a small notes app ",
+                project: "new",
+                name: " notes-app ",
+                rootPath,
+                tools,
+                projectId: "forged",
+                work_tools: "none",
+                context: [{ kind: "issue", text: "forged" }],
+              },
+            },
+            {
+              ...actionDeps,
+              surface: h.surface,
+              createProject: async (input) => {
+                calls.push(input);
+                return {
+                  id: "p-created",
+                  name: input.name,
+                  rootPath: "/resolved/notes-app",
+                  createdAt: T0,
+                };
+              },
+            },
+          );
+          expect(result.ok).toBe(true);
+          expect(calls).toEqual([
+            { name: "notes-app", ...(rootPath?.trim() ? { rootPath: "~/work/notes-app" } : {}) },
+          ]);
+          expect(begun.at(-1)).toEqual({
+            task: "Build a small notes app",
+            project: "p-created",
+            workTools: "write",
+          });
+        }
+      }
+      expect(h.surface.offersLaunchProject("p-created")).toBe(false);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation refuses unauthorized, unsupported and invalid requests before host side effects", async () => {
+    const h = launcherHarness({ projects, canCreateProject: true });
+    let calls = 0;
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const deps: ActionDeps = {
+        ...actionDeps,
+        surface: h.surface,
+        createProject: async () => {
+          calls++;
+          throw new Error("creation should not be reached");
+        },
+      };
+      const payload = { nonce: h.nonce(), task: "Build notes", project: "new", name: "notes" };
+      for (const extra of [
+        { nonce: "old" },
+        { nonce: undefined },
+        { name: "" },
+        { name: " \n " },
+        { name: 123 },
+        { name: undefined },
+        { rootPath: {} },
+        { rootPath: null },
+        { task: "" },
+        { task: "x".repeat(BODY_MAX + 1) },
+        { task: "Review #12" },
+        { task: "See https://example.com" },
+        { workflows: "bad/name" },
+        { workflows: Array.from({ length: 11 }, (_, i) => `flow-${i}`).join(",") },
+        { lead_tools: "beads_ready" },
+        { lead_tools: ["chat_post"] },
+        { lead_tools: [7] },
+        { project: "arbitrary-unoffered-id" },
+      ]) {
+        expect(
+          (
+            await handleSwarmsAction(
+              { type: "start-swarm", origin: "canvas-html", payload: { ...payload, ...extra } },
+              deps,
+            )
+          ).ok,
+        ).toBe(false);
+      }
+      expect(
+        await handleSwarmsAction(
+          { type: "start-swarm", origin: "canvas-html", payload },
+          { ...deps, createProject: undefined },
+        ),
+      ).toEqual({ ok: false, error: "This Keelson host can't create projects." });
+      expect(
+        (await handleSwarmsAction({ type: "start-swarm", origin: "board", payload }, deps)).ok,
+      ).toBe(false);
+      expect(calls).toBe(0);
+      expect(begun).toEqual([]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation preserves every host refusal and never admits or tracks a failed creation", async () => {
+    const h = launcherHarness({ projects, canCreateProject: true });
+    const tracked: unknown[] = [];
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      for (const status of [400, 409, 500, 503]) {
+        let calls = 0;
+        const message = `host refusal ${status}: keep this message unchanged`;
+        expect(
+          await handleSwarmsAction(
+            {
+              type: "start-swarm",
+              origin: "canvas-html",
+              payload: { nonce: h.nonce(), task: "Build notes", project: "new", name: "notes" },
+            },
+            {
+              ...actionDeps,
+              surface: {
+                ...h.surface,
+                track: (ids) => {
+                  tracked.push(ids);
+                },
+              },
+              createProject: async () => {
+                calls++;
+                throw new ProjectOperationError(status, message);
+              },
+            },
+          ),
+        ).toEqual({ ok: false, error: message });
+        expect(calls).toBe(1);
+      }
+      expect(begun).toEqual([]);
+      expect(tracked).toEqual([]);
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation resolves before admission and freshly filters grants revoked during the wait", async () => {
+    const h = launcherHarness({ projects, canCreateProject: true });
+    let resolve!: (project: Awaited<ReturnType<NonNullable<ActionDeps["createProject"]>>>) => void;
+    let reachable = true;
+    const order: string[] = [];
+    const queries: string[][] = [];
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const deps: ActionDeps = {
+        ...actionDeps,
+        surface: h.surface,
+        createProject: () => {
+          order.push("create");
+          return new Promise((done) => {
+            resolve = done;
+          });
+        },
+        getToolReachability: (names) => {
+          queries.push([...names]);
+          return names.map((name) => ({
+            name,
+            status: reachable && name === "beads_ready" ? "reachable" : "cross-rib-denied",
+          }));
+        },
+        begin: (input) => {
+          order.push("begin");
+          begun.push(input);
+          return "snew";
+        },
+      };
+      const pending = handleSwarmsAction(
+        {
+          type: "start-swarm",
+          origin: "canvas-html",
+          payload: {
+            nonce: h.nonce(),
+            task: "Build notes",
+            project: "new",
+            name: "notes",
+            workflows: "fix-issue",
+            lead_tools: ["beads_ready", "beads_close"],
+          },
+        },
+        deps,
+      );
+      expect(order).toEqual(["create"]);
+      expect(begun).toEqual([]);
+      reachable = false;
+      resolve({ id: "p-created", name: "notes", rootPath: "/resolved/notes", createdAt: T0 });
+      expect((await pending).ok).toBe(true);
+      expect(order).toEqual(["create", "begin"]);
+      expect(queries).toEqual([
+        ["beads_ready", "beads_close"],
+        ["beads_ready", "beads_close"],
+      ]);
+      expect(begun).toEqual([
+        {
+          task: "Build notes",
+          project: "p-created",
+          workTools: "write",
+          workflows: [{ name: "fix-issue", isolated: true }],
+        },
+      ]);
+      const refused = await handleSwarmsAction(
+        {
+          type: "start-swarm",
+          origin: "canvas-html",
+          payload: { nonce: h.nonce(), task: "Build notes", project: "new", name: "notes" },
+        },
+        {
+          ...deps,
+          createProject: async () => ({
+            id: "p-created",
+            name: "notes",
+            rootPath: "/resolved/notes",
+            createdAt: T0,
+          }),
+          begin: () => {
+            throw new Error("admission refused after registration");
+          },
+        },
+      );
+      expect(refused).toEqual({ ok: false, error: "admission refused after registration" });
     } finally {
       h.surface.dispose();
     }

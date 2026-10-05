@@ -6,7 +6,7 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import type { RibAction, RibActionResult, RibContext } from "@keelson/shared";
+import type { CreateProjectBody, RibAction, RibActionResult, RibContext } from "@keelson/shared";
 import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
@@ -127,12 +127,23 @@ function startInput(
   payload: Record<string, unknown>,
   deps: ActionDeps,
   html: boolean,
-): StartSwarmInput | string {
+): { input: StartSwarmInput; creation?: CreateProjectBody } | string {
   const task = text(payload, "task");
   if (!task) return "a swarm needs a task";
   if (task.length > BODY_MAX) return `a task is at most ${BODY_MAX} characters`;
   if (LINK.test(task)) return LINK_REFUSAL;
   const project = text(payload, "project");
+  let creation: CreateProjectBody | undefined;
+  if (project === "new") {
+    if (!html) return "project creation is only available from the launcher";
+    const name = text(payload, "name");
+    if (!name) return "a new project needs a name";
+    if (payload.rootPath !== undefined && typeof payload.rootPath !== "string") {
+      return "the project folder must be a string";
+    }
+    const rootPath = text(payload, "rootPath");
+    creation = { name, ...(rootPath ? { rootPath } : {}) };
+  }
   const tools = text(payload, "tools");
   if (tools === "write" && !project) {
     return "writing needs a project: pick one, or let agents only read";
@@ -145,11 +156,16 @@ function startInput(
   const power = adjusted ? powerOf(payload) : undefined;
   const input: StartSwarmInput = {
     task,
-    workTools:
-      tools === "none" || tools === "read" || tools === "write" ? tools : project ? "read" : "none",
+    workTools: creation
+      ? "write"
+      : tools === "none" || tools === "read" || tools === "write"
+        ? tools
+        : project
+          ? "read"
+          : "none",
     ...(size ? { size } : {}),
     ...(power ? { power } : {}),
-    ...(project ? { project } : {}),
+    ...(project && !creation ? { project } : {}),
     ...models,
   };
   const names = [
@@ -172,9 +188,12 @@ function startInput(
     return "tracker tools need a project: pick one, or leave Use the tracker off";
   }
   return {
-    ...input,
-    ...(names.length ? { workflows: names.map((name) => ({ name, isolated: true })) } : {}),
-    ...(leadTools.length ? { leadTools } : {}),
+    input: {
+      ...input,
+      ...(names.length ? { workflows: names.map((name) => ({ name, isolated: true })) } : {}),
+      ...(leadTools.length ? { leadTools } : {}),
+    },
+    ...(creation ? { creation } : {}),
   };
 }
 
@@ -519,7 +538,10 @@ export async function handleSwarmsAction(
     case "start-swarm": {
       const html = action.origin === "canvas-html";
       const project = html ? text(payload, "project") : "";
-      if (project) {
+      if (project === "new" && !deps.createProject) {
+        return fail("This Keelson host can't create projects.");
+      }
+      if (project && project !== "new") {
         let offered: boolean | undefined;
         try {
           offered = deps.surface?.offersLaunchProject(project);
@@ -528,11 +550,13 @@ export async function handleSwarmsAction(
         }
         if (!offered) return fail(`the launcher doesn't offer project '${project}'`);
       }
-      const input = startInput(
+      const parsed = startInput(
         html
           ? {
               task: payload.task,
               project,
+              name: payload.name,
+              rootPath: payload.rootPath,
               tools: !project && payload.tools !== "write" ? "none" : payload.tools,
               workflows: payload.workflows,
               lead_tools: payload.lead_tools,
@@ -545,7 +569,29 @@ export async function handleSwarmsAction(
         deps,
         html,
       );
-      return typeof input === "string" ? fail(input) : started(deps, input, "index");
+      if (typeof parsed === "string") return fail(parsed);
+      if (!parsed.creation) return started(deps, parsed.input, "index");
+      const creator = deps.createProject;
+      if (!creator) return fail("This Keelson host can't create projects.");
+      let created: Awaited<ReturnType<typeof creator>>;
+      try {
+        created = await creator(parsed.creation);
+      } catch (e) {
+        return fail(errText(e));
+      }
+      const leadTools = leadToolsOf(payload.lead_tools, deps);
+      if (typeof leadTools === "string") return fail(leadTools);
+      const { leadTools: _previous, ...input } = parsed.input;
+      return started(
+        deps,
+        {
+          ...input,
+          project: created.id,
+          workTools: "write",
+          ...(leadTools.length ? { leadTools } : {}),
+        },
+        "index",
+      );
     }
     case "run-again": {
       const record = id ? deps.find(id) : {};
