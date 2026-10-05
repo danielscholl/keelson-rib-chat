@@ -266,11 +266,12 @@ function lanes(s: SwarmSummary): Lane[] {
       first.set(t.agentId, at);
     }
   }
-  const order = (a: Agent) => first.get(a.id) ?? when(a.joinedAt) ?? Number.POSITIVE_INFINITY;
-  const agents = [...s.agents].sort((a, b) => {
-    const d = (order(a) || 0) - (order(b) || 0);
-    return Number.isFinite(d) && d !== 0 ? d : Number(b.lead) - Number(a.lead);
-  });
+  const order = (a: Agent) =>
+    first.get(a.id) ??
+    (Number.isFinite(when(a.joinedAt)) ? when(a.joinedAt) : Number.POSITIVE_INFINITY);
+  const agents = [...s.agents].sort(
+    (a, b) => order(a) - order(b) || Number(b.lead) - Number(a.lead),
+  );
   return [
     { kind: "operator", id: "operator", label: "you", tone: "neutral", cls: "neu" },
     ...agents.map((a) => ({

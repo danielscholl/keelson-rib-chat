@@ -1939,7 +1939,7 @@ describe("the live cockpit", () => {
     return sections;
   };
 
-  test("the head, state, agent strip and budget precede Map, conversation, composer, details and verbs", () => {
+  test("the head, state, agent strip and Budget precede Timeline, Map and conversation", () => {
     const s = fixtures.running!;
     const cockpit = sections(s);
     expect(cockpit.map((x) => x.kind)).toEqual([
@@ -1947,10 +1947,16 @@ describe("the live cockpit", () => {
       "rows",
       "segments",
       "stats",
+      "timeline",
       "graph",
       "rows",
       "actions",
       "actions",
+    ]);
+    expect(cockpit.slice(3, 6).map((section) => section.title)).toEqual([
+      "Budget",
+      "Timeline",
+      "Map",
     ]);
     expect(cockpit[0]).toMatchObject({
       kind: "cards",
@@ -1974,6 +1980,56 @@ describe("the live cockpit", () => {
       ],
     });
     expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
+  });
+
+  test("the native payload validates on the selected cockpit with a deadline clock", () => {
+    const s = swarm("stimeline", {
+      spans: [{ agentId: "stimeline-lead", n: 1, startedAt: T0, messages: 1, wokeBy: ["rib"] }],
+      activity: [{ at: T0, text: "you posted", kind: "operator", actor: "operator" }],
+      runs: [run("rtimeline", { gates: [{ nodeId: "approve-plan", openedAt: T0 }] })],
+    });
+    const index = buildIndex(state({ live: [s] }));
+    board(INDEX_KEY, index);
+    const timelines = index.sections.filter((section) => section.kind === "timeline");
+    expect(timelines).toHaveLength(1);
+    expect(timelines[0]).toEqual({
+      kind: "timeline",
+      title: "Timeline",
+      window: {
+        from: T0,
+        clock: { until: new Date(Date.parse(T0) + s.limits.wallClockMs).toISOString() },
+      },
+      lanes: [
+        { id: "operator", label: "you", tone: "neutral" },
+        { id: "stimeline-lead", label: "@lead", tone: "brand" },
+        { id: "stimeline-w1", label: "@w1", tone: "id-blue" },
+        { id: s.runs![0]!.runId, label: "fix-issue rtimelin", tone: "info", group: "Runs" },
+      ],
+      spans: [
+        { lane: "stimeline-lead", from: T0, title: "@lead turn 1 · running · woken by the task" },
+        {
+          lane: s.runs![0]!.runId,
+          from: T0,
+          tone: "info",
+          title: "fix-issue rtimelin · running",
+        },
+      ],
+      marks: [
+        { lane: s.runs![0]!.runId, at: T0, glyph: "◇", title: `approve-plan opened ${hhmm(T0)}` },
+        { lane: "operator", at: T0, glyph: "▲", title: `${hhmm(T0)} you posted` },
+      ],
+      legend: expect.stringContaining("Open the record"),
+    });
+    const endedAt = new Date(Date.parse(T0) + 60_000).toISOString();
+    expect(
+      sections({ ...s, endedAt }).find((section) => section.kind === "timeline")?.window,
+    ).toEqual({ from: T0, to: endedAt });
+    expect(buildSwarmBoard(s).sections.some((section) => section.kind === "timeline")).toBe(false);
+    expect(
+      buildIndex(state({ ended: [{ ...s, status: "done", endedAt }] })).sections.some(
+        (section) => section.kind === "timeline",
+      ),
+    ).toBe(false);
   });
 
   test("Map owns a top-level row before Conversation and the eligible composer on every live surface", () => {
