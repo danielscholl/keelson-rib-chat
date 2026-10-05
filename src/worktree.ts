@@ -302,19 +302,30 @@ export function mergeWorktree(
       { cwd: root, timeoutMs: GIT_TIMEOUT_MS },
     );
     if (!result.ok) {
-      const conflicts = (await git(deps, root, ["diff", "--name-only", "--diff-filter=U", "-z"]))
-        .split("\0")
-        .filter(Boolean);
-      if (
-        conflicts.length ||
-        (await gitOk(deps, root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]))
-      ) {
-        await git(deps, root, ["merge", "--abort"]);
-        const restored = (await git(deps, root, ["rev-parse", "--verify", "HEAD^{commit}"])).trim();
-        if (restored !== before)
-          throw new Error(`merge abort did not restore HEAD: ${result.error}`);
-        await mergeReady(deps, root, wt.base);
-      }
+      let conflicts: string[] = [];
+      await git(deps, root, ["diff", "--name-only", "--diff-filter=U", "-z"])
+        .then((out) => {
+          conflicts = out.split("\0").filter(Boolean);
+        })
+        .finally(async () => {
+          if (
+            conflicts.length ||
+            (await gitOk(deps, root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]))
+          ) {
+            await git(deps, root, ["merge", "--abort"]).catch((error: unknown) => {
+              throw new Error(
+                `git merge --abort failed: ${error instanceof Error ? error.message : String(error)}`,
+                { cause: error },
+              );
+            });
+            const restored = (
+              await git(deps, root, ["rev-parse", "--verify", "HEAD^{commit}"])
+            ).trim();
+            if (restored !== before)
+              throw new Error(`merge abort did not restore HEAD: ${result.error}`);
+            await mergeReady(deps, root, wt.base);
+          }
+        });
       if (conflicts.length) return { message: result.error, conflicts };
       throw new Error(`git merge failed: ${result.error}`);
     }

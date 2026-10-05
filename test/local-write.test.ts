@@ -203,6 +203,73 @@ describe("local merge helper", () => {
     );
     expect(git.ran("git merge")).toHaveLength(0);
   });
+
+  test.each(["failure", "timeout", "no merge state"] as const)(
+    "checks for rollback when conflict inspection fails: %s",
+    async (failure) => {
+      const git = fakeGit({ origin: false });
+      const wt = await createWorktree(git.deps, ROOT, "s1", "coder");
+      const run = git.deps.run;
+      git.deps.run = async (cmd, args, opts) => {
+        if (
+          (args[0] === "merge" && args[1] === "--no-ff") ||
+          args[0] === "diff" ||
+          (args[1] === "--verify" && args.at(-1) === "MERGE_HEAD")
+        ) {
+          git.calls.push({ cmd, args, cwd: opts?.cwd ?? "", timeoutMs: opts?.timeoutMs });
+          if (args.at(-1) === "MERGE_HEAD")
+            return failure === "no merge state"
+              ? { ok: false, error: "no merge in progress", code: 1 }
+              : { ok: true, data: HEAD, exitCode: 0 };
+          if (args[0] === "diff") {
+            if (failure === "timeout") throw new Error("conflict inspection timed out");
+            return { ok: false, error: "conflict inspection failed", code: 1 };
+          }
+          return { ok: false, error: "merge conflict", code: 1 };
+        }
+        return run(cmd, args, opts);
+      };
+
+      await expect(mergeWorktree(git.deps, ROOT, wt, "coder", HEAD)).rejects.toThrow(
+        failure === "timeout" ? "conflict inspection timed out" : "conflict inspection failed",
+      );
+      expect(git.ran("git rev-parse --verify --quiet MERGE_HEAD")).toHaveLength(1);
+      expect(git.ran("git merge --abort")).toHaveLength(failure === "no merge state" ? 0 : 1);
+      expect(git.heads.get(ROOT)).toBeUndefined();
+    },
+  );
+
+  test.each(["failure", "timeout"] as const)(
+    "surfaces rollback errors when conflict inspection also fails: %s",
+    async (failure) => {
+      const git = fakeGit({ origin: false });
+      const wt = await createWorktree(git.deps, ROOT, "s1", "coder");
+      const run = git.deps.run;
+      git.deps.run = async (cmd, args, opts) => {
+        if (
+          args[0] === "merge" ||
+          args[0] === "diff" ||
+          (args[1] === "--verify" && args.at(-1) === "MERGE_HEAD")
+        ) {
+          git.calls.push({ cmd, args, cwd: opts?.cwd ?? "", timeoutMs: opts?.timeoutMs });
+          if (args.at(-1) === "MERGE_HEAD") return { ok: true, data: HEAD, exitCode: 0 };
+          if (args[0] === "merge" && args[1] === "--abort") {
+            if (failure === "timeout") throw new Error("abort timed out");
+            return { ok: false, error: "cannot restore index", code: 1 };
+          }
+          return { ok: false, error: "merge or conflict inspection failed", code: 1 };
+        }
+        return run(cmd, args, opts);
+      };
+
+      await expect(mergeWorktree(git.deps, ROOT, wt, "coder", HEAD)).rejects.toThrow(
+        failure === "timeout"
+          ? "git merge --abort failed: abort timed out"
+          : "git merge --abort failed: git merge failed: cannot restore index",
+      );
+      expect(git.ran("git merge --abort")).toHaveLength(1);
+    },
+  );
 });
 
 describe("local merge tool", () => {
