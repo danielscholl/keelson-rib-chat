@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.15.0...v0.16.0) (2026-10-05)
+
+
+### Added
+
+* **surface:** preserve launcher drafts across recomposition ([#102](https://github.com/danielscholl/keelson-rib-chat/issues/102)) ([8841087](https://github.com/danielscholl/keelson-rib-chat/commit/8841087a209ca0fe43c0f78edc842abbd2eb2719))
+
 ## [0.15.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.14.0...v0.15.0) (2026-10-04)
 
 
