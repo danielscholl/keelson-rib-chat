@@ -9370,7 +9370,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("blank-folder creation of a local git repository refuses writers before fetching origin", async () => {
+  test("blank-folder creation starts a local writer without fetch, push or forge calls", async () => {
     const root = mkdtempSync(join(tmpdir(), "chat-new-project-"));
     const h = launcherHarness({ projects: [], canCreateProject: true });
     const commands: string[][] = [];
@@ -9432,6 +9432,7 @@ describe("launching from the tab", () => {
       );
       expect(result.ok).toBe(true);
       const input = begun.at(-1)!;
+      expect(input.workTools).toBe("write");
       const server = new FakeClickClack();
       swarm = await Swarm.start({
         id: "snew",
@@ -9445,16 +9446,28 @@ describe("launching from the tab", () => {
         ...(input.workTools === "write" ? { write: { root, git: { run } } } : {}),
         quiesceMs: 60_000,
       });
-      await expect(
-        swarm.spawn(swarm.summary().agents[0]!.id, {
-          handle: "coder",
-          role: "writer",
-          brief: "Build the app",
-          writes: true,
-        }),
-      ).rejects.toThrow("this one only reads. Spawn the agent without writes.");
-      expect(commands.some((command) => command[1] === "fetch")).toBe(false);
-      expect(swarm.summary().agents).toHaveLength(1);
+      const writer = await swarm.spawn(swarm.summary().agents[0]!.id, {
+        handle: "coder",
+        role: "writer",
+        brief: "Build the app",
+        writes: true,
+      });
+      expect(writer.worktree).toMatchObject({
+        path: join(root, ".worktrees", "swarm-snew-coder"),
+        branch: "keelson/swarm/snew/coder",
+        local: true,
+        base: "main",
+      });
+      expect((await run("git", ["status", "--porcelain"], { cwd: writer.worktree!.path })).ok).toBe(
+        true,
+      );
+      expect(swarm.summary().agents).toHaveLength(2);
+      await swarm.stop();
+      expect(
+        commands.some(
+          (command) => command[0] === "gh" || command.includes("fetch") || command.includes("push"),
+        ),
+      ).toBe(false);
     } finally {
       await swarm?.stop();
       h.surface.dispose();
@@ -9878,20 +9891,30 @@ describe("launching from the tab", () => {
 
   test("creation acceptance publishes real capability and admits exact frame traces after host registration", async () => {
     for (const rootPath of [undefined, "~/work/notes-app"]) {
-      for (const tracker of [false, true]) {
+      for (const mode of [
+        "all",
+        "partial",
+        "off",
+        "unavailable",
+        "init-only",
+        "failure",
+        "rejection",
+        "init-revoked",
+      ]) {
+        const tracker = mode !== "off" && mode !== "unavailable";
+        const offered = mode === "init-only" ? [] : [...TRACKER_TOOLS];
+        const initialized = ["all", "partial", "init-only"].includes(mode);
         const h = launcherHarness({
           projects: [],
           canCreateProject: true,
-          toolReachability: [
-            { name: "beads_ready", status: "reachable" },
-            { name: "beads_close", status: "reachable" },
-            { name: "beads_show", status: "reachable" },
-          ],
+          canInitTracker: mode !== "unavailable",
+          toolReachability: offered.map((name) => ({ name, status: "reachable" })),
         });
         const bridge = fakeStateBridge();
         const calls: Parameters<NonNullable<ActionDeps["createProject"]>>[0][] = [];
         const admitted: StartSwarmInput[] = [];
-        const queries: string[][] = [];
+        const queries: { after: string; names: string[] }[] = [];
+        const initCalls: Parameters<NonNullable<ActionDeps["callTool"]>>[] = [];
         const order: string[] = [];
         try {
           await Bun.sleep(5);
@@ -9906,7 +9929,7 @@ describe("launching from the tab", () => {
             frame.get("launch-project-folder")!.value = rootPath;
             frame.fire("launch-project-folder", "input");
           }
-          if (tracker) frame.fire("allow-tracker", "click");
+          if (mode === "off") frame.fire("allow-tracker", "click");
           frame.fire("launch-start", "click");
           const action = frame.calls[0]!;
           expect(action.payload).toEqual({
@@ -9914,9 +9937,10 @@ describe("launching from the tab", () => {
             task: "Build a small notes app",
             project: "new",
             name: "notes-app",
-            tools: "read",
+            tools: "write",
+            tracker,
             ...(rootPath ? { rootPath } : {}),
-            ...(tracker ? { lead_tools: ["beads_ready", "beads_show", "beads_close"] } : {}),
+            ...(tracker && offered.length ? { lead_tools: offered } : {}),
           });
           expect(bridge.operations.slice(-2)).toEqual(["save", "action"]);
           const result = await handleSwarmsAction(
@@ -9930,7 +9954,7 @@ describe("launching from the tab", () => {
                 calls.push(input);
                 const project = {
                   id: "p-created",
-                  name: input.name,
+                  name: "registered-notes",
                   rootPath: "/resolved/notes-app",
                   createdAt: T0,
                 };
@@ -9944,13 +9968,35 @@ describe("launching from the tab", () => {
                 return project;
               },
               getToolReachability: (names) => {
-                queries.push([...names]);
-                return [
-                  { name: "beads_ready", status: "reachable" },
-                  { name: "beads_close", status: "cross-rib-denied" },
-                  { name: "beads_show", status: "unregistered" },
-                  { name: "beads_dep", status: "reachable" },
-                ];
+                queries.push({ after: order.at(-1) ?? "validation", names: [...names] });
+                return names.map((name) => ({
+                  name,
+                  status:
+                    name === "beads_init"
+                      ? mode === "init-revoked"
+                        ? "cross-rib-denied"
+                        : "reachable"
+                      : mode === "partial" &&
+                          order.includes("initialized") &&
+                          name !== "beads_ready"
+                        ? "cross-rib-denied"
+                        : "reachable",
+                }));
+              },
+              callTool: async (...args) => {
+                order.push("init");
+                initCalls.push(args);
+                await Bun.sleep(0);
+                if (mode === "rejection") {
+                  order.push("init-failed");
+                  throw new Error("initialization rejected");
+                }
+                if (mode === "failure") {
+                  order.push("init-failed");
+                  return { ok: false, error: "initialization refused" };
+                }
+                order.push("initialized");
+                return { ok: true, chunks: [] };
               },
               begin: (input) => {
                 order.push("begin");
@@ -9966,24 +10012,54 @@ describe("launching from the tab", () => {
             },
           );
           expect(result.ok).toBe(true);
+          expect(result).toMatchObject({
+            data: { effect: "open-surface", regionKey: INDEX_KEY },
+          });
+          if (mode === "failure" || mode === "rejection") {
+            expect(result).toMatchObject({
+              data: {
+                message: expect.stringContaining(
+                  `beads_init failed: initialization ${mode === "failure" ? "refused" : "rejected"}`,
+                ),
+              },
+            });
+          }
           expect(calls).toEqual([{ name: "notes-app", ...(rootPath ? { rootPath } : {}) }]);
           expect(admitted).toEqual([
             {
               task: "Build a small notes app",
               project: "p-created",
-              workTools: "read",
-              ...(tracker ? { leadTools: ["beads_ready"] } : {}),
+              workTools: "write",
+              ...(initialized && offered.length
+                ? { leadTools: mode === "partial" ? ["beads_ready"] : offered }
+                : {}),
             },
           ]);
-          expect(order).toEqual(["create", "registered", "begin"]);
-          expect(queries).toHaveLength(tracker ? 2 : 0);
+          const invoked = tracker && mode !== "init-revoked";
+          expect(initCalls).toEqual(
+            invoked ? [["beads", "beads_init", { project: "registered-notes" }]] : [],
+          );
+          expect(order).toEqual([
+            "create",
+            "registered",
+            ...(invoked ? ["init", initialized ? "initialized" : "init-failed"] : []),
+            "begin",
+          ]);
+          expect(queries).toEqual([
+            ...(tracker && offered.length ? [{ after: "validation", names: offered }] : []),
+            ...(tracker ? [{ after: "registered", names: ["beads_init"] }] : []),
+            ...(initialized && offered.length ? [{ after: "initialized", names: offered }] : []),
+          ]);
           console.info(
             "creation acceptance trace",
             JSON.stringify({
+              mode,
               framePayload: action.payload,
               createProject: calls,
+              callTool: initCalls,
               begin: admitted,
               order,
+              probes: queries,
             }),
           );
         } finally {
