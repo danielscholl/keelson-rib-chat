@@ -493,8 +493,7 @@ const PAGE_SCRIPT = `
   const renderPermissions = () => {
     Object.keys(permissions).forEach((key) => {
       const button = document.getElementById("allow-" + key);
-      permissions[key] = key === "write" && isNew()
-        ? true : permissions[key] && !button.disabled;
+      permissions[key] = permissions[key] && !button.disabled;
       button.setAttribute("aria-checked", String(permissions[key]));
       document.getElementById(key + "-row").classList.toggle("is-on", permissions[key]);
       if (key !== "write") document.getElementById(key + "-details").hidden = !permissions[key];
@@ -508,7 +507,7 @@ const PAGE_SCRIPT = `
     const creating = isNew();
     if (newFields) newFields.hidden = !creating;
     row.classList.toggle("has-project", hasProject);
-    note.textContent = creating ? "The swarm starts with write access." : hasProject
+    note.textContent = creating ? "The swarm starts with read access. An origin remote with a default branch is required for writers." : hasProject
       ? "Agents read " + selected.dataset.path + " and run read-only commands there. Nothing changes unless you allow more."
       : chatNote;
     Object.keys(permissions).forEach((key) => { permissions[key] = false; });
@@ -518,8 +517,8 @@ const PAGE_SCRIPT = `
     if (hasProject && template) {
       access.append(template.content.cloneNode(true));
       if (creating) {
-        permissions.write = true;
         document.getElementById("allow-write").disabled = true;
+        document.getElementById("write-meaning").textContent = "An origin remote with a default branch is required for writers. Set it up, then select the registered project to enable writing.";
         const trackerAvailable = access.querySelectorAll('[data-tool][data-reachable="true"]').length > 0;
         document.getElementById("tracker-row").hidden = !trackerAvailable;
         document.getElementById("allow-tracker").disabled = !trackerAvailable;
@@ -864,7 +863,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
             ? `<div class="new-project" id="new-project-fields" hidden>
           <div><label for="launch-project-name">Name</label><input id="launch-project-name" type="text" required autocomplete="off" aria-describedby="project-name-error new-project-hint"><p class="hint detail" id="project-name-error" role="alert" hidden></p></div>
           <div><label for="launch-project-folder">Folder (optional)</label><input id="launch-project-folder" type="text" autocomplete="off" placeholder="${esc("~/keelson/<name>")}" aria-describedby="new-project-hint"></div>
-          <p class="hint" id="new-project-hint">Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with write access.</p>
+          <p class="hint" id="new-project-hint">Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with read access; writers need an origin remote with a default branch.</p>
         </div>`
             : ""
         }

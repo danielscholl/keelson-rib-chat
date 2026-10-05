@@ -17,6 +17,7 @@ import {
   type SnapshotManager,
   wcagContrast,
 } from "@keelson/shared";
+import { ClickClackClient } from "../src/clickclack.ts";
 import { CONTEXT_BOUNDS, type ContextIndexEntry, EXCERPT_CHARS } from "../src/context.ts";
 import { applyStatus } from "../src/dispatch.ts";
 import { historyPath, loadHistory } from "../src/history.ts";
@@ -110,7 +111,7 @@ import {
   CONVERSATION_SHOWN,
   tokensTile,
 } from "../src/surface/swarm-board.ts";
-import { ACTIVITY_KEPT, type Swarm } from "../src/swarm.ts";
+import { ACTIVITY_KEPT, Swarm } from "../src/swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../src/tools.ts";
 import {
   BODY_MAX,
@@ -126,6 +127,8 @@ import {
   type TurnSpan,
   WORKER_TONES,
 } from "../src/types.ts";
+import type { WorktreeDeps } from "../src/worktree.ts";
+import { FakeClickClack, OWNER_TOKEN, scriptedProvider, WORKSPACE } from "./fakes.ts";
 
 const T0 = "2026-09-22T14:00:00.000Z";
 
@@ -6979,7 +6982,7 @@ describe("launching from the tab", () => {
         projectRoot: "",
         name: ' notes <app> & "draft" ',
         rootPath: " ~/work/notes-app ",
-        permissions: { write: true, workflows: true, tracker: true },
+        permissions: { write: false, workflows: true, tracker: true },
         workflows: ["Second", "first"],
         workflowEntry: " pending-name ",
       });
@@ -7000,7 +7003,7 @@ describe("launching from the tab", () => {
         expect(next.get("launch-project-folder")!.value).toBe(" ~/work/notes-app ");
         expect(next.get("new-project-fields")!.hidden).toBe(false);
         expect(next.get("allow-write")!.disabled).toBe(true);
-        expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+        expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
         expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("true");
         expect(
           next.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
@@ -7015,7 +7018,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("creation draft reconciliation reapplies forced Write and current tracker restrictions", () => {
+  test("creation draft reconciliation clears saved Write and applies current tracker restrictions", () => {
     const bridge = fakeStateBridge();
     const first = frameHarness(
       {
@@ -7038,7 +7041,7 @@ describe("launching from the tab", () => {
     const saved = {
       ...bridge.stored!,
       projectRoot: "/forged/root",
-      permissions: { write: false, tracker: true, workflows: true },
+      permissions: { write: true, tracker: true, workflows: true },
     };
     for (const toolReachability of [
       undefined,
@@ -7051,12 +7054,10 @@ describe("launching from the tab", () => {
         fakeStateBridge(saved),
       );
       expect(next.get("launch-project")!.value).toBe("new");
-      expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+      expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
       expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
       expect(next.get("tracker-row")!.hidden).toBe(true);
-      expect(next.get("launch-mode")!.textContent).toBe(
-        "Creates notes · writes on a branch · fix-issue",
-      );
+      expect(next.get("launch-mode")!.textContent).toBe("Creates notes · fix-issue");
     }
     const lostBridge = fakeStateBridge(saved);
     const lost = frameHarness({ projects }, "lost", lostBridge);
@@ -7088,7 +7089,7 @@ describe("launching from the tab", () => {
     expect(restored.get("launch-project")!.value).toBe("new");
     expect(restored.get("launch-project-name")!.value).toBe("");
     expect(restored.get("launch-project-folder")!.value).toBe("");
-    expect(restored.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+    expect(restored.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
     restored.fire("launch-start", "click");
     expect(restored.calls).toEqual([]);
     for (const field of ["name", "rootPath"]) {
@@ -8325,14 +8326,17 @@ describe("launching from the tab", () => {
           "~/keelson/<name>",
         );
         expect(frame.get("new-project-hint")!.textContent).toBe(
-          "Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with write access.",
+          "Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with read access; writers need an origin remote with a default branch.",
         );
         expect(frame.get("allow-write")!.disabled).toBe(true);
-        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
         frame.fire("allow-write", "click");
-        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
+        expect(frame.get("write-meaning")!.textContent).toContain(
+          "An origin remote with a default branch is required for writers.",
+        );
         expect(frame.get("tracker-row")!.hidden).toBe(true);
-        expect(frame.get("launch-mode")!.textContent).toBe("Creates <name> · writes on a branch");
+        expect(frame.get("launch-mode")!.textContent).toBe("Creates <name>");
         frame.get("launch-task")!.value = "Build notes";
         frame.fire("launch-start", "click");
         expect(frame.calls).toEqual([]);
@@ -8342,9 +8346,7 @@ describe("launching from the tab", () => {
         frame.get("launch-project-name")!.value = " notes-app ";
         frame.fire("launch-project-name", "input");
         expect(frame.get("project-name-error")!.hidden).toBe(true);
-        expect(frame.get("launch-mode")!.textContent).toBe(
-          "Creates notes-app · writes on a branch",
-        );
+        expect(frame.get("launch-mode")!.textContent).toBe("Creates notes-app");
         frame.fire("launch-start", "click");
         frame.fire("launch-start", "click");
         expect(frame.calls).toEqual([
@@ -8355,7 +8357,7 @@ describe("launching from the tab", () => {
               task: "Build notes",
               project: "new",
               name: "notes-app",
-              tools: "write",
+              tools: "read",
             },
           },
         ]);
@@ -8389,9 +8391,9 @@ describe("launching from the tab", () => {
       frame.fire("allow-workflows", "click");
       frame.get("workflow-entry")!.value = "fix-issue";
       frame.fire("workflow-entry", "keydown", { key: "Enter" });
-      expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+      expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("false");
       expect(frame.get("launch-mode")!.textContent).toBe(
-        `Creates notes · writes on a branch · fix-issue${reachable ? " · beads" : ""}`,
+        `Creates notes · fix-issue${reachable ? " · beads" : ""}`,
       );
       frame.fire("launch-start", "click");
       expect(frame.calls[0]!.payload).toEqual({
@@ -8399,7 +8401,7 @@ describe("launching from the tab", () => {
         task: "",
         project: "new",
         name: "notes",
-        tools: "write",
+        tools: "read",
         workflows: "fix-issue",
         ...(reachable
           ? {
@@ -8472,7 +8474,7 @@ describe("launching from the tab", () => {
       project: "new",
       name: 'notes-<app> & "safe"',
       rootPath: "~/work/notes-app",
-      tools: "write",
+      tools: "read",
     });
   });
 
@@ -9235,7 +9237,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("HTML creation calls the host once with exact fields and forces its returned project and Write", async () => {
+  test("HTML creation calls the host once with exact fields and forces its returned project and read access", async () => {
     const h = launcherHarness({ projects, canCreateProject: true });
     const calls: unknown[] = [];
     try {
@@ -9281,13 +9283,105 @@ describe("launching from the tab", () => {
           expect(begun.at(-1)).toEqual({
             task: "Build a small notes app",
             project: "p-created",
-            workTools: "write",
+            workTools: "read",
           });
         }
       }
       expect(h.surface.offersLaunchProject("p-created")).toBe(false);
     } finally {
       h.surface.dispose();
+    }
+  });
+
+  test("blank-folder creation of a local git repository refuses writers before fetching origin", async () => {
+    const root = mkdtempSync(join(tmpdir(), "chat-new-project-"));
+    const h = launcherHarness({ projects: [], canCreateProject: true });
+    const commands: string[][] = [];
+    const run: WorktreeDeps["run"] = async (command, args, options) => {
+      commands.push([command, ...args]);
+      const result = Bun.spawnSync([command, ...args], {
+        cwd: options?.cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      return result.exitCode === 0
+        ? { ok: true, data: result.stdout.toString() }
+        : { ok: false, error: result.stderr.toString(), code: result.exitCode };
+    };
+    let swarm: Swarm | undefined;
+    try {
+      await Bun.sleep(5);
+      begun.length = 0;
+      const frame = frameHarness(h.page(), h.nonce());
+      frame.select("new");
+      frame.get("launch-project-name")!.value = "notes-app";
+      frame.get("launch-task")!.value = "Build a small notes app";
+      expect(frame.get("launch-project-folder")!.value).toBe("");
+      frame.fire("launch-start", "click");
+      const result = await handleSwarmsAction(
+        { ...frame.calls[0]!, origin: "canvas-html" },
+        {
+          ...actionDeps,
+          surface: h.surface,
+          createProject: async (input) => {
+            expect(input).toEqual({ name: "notes-app" });
+            expect((await run("git", ["init", "--initial-branch=main"], { cwd: root })).ok).toBe(
+              true,
+            );
+            expect(
+              (
+                await run(
+                  "git",
+                  [
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    "Initialize project",
+                  ],
+                  { cwd: root },
+                )
+              ).ok,
+            ).toBe(true);
+            expect(await run("git", ["remote"], { cwd: root })).toEqual({ ok: true, data: "" });
+            return { id: "p-created", name: input.name, rootPath: root, createdAt: T0 };
+          },
+        },
+      );
+      expect(result.ok).toBe(true);
+      const input = begun.at(-1)!;
+      const server = new FakeClickClack();
+      swarm = await Swarm.start({
+        id: "snew",
+        task: input.task,
+        owner: new ClickClackClient("http://fake", OWNER_TOKEN, server.transport),
+        workspaceId: WORKSPACE,
+        runAgentTurn: scriptedProvider([], async () => {}).run,
+        cwd: root,
+        project: { id: "p-created", name: "notes-app" },
+        workTools: ["Read", "Grep", "Glob"],
+        ...(input.workTools === "write" ? { write: { root, git: { run } } } : {}),
+        quiesceMs: 60_000,
+      });
+      await expect(
+        swarm.spawn(swarm.summary().agents[0]!.id, {
+          handle: "coder",
+          role: "writer",
+          brief: "Build the app",
+          writes: true,
+        }),
+      ).rejects.toThrow("this one only reads. Spawn the agent without writes.");
+      expect(commands.some((command) => command[1] === "fetch")).toBe(false);
+      expect(swarm.summary().agents).toHaveLength(1);
+    } finally {
+      await swarm?.stop();
+      h.surface.dispose();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
@@ -9451,7 +9545,7 @@ describe("launching from the tab", () => {
         {
           task: "Build notes",
           project: "p-created",
-          workTools: "write",
+          workTools: "read",
           workflows: [{ name: "fix-issue", isolated: true }],
         },
       ]);
@@ -9518,7 +9612,7 @@ describe("launching from the tab", () => {
             task: "Build a small notes app",
             project: "new",
             name: "notes-app",
-            tools: "write",
+            tools: "read",
             ...(rootPath ? { rootPath } : {}),
             ...(tracker ? { lead_tools: ["beads_ready", "beads_show", "beads_close"] } : {}),
           });
@@ -9575,7 +9669,7 @@ describe("launching from the tab", () => {
             {
               task: "Build a small notes app",
               project: "p-created",
-              workTools: "write",
+              workTools: "read",
               ...(tracker ? { leadTools: ["beads_ready"] } : {}),
             },
           ]);

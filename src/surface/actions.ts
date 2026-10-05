@@ -157,7 +157,7 @@ function startInput(
   const input: StartSwarmInput = {
     task,
     workTools: creation
-      ? "write"
+      ? "read"
       : tools === "none" || tools === "read" || tools === "write"
         ? tools
         : project
@@ -587,7 +587,7 @@ export async function handleSwarmsAction(
         {
           ...input,
           project: created.id,
-          workTools: "write",
+          workTools: "read",
           ...(leadTools.length ? { leadTools } : {}),
         },
         "index",

@@ -74,10 +74,12 @@ git identity can cause a host initialization error. Host refusal messages
 appear unchanged in a toast, with no swarm started. If creation succeeds but
 swarm admission fails, the registered project remains available for retry.
 
-For New project…, **Write is on and locked on**. The swarm uses the returned
-registered project ID and starts with write access. The scope footer reads
-`Creates <name> · writes on a branch`, followed by selected workflow names
-only when present, then ` · beads` when tracker intent is on.
+For New project…, **Write is off and disabled**. The swarm uses the returned
+registered project ID and starts with read access. Writers need a usable
+`origin` remote with a default branch, which project creation does not set up.
+Configure it first, then select the registered project and enable Write for
+a new swarm. The scope footer reads `Creates <name>`, followed by selected
+workflow names only when present, then ` · beads` when tracker intent is on.
 **Use the tracker** is shown only when at least one tracker tool is reachable.
 It defaults off with "no tracker yet in a new project". Reachability is not
 proof of an initialized tracker: beads tools require an initialized `.beads/`.
@@ -113,7 +115,7 @@ The rib rechecks lead-tool reachability on Start and Run again.
 
 Turning switches off omits their grants; workflow chips stay for that project.
 Changing or clearing the project resets all switches and chips, not the task.
-New project… always reapplies locked Write and keeps local Name and Folder edits.
+New project… always keeps Write disabled and keeps local Name and Folder edits.
 The scope footer follows your choices: **Reads \<name\>**, optionally
 **· writes on a branch**, workflow names or **· no workflows**, then optionally
 **· beads**. The beads suffix records switch intent, not a promise that every

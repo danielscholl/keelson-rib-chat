@@ -187,9 +187,12 @@ describe("contributed docs", () => {
         "Missing git identity can cause a host initialization error",
         "Host refusal messages appear unchanged in a toast, with no swarm started",
         "swarm admission fails, the registered project remains available for retry",
-        "Write is on and locked on",
+        "Write is off and disabled",
         "returned registered project ID",
-        "Creates <name> · writes on a branch",
+        "starts with read access",
+        "Writers need a usable origin remote with a default branch, which project creation does not set up",
+        "select the registered project and enable Write for a new swarm",
+        "The scope footer reads Creates <name>",
         "Use the tracker is shown only when at least one tracker tool is reachable",
         'defaults off with "no tracker yet in a new project"',
         "Reachability is not proof of an initialized tracker",
@@ -203,6 +206,8 @@ describe("contributed docs", () => {
         "A changed project root clears elevated consent until you opt in again",
       ])
         expect(text).toContain(phrase);
+      expect(text).not.toContain("Write is on and locked on");
+      expect(text).not.toContain("starts with write access");
     }
   });
 
