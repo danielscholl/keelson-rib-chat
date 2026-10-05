@@ -8113,6 +8113,177 @@ describe("launching from the tab", () => {
     ).toEqual(["elevated", "elevated · needs your grant", "elevated · needs your grant"]);
   });
 
+  test("creation is the last capability-gated choice and works without selectable projects", () => {
+    for (const inventory of [
+      [],
+      projects,
+      [{ id: "fallback", name: DEFAULT_PROJECT_NAME, rootPath: "/tmp" }],
+    ]) {
+      for (const canCreateProject of [false, true]) {
+        const frame = frameHarness({ projects: inventory, canCreateProject });
+        const options = frame.get("launch-project")!.options;
+        expect(options.some((option) => option.value === "new")).toBe(canCreateProject);
+        expect(Boolean(frame.get("launch-project-name"))).toBe(canCreateProject);
+        if (!canCreateProject) continue;
+        expect(options.at(-1)!.textContent).toBe("New project…");
+        frame.select("new");
+        expect(frame.get("new-project-fields")!.hidden).toBe(false);
+        expect(frame.get("launch-project-name")!.attributes.has("required")).toBe(true);
+        expect(frame.get("launch-project-folder")!.attributes.get("placeholder")).toBe(
+          "~/keelson/<name>",
+        );
+        expect(frame.get("new-project-hint")!.textContent).toBe(
+          "Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with write access.",
+        );
+        expect(frame.get("allow-write")!.disabled).toBe(true);
+        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+        frame.fire("allow-write", "click");
+        expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+        expect(frame.get("tracker-row")!.hidden).toBe(true);
+        expect(frame.get("launch-mode")!.textContent).toBe("Creates <name> · writes on a branch");
+        frame.get("launch-task")!.value = "Build notes";
+        frame.fire("launch-start", "click");
+        expect(frame.calls).toEqual([]);
+        expect(frame.get("project-name-error")!.hidden).toBe(false);
+        expect(frame.get("launch-project-name")!.attributes.get("aria-invalid")).toBe("true");
+        expect(frame.focused()).toBe(frame.get("launch-project-name"));
+        frame.get("launch-project-name")!.value = " notes-app ";
+        frame.fire("launch-project-name", "input");
+        expect(frame.get("project-name-error")!.hidden).toBe(true);
+        expect(frame.get("launch-mode")!.textContent).toBe(
+          "Creates notes-app · writes on a branch",
+        );
+        frame.fire("launch-start", "click");
+        frame.fire("launch-start", "click");
+        expect(frame.calls).toEqual([
+          {
+            type: "start-swarm",
+            payload: {
+              nonce: "instance-nonce",
+              task: "Build notes",
+              project: "new",
+              name: "notes-app",
+              tools: "write",
+            },
+          },
+        ]);
+      }
+    }
+  });
+
+  test("new-project tracker visibility uses reachable tracker tools without assuming initialization", () => {
+    for (const toolReachability of [
+      undefined,
+      [],
+      [{ name: "unrelated_tool", status: "reachable" as const }],
+      [{ name: "beads_ready", status: "cross-rib-denied" as const }],
+      [{ name: "beads_show", status: "unregistered" as const }],
+      [{ name: "beads_ready", status: "reachable" as const }],
+      TRACKER_TOOLS.map((name) => ({ name, status: "reachable" as const })),
+    ]) {
+      const frame = frameHarness({ projects, canCreateProject: true, toolReachability });
+      frame.select("new");
+      const reachable =
+        toolReachability?.some(
+          (tool) =>
+            (TRACKER_TOOLS as readonly string[]).includes(tool.name) && tool.status === "reachable",
+        ) ?? false;
+      expect(frame.get("tracker-row")!.hidden).toBe(!reachable);
+      expect(frame.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+      expect(frame.get("tracker-meaning")!.textContent).toBe("no tracker yet in a new project");
+      frame.get("launch-project-name")!.value = "notes";
+      frame.fire("launch-project-name", "change");
+      frame.fire("allow-tracker", "click");
+      frame.fire("allow-workflows", "click");
+      frame.get("workflow-entry")!.value = "fix-issue";
+      frame.fire("workflow-entry", "keydown", { key: "Enter" });
+      expect(frame.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+      expect(frame.get("launch-mode")!.textContent).toBe(
+        `Creates notes · writes on a branch · fix-issue${reachable ? " · beads" : ""}`,
+      );
+      frame.fire("launch-start", "click");
+      expect(frame.calls[0]!.payload).toEqual({
+        nonce: "instance-nonce",
+        task: "",
+        project: "new",
+        name: "notes",
+        tools: "write",
+        workflows: "fix-issue",
+        ...(reachable
+          ? {
+              lead_tools: toolReachability!
+                .filter((tool) => tool.status === "reachable")
+                .map((tool) => tool.name),
+            }
+          : {}),
+      });
+    }
+  });
+
+  test("creation fields survive local mode transitions while access resets and ordinary payloads omit them", () => {
+    const frame = frameHarness({
+      projects,
+      canCreateProject: true,
+      hasSwarms: true,
+      toolReachability: [{ name: "beads_ready", status: "reachable" }],
+    });
+    frame.get("compact-task")!.value = "Build notes";
+    frame.fire("compact-more", "click");
+    frame.select("new");
+    frame.get("launch-project-name")!.value = ' notes-<app> & "safe" ';
+    frame.fire("launch-project-name", "input");
+    frame.get("launch-project-folder")!.value = " ~/work/notes-app ";
+    frame.fire("launch-project-folder", "change");
+    frame.fire("allow-tracker", "click");
+    frame.fire("allow-workflows", "click");
+    frame.get("workflow-entry")!.value = "fix-issue";
+    frame.fire("workflow-entry", "keydown", { key: "Enter" });
+    frame.select("p1");
+    expect(frame.get("new-project-fields")!.hidden).toBe(true);
+    expect(frame.get("allow-write")!.disabled).toBe(false);
+    for (const key of ["write", "workflows", "tracker"])
+      expect(frame.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("false");
+    frame.fire("launch-start", "click");
+    expect(frame.calls.at(-1)!.payload).toEqual({
+      nonce: "instance-nonce",
+      task: "Build notes",
+      project: "p1",
+      tools: "read",
+    });
+    frame.release();
+    frame.select("");
+    expect(frame.get("launch-access")!.children).toEqual([]);
+    frame.fire("launch-start", "click");
+    expect(frame.calls.at(-1)!.payload).toEqual({
+      nonce: "instance-nonce",
+      task: "Build notes",
+      project: "",
+      tools: "none",
+    });
+    frame.release();
+    frame.select("new");
+    expect(frame.get("launch-project-name")!.value).toBe(' notes-<app> & "safe" ');
+    expect(frame.get("launch-project-folder")!.value).toBe(" ~/work/notes-app ");
+    expect(frame.get("launch-mode")!.children).toEqual([]);
+    expect(frame.get("workflow-chips")!.children).toEqual([]);
+    expect(frame.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+    frame.fire("launch-project-folder", "keydown", {
+      key: "Enter",
+      ctrlKey: true,
+      isComposing: true,
+    });
+    expect(frame.calls).toHaveLength(2);
+    frame.fire("launch-project-folder", "keydown", { key: "Enter", ctrlKey: true });
+    expect(frame.calls.at(-1)!.payload).toEqual({
+      nonce: "instance-nonce",
+      task: "Build notes",
+      project: "new",
+      name: 'notes-<app> & "safe"',
+      rootPath: "~/work/notes-app",
+      tools: "write",
+    });
+  });
+
   test("all eight switch combinations send only intended access fields in footer order", () => {
     for (let mask = 0; mask < 8; mask++) {
       const frame = frameHarness(

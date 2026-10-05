@@ -198,6 +198,7 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .project-note { padding: 12px 16px; color: var(--muted); border: 1px dashed var(--border); border-radius: 8px; }
 .project-row.has-project { grid-template-columns: 1fr; }
 .has-project .project-note { border: 0; padding: 0; }
+.new-project { margin-top: 16px; display: grid; gap: 12px; }
 .access { margin-top: 24px; }
 .access-heading { font-size: 12px; letter-spacing: .08em; margin: 0 0 8px; }
 .access-row { display: grid; grid-template-columns: 8px 44px minmax(150px, 1fr) minmax(240px, 2fr);
@@ -320,6 +321,11 @@ const PAGE_SCRIPT = `
   const form = document.getElementById("launch-form");
   const task = document.getElementById("launch-task");
   const project = document.getElementById("launch-project");
+  const newFields = document.getElementById("new-project-fields");
+  const name = document.getElementById("launch-project-name");
+  const folder = document.getElementById("launch-project-folder");
+  const nameError = document.getElementById("project-name-error");
+  const isNew = () => project.value === "new" && form.dataset.canCreateProject === "true";
   const start = document.getElementById("launch-start");
   activeStart = start;
   startLabel = "Start swarm";
@@ -337,9 +343,11 @@ const PAGE_SCRIPT = `
   let mountedProject = "";
   const updateMode = () => {
     mode.textContent = project.value
-      ? "Reads " + project.selectedOptions[0].dataset.name
+      ? (isNew() ? "Creates " + (name.value.trim() || "<name>")
+        : "Reads " + project.selectedOptions[0].dataset.name)
         + (permissions.write ? " · writes on a branch" : "")
-        + (permissions.workflows && workflows.length ? " · " + workflows.join(", ") : " · no workflows")
+        + (permissions.workflows && workflows.length ? " · " + workflows.join(", ")
+          : isNew() ? "" : " · no workflows")
         + (permissions.tracker ? " · beads" : "")
       : chatMode;
   };
@@ -483,7 +491,8 @@ const PAGE_SCRIPT = `
   const renderPermissions = () => {
     Object.keys(permissions).forEach((key) => {
       const button = document.getElementById("allow-" + key);
-      permissions[key] = permissions[key] && !button.disabled;
+      permissions[key] = key === "write" && isNew()
+        ? true : permissions[key] && !button.disabled;
       button.setAttribute("aria-checked", String(permissions[key]));
       document.getElementById(key + "-row").classList.toggle("is-on", permissions[key]);
       if (key !== "write") document.getElementById(key + "-details").hidden = !permissions[key];
@@ -494,8 +503,10 @@ const PAGE_SCRIPT = `
     mountedProject = project.value;
     const selected = project.selectedOptions[0];
     const hasProject = Boolean(project.value);
+    const creating = isNew();
+    if (newFields) newFields.hidden = !creating;
     row.classList.toggle("has-project", hasProject);
-    note.textContent = hasProject
+    note.textContent = creating ? "The swarm starts with write access." : hasProject
       ? "Agents read " + selected.dataset.path + " and run read-only commands there. Nothing changes unless you allow more."
       : chatNote;
     Object.keys(permissions).forEach((key) => { permissions[key] = false; });
@@ -504,6 +515,14 @@ const PAGE_SCRIPT = `
     access.replaceChildren();
     if (hasProject && template) {
       access.append(template.content.cloneNode(true));
+      if (creating) {
+        permissions.write = true;
+        document.getElementById("allow-write").disabled = true;
+        const trackerAvailable = access.querySelectorAll('[data-tool][data-reachable="true"]').length > 0;
+        document.getElementById("tracker-row").hidden = !trackerAvailable;
+        document.getElementById("allow-tracker").disabled = !trackerAvailable;
+        document.getElementById("tracker-meaning").textContent = "no tracker yet in a new project";
+      }
       controls = {
         entry: document.getElementById("workflow-entry"),
         chips: document.getElementById("workflow-chips"),
@@ -535,6 +554,7 @@ const PAGE_SCRIPT = `
         saveEdit();
       });
       watchText(controls.entry);
+      renderPermissions();
       renderWorkflows();
     }
     updateMode();
@@ -543,6 +563,14 @@ const PAGE_SCRIPT = `
     if (project.value !== mountedProject) mountProject();
   });
   watchText(task);
+  if (name) watchText(name, () => {
+    if (name.value.trim()) {
+      nameError.hidden = true;
+      name.setAttribute("aria-invalid", "false");
+    }
+    updateMode();
+  });
+  if (folder) watchText(folder);
   capture = () => ({
     version: 1, task: task.value, expanded: true, customize: !drawer.hidden,
     size, power, project: project.value, permissions: { ...permissions },
@@ -590,6 +618,13 @@ const PAGE_SCRIPT = `
   // form never fires submit here; Start is a plain click.
   const startSwarm = () => {
     if (busy || modelBlocked) return;
+    if (isNew() && !name.value.trim()) {
+      nameError.textContent = "A new project needs a name.";
+      nameError.hidden = false;
+      name.setAttribute("aria-invalid", "true");
+      name.focus();
+      return;
+    }
     if (permissions.workflows && !addWorkflows(false)) return;
     const payload = {
       nonce: form.dataset.nonce,
@@ -597,6 +632,10 @@ const PAGE_SCRIPT = `
       project: project.value,
       tools: project.value ? (permissions.write ? "write" : "read") : "none"
     };
+    if (isNew()) {
+      payload.name = name.value.trim();
+      if (folder.value.trim()) payload.rootPath = folder.value.trim();
+    }
     if (permissions.workflows && workflows.length) payload.workflows = workflows.join(", ");
     if (permissions.tracker) {
       const names = Array.from(access.querySelectorAll('[data-tool][data-reachable="true"]'))
@@ -614,13 +653,13 @@ const PAGE_SCRIPT = `
     dispatch(payload);
   };
   start.addEventListener("click", startSwarm);
-  task.addEventListener("keydown", (event) => {
+  [task, name, folder].filter(Boolean).forEach((field) => field.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229
       && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       startSwarm();
     }
-  });
+  }));
   };
   const compact = document.getElementById("launch-compact");
   if (!compact) {
@@ -809,10 +848,19 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
         <p class="hint" id="project-hint">Picking one lets agents read it. Anything more is a switch.</p>
         <div class="project-row" id="project-row">
           <select id="launch-project" name="project" aria-describedby="project-hint project-note">
-            <option value="" selected>No project · chat only</option>${options}
+            <option value="" selected>No project · chat only</option>${options}${state.canCreateProject ? '<option value="new">New project…</option>' : ""}
           </select>
           <p class="project-note" id="project-note">Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.</p>
         </div>
+        ${
+          state.canCreateProject
+            ? `<div class="new-project" id="new-project-fields" hidden>
+          <div><label for="launch-project-name">Name</label><input id="launch-project-name" type="text" required autocomplete="off" aria-describedby="project-name-error new-project-hint"><p class="hint detail" id="project-name-error" role="alert" hidden></p></div>
+          <div><label for="launch-project-folder">Folder (optional)</label><input id="launch-project-folder" type="text" autocomplete="off" placeholder="${esc("~/keelson/<name>")}" aria-describedby="new-project-hint"></div>
+          <p class="hint" id="new-project-hint">Keelson creates the folder, runs git init with a first empty commit, and registers it as a project. The swarm starts with write access.</p>
+        </div>`
+            : ""
+        }
         <div id="launch-access"></div>
       </div>
     </div>
@@ -834,7 +882,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
   return `<style>${designTokenCssBlock()}\n${PAGE_CSS}</style>
 <main id="launch-root">${state.hasSwarms ? compact : expanded}</main>
 ${state.hasSwarms ? `<template id="launch-expanded">${expanded}</template>` : ""}
-${projects.length ? accessTemplate(state) : ""}<script>${PAGE_SCRIPT}</script>`;
+${projects.length || state.canCreateProject ? accessTemplate(state) : ""}<script>${PAGE_SCRIPT}</script>`;
 }
 
 // Run again reads the old swarm's size and model as its defaults, and its hint
