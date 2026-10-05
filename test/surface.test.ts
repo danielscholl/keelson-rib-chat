@@ -6950,6 +6950,198 @@ describe("launching from the tab", () => {
     }
   });
 
+  test("creation drafts restore raw fields after project growth in fresh expanded and compact documents", async () => {
+    const h = launcherHarness({
+      projects,
+      canCreateProject: true,
+      toolReachability: [{ name: "beads_ready", status: "reachable" }],
+    });
+    try {
+      await Bun.sleep(5);
+      const bridge = fakeStateBridge();
+      const first = frameHarness(h.page(), h.nonce(), bridge);
+      first.get("launch-task")!.value = " Build notes ";
+      first.fire("launch-task", "input");
+      first.select("new");
+      first.get("launch-project-name")!.value = ' notes <app> & "draft" ';
+      first.fire("launch-project-name", "input");
+      first.get("launch-project-folder")!.value = " ~/work/notes-app ";
+      first.fire("launch-project-folder", "change");
+      first.fire("allow-workflows", "click");
+      first.fire("allow-tracker", "click");
+      first.get("workflow-entry")!.value = "Second, first";
+      first.fire("workflow-entry", "keydown", { key: "Enter" });
+      first.get("workflow-entry")!.value = " pending-name ";
+      first.fire("workflow-entry", "input");
+      const saved = bridge.stored!;
+      expect(saved).toMatchObject({
+        project: "new",
+        projectRoot: "",
+        name: ' notes <app> & "draft" ',
+        rootPath: " ~/work/notes-app ",
+        permissions: { write: true, workflows: true, tracker: true },
+        workflows: ["Second", "first"],
+        workflowEntry: " pending-name ",
+      });
+      h.inputs.projects = [
+        ...projects,
+        { id: "p-created", name: 'notes <app> & "draft"', rootPath: "/resolved/notes-app" },
+      ];
+      for (const compact of [false, true]) {
+        h.swarms.live = compact ? [fixtures.running!] : [];
+        h.surface.refresh();
+        await Bun.sleep(5);
+        const nextBridge = fakeStateBridge(saved);
+        const next = frameHarness(h.page(), h.nonce(), nextBridge);
+        expect(next.get("launch-task")).not.toBe(first.get("launch-task"));
+        expect(next.get("launch-task")!.value).toBe(" Build notes ");
+        expect(next.get("launch-project")!.value).toBe("new");
+        expect(next.get("launch-project-name")!.value).toBe(' notes <app> & "draft" ');
+        expect(next.get("launch-project-folder")!.value).toBe(" ~/work/notes-app ");
+        expect(next.get("new-project-fields")!.hidden).toBe(false);
+        expect(next.get("allow-write")!.disabled).toBe(true);
+        expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+        expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("true");
+        expect(
+          next.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
+        ).toEqual(["Second", "first"]);
+        expect(next.get("workflow-entry")!.value).toBe(" pending-name ");
+        expect(next.get("launch-compact")).toBeUndefined();
+        expect(next.calls).toEqual([]);
+        expect(nextBridge.saves).toEqual([]);
+      }
+    } finally {
+      h.surface.dispose();
+    }
+  });
+
+  test("creation draft reconciliation reapplies forced Write and current tracker restrictions", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness(
+      {
+        projects,
+        canCreateProject: true,
+        toolReachability: [{ name: "beads_ready", status: "reachable" }],
+      },
+      "first",
+      bridge,
+    );
+    first.select("new");
+    first.get("launch-project-name")!.value = " notes ";
+    first.fire("launch-project-name", "change");
+    first.get("launch-project-folder")!.value = " ~/work/notes ";
+    first.fire("launch-project-folder", "input");
+    first.fire("allow-tracker", "click");
+    first.fire("allow-workflows", "click");
+    first.get("workflow-entry")!.value = "fix-issue";
+    first.fire("workflow-entry", "keydown", { key: "Enter" });
+    const saved = {
+      ...bridge.stored!,
+      projectRoot: "/forged/root",
+      permissions: { write: false, tracker: true, workflows: true },
+    };
+    for (const toolReachability of [
+      undefined,
+      [],
+      [{ name: "beads_ready", status: "cross-rib-denied" as const }],
+    ]) {
+      const next = frameHarness(
+        { projects, canCreateProject: true, toolReachability },
+        "next",
+        fakeStateBridge(saved),
+      );
+      expect(next.get("launch-project")!.value).toBe("new");
+      expect(next.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+      expect(next.get("allow-tracker")!.attributes.get("aria-checked")).toBe("false");
+      expect(next.get("tracker-row")!.hidden).toBe(true);
+      expect(next.get("launch-mode")!.textContent).toBe(
+        "Creates notes · writes on a branch · fix-issue",
+      );
+    }
+    const lostBridge = fakeStateBridge(saved);
+    const lost = frameHarness({ projects }, "lost", lostBridge);
+    expect(lost.get("launch-project")!.value).toBe("");
+    expect(lost.get("launch-access")!.children).toEqual([]);
+    expect(lostBridge.stored).toMatchObject({
+      project: "",
+      permissions: { write: false, tracker: false, workflows: false },
+      workflows: [],
+    });
+    const returned = frameHarness({ projects, canCreateProject: true }, "returned", lostBridge);
+    expect(returned.get("launch-project")!.value).toBe("");
+    returned.select("new");
+    expect(returned.get("allow-workflows")!.attributes.get("aria-checked")).toBe("false");
+  });
+
+  test("creation draft fields are optional for legacy snapshots and reject malformed saved values", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness({ projects, canCreateProject: true }, "first", bridge);
+    first.get("launch-task")!.value = "Saved task";
+    first.select("new");
+    const { name: _name, rootPath: _folder, ...legacy } = bridge.stored!;
+    const restored = frameHarness(
+      { projects, canCreateProject: true },
+      "legacy",
+      fakeStateBridge(legacy),
+    );
+    expect(restored.get("launch-task")!.value).toBe("Saved task");
+    expect(restored.get("launch-project")!.value).toBe("new");
+    expect(restored.get("launch-project-name")!.value).toBe("");
+    expect(restored.get("launch-project-folder")!.value).toBe("");
+    expect(restored.get("allow-write")!.attributes.get("aria-checked")).toBe("true");
+    restored.fire("launch-start", "click");
+    expect(restored.calls).toEqual([]);
+    for (const field of ["name", "rootPath"]) {
+      for (const value of [null, 42, {}, []]) {
+        const invalidBridge = fakeStateBridge({ ...legacy, [field]: value });
+        const invalid = frameHarness(
+          { projects, canCreateProject: true },
+          "invalid",
+          invalidBridge,
+        );
+        expect(invalid.get("launch-task")!.value).toBe("");
+        expect(invalid.get("launch-project")!.value).toBe("");
+        expect(invalidBridge.saves).toEqual([]);
+      }
+    }
+  });
+
+  test("late creation restore cannot overwrite Name or Folder edits and Start clears before replacement", () => {
+    const bridge = fakeStateBridge(undefined, true);
+    const source: LaunchState = { projects, canCreateProject: true };
+    const first = frameHarness(source, "first", bridge);
+    first.get("launch-task")!.value = "Build notes";
+    first.select("new");
+    first.get("launch-project-name")!.value = "Saved name";
+    first.fire("launch-project-name", "input");
+    first.get("launch-project-folder")!.value = "~/saved";
+    first.fire("launch-project-folder", "change");
+    for (const field of ["launch-project-name", "launch-project-folder"]) {
+      const next = frameHarness(source, field, bridge);
+      next.get(field)!.value = "Fresh edit";
+      next.fire(field, "input");
+      next.restore();
+      expect(next.get(field)!.value).toBe("Fresh edit");
+      expect(next.get("launch-project")!.value).toBe("");
+    }
+    first.fire("launch-start", "click");
+    expect(bridge.operations.slice(-2)).toEqual(["save", "action"]);
+    expect(bridge.stored).toEqual({});
+    const replacement = frameHarness(
+      {
+        ...source,
+        projects: [...projects, { id: "p-created", name: "Saved name", rootPath: "/resolved" }],
+      },
+      "replacement",
+      bridge,
+    );
+    replacement.restore();
+    expect(replacement.get("launch-project")!.value).toBe("");
+    expect(replacement.get("launch-task")!.value).toBe("");
+    expect(replacement.get("launch-project-name")!.value).toBe("");
+    expect(first.get("launch-project-name")!.value).toBe("Saved name");
+  });
+
   test("compact drafts save exact text and expansion persists without action traffic", () => {
     const bridge = fakeStateBridge();
     const source = { projects, provider: "copilot", hasSwarms: true };

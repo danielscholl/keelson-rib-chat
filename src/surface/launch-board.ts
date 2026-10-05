@@ -267,6 +267,8 @@ const PAGE_SCRIPT = `
     && ["small", "medium", "large"].includes(state.size)
     && ["fast", "balanced", "deep"].includes(state.power)
     && typeof state.project === "string"
+    && (state.name === undefined || typeof state.name === "string")
+    && (state.rootPath === undefined || typeof state.rootPath === "string")
     && (state.projectRoot === undefined || typeof state.projectRoot === "string")
     && state.permissions && ["write", "workflows", "tracker"].every((key) =>
       typeof state.permissions[key] === "boolean")
@@ -574,7 +576,8 @@ const PAGE_SCRIPT = `
   capture = () => ({
     version: 1, task: task.value, expanded: true, customize: !drawer.hidden,
     size, power, project: project.value, permissions: { ...permissions },
-    projectRoot: project.value ? project.selectedOptions[0].dataset.root : "",
+    ...(name ? { name: name.value, rootPath: folder.value } : {}),
+    projectRoot: project.value && !isNew() ? project.selectedOptions[0].dataset.root : "",
     workflows: [...workflows], workflowEntry: controls?.entry.value ?? "",
     modelSelection: modelSelect.value === "other" ? "other"
       : model ? { model, provider } : "",
@@ -582,6 +585,8 @@ const PAGE_SCRIPT = `
   });
   restoreDraft = (state) => {
     task.value = state.task;
+    if (name) name.value = state.name ?? "";
+    if (folder) folder.value = state.rootPath ?? "";
     size = state.size;
     power = state.power;
     otherModel.value = state.otherModel;
@@ -599,18 +604,20 @@ const PAGE_SCRIPT = `
     updateModel();
     drawer.hidden = !state.customize && !modelBlocked;
     renderDrawer();
-    project.value = Array.from(project.options).some((option) => option.value === state.project)
+    project.value = (state.project !== "new" || form.dataset.canCreateProject === "true")
+      && Array.from(project.options).some((option) => option.value === state.project)
       ? state.project : "";
     mountProject();
-    const sameRoot = project.value && state.projectRoot === project.selectedOptions[0].dataset.root;
-    if (controls && sameRoot) {
+    const sameScope = isNew()
+      || (project.value && state.projectRoot === project.selectedOptions[0].dataset.root);
+    if (controls && sameScope) {
       Object.keys(permissions).forEach((key) => { permissions[key] = state.permissions[key]; });
       workflows = [...state.workflows];
       controls.entry.value = state.workflowEntry;
       renderPermissions();
       renderWorkflows();
     }
-    if (project.value !== state.project || (project.value && !sameRoot)) {
+    if (project.value !== state.project || (project.value && !sameScope)) {
       keelson.saveState?.(capture());
     }
   };
