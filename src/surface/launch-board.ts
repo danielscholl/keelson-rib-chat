@@ -853,7 +853,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
       </section>
       <div class="project">
         <label for="launch-project">PROJECT</label>
-        <p class="hint" id="project-hint">Existing projects start with read access. New project starts with Write on.</p>
+        <p class="hint" id="project-hint">${state.canCreateProject ? "Existing projects start with read access. New project starts with Write on." : "Picking one lets agents read it. Anything more is a switch."}</p>
         <div class="project-row" id="project-row">
           <select id="launch-project" name="project" aria-describedby="project-hint project-note">
             <option value="" selected>No project · chat only</option>${options}${state.canCreateProject ? '<option value="new">New project…</option>' : ""}

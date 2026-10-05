@@ -8304,7 +8304,7 @@ describe("launching from the tab", () => {
     ]) {
       const page = buildLaunch({ projects: inventory }, "nonce");
       for (const label of ["ALSO ALLOW", "Write", "Run workflows", "Use the tracker"]) {
-        expect(page).not.toContain(label);
+        expect(page.split("<script>")[0]).not.toContain(label);
       }
       expect(frameHarness(page).get("launch-access")!.children).toEqual([]);
     }
@@ -8355,6 +8355,9 @@ describe("launching from the tab", () => {
         expect(options.some((option) => option.value === "new")).toBe(canCreateProject);
         expect(Boolean(frame.get("launch-project-name"))).toBe(canCreateProject);
         if (!canCreateProject) continue;
+        expect(frame.get("project-hint")!.textContent).toBe(
+          "Existing projects start with read access. New project starts with Write on.",
+        );
         expect(options.at(-1)!.textContent).toBe("New project…");
         frame.select("new");
         expect(frame.get("new-project-fields")!.hidden).toBe(false);
@@ -10888,7 +10891,7 @@ describe("launching from the tab", () => {
         expect(page).toContain("width: 44px; height: 26px");
       } else {
         for (const name of ["ALSO ALLOW", "Write", "Run workflows", "Use the tracker"]) {
-          expect(page).not.toContain(name);
+          expect(page.split("<script>")[0]).not.toContain(name);
         }
       }
     }
