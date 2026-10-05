@@ -25,7 +25,7 @@ import {
   type SwarmSize,
   type SwarmSummary,
 } from "../types.ts";
-import { WORKFLOW } from "./actions.ts";
+import { TRACKER_TOOLS, WORKFLOW } from "./actions.ts";
 import { day, hhmm, plural } from "./format.ts";
 import { esc } from "./record.ts";
 
@@ -46,14 +46,7 @@ export interface LaunchState {
   dispatchBlocked?: string;
 }
 
-export const TRACKER_TOOLS = [
-  "beads_ready",
-  "beads_show",
-  "beads_create",
-  "beads_update",
-  "beads_close",
-  "beads_dep",
-] as const;
+export { TRACKER_TOOLS };
 
 export const TASK_PLACEHOLDER =
   "What should the swarm work out? Describe the issue or PR in words. A question works; so does a paste of the issue body.";

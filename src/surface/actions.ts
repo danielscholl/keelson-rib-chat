@@ -70,6 +70,14 @@ export interface ActionDeps {
 }
 
 export const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+export const TRACKER_TOOLS = [
+  "beads_ready",
+  "beads_show",
+  "beads_create",
+  "beads_update",
+  "beads_close",
+  "beads_dep",
+] as const;
 // A URL, or an issue or PR number, in a task: something agents cannot open.
 const LINK = /https?:\/\/\S+|(^|[\s(])#\d+\b/;
 
@@ -137,6 +145,9 @@ function startInput(
   let creation: CreateProjectBody | undefined;
   if (project === "new") {
     if (!html) return "project creation is only available from the launcher";
+    if (payload.tracker !== undefined && typeof payload.tracker !== "boolean") {
+      return "tracker must be a boolean";
+    }
     const name = text(payload, "name");
     if (!name) return "a new project needs a name";
     if (payload.rootPath !== undefined && typeof payload.rootPath !== "string") {
@@ -158,7 +169,7 @@ function startInput(
   const input: StartSwarmInput = {
     task,
     workTools: creation
-      ? "read"
+      ? "write"
       : tools === "none" || tools === "read" || tools === "write"
         ? tools
         : project
@@ -235,6 +246,7 @@ function started(
   input: StartSwarmInput,
   open: "index" | "drawer",
   origin?: { rerunOf?: string },
+  message?: string,
 ): RibActionResult {
   let id: string;
   try {
@@ -243,12 +255,13 @@ function started(
   } catch (e) {
     return fail(errText(e));
   }
+  const data =
+    open === "drawer"
+      ? { effect: "open-canvas", key: swarmKey(id), title: `Swarm ${id}` }
+      : { effect: "open-surface", surfaceId: SURFACE_TAB, regionKey: INDEX_KEY };
   return {
     ok: true,
-    data:
-      open === "drawer"
-        ? { effect: "open-canvas", key: swarmKey(id), title: `Swarm ${id}` }
-        : { effect: "open-surface", surfaceId: SURFACE_TAB, regionKey: INDEX_KEY },
+    data: { ...data, ...(message ? { message } : {}) },
   };
 }
 
@@ -558,6 +571,7 @@ export async function handleSwarmsAction(
               project,
               name: payload.name,
               rootPath: payload.rootPath,
+              tracker: payload.tracker,
               tools: !project && payload.tools !== "write" ? "none" : payload.tools,
               workflows: payload.workflows,
               lead_tools: payload.lead_tools,
@@ -580,7 +594,37 @@ export async function handleSwarmsAction(
       } catch (e) {
         return fail(errText(e));
       }
-      const leadTools = leadToolsOf(payload.lead_tools, deps);
+      let initialized = false;
+      let initError: string | undefined;
+      if (payload.tracker === true && deps.getToolReachability) {
+        let reachable: boolean;
+        try {
+          reachable =
+            deps.getToolReachability(["beads_init"]).find((tool) => tool.name === "beads_init")
+              ?.status === "reachable";
+        } catch (e) {
+          return fail(`Could not check tracker initialization reachability: ${errText(e)}`);
+        }
+        if (reachable) {
+          if (!deps.callTool) {
+            initError = "This Keelson host can't call beads_init.";
+          } else {
+            try {
+              const result = await deps.callTool("beads", "beads_init", { project: created.name });
+              if (result.ok) initialized = true;
+              else initError = result.error;
+            } catch (e) {
+              initError = errText(e);
+            }
+          }
+        }
+      }
+      const candidates = Array.isArray(payload.lead_tools)
+        ? payload.lead_tools.filter((name) =>
+            TRACKER_TOOLS.some((trackerTool) => trackerTool === name),
+          )
+        : [];
+      const leadTools = initialized ? leadToolsOf(candidates, deps) : [];
       if (typeof leadTools === "string") return fail(leadTools);
       const { leadTools: _previous, ...input } = parsed.input;
       return started(
@@ -588,10 +632,14 @@ export async function handleSwarmsAction(
         {
           ...input,
           project: created.id,
-          workTools: "read",
+          workTools: "write",
           ...(leadTools.length ? { leadTools } : {}),
         },
         "index",
+        undefined,
+        initError === undefined
+          ? undefined
+          : `beads_init failed: ${initError}. Started a write swarm without tracker tools.`,
       );
     }
     case "run-again": {
