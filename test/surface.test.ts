@@ -7475,6 +7475,48 @@ describe("launching from the tab", () => {
     expect(next.calls).toEqual([]);
   });
 
+  test("select input events save reconciled choices before change without resetting same-project access", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness(
+      { projects: [...projects, { ...projects[0]!, id: "p2" }], provider: "copilot" },
+      "first",
+      bridge,
+    );
+    first.get("launch-model")!.value = JSON.stringify({
+      model: "claude-opus-5.5",
+      provider: "copilot",
+    });
+    first.fire("launch-model", "input");
+    expect(bridge.stored?.modelSelection).toEqual({
+      model: "claude-opus-5.5",
+      provider: "copilot",
+    });
+    first.get("launch-project")!.value = "p1";
+    first.fire("launch-project", "input");
+    first.fire("allow-write", "click");
+    first.fire("allow-workflows", "click");
+    first.get("workflow-entry")!.value = "fix-issue";
+    first.fire("workflow-entry", "keydown", { key: "Enter" });
+    first.fire("launch-project", "change");
+    expect(bridge.stored).toMatchObject({
+      project: "p1",
+      permissions: { write: true, workflows: true, tracker: false },
+      workflows: ["fix-issue"],
+    });
+    first.get("launch-project")!.value = "p2";
+    first.fire("launch-project", "input");
+    expect(bridge.stored).toMatchObject({
+      project: "p2",
+      permissions: { write: false, workflows: false, tracker: false },
+      workflows: [],
+      workflowEntry: "",
+    });
+    const next = frameHarness(undefined, "next", bridge);
+    expect(next.get("launch-project")!.value).toBe("");
+    expect(next.get("launch-models")!.textContent).toBe("claude-opus-5.5 · lead and workers");
+    expect(next.calls).toEqual([]);
+  });
+
   test("compact initial markup renders only a one-line launcher outside inert templates", () => {
     const page = buildLaunch({ projects, hasSwarms: true }, "nonce");
     const initial = page

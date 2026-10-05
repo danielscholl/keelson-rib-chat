@@ -332,6 +332,7 @@ const PAGE_SCRIPT = `
   const permissions = { write: false, workflows: false, tracker: false };
   let workflows = [];
   let controls;
+  let mountedProject = "";
   const updateMode = () => {
     mode.textContent = project.value
       ? "Reads " + project.selectedOptions[0].dataset.name
@@ -459,10 +460,9 @@ const PAGE_SCRIPT = `
     provider = model ? choice.provider : "";
     updateChoice();
   };
-  modelSelect.addEventListener("change", () => {
+  watchText(modelSelect, () => {
     otherProvider = form.dataset.provider;
     updateModel();
-    saveEdit();
   });
   watchText(otherModel, updateModel);
   const renderDrawer = () => {
@@ -489,6 +489,7 @@ const PAGE_SCRIPT = `
     updateMode();
   };
   const mountProject = () => {
+    mountedProject = project.value;
     const selected = project.selectedOptions[0];
     const hasProject = Boolean(project.value);
     row.classList.toggle("has-project", hasProject);
@@ -536,9 +537,8 @@ const PAGE_SCRIPT = `
     }
     updateMode();
   };
-  project.addEventListener("change", () => {
-    mountProject();
-    saveEdit();
+  watchText(project, () => {
+    if (project.value !== mountedProject) mountProject();
   });
   watchText(task);
   capture = () => ({
