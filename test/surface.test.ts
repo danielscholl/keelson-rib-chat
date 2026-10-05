@@ -6847,16 +6847,265 @@ describe("launching from the tab", () => {
     first.stateApi!.saveState({ task: "replacement" });
     const next = frameHarness(undefined, "next", bridge);
     expect(next.get("launch-task")).not.toBe(first.get("launch-task"));
-    next.stateApi!.onRestore((value) => received.push(value));
-    next.stateApi!.onRestore((value) => received.push(value));
+    const receiver = bridge.connect();
+    receiver.onRestore((value) => received.push(value));
+    receiver.onRestore((value) => received.push(value));
     expect(received).toEqual([{ task: "replacement" }]);
     next.stateApi!.saveState({});
     const empty = frameHarness(undefined, "empty", bridge);
-    empty.stateApi!.onRestore((value) => received.push(value));
+    bridge.connect().onRestore((value) => received.push(value));
     expect(received.at(-1)).toEqual({});
     expect(first.calls).toEqual([]);
     expect(next.calls).toEqual([]);
+    expect(empty.calls).toEqual([]);
     expect(bridge.operations).toEqual(["save", "save", "save"]);
+  });
+
+  test("expanded drafts round-trip raw fields, custom choices, access and presentation without restore saves", () => {
+    for (const delayed of [false, true]) {
+      const bridge = fakeStateBridge(undefined, delayed);
+      const source: LaunchState = {
+        projects,
+        provider: "copilot",
+        toolReachability: [{ name: "beads_ready", status: "reachable" }],
+      };
+      const first = frameHarness(source, "first", bridge);
+      expect(bridge.saves).toEqual([]);
+      const task = '  Investigate "A" & <B>\nKeep this second line.  ';
+      first.get("launch-task")!.value = task;
+      first.fire("launch-task", "input");
+      first.fire("plan-large", "click");
+      first.fire("effort-small", "click");
+      first.fire("launch-customize", "click");
+      first.get("launch-model")!.value = "other";
+      first.fire("launch-model", "change");
+      first.get("launch-other-model")!.value = "  custom/<name>  ";
+      first.fire("launch-other-model", "input");
+      first.select("p1");
+      for (const key of ["write", "workflows", "tracker"]) first.fire(`allow-${key}`, "click");
+      first.get("workflow-entry")!.value = "Second, first";
+      first.fire("workflow-entry", "keydown", { key: "Enter" });
+      first.get("workflow-entry")!.value = "  pending-name  ";
+      first.fire("workflow-entry", "input");
+      expect(bridge.stored).toEqual({
+        version: 1,
+        task,
+        expanded: true,
+        customize: true,
+        size: "small",
+        power: "deep",
+        project: "p1",
+        permissions: { write: true, workflows: true, tracker: true },
+        workflows: ["Second", "first"],
+        workflowEntry: "  pending-name  ",
+        modelSelection: "other",
+        otherModel: "  custom/<name>  ",
+        modelProvider: "copilot",
+      });
+      const savedCount = bridge.saves.length;
+      const next = frameHarness(source, "new-document", bridge);
+      if (delayed) {
+        expect(next.get("launch-task")!.value).toBe("");
+        next.restore();
+      }
+      expect(next.get("launch-task")!.value).toBe(task);
+      expect(next.get("launch-task")).not.toBe(first.get("launch-task"));
+      expect(next.get("launch-drawer")!.hidden).toBe(false);
+      expect(next.get("launch-customize")!.attributes.get("aria-expanded")).toBe("true");
+      expect(next.get("customize-label")!.textContent).toBe("Hide");
+      expect(next.get("effort-small")!.attributes.get("aria-pressed")).toBe("true");
+      expect(next.get("launch-model")!.value).toBe("other");
+      expect(next.get("launch-other-model")!.value).toBe("  custom/<name>  ");
+      expect(next.get("launch-models")!.textContent).toBe("custom/<name> · lead and workers");
+      expect(next.get("launch-project")!.value).toBe("p1");
+      for (const key of ["write", "workflows", "tracker"]) {
+        expect(next.get(`allow-${key}`)!.attributes.get("aria-checked")).toBe("true");
+      }
+      expect(
+        next.get("workflow-chips")!.children.map((chip) => chip.children[0]!.textContent),
+      ).toEqual(["Second", "first"]);
+      expect(next.get("workflow-entry")!.value).toBe("  pending-name  ");
+      expect(next.get("launch-mode")!.textContent).toBe(
+        "Reads keelson-sample · writes on a branch · Second, first · beads",
+      );
+      expect(next.focused()).toBeUndefined();
+      expect(next.calls).toEqual([]);
+      expect(bridge.saves).toHaveLength(savedCount);
+      next.fire("launch-start", "click");
+      expect(next.calls[0]!.payload).toEqual({
+        nonce: "new-document",
+        task,
+        project: "p1",
+        tools: "write",
+        workflows: "Second, first, pending-name",
+        lead_tools: ["beads_ready"],
+        size: "small",
+        model: "custom/<name>",
+        provider: "copilot",
+      });
+    }
+  });
+
+  test("compact drafts save exact text and expansion persists without action traffic", () => {
+    const bridge = fakeStateBridge();
+    const source = { projects, provider: "copilot", hasSwarms: true };
+    const first = frameHarness(source, "first", bridge);
+    first.get("compact-task")!.value = '  "Draft" & <task>  ';
+    first.fire("compact-task", "change");
+    expect(bridge.stored?.expanded).toBe(false);
+    const next = frameHarness(source, "next", bridge);
+    expect(next.get("compact-task")!.value).toBe('  "Draft" & <task>  ');
+    expect(next.get("launch-task")).toBeUndefined();
+    expect(bridge.saves).toHaveLength(1);
+    next.fire("compact-more", "click");
+    expect(bridge.stored?.expanded).toBe(true);
+    const expanded = frameHarness(source, "expanded", bridge);
+    expect(expanded.get("compact-task")).toBeUndefined();
+    expect(expanded.get("launch-task")!.value).toBe('  "Draft" & <task>  ');
+    expect(expanded.focused()).toBeUndefined();
+    expect(bridge.operations).toEqual(["save", "save"]);
+  });
+
+  test("each plan and catalog model survives replacement with sparse dispatch semantics", () => {
+    for (const size of ["small", "medium", "large"]) {
+      const bridge = fakeStateBridge();
+      const first = frameHarness(undefined, "first", bridge);
+      first.fire(`plan-${size}`, "click");
+      const next = frameHarness(undefined, "next", bridge);
+      expect(next.get(`plan-${size}`)!.attributes.get("aria-pressed")).toBe("true");
+      next.fire("launch-start", "click");
+      expect(next.calls[0]!.payload).toEqual({
+        nonce: "next",
+        task: "",
+        project: "",
+        tools: "none",
+        ...(size === "medium" ? {} : { size, power: size === "small" ? "fast" : "deep" }),
+      });
+    }
+    const bridge = fakeStateBridge();
+    const first = frameHarness(undefined, "first", bridge);
+    const selection = { model: "claude-opus-5.5", provider: "copilot" };
+    first.get("launch-model")!.value = JSON.stringify(selection);
+    first.fire("launch-model", "change");
+    const next = frameHarness(undefined, "next", bridge);
+    expect(next.get("launch-model")!.value).toBe(JSON.stringify(selection));
+    expect(next.get("launch-models")!.textContent).toBe("claude-opus-5.5 · lead and workers");
+    next.fire("launch-start", "click");
+    expect(next.calls[0]!.payload).toMatchObject({ ...selection, size: "medium" });
+    expect(next.calls[0]!.payload).not.toHaveProperty("power");
+  });
+
+  test("click edits, chip removals and failed pastes save full snapshots without rendering saves", () => {
+    const bridge = fakeStateBridge();
+    const first = frameHarness(undefined, "first", bridge);
+    first.select("p1");
+    first.fire("allow-workflows", "click");
+    first.get("workflow-entry")!.value = "one two";
+    first.fire("workflow-entry", "keydown", { key: "," });
+    first.get("workflow-chips")!.children[0]!.children[1]!.listeners.get("click")!(first.event);
+    expect(bridge.stored?.workflows).toEqual(["two"]);
+    first.fire("workflow-entry", "paste", {
+      clipboardData: { getData: () => "../invalid" },
+    });
+    expect(bridge.stored?.workflowEntry).toBe("../invalid");
+    const next = frameHarness(undefined, "next", bridge);
+    expect(next.get("workflow-entry")!.value).toBe("../invalid");
+    expect(next.get("workflow-chips")!.children).toHaveLength(1);
+    first.select("");
+    expect(bridge.stored).toMatchObject({
+      project: "",
+      permissions: { write: false, workflows: false, tracker: false },
+      workflows: [],
+      workflowEntry: "",
+    });
+  });
+
+  test("restored typed and catalog models preserve provider identity or visibly require reselection", () => {
+    for (const selection of ["other", "catalog"]) {
+      const bridge = fakeStateBridge();
+      const first = frameHarness(
+        {
+          projects,
+          provider: "original",
+          classes: [{ provider: "original", defaultModel: "old-model" }],
+        },
+        "first",
+        bridge,
+      );
+      first.get("launch-model")!.value =
+        selection === "other"
+          ? "other"
+          : JSON.stringify({ model: "old-model", provider: "original" });
+      first.fire("launch-model", "change");
+      if (selection === "other") {
+        first.get("launch-other-model")!.value = "  old-model  ";
+        first.fire("launch-other-model", "change");
+      }
+      const saved = bridge.stored;
+      const next = frameHarness(
+        {
+          projects,
+          provider: "new-default",
+          classes: [{ provider: "original", defaultModel: "new-model" }],
+          hasSwarms: true,
+        },
+        "next",
+        bridge,
+      );
+      expect(next.get("compact-task")).toBeUndefined();
+      expect(next.get("model-error")!.hidden).toBe(true);
+      expect(next.get("launch-models")!.textContent).toBe("old-model · lead and workers");
+      next.fire("launch-start", "click");
+      expect(next.calls[0]!.payload).toMatchObject({ model: "old-model", provider: "original" });
+
+      const unavailable = frameHarness(
+        { projects, provider: "new-default", hasSwarms: true },
+        "unavailable",
+        fakeStateBridge(saved),
+      );
+      expect(unavailable.get("launch-start")!.disabled).toBe(true);
+      expect(unavailable.get("launch-drawer")!.hidden).toBe(false);
+      expect(unavailable.get("model-error")!.textContent).toBe(
+        "Provider original is unavailable. Choose a model or plan again.",
+      );
+      unavailable.fire("launch-start", "click");
+      unavailable.fire("launch-task", "keydown", { key: "Enter", ctrlKey: true });
+      expect(unavailable.calls).toEqual([]);
+      unavailable.fire("plan-medium", "click");
+      expect(unavailable.get("launch-start")!.disabled).toBe(false);
+      expect(unavailable.get("model-error")!.hidden).toBe(true);
+      unavailable.fire("launch-start", "click");
+      expect(unavailable.calls[0]!.payload).not.toHaveProperty("model");
+    }
+  });
+
+  test("delayed restoration cannot overwrite text, project, plan or presentation edits", () => {
+    const saved = fakeStateBridge();
+    const first = frameHarness(undefined, "first", saved);
+    first.get("launch-task")!.value = "old task";
+    first.fire("launch-task", "input");
+    for (const edit of ["task", "project", "plan", "drawer", "expand"]) {
+      const bridge = fakeStateBridge(saved.stored, true);
+      const next = frameHarness(
+        { projects, provider: "copilot", hasSwarms: edit === "expand" },
+        "next",
+        bridge,
+      );
+      if (edit === "task") {
+        next.get("launch-task")!.value = "new task";
+        next.fire("launch-task", "input");
+      } else if (edit === "project") next.select("p1");
+      else
+        next.fire(
+          edit === "plan" ? "plan-small" : edit === "drawer" ? "launch-customize" : "compact-more",
+          "click",
+        );
+      const latest = bridge.stored;
+      next.restore();
+      expect(bridge.stored).toEqual(latest);
+      expect(next.get("launch-task")!.value).toBe(edit === "task" ? "new task" : "");
+      expect(next.calls).toEqual([]);
+    }
   });
 
   test("fake state bridge delays one restore and models real select options and multiple listeners", () => {
