@@ -89,7 +89,7 @@ import {
   stateLine,
 } from "../src/surface/parts.ts";
 import { createKeyPublisher } from "../src/surface/publisher.ts";
-import { buildAgentEdges, buildRecord } from "../src/surface/record.ts";
+import { buildAgentEdges, buildRecord, buildTimelineModel, esc } from "../src/surface/record.ts";
 import { createServerOps } from "../src/surface/server-ops.ts";
 import {
   buildServerPanel,
@@ -5356,6 +5356,30 @@ describe("the record page", () => {
     expect(html).toContain(">×1</text>");
     expect(html).toContain(">asked ×1</text>");
     expect(html).not.toMatch(/<script/i);
+  });
+
+  test("the shared timeline items supply the record's labels and titles", () => {
+    const s = traced();
+    const model = buildTimelineModel(s);
+    const html = buildRecord(s, new Date(at(30)));
+    expect(model.lanes.map((lane) => lane.id)).toEqual([
+      "operator",
+      "s6rec-lead",
+      "s6rec-w2",
+      "s6rec-w1",
+      s.runs![0]!.runId,
+    ]);
+    expect(model.spans).toHaveLength(5);
+    expect(model.spans[2]).toMatchObject({ lane: "s6rec-w1", hatched: true });
+    expect(model.spans[4]).toMatchObject({ tone: "ok", to: at(15) });
+    expect(model.marks.map((mark) => mark.glyph)).toEqual(["◇", "◆", "✓", "○", "○", "?", "▲", "●"]);
+    for (const lane of model.lanes) expect(html).toContain(`>${esc(lane.label)}</text>`);
+    for (const item of [...model.spans, ...model.marks]) {
+      expect(html).toContain(`<title>${esc(item.title)}</title>`);
+    }
+    for (const mark of model.marks.filter((item) => item.descriptionId)) {
+      expect(html).toContain(`aria-describedby="${mark.descriptionId}"`);
+    }
   });
 
   test("an ended record is the same whenever it is composed; a live one runs to now", () => {

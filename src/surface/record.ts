@@ -6,7 +6,13 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-import { DESIGN_TOKENS, designTokenCssBlock } from "@keelson/shared";
+import {
+  type CanvasTimelineLane,
+  type CanvasTimelineMark,
+  type CanvasTimelineSpan,
+  DESIGN_TOKENS,
+  designTokenCssBlock,
+} from "@keelson/shared";
 import { freshTokens, modelLabel, tokenCount } from "../labels.ts";
 import {
   type ActivityEntry,
@@ -70,6 +76,14 @@ const RUN_CLASS: Record<ChildRun["status"], string> = {
   succeeded: "good",
   failed: "crit",
   cancelled: "neu",
+};
+
+const RUN_TONE: Record<ChildRun["status"], CanvasTimelineSpan["tone"]> = {
+  running: "info",
+  paused: "caution",
+  succeeded: "ok",
+  failed: "error",
+  cancelled: "neutral",
 };
 
 // The glyph an event leaves on the timeline, and the lane it sits on.
@@ -230,17 +244,27 @@ function ticks(f: Frame): string {
   return out.join("");
 }
 
-interface Lane {
+interface Lane extends CanvasTimelineLane {
   kind: "operator" | "agent" | "run";
-  id: string;
-  label: string;
   cls: string;
+}
+
+interface TimelineSpan extends CanvasTimelineSpan {
+  kind: "turn" | "run";
+  cls: string;
+}
+
+interface TimelineMark extends CanvasTimelineMark {
+  descriptionId?: string;
 }
 
 function lanes(s: SwarmSummary): Lane[] {
   const first = new Map<string, number>();
   for (const t of s.spans ?? []) {
-    if (!first.has(t.agentId)) first.set(t.agentId, when(t.startedAt));
+    const at = when(t.startedAt);
+    if (Number.isFinite(at) && at < (first.get(t.agentId) ?? Number.POSITIVE_INFINITY)) {
+      first.set(t.agentId, at);
+    }
   }
   const order = (a: Agent) => first.get(a.id) ?? when(a.joinedAt) ?? Number.POSITIVE_INFINITY;
   const agents = [...s.agents].sort((a, b) => {
@@ -248,17 +272,20 @@ function lanes(s: SwarmSummary): Lane[] {
     return Number.isFinite(d) && d !== 0 ? d : Number(b.lead) - Number(a.lead);
   });
   return [
-    { kind: "operator", id: "operator", label: "you", cls: "neu" },
+    { kind: "operator", id: "operator", label: "you", tone: "neutral", cls: "neu" },
     ...agents.map((a) => ({
       kind: "agent" as const,
       id: a.id,
       label: cut(`@${shortHandle(a.handle, s.id)}`, 16),
+      tone: a.tone,
       cls: TONE_CLASS[a.tone] ?? "neu",
     })),
     ...(s.runs ?? []).map((r) => ({
       kind: "run" as const,
       id: r.runId,
       label: cut(`${r.workflow} ${shortRun(r.runId)}`, 18),
+      tone: "info" as const,
+      group: "Runs",
       cls: RUN_CLASS[r.status] ?? "neu",
     })),
   ];
@@ -286,6 +313,99 @@ function spanTitle(s: SwarmSummary, t: TurnSpan): string {
   );
 }
 
+export function buildTimelineModel(s: SwarmSummary): {
+  lanes: Lane[];
+  spans: TimelineSpan[];
+  marks: TimelineMark[];
+} {
+  const all = lanes(s);
+  const byId = new Map(all.map((lane) => [lane.id, lane]));
+  const spans: TimelineSpan[] = [];
+  const marks: TimelineMark[] = [];
+  const addMark = (
+    lane: string,
+    at: string,
+    glyph: string,
+    title: string,
+    descriptionId?: string,
+  ) => {
+    if (!byId.has(lane) || !ok(when(at))) return;
+    marks.push({
+      lane,
+      at,
+      glyph,
+      title: cut(title, 40),
+      ...(descriptionId ? { descriptionId } : {}),
+    });
+  };
+  for (const t of s.spans ?? []) {
+    const lane = byId.get(t.agentId);
+    if (!lane || !ok(when(t.startedAt)) || (t.endedAt && !ok(when(t.endedAt)))) continue;
+    spans.push({
+      kind: "turn",
+      cls: lane.cls,
+      lane: t.agentId,
+      from: t.startedAt,
+      ...(t.endedAt ? { to: t.endedAt } : {}),
+      ...(t.outcome === "timeout" || t.outcome === "error" ? { hatched: true } : {}),
+      title: spanTitle(s, t),
+    });
+  }
+  for (const r of s.runs ?? []) {
+    if (!ok(when(r.startedAt)) || (r.completedAt && !ok(when(r.completedAt)))) continue;
+    spans.push({
+      kind: "run",
+      cls: RUN_CLASS[r.status],
+      lane: r.runId,
+      from: r.startedAt,
+      ...(r.completedAt ? { to: r.completedAt } : {}),
+      tone: RUN_TONE[r.status],
+      title: cut(
+        `${r.workflow} ${shortRun(r.runId)} · ${r.status}${r.completedAt ? ` · ${span(r.startedAt, r.completedAt)}` : ""}`,
+        80,
+      ),
+    });
+    for (const g of r.gates ?? []) {
+      addMark(r.runId, g.openedAt, "◇", `${g.nodeId} opened ${hhmm(g.openedAt)}`);
+      if (g.closedAt) {
+        const by =
+          g.by === "swarm"
+            ? "answered by the swarm"
+            : g.by === "operator"
+              ? "answered by you"
+              : "closed";
+        addMark(r.runId, g.closedAt, "◆", `${g.nodeId} ${by} ${hhmm(g.closedAt)}`);
+      }
+    }
+    if (r.verified && r.completedAt) {
+      addMark(r.runId, r.completedAt, "✓", `${r.workflow} verified ${hhmm(r.completedAt)}`);
+    }
+  }
+  for (const a of s.agents) {
+    if (!a.joinedAt || !a.spawnedBy) continue;
+    addMark(
+      a.id,
+      a.joinedAt,
+      "○",
+      `${handleOf(s, a.id)} spawned by ${handleOf(s, a.spawnedBy)} ${hhmm(a.joinedAt)}`,
+    );
+  }
+  for (const [eventIndex, e] of (s.activity ?? []).slice(-200).entries()) {
+    const glyph = e.kind ? MARKS[e.kind] : undefined;
+    if (!glyph) continue;
+    const lane = e.kind === "nudge" ? e.subject : e.kind === "answer" ? "operator" : e.actor;
+    if (!lane) continue;
+    addMark(
+      lane,
+      e.at,
+      glyph,
+      `${hhmm(e.at)} ${e.text.replaceAll(`@${s.id}-`, "@")}`,
+      `e${eventIndex}`,
+    );
+  }
+  return { lanes: all, spans, marks };
+}
+
 function mark(x: number, y: number, glyph: string, title: string, descriptionId?: string): string {
   if (!ok(x, y)) return "";
   return `<text x="${num(x)}" y="${num(y)}"${descriptionId ? ` aria-describedby="${descriptionId}"` : ""}><title>${esc(cut(title, 40))}</title>${glyph}</text>`;
@@ -293,7 +413,8 @@ function mark(x: number, y: number, glyph: string, title: string, descriptionId?
 
 function timeline(s: SwarmSummary, composedAt: Date): string {
   const f = frameOf(s, composedAt);
-  const all = lanes(s);
+  const model = buildTimelineModel(s);
+  const all = model.lanes;
   const index = new Map(all.map((l, i) => [l.id, i]));
   const height = laneY(all, all.length - 1) + LANE + GAP + 4;
   const mid = (i: number) => laneY(all, i) + LANE / 2 + 4;
@@ -314,95 +435,43 @@ function timeline(s: SwarmSummary, composedAt: Date): string {
   });
 
   const end = f.now ?? f.t1;
-  for (const t of s.spans ?? []) {
-    const i = index.get(t.agentId);
-    const agent = s.agents.find((a) => a.id === t.agentId);
-    const a = when(t.startedAt);
-    const b = t.endedAt ? when(t.endedAt) : end;
+  for (const t of model.spans.filter((item) => item.kind === "turn")) {
+    const i = index.get(t.lane);
+    const a = when(t.from);
+    const b = t.to ? when(t.to) : end;
     if (i === undefined || !ok(a, b)) continue;
     const x = xOf(f, a);
     const w = Math.max(MIN_SPAN, xOf(f, b) - x);
     const y = laneY(all, i) + 2;
-    const cls = TONE_CLASS[agent?.tone ?? "neutral"] ?? "neu";
-    const title = `<title>${esc(spanTitle(s, t))}</title>`;
+    const cls = t.cls;
+    const title = `<title>${esc(t.title)}</title>`;
     const path = `M${num(x)} ${y}h${num(w)}v${LANE - 4}h-${num(w)}z`;
     const group = turns.get(cls) ?? [];
-    group.push(`<path${t.endedAt ? "" : ' class="open"'} d="${path}">${title}</path>`);
-    if (t.outcome === "timeout" || t.outcome === "error") {
+    group.push(`<path${t.to ? "" : ' class="open"'} d="${path}">${title}</path>`);
+    if (t.hatched) {
       group.push(`<path class="hatch" d="${path}">${title}</path>`);
     }
     turns.set(cls, group);
   }
   for (const [cls, paths] of turns) parts.push(`<g class="t-${cls}">${paths.join("")}</g>`);
 
-  for (const r of s.runs ?? []) {
-    const i = index.get(r.runId);
+  for (const r of model.spans.filter((item) => item.kind === "run")) {
+    const i = index.get(r.lane);
     if (i === undefined) continue;
-    const a = when(r.startedAt);
-    const b = r.completedAt ? when(r.completedAt) : isLive(s.status) ? end : when(s.endedAt);
+    const a = when(r.from);
+    const b = r.to ? when(r.to) : isLive(s.status) ? end : when(s.endedAt);
     if (!ok(a, b)) continue;
     const x = xOf(f, a);
     const w = Math.max(MIN_SPAN, xOf(f, b) - x);
     const y = laneY(all, i) + 4;
-    const title = `${r.workflow} ${shortRun(r.runId)} · ${r.status}${r.completedAt ? ` · ${span(r.startedAt, r.completedAt)}` : ""}`;
     parts.push(
-      `<rect class="t-${RUN_CLASS[r.status] ?? "neu"}${r.completedAt ? "" : " open"}" x="${num(x)}" y="${y}" width="${num(w)}" height="${LANE - 8}" rx="2" opacity=".8"><title>${esc(cut(title, 80))}</title></rect>`,
-    );
-    for (const g of r.gates ?? []) {
-      marks.push(
-        mark(xOf(f, when(g.openedAt)), mid(i), "◇", `${g.nodeId} opened ${hhmm(g.openedAt)}`),
-      );
-      if (g.closedAt) {
-        const by =
-          g.by === "swarm"
-            ? "answered by the swarm"
-            : g.by === "operator"
-              ? "answered by you"
-              : "closed";
-        marks.push(
-          mark(xOf(f, when(g.closedAt)), mid(i), "◆", `${g.nodeId} ${by} ${hhmm(g.closedAt)}`),
-        );
-      }
-    }
-    if (r.verified && r.completedAt) {
-      marks.push(
-        mark(
-          xOf(f, when(r.completedAt)),
-          mid(i),
-          "✓",
-          `${r.workflow} verified ${hhmm(r.completedAt)}`,
-        ),
-      );
-    }
-  }
-
-  for (const a of s.agents) {
-    const i = index.get(a.id);
-    if (i === undefined || !a.joinedAt || !a.spawnedBy) continue;
-    marks.push(
-      mark(
-        xOf(f, when(a.joinedAt)),
-        mid(i),
-        "○",
-        `${handleOf(s, a.id)} spawned by ${handleOf(s, a.spawnedBy)} ${hhmm(a.joinedAt)}`,
-      ),
+      `<rect class="t-${r.cls}${r.to ? "" : " open"}" x="${num(x)}" y="${y}" width="${num(w)}" height="${LANE - 8}" rx="2" opacity=".8"><title>${esc(r.title)}</title></rect>`,
     );
   }
-  for (const [eventIndex, e] of (s.activity ?? []).slice(-200).entries()) {
-    const glyph = e.kind ? MARKS[e.kind] : undefined;
-    if (!glyph) continue;
-    const onLane = e.kind === "nudge" ? e.subject : e.kind === "answer" ? "operator" : e.actor;
-    const i = onLane ? index.get(onLane) : undefined;
+  for (const m of model.marks) {
+    const i = index.get(m.lane);
     if (i === undefined) continue;
-    marks.push(
-      mark(
-        xOf(f, when(e.at)),
-        mid(i),
-        glyph,
-        `${hhmm(e.at)} ${e.text.replaceAll(`@${s.id}-`, "@")}`,
-        `e${eventIndex}`,
-      ),
-    );
+    marks.push(mark(xOf(f, when(m.at)), mid(i), m.glyph, m.title, m.descriptionId));
   }
   parts.push(`<g class="mk">${marks.join("")}</g>`);
 
