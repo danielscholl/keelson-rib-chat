@@ -99,6 +99,7 @@ import {
 import {
   createSwarmsSurface,
   MAX_SWARM_KEYS,
+  STOPPED_LOG_NOTE,
   type SwarmRecord,
   type SwarmsSurface,
 } from "../src/surface/surface.ts";
@@ -1598,7 +1599,7 @@ describe("the details inspector", () => {
     const legacy = inspect(swarm("snolink", { clickclack: undefined }));
     expect(rows(legacy, "Transcript")).toEqual([{ text: "Transcript link not recorded." }]);
     expect(rows(legacy, "Health")).toEqual([{ text: "No health faults recorded." }]);
-    expect(rows(legacy, "Task and context").at(-1)!.text).toBe("No task context recorded.");
+    expect(rows(legacy, "Task and context").at(-1)!.text).toBe("No issue, PR or file attached.");
   });
 });
 
@@ -1712,8 +1713,11 @@ describe("the agent inspector", () => {
         },
       ],
     });
+    expect(view.sections.at(-2)).toMatchObject({
+      items: [{ text: "Its messages · transcript ↗", href: channelHref(s) }],
+    });
     expect(view.sections.at(-1)).toMatchObject({
-      items: [{ text: "its messages · transcript ↗", href: channelHref(s) }],
+      items: [{ text: "Swarm s1", action: { type: "swarm-open", payload: { id: "s1" } } }],
     });
   });
 
@@ -1926,9 +1930,8 @@ describe("the agent inspector", () => {
     expect(text).toContain("unknown source missing");
     expect(text).toContain("Woken by not recorded");
     expect(text).not.toContain('"clock"');
-    expect(view.sections[0]).toMatchObject({
-      items: [{ fields: [{}, { value: expect.stringContaining("Turn 2") }] }],
-    });
+    const turns = view.sections.find((x) => x.title === "Turns");
+    expect(turns?.kind === "rows" ? turns.items[0]?.text : "").toContain("Turn 2");
   });
 });
 
@@ -5146,6 +5149,39 @@ describe("publishing", () => {
     surface.dispose();
     expect(sm.keys()).toEqual([]);
     expect(views).toEqual([]);
+  });
+});
+
+describe("the server log pane", () => {
+  test("a stopped managed server's log says its lines are from the last run", async () => {
+    const sm = new FakeSnapshots();
+    let running = false;
+    const surface = createSwarmsSurface({
+      sm,
+      state: () => state(),
+      find: () => ({}),
+      projects: () => [],
+      launch: () => ({ projects: [] }),
+      launchOf: () => undefined,
+      server: () => ({ live: 0, server: { mode: "managed", url: "http://x", running } }),
+      readLog: async () => "listening on http://x",
+      report: () => undefined,
+      views: [],
+      windowMs: 1,
+    });
+    try {
+      surface.logOpened();
+      await Bun.sleep(10);
+      expect(sm.frames.get(SERVER_LOG_KEY)?.at(-1)).toBe(
+        `${STOPPED_LOG_NOTE}\n\nlistening on http://x`,
+      );
+      running = true;
+      surface.logOpened();
+      await Bun.sleep(10);
+      expect(sm.frames.get(SERVER_LOG_KEY)?.at(-1)).toBe("listening on http://x");
+    } finally {
+      surface.dispose();
+    }
   });
 });
 

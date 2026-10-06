@@ -39,6 +39,7 @@ import {
   swarmKey,
 } from "./keys.ts";
 import { buildLaunch, type LaunchState, TRACKER_TOOLS } from "./launch-board.ts";
+import { offlineLinks, serverDown } from "./offline.ts";
 import { gateIdentity } from "./parts.ts";
 import { createKeyPublisher, type KeyPublisher } from "./publisher.ts";
 import { buildGoneRecord, buildRecord } from "./record.ts";
@@ -71,6 +72,8 @@ export interface SurfaceDeps {
   invalidateManifest?: () => void;
   windowMs?: number;
 }
+
+export const STOPPED_LOG_NOTE = "ClickClack is not running. These lines are from its last run.";
 
 export interface SwarmsSurface {
   acceptsLaunchNonce(nonce: string): boolean;
@@ -239,24 +242,33 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
   const log = createKeyPublisher<string>(
     sm,
     SERVER_LOG_KEY,
-    () => deps.readLog(),
+    async () => {
+      const text = await deps.readLog();
+      const line = deps.server().server;
+      return line?.mode === "managed" && !line.running ? `${STOPPED_LOG_NOTE}\n\n${text}` : text;
+    },
     text(SERVER_LOG_KEY),
     windowMs,
   );
   deps.views.push({ key: SERVER_LOG_KEY, canvasKind: "log", title: "ClickClack log" });
   const swarms = new Map<string, { board: KeyPublisher; doc: KeyPublisher }>();
+  let serverWasDown = serverDown(deps.state().server);
 
   const composeBoard = (id: string): CanvasView => {
     const found = deps.find(id);
     const summary = found.live ?? found.ended;
     if (summary) {
       const launch = found.ended ? deps.launchOf(id) : undefined;
-      const server = found.live ? deps.state().server : undefined;
-      return buildSwarmBoard(summary, {
-        ...(launch ? { launch } : {}),
-        ...(server ? { server } : {}),
-        selectedAgentId: selectedAgents.get(id),
-      });
+      const current = deps.state().server;
+      const server = found.live ? current : undefined;
+      return offlineLinks(
+        buildSwarmBoard(summary, {
+          ...(launch ? { launch } : {}),
+          ...(server ? { server } : {}),
+          selectedAgentId: selectedAgents.get(id),
+        }),
+        current,
+      );
     }
     if (found.starting) return buildStartingBoard(found.starting);
     return buildGoneBoard(id);
@@ -276,7 +288,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       docKey(id),
       () => {
         const found = deps.find(id);
-        return buildDoc(found.live ?? found.ended, id);
+        return buildDoc(found.live ?? found.ended, id, !serverDown(deps.state().server));
       },
       text(docKey(id)),
       windowMs,
@@ -452,7 +464,10 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       publisher = createKeyPublisher<CanvasView>(
         sm,
         key,
-        compose,
+        () => {
+          const view = compose();
+          return view.view === "board" ? offlineLinks(view, deps.state().server) : view;
+        },
         expectView(key, "board"),
         windowMs,
       );
@@ -559,6 +574,14 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
       refreshLaunch();
     },
     refresh() {
+      const down = serverDown(deps.state().server);
+      if (down !== serverWasDown) {
+        serverWasDown = down;
+        for (const { board, doc } of swarms.values()) {
+          board.schedule();
+          doc.schedule();
+        }
+      }
       for (const entry of inspectors.values()) {
         for (const publisher of Object.values(entry)) publisher.schedule();
       }
