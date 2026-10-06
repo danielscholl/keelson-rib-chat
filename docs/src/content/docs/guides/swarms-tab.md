@@ -40,7 +40,9 @@ roster and stop control live in its cockpit, not in its request cards.
 One live swarm expands on the page as a cockpit. It runs in this order:
 
 1. The task and id, a lifecycle or **needs you** pill, and people dots.
-2. The state line, described below.
+2. **Task**: the prompt's first line, with the text you started it with one
+   click away (its first 800 characters; **Details** has all of it). Then the
+   state line, described below.
 3. Once the lead has concluded, the **Outcome** card: the conclusion, with
    **Open the report** when one exists. While a peer reviews a
    gate, its reviewing card appears here instead.

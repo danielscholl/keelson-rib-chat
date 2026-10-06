@@ -711,6 +711,11 @@ conclusion for the lead's Conclusion posts. MessageKind is
 \`"ask" | "run" | "conclusion"\`. report is reserved for the lead's published
 report and omitted: \`chat_report\` never posts to the channel.
 
+A Task row sits above the state line on the cockpit, and at the top of the
+per-swarm board (under the Outcome once it ends): the prompt's first line, with
+its first 800 characters one click away; Details keeps the whole text. Turn
+bars on the timeline are titled by turn number, since the lane names the agent.
+
 The state line names requests first, then busy agents with each turn number and
 start time, waiting agents with their queue counts, paused swarm-answerable
 runs with their gates and reviewers, and the conclusion. Otherwise it shows

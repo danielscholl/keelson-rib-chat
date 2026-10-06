@@ -23,6 +23,7 @@ import {
   CONCLUSION_MAX,
   type DispatchGrant,
   isLive,
+  POWER_MODELS,
   publicSummary,
   readTurnContext,
   SIZE_PRESETS,
@@ -293,7 +294,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .enum(SWARM_POWERS)
         .optional()
         .describe(
-          "How much model the agents get: fast, balanced (default) or deep. On copilot each power pins a lead and a worker model (balanced: claude-sonnet-5 lead, claude-sonnet-5.5 workers; deep: claude-opus-5.5 lead, claude-sonnet-5 workers; fast: claude-sonnet-5.5 throughout); another provider maps the class to one of its models. A named model wins. The power also sets the reasoning effort: low, medium or high, dropped for a model that refuses it.",
+          `How much model the agents get: fast, balanced (default) or deep. On copilot each power pins a lead and a worker model (${SWARM_POWERS.map((p) => `${p}: ${POWER_MODELS.copilot![p].lead} lead, ${POWER_MODELS.copilot![p].worker} workers`).join("; ")}); another provider maps the class to one of its models. A named model wins. The power also sets the reasoning effort: low, medium or high, dropped for a model that refuses it.`,
         ),
       effort: z
         .enum(SWARM_EFFORTS)
