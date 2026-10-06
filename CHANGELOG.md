@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/danielscholl/keelson-rib-chat/compare/v0.19.0...v0.19.1) (2026-10-06)
+
+
+### Fixed
+
+* **swarm:** retry a turn without effort when the model refuses it ([#113](https://github.com/danielscholl/keelson-rib-chat/issues/113)) ([14c9fa1](https://github.com/danielscholl/keelson-rib-chat/commit/14c9fa19b615a24407f1b385b1272376b1a6a19e))
+
 ## [0.19.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.18.1...v0.19.0) (2026-10-05)
 
 
