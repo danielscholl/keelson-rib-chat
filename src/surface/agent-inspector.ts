@@ -21,7 +21,7 @@ import {
   span,
   threadHref,
 } from "./format.ts";
-import { LIFECYCLE, turnMeter } from "./parts.ts";
+import { backToSwarm, LIFECYCLE, turnMeter } from "./parts.ts";
 import { AGENT_PILL, DETAIL_CHARS, openRecord } from "./swarm-board.ts";
 
 type Section = CanvasBoardView["sections"][number];
@@ -75,7 +75,7 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
       : undefined;
   const facts: Row[] = [
     ...(current
-      ? [{ text: turnText(s, current) }, { text: `Woken by ${wakeSources(s, current)}` }]
+      ? [{ text: `Woken by ${wakeSources(s, current)}` }]
       : [{ text: "No turn spans recorded." }]),
     {
       text: a.usage
@@ -142,7 +142,6 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
                     },
                   ]
                 : []),
-              ...(current ? [{ value: turnText(s, current) }] : []),
               ...(clock && current
                 ? [
                     {
@@ -221,7 +220,10 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
           ]
         : []),
       ...(refusal ? [{ kind: "rows" as const, items: [{ text: refusal }] }] : []),
-      { kind: "rows", items: [{ text: "its messages · transcript ↗", ...(href ? { href } : {}) }] },
+      ...(href
+        ? [{ kind: "rows" as const, items: [{ text: "Its messages · transcript ↗", href }] }]
+        : []),
+      backToSwarm(s),
     ],
   };
 }

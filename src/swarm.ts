@@ -1234,7 +1234,12 @@ export class Swarm {
       text: message.body.slice(0, BODY_MAX),
       at: message.createdAt || new Date().toISOString(),
     });
-    this.log(`@${agent.handle} asked the operator`, {
+    const question = message.body
+      .replace(/^(\s*@[\w.-]+[,:]?)+\s*/, "")
+      .split("\n")[0]
+      ?.trim()
+      .slice(0, 160);
+    this.log(`@${agent.handle} asked the operator${question ? `: ${question}` : ""}`, {
       kind: "ask",
       actor: agent.id,
       subject: message.threadRootId || message.id,
