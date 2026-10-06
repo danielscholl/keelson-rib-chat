@@ -255,13 +255,8 @@ function stats(s: SwarmSummary, now: Date): Leaf {
       }
     }
     for (const pr of s.prs ?? []) record(pr.url, pr.ci?.verdict === "pass");
-    if (
-      s.workflows?.length ||
-      s.runs?.length ||
-      s.writeEnabled ||
-      s.agents.some((a) => a.worktree) ||
-      prs.size > 0
-    ) {
+    const writesByPr = (s.writeEnabled || s.agents.some((a) => a.worktree)) && !s.writeLocal;
+    if (s.workflows?.length || s.runs?.length || writesByPr || prs.size > 0) {
       items.push({
         label: "Pull requests",
         value: prs.size,
@@ -270,6 +265,7 @@ function stats(s: SwarmSummary, now: Date): Leaf {
           : {}),
       });
     }
+    if (s.writeLocal) items.push({ label: "Merged", value: s.merges?.length ?? 0 });
     const runs = s.runs ?? [];
     if (runs.length > 0) {
       const n = runs.filter((r) => r.verified).length;
@@ -611,6 +607,18 @@ function produced(s: SwarmSummary): Leaf[] {
     });
   }
   for (const run of s.runs ?? []) groups.push({ at: run.startedAt, rows: runRows(s, run) });
+  for (const m of s.merges ?? []) {
+    groups.push({
+      at: m.at,
+      rows: [
+        {
+          chip: writerChip(s, m.agent),
+          text: m.branch,
+          trailing: `merged into ${m.base} · ${m.commit.slice(0, 7)}`,
+        },
+      ],
+    });
+  }
   for (const pr of s.prs ?? []) {
     groups.push({
       at: pr.at,
@@ -656,17 +664,21 @@ function produced(s: SwarmSummary): Leaf[] {
           : `The lead could start ${s.workflows.join(", ")}; none started.`,
       );
     }
+    const lands = s.writeLocal
+      ? { may: "may have reviewed work merged", none: "none merged" }
+      : { may: "may open draft pull requests", none: "none opened" };
     if (writers.length) {
       empty.push(
         live(s)
-          ? `Writers ${writers.join(", ")} may open draft pull requests; none opened yet.`
-          : `Writers ${writers.join(", ")} could open draft pull requests; none opened.`,
+          ? `Writers ${writers.join(", ")} ${lands.may}; ${lands.none} yet.`
+          : `Writers ${writers.join(", ")} ${lands.may.replace("may", "could")}; ${lands.none}.`,
       );
     } else if (s.writeEnabled) {
+      const what = s.writeLocal ? "whose reviewed work is merged" : "to open draft pull requests";
       empty.push(
         live(s)
-          ? "The lead may spawn writers to open draft pull requests; none opened yet."
-          : "The lead could spawn writers to open draft pull requests; none opened.",
+          ? `The lead may spawn writers ${what}; ${lands.none} yet.`
+          : `The lead could spawn writers ${what}; ${lands.none}.`,
       );
     }
     if (empty.length === 0) return [];

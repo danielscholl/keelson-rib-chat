@@ -59,6 +59,12 @@ export function addressedHandles(body: string): string[] {
   return [...found];
 }
 
+// A handle without its swarm-id prefix: "s1-writer" -> "writer".
+function shortName(handle: string): string {
+  const at = handle.indexOf("-");
+  return (at >= 0 ? handle.slice(at + 1) : handle).toLowerCase();
+}
+
 export function route(input: RouteInput): string[] {
   const { message, agents, threadParticipants, threadStarter } = input;
   const author = agents.find((a) => a.botUserId === message.authorId);
@@ -67,6 +73,13 @@ export function route(input: RouteInput): string[] {
   const handles = new Set(mentionedHandles(message.body));
   for (const agent of agents) {
     if (handles.has(agent.handle.toLowerCase())) recipients.add(agent.id);
+  }
+  // Agents often write a peer's name without the swarm id ("@writer" for
+  // "@s1-writer"); route it when exactly one agent goes by that name.
+  for (const handle of handles) {
+    if (agents.some((a) => a.handle.toLowerCase() === handle)) continue;
+    const named = agents.filter((a) => shortName(a.handle) === handle);
+    if (named.length === 1 && named[0]) recipients.add(named[0].id);
   }
 
   // A reply from the thread's starter, or from a human, addresses the whole

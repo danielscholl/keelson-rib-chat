@@ -71,7 +71,7 @@ export function systemPrompt(opts: {
         `The conclusion is at most ${CONCLUSION_MAX} characters: the answer in brief, since the report carries the detail. Calling chat_done ends the swarm.`,
       ].join("\n")
     : [
-        "You are a WORKER. Own the piece you were given. Where it meets a peer's piece (a shared name, a contract, a boundary), settle that with the peer directly, in one seam thread: if the peer already opened one with you, reply there; otherwise chat_post top-level and @mention them with the exact point and your proposal. Keep the lead out of it; every reply in the lead's thread wakes the lead, and that thread is for your one report. Each turn lists the team and who owns what.",
+        "You are a WORKER. Own the piece you were given. Where it meets a peer's piece (a shared name, a contract, a boundary), settle that with the peer directly, in one seam thread: if the peer already opened one with you, reply there; otherwise chat_post top-level and @mention them with the exact point and your proposal. Keep the lead out of it; every reply in the lead's thread wakes the lead, and that thread is for your one report. Each turn lists the team and who owns what; never restate that list in a post.",
         "Report once, to whoever asked, in their thread, with evidence and what you settled with whom, and only when every seam you own is settled. If a settled point changes after you reported, reply in your report's thread with the correction and @mention whoever asked. Then stop.",
         "If your piece splits into parts worth running in parallel, you may chat_spawn a helper with a narrow brief. If you find work nobody owns, tell the lead rather than taking over the task.",
       ].join("\n");
@@ -109,7 +109,7 @@ export function systemPrompt(opts: {
           `- This swarm may change the project. You and every agent without writes only read it. To have code changed, chat_spawn a worker with writes: true. Each writer gets its own git worktree and branch, cut from ${opts.writeSwarm.localBase ? `the current tip of refs/heads/${opts.writeSwarm.localBase} without fetching` : "the remote default branch"}, and is the only agent that edits it.`,
           "- Give each writer one piece that does not touch another writer's files, with the acceptance criteria it must meet.",
           "- Commits carry no AI attribution: never ask a writer to add a Co-Authored-By trailer naming an AI, a 'Generated with' line, or a session link. chat_merge and chat_pr_open refuse such commits.",
-          `- Before you conclude, have an agent without writes review each writer's change: chat_diff shows a writer's commits and its diff against ${opts.writeSwarm.localBase ? `refs/heads/${opts.writeSwarm.localBase}, including its full head SHA` : "the remote default branch"}, and the reviewer can read the writer's files under ${opts.writeSwarm.root}/.worktrees/swarm-${opts.writeSwarm.swarmId}-<name>. Send the writer the reviewer's findings, and let it fix them.`,
+          `- Before you conclude, have an agent without writes review each writer's change: chat_diff shows a writer's commits and its diff against ${opts.writeSwarm.localBase ? `refs/heads/${opts.writeSwarm.localBase}, including its full head SHA` : "the remote default branch"}, and the reviewer can read the writer's files under ${opts.writeSwarm.root}/.worktrees/swarm-${opts.writeSwarm.swarmId}-<name>. Send the writer the reviewer's findings, and let it fix them. Bring the reviewer in when there is a diff to read: a reviewer briefed early spends its turns waiting.`,
           ...(opts.writeSwarm.localBase
             ? [
                 "- Wait for the writer's changes, checks, and turn to settle, then call chat_merge with writer and the peer-reviewed head_sha. Your file tools remain read-only; chat_merge is the only way you modify the root. Keep the root clean and do not ask the operator to edit it during a merge.",
@@ -125,6 +125,11 @@ export function systemPrompt(opts: {
     opts.leadTools && opts.leadTools.length > 0
       ? [
           `- ${opts.leadTools.join(", ")} come from other Keelson ribs, granted by the operator. Use them for what they are for, such as reading or updating the project's tracker, and record what you changed in the channel. A tool you were promised but cannot call was not granted: tell @operator instead of working around it.`,
+          ...(opts.leadTools.includes("beads_close")
+            ? [
+                "- Never set a bead's assignee to an agent's handle: beads_close refuses a bead held by anyone but the operator. Name the agent working it in the bead's notes instead.",
+              ]
+            : []),
         ]
       : [];
   const dispatch =
@@ -177,6 +182,7 @@ export function systemPrompt(opts: {
     turnLine,
     "- Post one complete report instead of several partial ones. Lead with the answer, then the evidence: file paths, line numbers, output.",
     "- Do not post to agree, thank, or acknowledge. Reply only to add a fact, a correction, or a decision. Ending a turn without posting is fine.",
+    "- If you wake with nothing new to add, such as a request that has not arrived yet, end the turn without posting. Never post that you are waiting or standing by: the post costs the agent it reaches a turn.",
     "- When a peer's claim is wrong, correct it with evidence and @mention them. When yours was wrong, say so once.",
     `- A message is at most ${BODY_MAX} characters.`,
     "",

@@ -73,6 +73,7 @@ import {
   sizeOf,
   type TurnSpan,
   WORKER_TONES,
+  type WriterMerge,
   type WriterPr,
 } from "./types.ts";
 import {
@@ -398,6 +399,7 @@ export class Swarm {
   // so a writer's worktree is checked only once they have.
   private readonly inFlight = new Map<string, Set<Promise<unknown>>>();
   private readonly prs: WriterPr[] = [];
+  private readonly merges: WriterMerge[] = [];
   private readonly pushingPrs = new Set<Promise<string>>();
   private readonly openingPrs = new Set<Promise<WriterPr>>();
   private readonly pushedHeads = new Map<string, string>();
@@ -1250,27 +1252,48 @@ export class Swarm {
 
   // A question clears when the operator replies in its thread or mentions the
   // asker; a top-level note that mentions nobody goes to the lead, so it clears
-  // the lead's questions and no one else's.
+  // the lead's questions and no one else's. An answer also clears the asker's
+  // earlier questions: the answer wakes it, and it can ask again what is still open.
   private answerAsks(message: ChatMessage, isRoot: boolean): void {
     if (this.asks.length === 0) return;
     const handles = new Set(mentionedHandles(message.body));
     const toLead =
       isRoot && ![...this.agents.values()].some((a) => handles.has(a.handle.toLowerCase()));
-    const answered = this.asks.filter((ask) => {
+    const direct = this.asks.filter((ask) => {
       if (ask.threadRootId === message.threadRootId) return true;
       if (handles.has(ask.handle.toLowerCase())) return true;
       return toLead && this.agents.get(ask.agentId)?.lead === true;
     });
-    if (answered.length === 0) return;
+    if (direct.length === 0) return;
+    const answered = this.asks.filter((ask, i) =>
+      direct.some((d) => d.agentId === ask.agentId && i <= this.asks.indexOf(d)),
+    );
     this.dropAsks(answered, "the operator answered");
   }
 
-  // Dismiss from the tab: the question stays in the channel, the card goes.
+  // Dismiss from the tab: the question stays in the channel, the card goes. An
+  // idle lead is woken, since a dismissal posts nothing that would wake it.
   dismissAsk(messageId: string): boolean {
     const ask = this.asks.find((a) => a.messageId === messageId);
     if (!ask) return false;
     this.dropAsks([ask], `dismissed @${ask.handle}'s question`);
+    this.wakeLeadAfterDismiss(ask);
     return true;
+  }
+
+  private wakeLeadAfterDismiss(ask: OperatorAsk): void {
+    const lead = [...this.agents.values()].find((a) => a.lead);
+    if (!lead || this.status !== "running" || this.conclusion !== undefined) return;
+    if (lead.status !== "idle" || this.busy >= this.limits.maxConcurrent) return;
+    if (this.turnsUsed >= this.limits.maxTurns) return;
+    const still = this.asks.filter((a) => a.agentId === lead.id).length;
+    const note = `The operator dismissed @${ask.handle}'s question (${ask.messageId}) without answering it. ${
+      still > 0
+        ? `${still === 1 ? "One question" : `${still} questions`} you asked the operator are still open.`
+        : "None of your questions to the operator are open now, so they no longer hold the swarm."
+    } Carry on, or call chat_done if the task is resolved.`;
+    const inbox = this.inboxes.get(lead.id) ?? [];
+    void this.runAgent(lead, inbox.splice(0), note, this.notes.splice(0));
   }
 
   private dropAsks(gone: readonly OperatorAsk[], why: string): void {
@@ -1592,6 +1615,13 @@ export class Swarm {
     if (!result.commit) return result.message;
     const landed = `@${writer.handle} merged branch ${writer.worktree.branch} into ${writer.worktree.base}: ${result.commit}`;
     this.log(landed, { kind: "run", actor: agent.id, subject: writer.id });
+    this.merges.push({
+      agent: writer.handle,
+      branch: writer.worktree.branch,
+      base: writer.worktree.base,
+      commit: result.commit,
+      at: new Date().toISOString(),
+    });
     this.changed("agent");
     return `${landed}\n${result.message}`;
   }
@@ -2255,6 +2285,7 @@ export class Swarm {
       ...(effort ? { effort } : {}),
       ...(this.opts.project ? { project: this.opts.project } : {}),
       ...(this.opts.write ? { writeEnabled: true } : {}),
+      ...(this.writeTarget?.mode === "local" ? { writeLocal: true } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
       ...(health ? { health } : {}),
@@ -2273,6 +2304,7 @@ export class Swarm {
       ...(this.prs.length > 0
         ? { prs: this.prs.map((p) => ({ ...p, ...(p.ci ? { ci: { ...p.ci } } : {}) })) }
         : {}),
+      ...(this.merges.length > 0 ? { merges: this.merges.map((m) => ({ ...m })) } : {}),
       ...(this.keptWorktrees.length > 0
         ? { worktrees: this.keptWorktrees.map((w) => ({ ...w })) }
         : {}),

@@ -153,7 +153,8 @@ bodies, is kept in the swarm's status and durable result.
 | the rib's run and gate posts (\`Run started\`, \`Run update\`, \`Approval needed\`, \`Approved\`, \`Changes requested\`) | nobody, even when they name a reviewer |
 
 Mentions add to every row. Agent handles are prefixed with the swarm id, for
-example \`s3fk-lead\`. Writing to the channel is free; costing a peer a turn takes
+example \`s3fk-lead\`; a mention without the prefix, such as \`@lead\`, reaches
+the one agent of that name. Writing to the channel is free; costing a peer a turn takes
 deliberate addressing. An agent's plain reply text is never posted, so silence
 is the default. An idle agent with pending messages runs one turn with all of
 them batched in.
@@ -291,7 +292,8 @@ handle), or by asking a question that names them; a passing mention ("I'll show
 both to @operator") is not a question. A reply in
 the question's thread, a channel post that mentions the asker, or Dismiss on the
 Swarms tab answers it; a note to the lead answers the lead's own questions and
-no one else's. Its wall clock still applies, so give long runs a larger
+no one else's. An answer also clears the asker's earlier open questions, and a
+Dismiss wakes an idle lead so it can carry on or conclude. Its wall clock still applies, so give long runs a larger
 \`max_minutes\`. The lead cannot conclude while a run is live, nor while a question it asked
 the operator is still open. A swarm that ends
 any other way cancels its live runs.
@@ -672,6 +674,8 @@ turn start timestamps over the last five minutes, or since the start when younge
 with at least one minute as the rate's denominator. Older records without spans
 use the last five pace buckets over their covered time, accounting for the partial
 last minute; without buckets, they use turns so far. Fewer than one turn is reported as no pace.
+While a workflow run is running or paused, the swarm mostly waits on it, so the
+tile reads on-run instead of projecting the earlier pace.
 With positive pace, it projects when the remaining turns run out. If that is
 before the wall clock ends, it reads runs-out-first. Otherwise, it rounds the
 projected unused turns and reads clock-first when at least a tenth of the total
@@ -683,6 +687,7 @@ turn budget (rounded up) would be unused; less reads fits.
 | clock-first | N left · about M unused at hh:mm | flat | caution |
 | fits | N left · pace fits the clock | flat | none |
 | no-pace | N left · no turn in 5 min | flat | none |
+| on-run | N left · waiting on a workflow run | flat | none |
 | out-of-turns | none left · agents finish their turns | down | warn |
 
 N is turns left and M is projected unused turns. Delta text stays within 44

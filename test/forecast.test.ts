@@ -10,7 +10,7 @@ import { endsAt } from "../src/surface/parts.ts";
 import { turnsTile } from "../src/surface/swarm-board.ts";
 import { SIZE_PRESETS, type SwarmSummary, type TurnSpan } from "../src/types.ts";
 
-type Summary = Pick<SwarmSummary, "spans" | "pace" | "turnsUsed" | "limits" | "startedAt">;
+type Summary = Pick<SwarmSummary, "spans" | "pace" | "turnsUsed" | "limits" | "startedAt" | "runs">;
 const START = "2026-09-22T14:00:00.000Z";
 const NOW = new Date("2026-09-22T14:21:00.000Z");
 
@@ -82,6 +82,32 @@ describe("turn budget forecast", () => {
       text: "22 left · pace fits the clock",
       direction: "flat",
     });
+  });
+
+  test("a live workflow run holds the projection instead of extrapolating the early pace", () => {
+    const live = (status: "running" | "paused" | "succeeded") => ({
+      runId: "r1",
+      workflow: "fix-issue",
+      purpose: "Fix issue 2",
+      inputs: {},
+      status,
+      startedAt: START,
+      isolated: true,
+      nodesDone: 3,
+      prUrls: [],
+      verified: false,
+    });
+    const busy = summary({ turnsUsed: 20, spans: recentSpans(20) });
+    expect(forecast(busy, NOW).reading).toBe("runs-out-first");
+    for (const status of ["running", "paused"] as const) {
+      const f = forecast({ ...busy, runs: [live(status)] }, NOW);
+      expect(f).toEqual({ reading: "on-run", left: 20, clockEndsAt: endsAt(summary()) });
+      expect(forecastDelta(f)).toEqual({
+        text: "20 left · waiting on a workflow run",
+        direction: "flat",
+      });
+    }
+    expect(forecast({ ...busy, runs: [live("succeeded")] }, NOW).reading).toBe("runs-out-first");
   });
 
   test("reports no pace when turn starts are old despite nonempty pace buckets", () => {

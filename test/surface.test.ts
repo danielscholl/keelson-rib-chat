@@ -3117,6 +3117,47 @@ describe("Swarms boards", () => {
     expect(dispatch[4]).toEqual({ label: "Runs verified", value: "1 of 1", tone: "ok" });
   });
 
+  test("a local write swarm counts merges, not pull requests, and says so before any land", () => {
+    const id = "slocal";
+    const writer = agent(id, 1, {
+      worktree: { path: "/wt/w1", branch: "keelson/swarm/slocal/w1", base: "main", local: true },
+    });
+    const live = swarm(id, {
+      writeEnabled: true,
+      writeLocal: true,
+      agents: [agent(id, 0), writer],
+    });
+    const texts = (s: SwarmSummary) =>
+      leaves(buildSwarmBoard(s, { now: new Date(T0) }).sections)
+        .flatMap((section) => (section.kind === "rows" ? section.items : []))
+        .map((row) => `${row.text} ${row.trailing ?? ""}`);
+    expect(texts(live)).toContainEqual(
+      expect.stringContaining(`Writers @w1 may have reviewed work merged; none merged yet.`),
+    );
+    expect(texts(live).join(" ")).not.toContain("pull request");
+    const ended = {
+      ...live,
+      status: "done" as const,
+      endedAt: "2026-09-22T14:05:00.000Z",
+      merges: [
+        {
+          agent: writer.handle,
+          branch: "keelson/swarm/slocal/w1",
+          base: "main",
+          commit: "abcdef1234567890abcdef1234567890abcdef12",
+          at: "2026-09-22T14:03:00.000Z",
+        },
+      ],
+    };
+    expect(texts(ended)).toContainEqual("keelson/swarm/slocal/w1 merged into main · abcdef1");
+    const result = buildSwarmBoard(ended, { now: new Date(T0) }).sections.find(
+      (section) => section.kind === "stats",
+    );
+    if (result?.kind !== "stats") throw new Error("missing Result");
+    expect(result.items.map((tile) => tile.label)).toEqual(["Turns", "Time", "Tokens", "Merged"]);
+    expect(result.items[3]).toEqual({ label: "Merged", value: 1 });
+  });
+
   test("ended PR totals count distinct URLs and require every owner to explicitly pass", () => {
     const id = "s8cnt";
     const url = (n: number) => `https://github.com/o/r/pull/${n}`;

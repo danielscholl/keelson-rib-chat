@@ -321,6 +321,14 @@ describe("local merge tool", () => {
           ),
         }),
       );
+      expect(h.swarm.summary().writeLocal).toBe(true);
+      expect(h.swarm.summary().merges).toEqual([
+        expect.objectContaining({
+          agent: writer.handle,
+          branch: writer.worktree!.branch,
+          commit: "c".repeat(40),
+        }),
+      ]);
       const leadTools = h.provider.requests.find((req) => req.turnContext?.agentId === lead.id)!
         .tools!;
       const writerTools = h.provider.requests.find((req) => req.turnContext?.agentId === writer.id)!
