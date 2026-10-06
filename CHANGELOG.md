@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.19.2...v0.20.0) (2026-10-06)
+
+
+### Added
+
+* **surface:** read GitHub links at Start, add Retry and Go deeper ([#119](https://github.com/danielscholl/keelson-rib-chat/issues/119)) ([5ee4473](https://github.com/danielscholl/keelson-rib-chat/commit/5ee4473f832ee594d776e04b04051fa585977d68))
+
 ## [0.19.2](https://github.com/danielscholl/keelson-rib-chat/compare/v0.19.1...v0.19.2) (2026-10-06)
 
 
