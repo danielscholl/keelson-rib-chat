@@ -53,7 +53,7 @@ A choice that no longer matches a card shows **custom**. Picking a card clears
 the named model and restores that plan.
 
 The live footer follows the choice: agents, up to N turns, about N min, then
-**quick models**, **balanced models**, **strongest models** or **one model**.
+**fast models**, **balanced models**, **deep models** or **one model**.
 The models line below shows the pair, or the named model for lead and workers.
 Untouched Working session sends no size, power or model overrides. Opening
 Customize alone does not change that. Quick look records small/fast; Deep dig

@@ -603,7 +603,7 @@ never the requested model as served. Provenance names the parent and join time.
 Writers show worktree, branch, draft PR and observed CI, with an Open PR link.
 
 Said is this agent's recent messages only, newest first, each linked to its
-thread. Turns keeps its recorded spans newest first. The quiet its messages ·
+thread. Turns keeps its recorded spans newest first. The quiet Its messages ·
 transcript ↗ link opens the channel, not a complete agent-only message history.
 Message @agent posts as you with the roster's full handle mentioned, through
 the unchanged router. It wakes the selected agent and spends a turn; additional
@@ -874,7 +874,7 @@ A choice that no longer matches a card shows custom. Picking a card clears
 the named model and restores that plan.
 
 The live footer follows the choice: agents, up to N turns, about N min, then
-quick models, balanced models, strongest models or one model. The models line
+fast models, balanced models, deep models or one model. The models line
 below shows the pair, or the named model for lead and workers.
 Untouched Working session sends no size, power or model overrides. Opening
 Customize alone does not change that. Quick look records small/fast; Deep dig

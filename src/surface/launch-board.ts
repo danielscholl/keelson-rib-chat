@@ -135,11 +135,8 @@ const PAGE_CSS = `
 :root[data-theme="light"] { --button-ink: var(--card); }
 body { font-size: 14px; }
 * { box-sizing: border-box; }
-main { margin: 0 auto; max-width: 1120px; border: 1px solid var(--border);
-  border-radius: 12px; overflow: hidden; background: var(--card); }
+main { margin: 0; background: var(--card); }
 header { display: flex; align-items: center; gap: 14px; padding: 24px; flex-wrap: wrap; }
-.glyph { display: grid; place-items: center; width: 44px; height: 44px; flex: none;
-  border-radius: 12px; background: var(--card-2); color: var(--accent); }
 .compact { display: flex; align-items: center; gap: 12px; padding: 16px; }
 .compact h1 { margin: 0; font-size: 16px; white-space: nowrap; }
 .compact input { flex: 1; min-width: 0; width: auto; }
@@ -171,7 +168,7 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .chevron { display: inline-block; margin-left: 6px; }
 .customize[aria-expanded="true"] .chevron { transform: rotate(180deg); }
 .plan-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.plan { text-align: left; padding: 16px; background: var(--bg); color: var(--fg); }
+.plan { display: flex; flex-direction: column; justify-content: flex-start; text-align: left; padding: 16px; background: var(--bg); color: var(--fg); }
 .plan[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .plan-title { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: var(--fg-strong); }
 .plan-blurb { display: block; margin-top: 8px; color: var(--muted); line-height: 1.5; min-height: 4.5em; }
@@ -195,10 +192,8 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .new-project { margin-top: 16px; display: grid; gap: 12px; }
 .access { margin-top: 24px; }
 .access-heading { font-size: 12px; letter-spacing: .08em; margin: 0 0 8px; }
-.access-row { display: grid; grid-template-columns: 8px 44px minmax(150px, 1fr) minmax(240px, 2fr);
+.access-row { display: grid; grid-template-columns: 44px minmax(150px, 1fr) minmax(240px, 2fr);
   gap: 14px; align-items: center; padding: 16px 0; border-top: 1px solid var(--border); }
-.access-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
-.access-row.is-on .access-dot { background: var(--accent); }
 .access-name { color: var(--fg-strong); font-weight: 600; }
 .access-tag { display: block; font: 11px var(--mono); color: var(--muted); margin-top: 4px; }
 .access-meaning { color: var(--muted); line-height: 1.5; }
@@ -207,7 +202,7 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
 .switch[aria-checked="true"]::after { background: var(--button-ink); transform: translateX(18px); }
 .switch:disabled { cursor: not-allowed; }
-.access-details { grid-column: 4; min-width: 0; }
+.access-details { grid-column: 3; min-width: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px;
   border: 1px solid var(--border); border-radius: 6px; font: 12px var(--mono); color: var(--fg); background: var(--card-2); }
@@ -236,8 +231,8 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-
   .project-row { grid-template-columns: 1fr; }
   .prepare { width: 100%; }
   .mode { margin-left: 0; width: 100%; }
-  .access-row { grid-template-columns: 8px 44px minmax(0, 1fr); gap: 12px; }
-  .access-meaning, .access-details { grid-column: 3; }
+  .access-row { grid-template-columns: 44px minmax(0, 1fr); gap: 12px; }
+  .access-meaning, .access-details { grid-column: 2; }
   .plan-cards, .drawer { grid-template-columns: 1fr; }
   .plan-blurb { min-height: 0; }
 }
@@ -382,7 +377,7 @@ const PAGE_SCRIPT = `
     const names = controls.entry.value.trim().split(/[\\s,]+/).filter(Boolean);
     const bad = names.find((name) => !${WORKFLOW}.test(name));
     if (bad) {
-      workflowError("'" + bad + "' is not a workflow name");
+      workflowError("'" + bad + "' is not a workflow name. Use letters, digits, '.', '_' or '-', and separate names with spaces or commas.");
       return false;
     }
     const next = [...new Set([...workflows, ...names])];
@@ -407,7 +402,7 @@ const PAGE_SCRIPT = `
   const models = JSON.parse(form.dataset.models);
   const details = JSON.parse(form.dataset.details);
   const budgets = JSON.parse(form.dataset.budgets);
-  const categories = { fast: "quick models", balanced: "balanced models", deep: "strongest models" };
+  const categories = { fast: "fast models", balanced: "balanced models", deep: "deep models" };
   let size = "medium";
   let power = "balanced";
   let model = "";
@@ -426,11 +421,10 @@ const PAGE_SCRIPT = `
     cards.forEach((card) => {
       const selected = !model && size === card.dataset.size && power === card.dataset.power;
       card.setAttribute("aria-pressed", String(selected));
+      document.getElementById("chip-" + card.dataset.size).hidden = !selected;
       matches ||= selected;
     });
     efforts.forEach((effort) => effort.setAttribute("aria-pressed", String(size === effort.dataset.size)));
-    document.getElementById("working-chip").textContent =
-      !model && size === "medium" && power === "balanced" ? "selected" : "default";
     document.getElementById("custom-chip").hidden = matches;
     document.getElementById("effort-detail").textContent = details[size];
     document.getElementById("model-detail").textContent = model
@@ -501,6 +495,7 @@ const PAGE_SCRIPT = `
     const hasProject = Boolean(project.value);
     const creating = isNew();
     if (newFields) newFields.hidden = !creating;
+    document.getElementById("project-hint").hidden = hasProject && !creating;
     row.classList.toggle("has-project", hasProject);
     note.textContent = creating ? "Write is on. Agents write in branch-isolated worktrees; a new repository without origin uses local writing." : hasProject
       ? "Agents read " + selected.dataset.path + " and run read-only commands there. Nothing changes unless you allow more."
@@ -755,7 +750,7 @@ function accessTemplate(state: LaunchState): string {
     {
       key: "write",
       name: "Write",
-      tag: "elevated",
+      tag: "",
       meaning: "Change files. Each agent works in its own worktree on a branch, never on main.",
       disabled: false,
       details: "",
@@ -763,15 +758,15 @@ function accessTemplate(state: LaunchState): string {
     {
       key: "workflows",
       name: "Run workflows",
-      tag: "elevated · needs your grant",
+      tag: "needs your grant",
       meaning: workflowMeaning,
       disabled: Boolean(state.dispatchBlocked),
-      details: `<div class="access-details" id="workflows-details" hidden><div class="chips" id="workflow-chips"></div><input class="workflow-input" id="workflow-entry" type="text" aria-label="Add a workflow" aria-describedby="workflow-count workflow-error" placeholder="add a workflow…" /><p class="hint workflow-count" id="workflow-count">0 / ${START_BOUNDS.maxWorkflows} workflows</p><p class="workflow-error" id="workflow-error" role="alert" hidden></p></div>`,
+      details: `<div class="access-details" id="workflows-details" hidden><div class="chips" id="workflow-chips"></div><input class="workflow-input" id="workflow-entry" type="text" aria-label="Add a workflow" aria-describedby="workflow-count workflow-error" placeholder="add a workflow…" /><p class="workflow-error" id="workflow-error" role="alert" hidden></p><p class="hint workflow-count" id="workflow-count">0 / ${START_BOUNDS.maxWorkflows} workflows</p></div>`,
     },
     {
       key: "tracker",
       name: "Use the tracker",
-      tag: "elevated · needs your grant",
+      tag: "needs your grant",
       meaning: trackerMeaning,
       disabled: !state.toolReachability || Boolean(state.toolReachabilityError),
       details: `<div class="access-details chips" id="tracker-details" hidden>${TRACKER_TOOLS.map(
@@ -786,7 +781,7 @@ function accessTemplate(state: LaunchState): string {
   return `<template id="access-template"><section class="access" aria-labelledby="access-heading"><h2 class="access-heading" id="access-heading">ALSO ALLOW</h2>${rows
     .map(
       (item) =>
-        `<div class="access-row" id="${item.key}-row"><span class="access-dot" aria-hidden="true"></span><button class="switch" id="allow-${item.key}" type="button" role="switch" aria-label="${esc(item.name)}" aria-describedby="${item.key}-meaning" aria-checked="false"${item.disabled ? " disabled" : ""}></button><div class="access-name">${esc(item.name)}<span class="access-tag">${esc(item.tag)}</span></div><p class="access-meaning" id="${item.key}-meaning">${esc(item.meaning)}</p>${item.details}</div>`,
+        `<div class="access-row" id="${item.key}-row"><button class="switch" id="allow-${item.key}" type="button" role="switch" aria-label="${esc(item.name)}" aria-describedby="${item.key}-meaning" aria-checked="false"${item.disabled ? " disabled" : ""}></button><div class="access-name">${esc(item.name)}${item.tag ? `<span class="access-tag">${esc(item.tag)}</span>` : ""}</div><p class="access-meaning" id="${item.key}-meaning">${esc(item.meaning)}</p>${item.details}</div>`,
     )
     .join("")}</section></template>`;
 }
@@ -800,7 +795,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     const l = SIZE_PRESETS[plan.size];
     const selected = plan.size === "medium";
     return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
-      <span class="plan-title">${plan.name}${selected ? '<span class="chip" id="working-chip">selected</span>' : ""}</span>
+      <span class="plan-title">${plan.name}<span class="chip" id="chip-${plan.size}"${selected ? "" : " hidden"}>selected</span></span>
       <span class="plan-blurb">${plan.blurb}</span>
       <span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>
       <span class="models plan-models">${esc(models[plan.power]!)}</span>
@@ -834,8 +829,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     .join("");
   const expanded = `
   <header>
-    <span class="glyph" aria-hidden="true">▶</span>
-    <div class="intro"><h1>Start a swarm</h1><p class="hint">Describe the problem. Agents investigate, debate, and bring back a conclusion.</p></div>
+    <div class="intro"><h1>New swarm</h1><p class="hint">Describe the problem. Agents investigate, debate, and bring back a conclusion.</p></div>
     <button class="prepare" id="launch-prepare" type="button">Prepare in chat · attach an issue or PR</button>
   </header>
   <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-models="${esc(JSON.stringify(models))}" data-details="${esc(JSON.stringify(details))}" data-budgets="${esc(JSON.stringify(budgets))}">
@@ -880,7 +874,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
   </form>`;
   const l = SIZE_PRESETS.medium;
   const compact = `<div class="compact" id="launch-compact" data-nonce="${esc(nonce)}">
-    <span class="glyph" aria-hidden="true">▶</span><h1>New swarm</h1>
+    <h1>New swarm</h1>
     <input id="compact-task" type="text" aria-label="Swarm task" placeholder="What should the swarm work out?">
     <button class="compact-plan" id="compact-plan" type="button" aria-expanded="false" aria-controls="launch-root">${PLANS[1].name}</button>
     <span class="compact-budget">${l.maxAgents} agents · ${l.wallClockMs / 60_000} min</span>
@@ -919,7 +913,7 @@ export function runAgainItem(s: SwarmSummary, launch: StartSwarmInput): Item {
     glyph: "↻",
     hint: `Starts a new swarm with ${reuses.join(", ")}. Context is not refreshed.`,
     fields: [sizeField(s.sizeBase), modelField(s.model, s.provider)],
-    submitLabel: "Run again",
+    submitLabel: "Start new run",
     binding: { id: s.id },
   };
 }

@@ -265,7 +265,9 @@ function stats(s: SwarmSummary, now: Date): Leaf {
       items.push({
         label: "Pull requests",
         value: prs.size,
-        sub: `${[...prs.values()].filter(Boolean).length} with CI passing`,
+        ...(prs.size > 0
+          ? { sub: `${[...prs.values()].filter(Boolean).length} with CI passing` }
+          : {}),
       });
     }
     const runs = s.runs ?? [];
