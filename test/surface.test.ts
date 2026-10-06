@@ -572,7 +572,7 @@ describe("shared inspector keys and presentation", () => {
     const health = buildDetailsInspector(s).sections.find((section) => section.title === "Health");
     expect(health?.kind === "rows" ? health.items : []).toEqual(healthRows(s));
     expect(healthRows({ ...s, status: "error", error: "fatal" }).at(-1)).toEqual({
-      icon: "✕",
+      icon: "!",
       glyph: "error",
       text: "fatal",
     });
@@ -3040,7 +3040,7 @@ describe("Swarms boards", () => {
         "Tokens",
         "Pull requests",
       ]);
-      expect(result[3]).toEqual({ label: "Pull requests", value: 0, sub: "0 with CI passing" });
+      expect(result[3]).toEqual({ label: "Pull requests", value: 0 });
     }
     const dispatch = tiles({
       ...base,
@@ -3054,7 +3054,7 @@ describe("Swarms boards", () => {
       "Pull requests",
       "Runs verified",
     ]);
-    expect(dispatch[3]).toEqual({ label: "Pull requests", value: 0, sub: "0 with CI passing" });
+    expect(dispatch[3]).toEqual({ label: "Pull requests", value: 0 });
     expect(dispatch[4]).toEqual({ label: "Runs verified", value: "1 of 1", tone: "ok" });
   });
 
@@ -3538,7 +3538,7 @@ describe("ended board contract", () => {
             "Pull requests",
             "Runs verified",
           ]);
-          expect(pr).toEqual({ label: "Pull requests", value: 0, sub: "0 with CI passing" });
+          expect(pr).toEqual({ label: "Pull requests", value: 0 });
           expect(verified).toEqual({ label: "Runs verified", value: "0 of 1", tone: "warn" });
         }
       }
@@ -3603,7 +3603,7 @@ describe("ended board contract", () => {
         tone: "warn",
       });
     } else if (s.writeEnabled || s.workflows?.length) {
-      expect(pr).toEqual({ label: "Pull requests", value: 0, sub: "0 with CI passing" });
+      expect(pr).toEqual({ label: "Pull requests", value: 0 });
     } else expect(pr).toBeUndefined();
     const verbs = view.sections[2];
     if (verbs?.kind !== "actions") throw new Error("missing actions");
@@ -8560,7 +8560,7 @@ describe("launching from the tab", () => {
         .all()
         .filter((node) => node.classes.has("access-tag"))
         .map((node) => node.textContent),
-    ).toEqual(["elevated", "elevated · needs your grant", "elevated · needs your grant"]);
+    ).toEqual(["needs your grant", "needs your grant"]);
   });
 
   test("creation is the last capability-gated choice and works without selectable projects", () => {
@@ -9129,16 +9129,17 @@ describe("launching from the tab", () => {
     capture({});
     trigger("plan-small");
     expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
-    expect(e["working-chip"]!.textContent).toBe("default");
+    expect(e["chip-small"]!.hidden).toBe(false);
+    expect(e["chip-medium"]!.hidden).toBe(true);
     expect(e["launch-summary"]!.textContent).toBe(
-      "3 agents · up to 20 turns · about 15 min · quick models",
+      "3 agents · up to 20 turns · about 15 min · fast models",
     );
     expect(e["launch-models"]!.textContent).toBe("claude-sonnet-5.5 · lead and workers");
     capture({ size: "small", power: "fast" });
     trigger("plan-large");
     expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("true");
     expect(e["launch-summary"]!.textContent).toBe(
-      "8 agents · up to 80 turns · about 60 min · strongest models",
+      "8 agents · up to 80 turns · about 60 min · deep models",
     );
     expect(e["effort-detail"]!.textContent).toBe(
       "8 agents, 4 at once · 80 turns in all, 16 per worker · stops after 60 min",
@@ -9160,7 +9161,8 @@ describe("launching from the tab", () => {
     capture({ size: "large", model: "claude-opus-5.5", provider: "copilot" });
     trigger("plan-medium");
     expect(e["custom-chip"]!.hidden).toBe(true);
-    expect(e["working-chip"]!.textContent).toBe("selected");
+    expect(e["chip-medium"]!.hidden).toBe(false);
+    expect(e["chip-large"]!.hidden).toBe(true);
     expect(e["launch-model"]!.value).toBe("");
     capture({});
     e["launch-project"]!.value = "p1";
@@ -9196,7 +9198,7 @@ describe("launching from the tab", () => {
     trigger("plan-small");
     trigger("effort-large");
     expect(e["custom-chip"]!.hidden).toBe(false);
-    expect(e["launch-summary"]!.textContent).toEndWith(" · quick models");
+    expect(e["launch-summary"]!.textContent).toEndWith(" · fast models");
     trigger("launch-start");
     expect(calls.at(-1)?.payload).toMatchObject({ size: "large", power: "fast" });
     release();
@@ -10905,7 +10907,7 @@ describe("launching from the tab", () => {
         expect(restored.get("compact-task")).toBeUndefined();
         expect(restored.get("launch-task")!.value).toBe("  Kept when presence\nchanges  ");
         expect(restored.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
-        expect(restored.get("launch-summary")!.textContent).toContain("quick models");
+        expect(restored.get("launch-summary")!.textContent).toContain("fast models");
         expect(restored.calls).toEqual([]);
         expect(h.nonce()).toBe(nonce);
         if (first === "live") {
@@ -11048,7 +11050,7 @@ describe("launching from the tab", () => {
     for (const st of [{ projects }, { projects: [] }]) {
       const page = buildLaunch(st, "nonce");
       for (const copy of [
-        "Start a swarm",
+        "New swarm",
         "Describe the problem. Agents investigate, debate, and bring back a conclusion.",
         "Prepare in chat · attach an issue or PR",
         "TASK",
@@ -11088,7 +11090,8 @@ describe("launching from the tab", () => {
       expect(page).toContain('id="launch-drawer" hidden');
       expect(page).toContain('id="other-model-row" hidden');
       expect(page).toContain('id="custom-chip" hidden>custom');
-      expect(page).toContain('id="working-chip">selected');
+      expect(page).toContain('id="chip-medium">selected');
+      expect(page).toContain('id="chip-small" hidden>selected');
       expect(page).toContain(
         'id="plan-medium" type="button" data-size="medium" data-power="balanced" aria-pressed="true"',
       );

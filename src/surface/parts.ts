@@ -179,7 +179,7 @@ export function healthRows(s: SwarmSummary): Row[] {
       : []),
     ...(h?.cancelFault ? [warn(h.cancelFault)] : []),
     ...(!isLive(s.status) && s.error
-      ? [{ icon: "✕", glyph: "error" as const, text: s.error }]
+      ? [{ icon: "!", glyph: "error" as const, text: s.error }]
       : []),
   ];
 }

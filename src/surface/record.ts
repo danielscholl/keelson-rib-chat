@@ -189,6 +189,7 @@ svg .count { font-size: 10.5px; fill: var(--fg);
 table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); }
 td { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+td:first-child { white-space: nowrap; }
 footer { margin-top: 26px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 `;
 

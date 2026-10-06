@@ -20,9 +20,10 @@ export function buildDoc(s: SwarmSummary | undefined, id: string): string {
   const title = `# ${firstLine(s.task, 160)}`;
   const after = `\n\n## Task\n\n${s.task}`;
   if (s.conclusion !== undefined) {
+    const heading = `# ${s.report?.title ?? "Conclusion"}`;
     const by = s.agents.find((a) => a.lead)?.handle ?? `${s.id}-lead`;
     const when = s.endedAt ? ` · ${day(s.endedAt)} ${hhmm(s.endedAt)}` : "";
-    return `${title}\n\n*Swarm ${s.id} · ${s.status} · by @${by}${when}${transcript}*\n\n${s.conclusion}${after}\n`;
+    return `${heading}\n\n*Swarm ${s.id} · ${s.status} · by @${by}${when}${transcript}*\n\n${s.conclusion}${after}\n`;
   }
   const draft = s.draftConclusion
     ? `\n\n> The lead's last conclusion was refused, and is kept below.\n\n${s.draftConclusion}`
