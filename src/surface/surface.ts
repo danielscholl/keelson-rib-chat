@@ -74,6 +74,8 @@ export interface SurfaceDeps {
 
 export interface SwarmsSurface {
   acceptsLaunchNonce(nonce: string): boolean;
+  // A start from the launcher frame succeeded: republish it empty.
+  launched(): void;
   offersLaunchProject(id: string): boolean;
   track(ids: readonly string[]): void;
   select(id: string): void;
@@ -172,6 +174,8 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     windowMs,
   );
   const launchNonce = crypto.randomUUID();
+  // Bumped per launcher start so the frame reloads empty instead of keeping the sent draft.
+  let launchGeneration = 0;
   let launchInputs: string | undefined;
   function launchState(): LaunchState {
     const state = deps.launch();
@@ -213,7 +217,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     LAUNCH_KEY,
     () => {
       const state = launchState();
-      const html = buildLaunch(state, launchNonce);
+      const html = buildLaunch(state, launchNonce, launchGeneration);
       launchInputs = JSON.stringify(state);
       return html;
     },
@@ -464,6 +468,11 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
 
   return {
     acceptsLaunchNonce: (nonce) => !disposed && nonce === launchNonce,
+    launched() {
+      if (disposed) return;
+      launchGeneration++;
+      launch.schedule();
+    },
     offersLaunchProject: (id) =>
       !disposed && deps.projects().some((p) => p.id === id && p.name !== DEFAULT_PROJECT_NAME),
     track,

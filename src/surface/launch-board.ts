@@ -791,7 +791,7 @@ function accessTemplate(state: LaunchState): string {
     .join("")}</section></template>`;
 }
 
-export function buildLaunch(state: LaunchState, nonce: string): string {
+export function buildLaunch(state: LaunchState, nonce: string, generation = 0): string {
   const projects = state.projects.filter((p) => p.name !== DEFAULT_PROJECT_NAME);
   const models = Object.fromEntries(SWARM_POWERS.map((p) => [p, planModels(state, p)]));
   const details = Object.fromEntries(SWARM_SIZES.map((s) => [s, effortDetail(s)]));
@@ -888,7 +888,7 @@ export function buildLaunch(state: LaunchState, nonce: string): string {
     <button class="more" id="compact-more" type="button" aria-expanded="false" aria-controls="launch-root">More options</button>
   </div>`;
   return `<style>${designTokenCssBlock()}\n${PAGE_CSS}</style>
-<main id="launch-root">${state.hasSwarms ? compact : expanded}</main>
+<main id="launch-root" data-generation="${generation}">${state.hasSwarms ? compact : expanded}</main>
 ${state.hasSwarms ? `<template id="launch-expanded">${expanded}</template>` : ""}
 ${projects.length || state.canCreateProject ? accessTemplate(state) : ""}<script>${PAGE_SCRIPT}</script>`;
 }

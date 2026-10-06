@@ -246,7 +246,7 @@ function started(
   input: StartSwarmInput,
   open: "index" | "drawer",
   origin?: { rerunOf?: string },
-  message?: string,
+  message?: string | ((id: string) => string),
 ): RibActionResult {
   let id: string;
   try {
@@ -255,13 +255,14 @@ function started(
   } catch (e) {
     return fail(errText(e));
   }
+  const toast = typeof message === "function" ? message(id) : message;
   const data =
     open === "drawer"
       ? { effect: "open-canvas", key: swarmKey(id), title: `Swarm ${id}` }
       : { effect: "open-surface", surfaceId: SURFACE_TAB, regionKey: INDEX_KEY };
   return {
     ok: true,
-    data: { ...data, ...(message ? { message } : {}) },
+    data: { ...data, ...(toast ? { message: toast } : {}) },
   };
 }
 
@@ -585,7 +586,17 @@ export async function handleSwarmsAction(
         html,
       );
       if (typeof parsed === "string") return fail(parsed);
-      if (!parsed.creation) return started(deps, parsed.input, "index");
+      if (!parsed.creation) {
+        const result = started(
+          deps,
+          parsed.input,
+          "index",
+          undefined,
+          html ? (id) => `Swarm ${id} started` : undefined,
+        );
+        if (html && result.ok) deps.surface?.launched();
+        return result;
+      }
       const creator = deps.createProject;
       if (!creator) return fail("This Keelson host can't create projects.");
       let created: Awaited<ReturnType<typeof creator>>;
@@ -627,7 +638,7 @@ export async function handleSwarmsAction(
       const leadTools = initialized ? leadToolsOf(candidates, deps) : [];
       if (typeof leadTools === "string") return fail(leadTools);
       const { leadTools: _previous, ...input } = parsed.input;
-      return started(
+      const result = started(
         deps,
         {
           ...input,
@@ -638,9 +649,11 @@ export async function handleSwarmsAction(
         "index",
         undefined,
         initError === undefined
-          ? undefined
+          ? (swarm) => `Swarm ${swarm} started in ${created.name}`
           : `beads_init failed: ${initError}. Started a write swarm without tracker tools.`,
       );
+      if (result.ok) deps.surface?.launched();
+      return result;
     }
     case "run-again": {
       const record = id ? deps.find(id) : {};
