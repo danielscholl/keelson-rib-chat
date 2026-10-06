@@ -8,16 +8,9 @@
 
 import { createHash } from "node:crypto";
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
-import { modelLabel, servedModels, sizeText, tokensText } from "../labels.ts";
+import { modelLabel, servedModels, tokensText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
-import {
-  type ChildRun,
-  isLive,
-  SIZE_PRESETS,
-  SWARM_SIZES,
-  type SwarmStatus,
-  type SwarmSummary,
-} from "../types.ts";
+import { type ChildRun, isLive, PLAN_NAME, type SwarmStatus, type SwarmSummary } from "../types.ts";
 import {
   activityText,
   channelHref,
@@ -67,14 +60,9 @@ export function serverAddress(server: ServerLine): string | undefined {
   return server.url?.replace(/^https?:\/\//, "");
 }
 
-// The hover on Start and the tool's size input share these words.
-export function sizesHint(): string {
-  return SWARM_SIZES.map((k) => `${k}: ${sizeText(SIZE_PRESETS[k])}`).join(" · ");
-}
-
 // The size in one word: the preset, or the preset a custom start was adjusted from.
 export function sizeWord(s: Pick<SwarmSummary, "size" | "sizeBase">): string {
-  return s.size === "custom" ? `${s.sizeBase}, adjusted` : s.size;
+  return s.size === "custom" ? `${PLAN_NAME[s.sizeBase]}, adjusted` : PLAN_NAME[s.size];
 }
 
 export function sizeDetail(s: Pick<SwarmSummary, "limits" | "size" | "sizeBase">): string {
@@ -131,7 +119,7 @@ function roleModelRow(s: SwarmSummary, lead: boolean): Row {
 function detailedSetupRows(s: SwarmSummary): Row[] {
   const l = s.limits;
   return [
-    { icon: "◫", text: `Size: ${sizeWord(s)}` },
+    { icon: "◫", text: `Plan: ${sizeWord(s)}` },
     {
       text: `Effective limits: ${l.maxAgents} agents · ${l.maxTurns} total turns · ${l.maxTurnsPerAgent} turns per worker · ${l.maxConcurrent} concurrent turns`,
     },
@@ -140,7 +128,7 @@ function detailedSetupRows(s: SwarmSummary): Row[] {
     },
     roleModelRow(s, true),
     roleModelRow(s, false),
-    { text: `Recorded reasoning effort: ${s.effort ?? "not recorded"}` },
+    { text: `Model thinking: ${s.effort ?? "not recorded"}` },
   ];
 }
 
@@ -156,15 +144,17 @@ export function setupRows(s: SwarmSummary, options: { detailed?: boolean } = {})
   ];
 }
 
-export function healthRows(s: SwarmSummary): Row[] {
+// The ended board's About omits the cause, which its Outcome card already shows.
+export function healthRows(s: SwarmSummary, opts: { omitCause?: boolean } = {}): Row[] {
   const h = s.health;
+  const repeatsCause = (text: string) => Boolean(opts.omitCause && s.error?.includes(text));
   const warn = (text: string): Row => ({ icon: "!", glyph: "warn", text });
   return [
     ...(h?.socketDrops
       ? [warn(`socket closed ${h.socketDrops} time(s) since it last opened`)]
       : []),
     ...(h?.channelFault ? [warn(`ClickClack fault: ${h.channelFault}`)] : []),
-    ...(h?.lastLeadFailure
+    ...(h?.lastLeadFailure && !repeatsCause(h.lastLeadFailure)
       ? [
           warn(
             `the lead's last turn failed (${h.leadFailures ?? 1} in a row): ${h.lastLeadFailure}`,
@@ -178,7 +168,7 @@ export function healthRows(s: SwarmSummary): Row[] {
       ? [warn(`the lead's conclusion was refused ${h.refusedConclusions} time(s) for length`)]
       : []),
     ...(h?.cancelFault ? [warn(h.cancelFault)] : []),
-    ...(!isLive(s.status) && s.error
+    ...(!isLive(s.status) && s.error && !opts.omitCause
       ? [{ icon: "!", glyph: "error" as const, text: s.error }]
       : []),
   ];
@@ -636,8 +626,11 @@ export function causeTitle(s: SwarmSummary, withTime = true): string {
       return `Out of budget${at}`;
     case "stalled":
       return `Stalled${at}`;
-    case "error":
+    case "error": {
+      const refused = /Model '([^']+)' does not support reasoning effort/.exec(why);
+      if (refused) return `${refused[1]} can't take a thinking setting. Retry with another model.`;
       return `Failed: ${firstLine(why || "no reason recorded", 80)}`;
+    }
     default:
       return "Ended without a conclusion";
   }

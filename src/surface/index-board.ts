@@ -51,7 +51,7 @@ type Field = NonNullable<Card["fields"]>[number];
 export const ENDED_SHOWN = 8;
 // An ended row's outcome and task together stay under this.
 const ENDED_TEXT = 90;
-const OUTCOME_CHARS = 60;
+const OUTCOME_CHARS = 48;
 const NEEDS_SHOWN = 12;
 
 // The third level: what the swarm is, in one muted line.
@@ -143,23 +143,22 @@ function startingCard(s: StartingSwarm): Card {
 function outcomeOf(s: SwarmSummary): string {
   if (s.report) return firstLine(s.report.title, OUTCOME_CHARS);
   const said = s.conclusion ? gist(s.conclusion, OUTCOME_CHARS) : "";
-  return said || causeTitle(s, false);
+  return said || firstLine(causeTitle(s, false).split(". ")[0]!, OUTCOME_CHARS);
 }
 
-// An ended swarm leads with its outcome, then the task it was for. A done row
+// An ended swarm leads with the task it was for, then its outcome. A done row
 // carries a quiet check, so a chip marks only the swarms that did not finish.
 // The trailing text never shrinks on the host, so it carries only the short facts.
 export function endedRow(s: SwarmSummary): Row {
   const took = span(s.startedAt, s.endedAt);
   const verified = verifiedText(s);
-  const head = `${s.rerunOf ? "↻ " : ""}${outcomeOf(s)} · for: `;
+  const tail = ` · ${outcomeOf(s)}`;
   return {
     ...(s.status === "done"
       ? { icon: "✓" }
       : { chip: { label: LIFECYCLE[s.status].label, tone: LIFECYCLE[s.status].tone } }),
-    text: `${head}${firstLine(s.task, Math.max(24, ENDED_TEXT - head.length))}`,
+    text: `${s.rerunOf ? "↻ " : ""}${firstLine(s.task, Math.max(24, ENDED_TEXT - tail.length))}${tail}`,
     trailing: [
-      modelLabel(s),
       plural(s.turnsUsed, "turn"),
       ...(took ? [took] : []),
       hhmm(s.endedAt ?? s.startedAt),

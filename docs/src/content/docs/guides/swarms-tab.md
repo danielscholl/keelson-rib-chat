@@ -8,7 +8,7 @@ sidebar:
 The rib adds a **Swarms** tab to Keelson. It shows every swarm at once. The
 conversation stays in ClickClack, and the cockpit shows its newest eight
 lines. Details links the transcript. Questions and gates open side inspectors;
-the reading pane keeps the conclusion or refused draft and the full task.
+the reading pane keeps a refused draft and the full task.
 
 ## The index
 
@@ -42,7 +42,7 @@ One live swarm expands on the page as a cockpit. It runs in this order:
 1. The task and id, a lifecycle or **needs you** pill, and people dots.
 2. The state line, described below.
 3. Once the lead has concluded, the **Outcome** card: the conclusion, with
-   **Open the report** and **Read the conclusion**. While a peer reviews a
+   **Open the report** when one exists. While a peer reviews a
    gate, its reviewing card appears here instead.
 4. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
    omitting zero counts. Open seats are hatched.
@@ -58,7 +58,7 @@ One live swarm expands on the page as a cockpit. It runs in this order:
 9. **Message the lead**, expanded directly under Conversation for a running
    swarm that has not concluded.
 10. Spend, Produced so far, and Activity.
-11. **Open the report** when one exists; **Open the record**; **Details**; and
+11. **Open the report** when one exists; **Timeline**; **Details**; and
    **Stop swarm…** last.
 
 ### Timeline
@@ -81,7 +81,7 @@ Timeline keeps at most **12 lanes, 400 spans and 200 marks**. It keeps the opera
 then first-worked agents, then runs; it retains the newest eligible spans and
 marks with stable timestamp sorts. Items on omitted lanes are removed.
 The title names shown/total counts for each clipped dimension, including items
-lost with omitted lanes. **Open the record** shows additional lanes and events.
+lost with omitted lanes. **Timeline** opens the record with additional lanes and events.
 The record keeps the full retained timeline, with its own snapshot window and
 drawing. Native clipping does not remove its lanes or events.
 
@@ -132,7 +132,7 @@ draft PR and observed CI, with an **Open PR** link.
 
 **Said** is this agent's recent messages only, newest first, each linked to
 its thread. **Turns** shows its newest 40 recorded spans first and names the
-total when older turns are hidden. **Open the record** shows every recorded
+total when older turns are hidden. **Timeline** opens the record with every recorded
 turn on the timeline. The quiet
 **its messages · transcript ↗** link opens the channel, not a complete
 agent-only message history.
@@ -190,7 +190,7 @@ at `rib:chat:details:<swarm>`. It is read-only with no composer.
 | Section | Shows |
 |---|---|
 | **Task and context** | The full task in ordered disclosures of at most 4,000 characters; every retained context excerpt with its id, kind/title, source, retrieval time, head/base SHA and character count |
-| **Setup** | The size/preset adjustment, all effective limits, requested models per role/provider, recorded overrides and effort |
+| **Setup** | The plan (**Plan: Quick look**, or **Quick look, adjusted** when limits moved off it), all effective limits, requested models per role/provider, recorded overrides and effort |
 | **Health** | Recorded faults, disconnection and idle evidence |
 | **Transcript** | One transcript row, or an explicit not-recorded state |
 
@@ -209,8 +209,8 @@ settings first. Without explicit settings, the request reads
 worker role override is recorded. Each role's disclosure labels served model
 and served provider per agent by short handle, with explicit per-agent request
 overrides. Missing served evidence says **not reported**; missing role agents
-are explicitly **not recorded**. Recorded reasoning effort and aggregate
-token usage remain visible.
+are explicitly **not recorded**. **Model thinking** (the recorded reasoning
+effort) and aggregate token usage remain visible.
 
 Each inspector publishes before opening. Question and gate selection is
 shared by every viewer, independently of expanded-swarm and agent selection,
@@ -318,14 +318,14 @@ A stale selection falls back the same way.
 The others fold to one running card each under **Also live**: task and id,
 the same state line, the **Turn budget used** meter, time left on a live clock,
 people dots, and setup in the footnote. **Open swarm** expands that swarm;
-hover it to see the size's numbers and the model. Starting swarms stay cards
+hover it to see the plan's numbers and the model. Starting swarms stay cards
 under **Also live** and open their starting board.
 
 ### Ended swarms
 
 Ended swarms are rows grouped under the day they ended: **Today**,
-**Yesterday**, then the weekday and date. A row leads with what came of the
-swarm, then **for:** and the task:
+**Yesterday**, then the weekday and date. A row leads with the task, then
+**·** and what came of the swarm:
 
 - the report's title, when the lead published one
 - else the conclusion's first sentence
@@ -333,8 +333,8 @@ swarm, then **for:** and the task:
 
 A done row carries a check; stopped, stalled, out of budget and failed rows
 carry a chip, so the ones that did not finish stand out. ↻ marks a swarm
-started with **Run again**. The trailing names the model that served it, the
-turns, how long it ran, when it ended, how many of its runs verified, and
+started with **Retry** or **Go deeper**. The trailing names the turns, how
+long it ran, when it ended, how many of its runs verified, and
 **◧ report** when a report exists. The index shows the latest eight, and the
 last row opens the rest in the same day groups. The rib keeps the last 50 in
 its data directory, so they survive a restart.
@@ -369,7 +369,9 @@ If that gate becomes quiet, its quiet request keeps **Read gate** while
 
 An ended row opens its board in the drawer. The per-swarm board still composes
 for MCP clients, live or ended. Its header carries the lifecycle pill, the
-size, the turns and the model, and a dot per agent.
+plan (**Quick look**, **Working session** or **Deep dig**), the turns, and a
+dot per agent. Sizes are named by plan everywhere; the ended header chip does
+not name the model.
 
 Live, the board runs in this order:
 
@@ -385,14 +387,14 @@ Live, the board runs in this order:
 - the same full-width **Map**, then **Conversation**, with the newest eight
   messages and transcript link as the cockpit, followed by the eligible
   **Message the lead** composer
-- **Open the record**, **Details** and **Stop swarm…** at the far end of the row.
+- **Timeline**, **Details** and **Stop swarm…** at the far end of the row.
   The **Message the lead** form under Conversation posts in the channel as
   you and wakes the lead. Its placeholder reads **posts as you, wakes the
   lead**. The button reads **Sending…** until the note is posted, the toast
   says where it went, and the note shows at once under Activity as
   **you posted in #swarm-<id>: …**
 
-Ended section order: Outcome, Result, actions, Agents, Produced so far when
+Ended section order: Outcome, Result, actions, Agents, Produced when
 applicable, Activity when events exist, About, then the separate Ended swarms
 back-link.
 
@@ -411,30 +413,32 @@ A URL counts as passing only when every recorded owner explicitly reports
 pass. Run CI must also identify the same PR URL. A verified run is not a
 substitute for CI evidence. Live boards omit the Pull requests tile.
 
-The actions strip is Run again, Open the record, Details.
-Run again is omitted when retained launch inputs are unavailable.
+The actions strip is Retry or Go deeper, Timeline, Details.
+Retry and Go deeper are omitted when retained launch inputs are unavailable.
 
 The outcome is one card. When the lead published a report, the card carries
-its title, the conclusion with a copy button, **Open the report** and **Read
-the conclusion**, and a footnote with who concluded,
+its title, the conclusion with a copy button, **Open the report**, and a
+footnote with who concluded,
 when, the conclusion's length and the report's size. Without a report the card
 is titled **Conclusion**. A swarm that did not conclude shows its cause
 instead, such as **Stopped by you at 21:50**, **Out of turns at 40** or
-**Failed: …**. A refused draft keeps its **Read the draft** action.
-Outcome has no channel field.
+**Failed: …**. A refused draft keeps its **Read the draft** action. A model
+that refuses a reasoning setting reads **<model> can't take a thinking
+setting. Retry with another model.** Outcome has no channel field.
 
 Live details do not repeat an agent bench. The remaining details depend on
 the lifecycle:
 
-- **Agents** (ended only): proportional identity-colored agent cards with
+- **Agents · N** (ended only): proportional identity-colored agent cards with
   turns, role, tokens and the last event. They select the same read-only
   inspector, without monospace/stacked cards or ghost seats.
 - **Spend** (live boards and cockpits only), once two agents have spent:
   a bar per agent, its fresh tokens against the swarm's, with the count and
   share beside it. For ended swarms, Spend by agent is on the record only,
   with fresh and cached tokens apart.
-- **Produced so far**: reports, dispatched runs, writer draft PRs, and, once
-  ended, kept worktrees, as described below
+- **Produced so far** while live, **Produced** once ended: reports,
+  dispatched runs, writer draft PRs, and, once ended, kept worktrees, as
+  described below
 - **Activity**: Ended Activity shows at most the newest 12 events, with actor,
   time and repeats, and no Read the full log row. Only live Activity adds
   Read the full log when earlier events exist; it opens the record's latest
@@ -442,18 +446,20 @@ the lifecycle:
   Each row starts with who it is by: the agent's handle in its color, or
   **you**. A turn is one row, written when it ends: **turn 3 ok · 42 s · 2
   new**, or **nudged** or **run update** when no message woke it
-- **About** (ended only): times, health and one transcript link. The back-link
+- **About** (ended only): times, health and one transcript link. About leaves
+  out the cause the Outcome card already shows; Details keeps it. The back-link
   to Ended swarms is a separate row outside About. The transcript link is
   omitted when its address is unavailable.
 
-Open the record reaches Activity as well as the timeline and spend.
+Timeline reaches Activity as well as the timeline and spend.
 
 Task and context disclosures live in Details, not on the cockpit or
 per-swarm board. Setup and live health evidence also live in Details.
 
 ### Produced so far
 
-The cockpit and per-swarm board share one inventory. Artifacts appear in
+The cockpit and per-swarm board share one inventory, titled **Produced** once
+the swarm ends. Artifacts appear in
 landing order, oldest first: report publication time, run start time, and
 PR opening time. Equal times keep report/run/writer order and ledger order.
 Missing legacy times fall back to the swarm start. Run gate answers stay
@@ -510,14 +516,14 @@ swarm is still running. A folded card offers **Report**, and an ended row marks
 it with **◧ report**. The lead skips the report when the whole answer fits in a
 sentence or two.
 
-**Read the conclusion** and **Read the draft** open the reading pane. It
-contains the applicable conclusion or refused draft and the full task, not
-questions, gates, context, runs or activity. The conclusion's copy button
-copies all of it, not the board preview.
+**Read the draft** opens the reading pane with the lead's refused draft and
+the full task, not questions, gates, context, runs or activity. The Outcome
+card shows the conclusion itself; its copy button copies all of it, not the
+board preview.
 
 ## A swarm's record
 
-**Open the record** shows a page the rib draws for the swarm, live or ended. It
+**Timeline** shows the swarm's record, a page the rib draws, live or ended. It
 answers what happened, in what order, by whom, and at what cost:
 
 - **Timeline**: a lane per agent in the order they first worked, yours above
@@ -554,23 +560,26 @@ not its deadline window or native rendering.
 
 The **Start a swarm** header above the index is a themed HTML launcher. With a
 live or retained ended swarm and no restored expanded draft, it starts as
-one compact **New swarm** line.
-Type in **What should the swarm work out?** The **Working session** chip sits
-beside **5 agents · 30 min**.
+one compact line. Type in **Describe a problem. Agents work it out
+together.** The **Working session · 30 min** chip sits beside **Start**.
 
 Compact Start uses chat mode with no project: nothing on disk is read or
 changed. It sends no size, power, model, provider, workflow or lead-tool
 overrides. **More options** or the **Working session** chip expands the
 launcher in place without losing the task. Expansion alone does not change
-the default plan.
+the default plan. **Fewer options** returns to the compact line, keeping the
+task's first line and dropping every other choice.
 
 With no live or retained ended swarms, the launcher opens expanded with
 **Task**, **Project** and **Start swarm**. Starting-only entries do not compact
 it.
 
-Describe the question in **Task**, or paste the issue or PR body. Agents
-cannot open links: a task naming a URL or `#123` is refused before a channel
-exists.
+Describe the question in **Task**. A GitHub issue or PR link in the task is
+read with the gh CLI at Start and attached as a context item: title, body and
+comments, with its URL and retrieval time. The task hint says **Will attach
+issue #N from owner/repo**. At most 5 links are read. Agents cannot open other
+links: any other URL or a bare `#123` is refused before a channel exists, so
+paste the text instead. A link gh cannot read refuses Start with gh's reason.
 
 **Project** starts on **No project · chat only**. Agents work from the task
 and attached evidence; nothing on disk is read or changed. Registered projects
@@ -598,8 +607,8 @@ uses the returned registered project ID and starts with write access. Writers
 can work locally without origin after the project has a branch and a first
 commit. Each writer uses a branch-isolated worktree. An existing repository
 supplied as Folder follows the engine's remote or local write rules.
-The scope footer reads `Creates <name> · writes on a branch`, followed by
-selected workflow names only when present, then ` · beads` when tracker intent is on.
+The sentence ends `creating <name>`, followed by `, then <workflows>` only
+when present, then `, with beads` when tracker intent is on.
 
 **Use the tracker** defaults on when `beads_init` is reachable, even with no
 reachable lead tools. You can switch it off. After creation, the rib rechecks
@@ -639,7 +648,7 @@ Grant initialization and the six lead tools in `config.json`:
 
 The switch and initialization create no grants. The rib never runs `bd init`
 itself; the host-owned beads tool initializes and refreshes the tracker.
-Existing-project starts and Run again do not initialize a tracker.
+Existing-project starts, Retry and Go deeper do not initialize a tracker.
 
 With no project selected, the **ALSO ALLOW** group is absent. Selecting an
 existing project reveals **Write**, **Run workflows** and **Use the tracker**,
@@ -666,15 +675,15 @@ The switch does not create host grants. Without a reachability hook it is
 disabled: **This host does not say which tools a lead may hold.** For existing
 projects, a supported host reporting no reachable tools leaves it usable,
 with all chips muted.
-The rib rechecks lead-tool reachability on Start and Run again.
+The rib rechecks lead-tool reachability on Start, Retry and Go deeper.
 
 Turning switches off omits their grants; workflow chips stay for that project.
 Changing or clearing the project resets all switches and chips, not the task.
 Returning to New project… reapplies its defaults and keeps local Name and Folder edits.
-The scope footer follows your choices: **Reads \<name\>**, optionally
-**· writes on a branch**, workflow names or **· no workflows**, then optionally
-**· beads**. The beads suffix records switch intent, not a promise that every
-tracker tool was granted.
+The sentence follows your choices: **reading \<name\>**, then **and writing
+on a branch** when Write is on, then **, then \<workflows\>** when workflows
+are named, then **, with beads** when the tracker is on. The beads suffix
+records switch intent, not a promise that every tracker tool was granted.
 
 **How hard it works** offers three plans. **Working session is selected by
 default**. Each card shows its agents, turns, minutes and the effective
@@ -688,30 +697,21 @@ class model.
 | Working session | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
 | Deep dig | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
 
-**Customize** opens a drawer with **Effort** and **Model**; **Hide** keeps your
-choices. Effort changes size budgets, not reasoning effort. Small, medium and
-large show agents, concurrent turns, total turns, turns per worker and the
-time limit.
+**Model** sits under the cards and starts on **the plan's models**. Provider
+groups contain each provider's default model, class models and pinned models,
+without duplicates within a group. **Other…** accepts a model name and uses the
+effective default provider. Naming a model runs every agent on it and keeps the
+card selected. Picking a card clears the named model and restores that plan.
 
-Model starts on **the plan's models**. Provider groups contain each provider's
-default model, class models and pinned models, without duplicates within a
-group. **Other…** accepts a model name and uses the effective default provider.
-Changing Effort keeps the plan's pair. Naming a model runs every agent on it.
-A choice that no longer matches a card shows **custom**. Picking a card clears
-the named model and restores that plan.
-
-The live footer follows the choice: agents, up to N turns, about N min, then
-**quick models**, **balanced models**, **strongest models** or **one model**.
-The models line below shows the pair, or the named model for lead and workers.
-Untouched Working session sends no size, power or model overrides. Opening
-Customize alone does not change that. Quick look records small/fast; Deep dig
-records large/deep. A named model records size, model and provider, with no
-power. For advanced inputs, use
+**Start swarm** sits at the end of the form with one sentence beside it: N
+agents for up to N min, then on \<model\> when one is named, then where they
+work, such as **5 agents for up to 30 min, chat only.** or **8 agents for up to
+60 min on claude-opus-5.5, reading keelson and writing on a branch, then
+fix-issue, with beads.** Untouched Working session sends no size, power or
+model overrides. Quick look records small/fast; Deep dig records large/deep. A
+named model records size, model and provider, with no power. For advanced
+inputs, use
 [`chat_swarm_start`](../../reference/tools-and-commands/#chat_swarm_start).
-
-**Prepare in chat · attach an issue or PR** opens a chat that gathers the issue or PR context, picks a
-size, and calls `chat_swarm_start`. Use it when the swarm needs evidence it
-can't fetch.
 
 Compact **Start** and expanded **Start swarm** show **Starting…** and disable
 the button for about two seconds as a duplicate-click guard, not a completion
@@ -728,7 +728,7 @@ between no live or retained ended swarms and at least one can replace the
 page. A project-list, provider, capability, dispatch or remembered-refusal
 configuration change can also replace the page. On Keelson v0.119.0 or later,
 replacement documents restore the task verbatim, plan and model choices,
-project, switches and chips, pending field text, and expanded/Customize
+project, switches and chips, pending field text, and expanded
 presentation. A restored expanded or multiline draft opens the full controls
 instead of compact defaults.
 
@@ -760,22 +760,24 @@ launcher page is replaced.
 A swarm started any other way, over MCP or from the `chat-swarm` workflow,
 appears in the same live area.
 
-## Running a swarm again
+## Retry or go deeper
 
-An ended swarm's board offers **Run again**. It starts a new swarm with the
-same task, project, workflows, and context. **Run again** has **Effort and Model
-only**, seeded with the old swarm's size and effective model/provider. Its
-hover names what it reuses, including how many context items and when they
-were captured; context is not refreshed.
+A swarm that did not finish offers **Retry**, with a **Retry with** model
+picker seeded with its effective model/provider, since the model is the usual
+cause. A finished Quick look or Working session offers **Go deeper**: one click
+starts the same launch on the next plan up with that plan's models. A finished
+Deep dig offers neither. Both start a new swarm with the same task, project,
+workflows, and context. Their hint names what they reuse, including how many
+context items and when they were captured; context is not refreshed.
 
-Run again reuses saved plan power unless a model is named; there is no Power
-field. Accepting an unchanged plan-derived lead keeps the pair, not one model
-for everyone. Deliberately saved model/worker overrides are retained unchanged.
-Choosing another model drops the old worker override; clearing the model
-restores saved power or its omitted default. The rib keeps each launch in its
-data directory next to the history, and a server reset forgets them with it.
-Run again rechecks retained lead tools against the host's current
-reachability, so revoked grants are dropped.
+Retry reuses the saved size and plan power unless a model is named. Accepting
+an unchanged plan-derived lead keeps the pair, not one model for everyone.
+Deliberately saved model/worker overrides are retained unchanged. Choosing
+another model drops the old worker override; clearing the model restores saved
+power or its omitted default. The rib keeps each launch in its data directory
+next to the history, and a server reset forgets them with it. Retry and Go
+deeper recheck retained lead tools against the host's current reachability, so
+revoked grants are dropped.
 
 ## The server line
 

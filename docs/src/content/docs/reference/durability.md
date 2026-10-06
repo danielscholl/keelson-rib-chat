@@ -16,10 +16,10 @@ The rib keeps no swarm state on disk. State lives in three places, and a
 | Agents, inboxes, thread membership, turn counts | memory | no |
 | Agent provider session ids | memory | no |
 | Bot tokens | memory | no |
-| Task context bodies | memory, and the swarm's launch file | yes, for Run again |
+| Task context bodies | memory, and the swarm's launch file | yes, for Retry and Go deeper |
 | Summaries of ended swarms (last 50) | `swarms.json` in the rib's data directory | yes |
 | Workflows whose gates the host refused to let a swarm answer | `swarms.json` | yes |
-| What each kept swarm was started with, for Run again | `launches/<id>.json` in the rib's data directory | yes |
+| What each kept swarm was started with, for Retry and Go deeper | `launches/<id>.json` in the rib's data directory | yes |
 | A managed server's database, log, and process record | the rib's data directory | yes |
 
 ## A restart ends a swarm in flight

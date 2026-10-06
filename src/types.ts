@@ -53,6 +53,13 @@ export const DEFAULT_LIMITS: SwarmLimits = {
 export const SWARM_SIZES = ["small", "medium", "large"] as const;
 export type SwarmSize = (typeof SWARM_SIZES)[number];
 
+// The launcher's plan for each size; the board names a swarm's size by its plan.
+export const PLAN_NAME: Readonly<Record<SwarmSize, string>> = {
+  small: "Quick look",
+  medium: "Working session",
+  large: "Deep dig",
+};
+
 // Medium is DEFAULT_LIMITS, so a start that names no size behaves as it always has.
 export const SIZE_PRESETS: Readonly<Record<SwarmSize, SwarmLimits>> = {
   small: {

@@ -16,6 +16,7 @@ import {
 } from "@keelson/shared";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
+  PLAN_NAME,
   POWER_MODELS,
   pinnedModels,
   SIZE_PRESETS,
@@ -49,27 +50,9 @@ export interface LaunchState {
 export { TRACKER_TOOLS };
 
 export const TASK_PLACEHOLDER =
-  "What should the swarm work out? Describe the issue or PR in words. A question works; so does a paste of the issue body.";
+  "What should the swarm work out? A question, a pasted issue, or a GitHub issue or PR link.";
 
-// Each segment carries what the size costs, since the word alone does not.
-export function sizeField(defaultValue: SwarmSize = "medium"): Field {
-  return {
-    name: "size",
-    label: "Effort",
-    required: true,
-    segmented: true,
-    half: true,
-    defaultValue,
-    options: SWARM_SIZES.map((k) => {
-      const l = SIZE_PRESETS[k];
-      return {
-        value: k,
-        label: `${k} · ${l.maxAgents} agents · ${l.maxTurns} turns`,
-        hint: `${l.maxTurnsPerAgent} turns per worker · ${l.maxConcurrent} at once · ${l.wallClockMs / 60_000} min`,
-      };
-    }),
-  };
-}
+export const COMPACT_PLACEHOLDER = "Describe a problem. Agents work it out together.";
 
 export function modelField(model?: string, provider?: string): Field {
   return {
@@ -84,19 +67,19 @@ export function modelField(model?: string, provider?: string): Field {
 
 const PLANS = [
   {
-    name: "Quick look",
+    name: PLAN_NAME.small,
     blurb: "A narrow question, or a first pass before a bigger run.",
     size: "small",
     power: "fast",
   },
   {
-    name: "Working session",
+    name: PLAN_NAME.medium,
     blurb: "Most tasks: investigate, debate, and decide.",
     size: "medium",
     power: "balanced",
   },
   {
-    name: "Deep dig",
+    name: PLAN_NAME.large,
     blurb: "Wide or hard problems that are worth the spend.",
     size: "large",
     power: "deep",
@@ -120,14 +103,9 @@ function planModels(state: LaunchState, power: SwarmPower): string {
   return model ? `${state.provider}: ${model}` : "";
 }
 
-function effortDetail(size: SwarmSize): string {
-  const l = SIZE_PRESETS[size];
-  return `${l.maxAgents} agents, ${l.maxConcurrent} at once · ${l.maxTurns} turns in all, ${l.maxTurnsPerAgent} per worker · stops after ${l.wallClockMs / 60_000} min`;
-}
-
 function budgetSummary(size: SwarmSize): string {
   const l = SIZE_PRESETS[size];
-  return `${l.maxAgents} agents · up to ${l.maxTurns} turns · about ${l.wallClockMs / 60_000} min`;
+  return `${l.maxAgents} agents for up to ${l.wallClockMs / 60_000} min`;
 }
 
 const PAGE_CSS = `
@@ -138,12 +116,10 @@ body { font-size: 14px; }
 main { margin: 0; background: var(--card); }
 header { display: flex; align-items: center; gap: 14px; padding: 24px; flex-wrap: wrap; }
 .compact { display: flex; align-items: center; gap: 12px; padding: 16px; }
-.compact h1 { margin: 0; font-size: 16px; white-space: nowrap; }
 .compact input { flex: 1; min-width: 0; width: auto; }
 .compact input::placeholder { color: var(--muted); opacity: 1; }
 .compact-plan { background: var(--card-2); color: var(--fg); border-radius: 999px; }
-.compact-budget { font: 12px var(--mono); color: var(--muted); }
-.compact-plan, .compact-budget, .compact .start, .more { flex: none; white-space: nowrap; }
+.compact-plan, .compact .start, .more { flex: none; white-space: nowrap; }
 .more { padding: 6px 0; border: 0; background: transparent; color: var(--fg); }
 .intro { flex: 1; min-width: 220px; }
 h1 { font-size: 22px; line-height: 1.3; margin: 0 0 5px; color: var(--fg-strong); }
@@ -151,7 +127,6 @@ p { margin: 0; }
 .hint { color: var(--muted); font-size: 13px; }
 button, textarea, select, input { font: inherit; }
 button { cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; }
-.prepare { border-radius: 999px; color: var(--fg); background: var(--card-2); }
 .fields { padding: 0 24px 24px; }
 label { display: block; font-size: 12px; font-weight: 600; letter-spacing: .08em; margin-bottom: 8px; }
 textarea, select, input { display: block; width: 100%; border: 1px solid var(--border);
@@ -159,14 +134,13 @@ textarea, select, input { display: block; width: 100%; border: 1px solid var(--b
 textarea { resize: vertical; min-height: 112px; line-height: 1.5; }
 textarea::placeholder { color: var(--muted); opacity: 1; }
 .task-hint { margin-top: 8px; }
+.task-hint:empty { display: none; }
 .plans { margin-top: 24px; }
 .plans-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; }
 .chip { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .plan[aria-pressed="true"] .chip { color: var(--accent); }
-.customize { margin-left: auto; padding: 6px 0 6px 12px; border: 0; color: var(--fg); background: transparent; }
 .chevron { display: inline-block; margin-left: 6px; }
-.customize[aria-expanded="true"] .chevron { transform: rotate(180deg); }
 .plan-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .plan { display: flex; flex-direction: column; justify-content: flex-start; text-align: left; padding: 16px; background: var(--bg); color: var(--fg); }
 .plan[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -176,11 +150,7 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .figure { color: var(--muted); font-size: 12px; }
 .figure strong { display: block; font-size: 24px; line-height: 1.3; font-weight: 600; color: var(--fg-strong); }
 .plan-models { display: block; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 14px; }
-.drawer { margin-top: 16px; padding: 18px; border: 1px solid var(--border); border-radius: 8px;
-  background: var(--card-2); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-.effort-pills { display: flex; gap: 6px; }
-.effort-pills button { flex: 1; padding: 10px; background: var(--bg); color: var(--fg); }
-.effort-pills button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.model-row { margin-top: 16px; }
 .detail { margin-top: 10px; line-height: 1.5; }
 .other-model { margin-top: 12px; }
 .project { margin-top: 24px; }
@@ -195,7 +165,6 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .access-row { display: grid; grid-template-columns: 44px minmax(150px, 1fr) minmax(240px, 2fr);
   gap: 14px; align-items: center; padding: 16px 0; border-top: 1px solid var(--border); }
 .access-name { color: var(--fg-strong); font-weight: 600; }
-.access-tag { display: block; font: 11px var(--mono); color: var(--muted); margin-top: 4px; }
 .access-meaning { color: var(--muted); line-height: 1.5; }
 .switch { width: 44px; height: 26px; padding: 3px; border-radius: 999px; background: var(--card-2); }
 .switch::after { content: ""; display: block; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); }
@@ -213,12 +182,11 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .workflow-input::placeholder { color: var(--muted); opacity: 1; }
 .workflow-error { color: var(--fg); margin-top: 8px; }
 .workflow-count { margin-top: 8px; }
-footer { display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
-  background: var(--card-2); border-top: 1px solid var(--border); padding: 18px 24px; }
+footer { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 0 24px 24px; }
 .start { background: var(--accent); color: var(--button-ink); border-color: var(--accent); font-weight: 600; }
 .start:disabled { cursor: wait; }
 .models { font-family: var(--mono); color: var(--muted); font-size: 12px; margin-top: 3px; overflow-wrap: anywhere; }
-.mode { margin-left: auto; color: var(--fg); }
+.summary { flex: 1; min-width: 0; color: var(--muted); overflow-wrap: anywhere; }
 button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 [hidden] { display: none !important; }
 @media (max-width: 900px) {
@@ -229,11 +197,9 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-
   header, footer { padding: 18px; }
   .fields { padding: 0 18px 18px; }
   .project-row { grid-template-columns: 1fr; }
-  .prepare { width: 100%; }
-  .mode { margin-left: 0; width: 100%; }
   .access-row { grid-template-columns: 44px minmax(0, 1fr); gap: 12px; }
   .access-meaning, .access-details { grid-column: 2; }
-  .plan-cards, .drawer { grid-template-columns: 1fr; }
+  .plan-cards { grid-template-columns: 1fr; }
   .plan-blurb { min-height: 0; }
 }
 `;
@@ -250,6 +216,8 @@ const PAGE_SCRIPT = `
   let restoreDraft;
   let activeStart;
   let startLabel;
+  let collapse;
+  let refreshLinks = () => {};
   const validDraft = (state) => state && state.version === 1
     && typeof state.task === "string" && typeof state.expanded === "boolean"
     && typeof state.customize === "boolean"
@@ -326,6 +294,19 @@ const PAGE_SCRIPT = `
   const mode = document.getElementById("launch-mode");
   const chatNote = note.textContent;
   const chatMode = mode.textContent;
+  const taskHint = document.getElementById("task-hint");
+  const updateLinks = () => {
+    const found = [];
+    const github = /https:\\/\\/github\\.com\\/([\\w.-]+\\/[\\w.-]+)\\/(issues|pull)\\/(\\d+)[^\\s]*/g;
+    let match;
+    while ((match = github.exec(task.value))) {
+      found.push((match[2] === "pull" ? "PR" : "issue") + " #" + match[3] + " from " + match[1]);
+    }
+    const other = /https?:\\/\\/\\S+|(^|[\\s(])#\\d+\\b/.test(task.value.replace(github, ""));
+    taskHint.textContent = other
+      ? "Agents can't open other links. Paste their text instead."
+      : found.length ? "Will attach " + found.join(", ") + "." : "";
+  };
   const access = document.getElementById("launch-access");
   const template = document.getElementById("access-template");
   const permissions = { write: false, workflows: false, tracker: false };
@@ -334,12 +315,11 @@ const PAGE_SCRIPT = `
   let mountedProject = "";
   const updateMode = () => {
     mode.textContent = project.value
-      ? (isNew() ? "Creates " + (name.value.trim() || "<name>")
-        : "Reads " + project.selectedOptions[0].dataset.name)
-        + (permissions.write ? " · writes on a branch" : "")
-        + (permissions.workflows && workflows.length ? " · " + workflows.join(", ")
-          : isNew() ? "" : " · no workflows")
-        + (permissions.tracker ? " · beads" : "")
+      ? (isNew() ? "creating " + (name.value.trim() || "<name>")
+        : "reading " + project.selectedOptions[0].dataset.name
+          + (permissions.write ? " and writing on a branch" : ""))
+        + (permissions.workflows && workflows.length ? ", then " + workflows.join(", ") : "")
+        + (permissions.tracker ? ", with beads" : "")
       : chatMode;
   };
   const workflowError = (message) => {
@@ -394,15 +374,10 @@ const PAGE_SCRIPT = `
   };
   const sizes = ["small", "medium", "large"];
   const cards = sizes.map((size) => document.getElementById("plan-" + size));
-  const efforts = sizes.map((size) => document.getElementById("effort-" + size));
-  const drawer = document.getElementById("launch-drawer");
-  const customize = document.getElementById("launch-customize");
   const modelSelect = document.getElementById("launch-model");
   const otherModel = document.getElementById("launch-other-model");
   const models = JSON.parse(form.dataset.models);
-  const details = JSON.parse(form.dataset.details);
   const budgets = JSON.parse(form.dataset.budgets);
-  const categories = { fast: "fast models", balanced: "balanced models", deep: "deep models" };
   let size = "medium";
   let power = "balanced";
   let model = "";
@@ -417,23 +392,16 @@ const PAGE_SCRIPT = `
       : "";
     modelError.hidden = !modelBlocked;
     updateStart();
-    let matches = false;
     cards.forEach((card) => {
-      const selected = !model && size === card.dataset.size && power === card.dataset.power;
+      const selected = size === card.dataset.size && power === card.dataset.power;
       card.setAttribute("aria-pressed", String(selected));
       document.getElementById("chip-" + card.dataset.size).hidden = !selected;
-      matches ||= selected;
     });
-    efforts.forEach((effort) => effort.setAttribute("aria-pressed", String(size === effort.dataset.size)));
-    document.getElementById("custom-chip").hidden = matches;
-    document.getElementById("effort-detail").textContent = details[size];
     document.getElementById("model-detail").textContent = model
       ? "Every agent runs " + model + ", lead and workers alike."
       : "Keeps the plan's pair: " + models[power] + ".";
-    document.getElementById("launch-summary").textContent =
-      budgets[size] + " · " + (model ? "one model" : categories[power]);
-    document.getElementById("launch-models").textContent =
-      model ? model + " · lead and workers" : models[power];
+    document.getElementById("launch-summary").textContent = budgets[size];
+    document.getElementById("launch-models").textContent = model ? " on " + model : "";
     document.getElementById("other-model-row").hidden = modelSelect.value !== "other";
   };
   cards.forEach((card) => card.addEventListener("click", () => {
@@ -444,11 +412,6 @@ const PAGE_SCRIPT = `
     modelSelect.value = "";
     otherModel.value = "";
     otherProvider = form.dataset.provider;
-    updateChoice();
-    saveEdit();
-  }));
-  efforts.forEach((effort) => effort.addEventListener("click", () => {
-    size = effort.dataset.size;
     updateChoice();
     saveEdit();
   }));
@@ -465,19 +428,8 @@ const PAGE_SCRIPT = `
     updateModel();
   });
   watchText(otherModel, updateModel);
-  const renderDrawer = () => {
-    customize.setAttribute("aria-expanded", String(!drawer.hidden));
-    document.getElementById("customize-label").textContent = drawer.hidden ? "Customize" : "Hide";
-  };
-  customize.addEventListener("click", () => {
-    drawer.hidden = !drawer.hidden;
-    renderDrawer();
-    saveEdit();
-  });
   updateChoice();
-  document.getElementById("launch-prepare").addEventListener("click", () => {
-    keelson.action("start-in-chat", { nonce: form.dataset.nonce });
-  });
+  document.getElementById("launch-fewer")?.addEventListener("click", () => collapse?.());
   const renderPermissions = () => {
     Object.keys(permissions).forEach((key) => {
       const button = document.getElementById("allow-" + key);
@@ -558,7 +510,8 @@ const PAGE_SCRIPT = `
   watchText(project, () => {
     if (project.value !== mountedProject) mountProject();
   });
-  watchText(task);
+  refreshLinks = updateLinks;
+  watchText(task, updateLinks);
   if (name) watchText(name, () => {
     if (name.value.trim()) {
       nameError.hidden = true;
@@ -568,7 +521,7 @@ const PAGE_SCRIPT = `
   });
   if (folder) watchText(folder);
   capture = () => ({
-    version: 1, task: task.value, expanded: true, customize: !drawer.hidden,
+    version: 1, task: task.value, expanded: true, customize: false,
     size, power, project: project.value, permissions: { ...permissions },
     ...(name ? { name: name.value, rootPath: folder.value } : {}),
     projectRoot: project.value && !isNew() ? project.selectedOptions[0].dataset.root : "",
@@ -579,6 +532,7 @@ const PAGE_SCRIPT = `
   });
   restoreDraft = (state) => {
     task.value = state.task;
+    updateLinks();
     if (name) name.value = state.name ?? "";
     if (folder) folder.value = state.rootPath ?? "";
     size = state.size;
@@ -596,8 +550,6 @@ const PAGE_SCRIPT = `
       modelSelect.value = value;
     } else modelSelect.value = state.modelSelection;
     updateModel();
-    drawer.hidden = !state.customize && !modelBlocked;
-    renderDrawer();
     project.value = (state.project !== "new" || form.dataset.canCreateProject === "true")
       && Array.from(project.options).some((option) => option.value === state.project)
       ? state.project : "";
@@ -664,12 +616,14 @@ const PAGE_SCRIPT = `
     }
   }));
   };
-  const compact = document.getElementById("launch-compact");
-  if (!compact) {
+  if (!document.getElementById("launch-compact")) {
     initializeExpanded();
     finishInitialization();
     return;
   }
+  let expanded = false;
+  const initializeCompact = () => {
+  const compact = document.getElementById("launch-compact");
   const task = document.getElementById("compact-task");
   activeStart = document.getElementById("compact-start");
   startLabel = "Start";
@@ -694,7 +648,6 @@ const PAGE_SCRIPT = `
       startCompact();
     }
   });
-  let expanded = false;
   const expand = (focus = false) => {
     if (expanded) return;
     expanded = true;
@@ -704,6 +657,7 @@ const PAGE_SCRIPT = `
     initializeExpanded();
     const textarea = document.getElementById("launch-task");
     textarea.value = draft;
+    refreshLinks();
     if (focus) textarea.focus();
   };
   restoreDraft = (state) => {
@@ -722,6 +676,22 @@ const PAGE_SCRIPT = `
   };
   document.getElementById("compact-plan").addEventListener("click", expandFromClick);
   document.getElementById("compact-more").addEventListener("click", expandFromClick);
+  };
+  // Fewer options keeps the task's first line and drops every other choice,
+  // since the compact row only starts the default plan.
+  collapse = () => {
+    if (!expanded) return;
+    const draft = document.getElementById("launch-task").value.split(/[\\r\\n]/)[0];
+    expanded = false;
+    const template = document.getElementById("launch-compact-template");
+    document.getElementById("launch-root").replaceChildren(template.content.cloneNode(true));
+    initializeCompact();
+    const input = document.getElementById("compact-task");
+    input.value = draft;
+    saveEdit();
+    input.focus();
+  };
+  initializeCompact();
   finishInitialization();
 })();
 `;
@@ -750,7 +720,6 @@ function accessTemplate(state: LaunchState): string {
     {
       key: "write",
       name: "Write",
-      tag: "",
       meaning: "Change files. Each agent works in its own worktree on a branch, never on main.",
       disabled: false,
       details: "",
@@ -758,7 +727,6 @@ function accessTemplate(state: LaunchState): string {
     {
       key: "workflows",
       name: "Run workflows",
-      tag: "needs your grant",
       meaning: workflowMeaning,
       disabled: Boolean(state.dispatchBlocked),
       details: `<div class="access-details" id="workflows-details" hidden><div class="chips" id="workflow-chips"></div><input class="workflow-input" id="workflow-entry" type="text" aria-label="Add a workflow" aria-describedby="workflow-count workflow-error" placeholder="add a workflow…" /><p class="workflow-error" id="workflow-error" role="alert" hidden></p><p class="hint workflow-count" id="workflow-count">0 / ${START_BOUNDS.maxWorkflows} workflows</p></div>`,
@@ -766,7 +734,6 @@ function accessTemplate(state: LaunchState): string {
     {
       key: "tracker",
       name: "Use the tracker",
-      tag: "needs your grant",
       meaning: trackerMeaning,
       disabled: !state.toolReachability || Boolean(state.toolReachabilityError),
       details: `<div class="access-details chips" id="tracker-details" hidden>${TRACKER_TOOLS.map(
@@ -781,7 +748,7 @@ function accessTemplate(state: LaunchState): string {
   return `<template id="access-template"><section class="access" aria-labelledby="access-heading"><h2 class="access-heading" id="access-heading">ALSO ALLOW</h2>${rows
     .map(
       (item) =>
-        `<div class="access-row" id="${item.key}-row"><button class="switch" id="allow-${item.key}" type="button" role="switch" aria-label="${esc(item.name)}" aria-describedby="${item.key}-meaning" aria-checked="false"${item.disabled ? " disabled" : ""}></button><div class="access-name">${esc(item.name)}${item.tag ? `<span class="access-tag">${esc(item.tag)}</span>` : ""}</div><p class="access-meaning" id="${item.key}-meaning">${esc(item.meaning)}</p>${item.details}</div>`,
+        `<div class="access-row" id="${item.key}-row"><button class="switch" id="allow-${item.key}" type="button" role="switch" aria-label="${esc(item.name)}" aria-describedby="${item.key}-meaning" aria-checked="false"${item.disabled ? " disabled" : ""}></button><div class="access-name">${esc(item.name)}</div><p class="access-meaning" id="${item.key}-meaning">${esc(item.meaning)}</p>${item.details}</div>`,
     )
     .join("")}</section></template>`;
 }
@@ -789,7 +756,6 @@ function accessTemplate(state: LaunchState): string {
 export function buildLaunch(state: LaunchState, nonce: string, generation = 0): string {
   const projects = state.projects.filter((p) => p.name !== DEFAULT_PROJECT_NAME);
   const models = Object.fromEntries(SWARM_POWERS.map((p) => [p, planModels(state, p)]));
-  const details = Object.fromEntries(SWARM_SIZES.map((s) => [s, effortDetail(s)]));
   const budgets = Object.fromEntries(SWARM_SIZES.map((s) => [s, budgetSummary(s)]));
   const cards = PLANS.map((plan) => {
     const l = SIZE_PRESETS[plan.size];
@@ -829,19 +795,18 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     .join("");
   const expanded = `
   <header>
-    <div class="intro"><h1>New swarm</h1><p class="hint">Describe the problem. Agents investigate, debate, and bring back a conclusion.</p></div>
-    <button class="prepare" id="launch-prepare" type="button">Prepare in chat · attach an issue or PR</button>
+    <div class="intro"><h1>New swarm</h1><p class="hint">Agents investigate, debate, and bring back a conclusion.</p></div>
+    ${state.hasSwarms ? '<button class="more" id="launch-fewer" type="button" aria-controls="launch-root">Fewer options<span class="chevron" aria-hidden="true">⌃</span></button>' : ""}
   </header>
-  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-models="${esc(JSON.stringify(models))}" data-details="${esc(JSON.stringify(details))}" data-budgets="${esc(JSON.stringify(budgets))}">
+  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-models="${esc(JSON.stringify(models))}" data-budgets="${esc(JSON.stringify(budgets))}">
     <div class="fields">
       <label for="launch-task">TASK</label>
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
-      <p class="hint task-hint" id="task-hint">Agents can't open links. Paste the text, or use Prepare in chat to attach the issue or PR.</p>
+      <p class="hint task-hint" id="task-hint" aria-live="polite"></p>
       <section class="plans" aria-labelledby="plans-heading">
-        <div class="plans-heading"><span class="eyebrow" id="plans-heading">HOW HARD IT WORKS</span><span class="chip" id="custom-chip" hidden>custom</span><button class="customize" id="launch-customize" type="button" aria-expanded="false" aria-controls="launch-drawer"><span id="customize-label">Customize</span><span class="chevron" aria-hidden="true">⌄</span></button></div>
+        <div class="plans-heading"><span class="eyebrow" id="plans-heading">HOW HARD IT WORKS</span></div>
         <div class="plan-cards">${cards}</div>
-        <div class="drawer" id="launch-drawer" hidden>
-          <div><label id="effort-label">EFFORT</label><div class="effort-pills" role="group" aria-labelledby="effort-label">${SWARM_SIZES.map((s) => `<button id="effort-${s}" type="button" data-size="${s}" aria-pressed="${s === "medium"}">${s}</button>`).join("")}</div><p class="hint detail" id="effort-detail">${esc(details.medium!)}</p></div>
+        <div class="model-row">
           <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-detail">Keeps the plan's pair: ${esc(models.balanced!)}.</p><p class="hint detail" id="model-error" role="alert" hidden></p></div>
         </div>
       </section>
@@ -868,28 +833,26 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     </div>
     <footer>
       <button class="start" id="launch-start" type="button">Start swarm</button>
-      <div aria-live="polite"><p id="launch-summary">${budgets.medium} · balanced models</p><p class="models" id="launch-models">${esc(models.balanced!)}</p></div>
-      <p class="mode" id="launch-mode">Chat mode · nothing on disk</p>
+      <p class="summary" aria-live="polite"><span id="launch-summary">${budgets.medium}</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>
     </footer>
   </form>`;
   const l = SIZE_PRESETS.medium;
   const compact = `<div class="compact" id="launch-compact" data-nonce="${esc(nonce)}">
-    <h1>New swarm</h1>
-    <input id="compact-task" type="text" aria-label="Swarm task" placeholder="What should the swarm work out?">
-    <button class="compact-plan" id="compact-plan" type="button" aria-expanded="false" aria-controls="launch-root">${PLANS[1].name}</button>
-    <span class="compact-budget">${l.maxAgents} agents · ${l.wallClockMs / 60_000} min</span>
+    <input id="compact-task" type="text" aria-label="Swarm task" placeholder="${esc(COMPACT_PLACEHOLDER)}">
+    <button class="compact-plan" id="compact-plan" type="button" aria-expanded="false" aria-controls="launch-root">${PLANS[1].name} · ${l.wallClockMs / 60_000} min<span class="chevron" aria-hidden="true">⌄</span></button>
     <button class="start" id="compact-start" type="button">Start</button>
     <button class="more" id="compact-more" type="button" aria-expanded="false" aria-controls="launch-root">More options</button>
   </div>`;
   return `<style>${designTokenCssBlock()}\n${PAGE_CSS}</style>
 <main id="launch-root" data-generation="${generation}">${state.hasSwarms ? compact : expanded}</main>
-${state.hasSwarms ? `<template id="launch-expanded">${expanded}</template>` : ""}
+${state.hasSwarms ? `<template id="launch-expanded">${expanded}</template><template id="launch-compact-template">${compact}</template>` : ""}
 ${projects.length || state.canCreateProject ? accessTemplate(state) : ""}<script>${PAGE_SCRIPT}</script>`;
 }
 
-// Run again reads the old swarm's size and model as its defaults, and its hint
-// names what it reuses, so stale evidence is rerun on purpose.
-export function runAgainItem(s: SwarmSummary, launch: StartSwarmInput): Item {
+// A swarm that did not finish offers Retry with a model picker, since the model
+// is the usual cause. A finished one offers Go deeper: the same launch on the
+// next plan up, with that plan's models.
+export function runAgainItem(s: SwarmSummary, launch: StartSwarmInput): Item[] {
   const context = launch.context ?? [];
   const captured = context
     .map((c) => c.retrievedAt)
@@ -906,14 +869,31 @@ export function runAgainItem(s: SwarmSummary, launch: StartSwarmInput): Item {
           `${plural(context.length, "context item")}${captured ? ` captured ${day(captured)} ${hhmm(captured)}` : ""}`,
         ]
       : []),
+  ].join(", ");
+  if (s.status !== "done") {
+    return [
+      {
+        type: "run-again",
+        label: "Retry",
+        glyph: "↻",
+        hint: `Starts a new swarm with ${reuses}. Context is not refreshed.`,
+        fields: [{ ...modelField(s.model, s.provider), label: "Retry with" }],
+        submitLabel: "Retry",
+        binding: { id: s.id },
+      },
+    ];
+  }
+  const next = PLANS.find(
+    (p) => SWARM_SIZES.indexOf(p.size) === SWARM_SIZES.indexOf(s.sizeBase) + 1,
+  );
+  if (!next) return [];
+  return [
+    {
+      type: "run-again",
+      label: "Go deeper",
+      glyph: "›",
+      hint: `Starts a ${next.name} with ${reuses}. Context is not refreshed.`,
+      payload: { id: s.id, size: next.size, power: next.power },
+    },
   ];
-  return {
-    type: "run-again",
-    label: "Run again",
-    glyph: "↻",
-    hint: `Starts a new swarm with ${reuses.join(", ")}. Context is not refreshed.`,
-    fields: [sizeField(s.sizeBase), modelField(s.model, s.provider)],
-    submitLabel: "Start new run",
-    binding: { id: s.id },
-  };
 }

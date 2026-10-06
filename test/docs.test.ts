@@ -41,15 +41,16 @@ describe("contributed docs", () => {
       "No project · chat only",
       "name · path",
       "Working session is selected by default",
-      "Customize",
-      "Effort and Model",
+      "Model sits under the cards",
+      "Start swarm sits at the end of the form",
       "Untouched Working session sends no size, power or model overrides",
       "host toast",
       "about two seconds",
-      "compact New swarm line",
+      "one compact line",
       "More options",
+      "Fewer options",
+      "Will attach issue #N from owner/repo",
       "replacement documents restore",
-      "Prepare in chat",
       "ALSO ALLOW",
       "Write, Run workflows and Use the tracker",
       "all off",
@@ -68,6 +69,11 @@ describe("contributed docs", () => {
       "adjust shows",
       "folded once",
       "fold it by hand",
+      "Customize",
+      "Effort",
+      "Prepare in chat",
+      "New swarm",
+      "Run again",
     ]) {
       expect(launcher).not.toContain(old);
     }
@@ -83,15 +89,15 @@ describe("contributed docs", () => {
     const l = SIZE_PRESETS.medium;
     for (const text of [swarms, guide].map(normalize)) {
       for (const phrase of [
-        "With a live or retained ended swarm and no restored expanded draft, it starts as one compact New swarm line",
-        "What should the swarm work out?",
-        "Working session chip",
-        `${l.maxAgents} agents · ${l.wallClockMs / 60_000} min`,
+        "With a live or retained ended swarm and no restored expanded draft, it starts as one compact line",
+        "Describe a problem. Agents work it out together.",
+        `The Working session · ${l.wallClockMs / 60_000} min chip sits beside Start`,
         "Compact Start uses chat mode with no project",
         "nothing on disk is read or changed",
         "no size, power, model, provider, workflow or lead-tool overrides",
         "More options or the Working session chip expands the launcher in place without losing the task",
         "Expansion alone does not change the default plan",
+        "Fewer options returns to the compact line, keeping the task's first line and dropping every other choice",
         "With no live or retained ended swarms, the launcher opens expanded",
         "Starting-only entries do not compact it",
         "Ordinary refreshes preserve local expansion, the draft, plan and model choices, switches and chips while swarm presence stays unchanged",
@@ -109,6 +115,8 @@ describe("contributed docs", () => {
         "collapse back",
         "replace the page and discard it",
         "Reloading or replacing the page does not restore local edits",
+        "New swarm line",
+        "What should the swarm work out?",
       ]) {
         expect(text).not.toContain(obsolete);
       }
@@ -124,7 +132,7 @@ describe("contributed docs", () => {
     for (const text of [swarms, ...pages].map(normalize)) {
       for (const phrase of [
         "On Keelson v0.119.0 or later, replacement documents restore the task verbatim",
-        "plan and model choices, project, switches and chips, pending field text, and expanded/Customize presentation",
+        "plan and model choices, project, switches and chips, pending field text, and expanded presentation",
         "Projects restore by ID",
         "a removed or hidden project becomes chat-only and clears its switches and workflow chips",
         "Current capability restrictions still apply",
@@ -149,7 +157,7 @@ describe("contributed docs", () => {
     for (const phrase of [
       "Keelson v0.119.0 or later",
       "replacement documents restore",
-      "expanded/Customize presentation",
+      "expanded presentation",
       "Removed or hidden projects restore as chat-only",
       "Workflow chips restore exactly as typed, in order",
       "the host refuses unknown workflows at Start",
@@ -164,6 +172,8 @@ describe("contributed docs", () => {
     ])
       expect(readme).toContain(phrase);
     expect(readme).not.toContain("changes can discard them");
+    for (const removed of ["Customize", "Prepare in chat", "Run again"])
+      expect(readme).not.toContain(removed);
   });
 
   test("packaged and both guides agree on host-owned creation and creation draft boundaries", () => {
@@ -192,7 +202,7 @@ describe("contributed docs", () => {
         "starts with write access",
         "can work locally without origin after the project has a branch and a first commit",
         "An existing repository supplied as Folder follows the engine's remote or local write rules",
-        "The scope footer reads Creates <name>",
+        "The sentence ends creating <name>",
         "Use the tracker defaults on when beads_init is reachable, even with no reachable lead tools",
         "You can switch it off",
         'callTool("beads", "beads_init", { project: created.name }) before admitting the write swarm',
@@ -204,7 +214,7 @@ describe("contributed docs", () => {
         "An explicit reachability-probe error or admission refusal still refuses Start",
         "There is no automatic retry or project rollback",
         "The switch and initialization create no grants",
-        "Existing-project starts and Run again do not initialize a tracker",
+        "Existing-project starts, Retry and Go deeper do not initialize a tracker",
         "The rib never runs bd init",
         "Selecting an existing project reveals Write, Run workflows and Use the tracker, all off",
         "New project… selection, Name and Folder restore verbatim while creation remains available",
@@ -274,14 +284,17 @@ describe("contributed docs", () => {
         "needs your grant: crossRibGrants",
         "does not create host grants",
         "This host does not say which tools a lead may hold.",
-        "rechecks lead-tool reachability on Start and Run again",
+        "rechecks lead-tool reachability on Start, Retry and Go deeper",
         "Changing or clearing the project resets all switches and chips, not the task",
-        "writes on a branch",
-        "no workflows",
+        "reading <name>",
+        "writing on a branch",
+        "with beads",
         "beads suffix",
         "dispatch or remembered-refusal",
       ])
         expect(text).toContain(phrase);
+      for (const obsolete of ["no workflows", "Reads <name>", "· beads"])
+        expect(text).not.toContain(obsolete);
     }
     expect(topics(content).find((topic) => topic.title === "Write mode")!.body).toContain(
       "turn on Write",
@@ -296,7 +309,7 @@ describe("contributed docs", () => {
       expect(normalize(readme)).toContain(name);
   });
 
-  test("packaged and both guides agree on plans, Customize, sparse defaults and Run again", () => {
+  test("packaged and both guides agree on plans, the Model select, sparse defaults, Retry and Go deeper", () => {
     const swarms = topics(content).find((t) => t.title === "Swarms tab")?.body ?? "";
     const guides = ["swarms-tab", "run-a-swarm"].map((name) =>
       readFileSync(new URL(`../docs/src/content/docs/guides/${name}.md`, import.meta.url), "utf8"),
@@ -305,20 +318,19 @@ describe("contributed docs", () => {
     for (const text of [swarms, ...guides].map(normalize)) {
       for (const phrase of [
         "Working session is selected by default",
-        "Effort changes size budgets, not reasoning effort",
-        "the plan's models",
+        "Model sits under the cards and starts on the plan's models",
         "default model, class models and pinned models, without duplicates within a group",
         "Other… accepts a model name and uses the effective default provider",
-        "Changing Effort keeps the plan's pair",
-        "Naming a model runs every agent on it",
+        "Naming a model runs every agent on it and keeps the card selected",
         "Picking a card clears the named model and restores that plan",
-        "The live footer follows the choice",
+        "Start swarm sits at the end of the form with one sentence beside it",
+        `${SIZE_PRESETS.medium.maxAgents} agents for up to ${SIZE_PRESETS.medium.wallClockMs / 60_000} min, chat only.`,
         "Untouched Working session sends no size, power or model overrides",
         "Quick look records small/fast; Deep dig records large/deep",
         "A named model records size, model and provider, with no power",
-        "Effort and Model only",
-        "Run again reuses saved plan power unless a model is named",
-        "there is no Power field",
+        "A finished Quick look or Working session offers Go deeper",
+        "Deep dig offers neither",
+        "Retry reuses the saved size and plan power unless a model is named",
         "context is not refreshed",
         "Accepting an unchanged plan-derived lead keeps the pair",
       ])
@@ -337,6 +349,12 @@ describe("contributed docs", () => {
         "fixed medium limits",
         "no size, model, write",
         "size, power and model; its hover",
+        "Customize",
+        "Effort",
+        "custom.",
+        "live footer",
+        "Run again",
+        "Prepare in chat",
       ]) {
         expect(text).not.toContain(obsolete);
       }
@@ -436,7 +454,7 @@ describe("contributed docs", () => {
         "newest eligible spans and marks with stable timestamp sorts",
         "title names shown/total counts for each clipped dimension",
         "including items lost with omitted lanes",
-        "Open the record shows additional lanes and events",
+        "Timeline opens the record with additional lanes and events",
         "full retained timeline, with its own snapshot window and drawing",
         "Native clipping does not remove its lanes or events",
         "not its deadline window or native rendering",
@@ -444,6 +462,7 @@ describe("contributed docs", () => {
         expect(text).toContain(phrase);
       }
       expect(text).not.toMatch(/cockpit timeline (?:is )?(?:deferred|still deferred)/i);
+      expect(text).not.toContain("Open the record");
     }
   });
 
@@ -476,7 +495,8 @@ describe("contributed docs", () => {
         "explicit per-agent request overrides",
         "Missing served evidence says not reported",
         "missing role agents are explicitly not recorded",
-        "Recorded reasoning effort and aggregate token usage remain visible",
+        "Plan: Quick look, or Quick look, adjusted when limits moved off it",
+        "Model thinking (the recorded reasoning effort) and aggregate token usage remain visible",
         "Ended agent heads use the swarm lifecycle pill: done, stopped, stalled, out of budget or failed",
         "not the agent's last live status",
         "Live, unended heads retain the agent's actual status",
@@ -683,22 +703,24 @@ describe("contributed docs", () => {
         "retention trimming and disposal release inspector keys",
         "times, health and one transcript link",
         "separate row outside About",
-        "Ended section order: Outcome, Result, actions, Agents, Produced so far when applicable, Activity when events exist, About, then the separate Ended swarms back-link.",
+        "Ended section order: Outcome, Result, actions, Agents, Produced when applicable, Activity when events exist, About, then the separate Ended swarms back-link.",
         "The ended Result orders Turns, Time, Tokens, Pull requests when eligible, then Runs verified only when runs exist.",
         "There is no Agents tile",
         "unavailable, not an invented zero",
-        "The actions strip is Run again, Open the record, Details",
-        "Run again is omitted when retained launch inputs are unavailable",
+        "The actions strip is Retry or Go deeper, Timeline, Details",
+        "Retry and Go deeper are omitted when retained launch inputs are unavailable",
+        "can't take a thinking setting. Retry with another model.",
         "Outcome has no channel field",
         "For ended swarms, Spend by agent is on the record only, with fresh and cached tokens apart",
         "Ended Activity shows at most the newest 12 events, with actor, time and repeats, and no Read the full log row",
         "Only live Activity adds Read the full log when earlier events exist",
-        "Open the record reaches Activity as well as the timeline and spend",
+        "Timeline reaches Activity as well as the timeline and spend",
+        "About leaves out the cause the Outcome card already shows; Details keeps it",
         "The transcript link is omitted when its address is unavailable",
         "latest 200 retained entries, newest first",
         "not a complete transcript",
-        "applicable conclusion or refused draft and the full task, not questions, gates, context, runs or activity",
-        "The conclusion's copy button copies all of it, not the board preview.",
+        "refused draft and the full task, not questions, gates, context, runs or activity",
+        "The Outcome card shows the conclusion itself; its copy button copies all of it, not the board preview.",
         "Legacy summaries cannot recover question text already truncated",
       ]) {
         expect(text).toContain(phrase);
@@ -711,6 +733,9 @@ describe("contributed docs", () => {
         "Both retain Spend",
         "agent bench, Spend, Produced so far",
         "The remaining details follow in both",
+        "Read the conclusion",
+        "Open the record",
+        "Run again",
       ]) {
         expect(text).not.toContain(obsolete);
       }
