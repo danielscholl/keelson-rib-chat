@@ -1401,6 +1401,53 @@ describe("size and model", () => {
     expect(summary.effort).toBeUndefined();
   });
 
+  // Copilot's claude-haiku-4.5 refuses any reasoning effort at session.create.
+  const HAIKU_REFUSAL =
+    "Request session.create failed with message: Model 'claude-haiku-4.5' does not support reasoning effort configuration. Use models.list to check which models support reasoning effort.";
+  function refusingEffort(extra: Partial<SwarmOptions>) {
+    const sent: (string | undefined)[] = [];
+    const h = harness(
+      script,
+      {},
+      {
+        ...extra,
+        runAgentTurn: (req) => {
+          sent.push(req.reasoningEffort);
+          if (!req.reasoningEffort) return h.provider.run(req);
+          const result = Promise.resolve({
+            status: "error" as const,
+            text: "",
+            error: HAIKU_REFUSAL,
+          });
+          return { stream: (async function* () {})(), result };
+        },
+      },
+    );
+    return { ...h, sent };
+  }
+
+  test("a model that refuses the power's effort is retried once without it", async () => {
+    const h = refusingEffort({ power: "fast" });
+    const summary = await (await h.start()).finished;
+    expect(summary.status).toBe("done");
+    // One refusal, then every turn of that class, the worker's too, goes without.
+    expect(h.sent.filter(Boolean)).toEqual(["low"]);
+    expect(h.sent[0]).toBe("low");
+    expect(h.provider.requests.length).toBeGreaterThan(1);
+    expect(h.provider.requests.every((r) => r.reasoningEffort === undefined)).toBe(true);
+    expect(summary.activity?.map((e) => e.text)).toContain(
+      "the fast model takes no reasoning effort; its turns go without one",
+    );
+  });
+
+  test("an effort the operator named still fails the turn when the model refuses it", async () => {
+    const h = refusingEffort({ power: "fast", effort: "low" });
+    const summary = await (await h.start()).finished;
+    expect(summary.status).toBe("error");
+    expect(summary.error).toContain("does not support reasoning effort");
+    expect(h.sent).toEqual(Array(MAX_TURN_FAILURES).fill("low"));
+  });
+
   test("with no model, agents record no model and the provider that served them", async () => {
     const summary = await (await harness(script).start()).finished;
     expect(summary.model).toBeUndefined();

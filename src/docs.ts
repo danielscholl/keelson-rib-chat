@@ -74,8 +74,8 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`max_minutes\` | ${minutes(l.wallClockMs)} | Wall clock for the whole swarm. 1 to ${START_BOUNDS.maxMinutes}. |
 | \`context\` | none | Evidence the agents cannot fetch themselves. See Task context. |
 | \`provider\` | host default | Provider id used for every agent's turns. |
-| \`power\` | balanced | fast, balanced or deep. On copilot each power pins a lead model and a worker model (see Models); on another provider it is the provider's model for that class. It also sets the reasoning effort every turn asks for: low, medium or high. |
-| \`effort\` | the power's | none, low, medium, high or xhigh: the reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it. |
+| \`power\` | balanced | fast, balanced or deep. On copilot each power pins a lead model and a worker model (see Models); on another provider it is the provider's model for that class. It also sets the reasoning effort every turn asks for: low, medium or high. A model that refuses effort runs its turns without it. |
+| \`effort\` | the power's | none, low, medium, high or xhigh: the reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it; a model that refuses it fails the turn. |
 | \`model\` | the power's lead model | Model for every agent, or for the lead alone when \`worker_model\` is set. Naming one switches the power's pins off. |
 | \`worker_model\` | the power's worker model, else \`model\` | Model for workers. |
 | \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |

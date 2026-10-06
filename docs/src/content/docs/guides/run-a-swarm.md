@@ -233,7 +233,12 @@ named model ignores `power` for its model.
 `low`, `balanced` for `medium`, `deep` for `high`. To set it apart from the
 power, pass `effort` (`none`, `low`, `medium`, `high` or `xhigh`); it applies to
 every agent, named model or not. A provider without effort support ignores it.
-`chat_swarm_status` reports the effort in use as `effort`.
+`chat_swarm_status` reports the effort asked for as `effort`.
+
+Some models take no effort at all: on Copilot, `claude-haiku-4.5` refuses one. When a model refuses the power's effort, the turn is retried
+once without it, every later turn on that model goes without, and the activity
+log says so. An `effort` you name is not dropped: a model that refuses it fails
+the turn, and the swarm ends once the lead's turns have failed three times.
 
 ## Or run the workflow
 
