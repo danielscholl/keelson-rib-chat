@@ -75,7 +75,7 @@ wrong: socket drops, a ClickClack fault, lead failures, nudges, refused
 conclusions, or `quietSince` when the swarm went idle at an open gate),
 `context` (the item list without bodies), `runs`, `activity`, `pace`, `messageCount`,
 `conclusion`, `draftConclusion`, `error`, and `rerunOf` for a swarm started
-with Run again. `draftConclusion` is the lead's last refused conclusion, present
+with Retry or Go deeper. `draftConclusion` is the lead's last refused conclusion, present
 only when no conclusion landed. Each agent carries the model it asks for and the
 provider that served its last turn, the tokens its turns spent, as the provider
 reported them, and when it joined. `usage` sums them for the swarm. Each

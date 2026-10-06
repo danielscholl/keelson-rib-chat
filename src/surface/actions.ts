@@ -7,6 +7,8 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { CreateProjectBody, RibAction, RibActionResult, RibContext } from "@keelson/shared";
+import type { ContextItem } from "../context.ts";
+import { type GithubLink, githubLinks, MAX_LINKS, withoutGithubLinks } from "../github-link.ts";
 import type { Swarm } from "../swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
@@ -35,7 +37,7 @@ import {
   SURFACE_TAB,
   swarmKey,
 } from "./keys.ts";
-import { gateIdentity, sizesHint } from "./parts.ts";
+import { gateIdentity } from "./parts.ts";
 import type { ServerOps } from "./server-ops.ts";
 import type { ServerVerb } from "./server-panel.ts";
 import type { SwarmRecord, SwarmsSurface } from "./surface.ts";
@@ -67,6 +69,7 @@ export interface ActionDeps {
   getToolReachability?: RibContext["getToolReachability"];
   createProject?: RibContext["createProject"];
   callTool?: RibContext["callTool"];
+  readLink?: (link: GithubLink) => Promise<ContextItem>;
 }
 
 export const WORKFLOW = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
@@ -82,7 +85,7 @@ export const TRACKER_TOOLS = [
 const LINK = /https?:\/\/\S+|(^|[\s(])#\d+\b/;
 
 export const LINK_REFUSAL =
-  "The task names a link agents can't open. Prepare in chat to attach it, or describe it in the task.";
+  "The task names a link agents can't open. Paste its text, or use a GitHub issue or PR link, which is read and attached at Start.";
 
 function text(payload: Record<string, unknown>, key: string): string {
   const v = payload[key];
@@ -131,7 +134,8 @@ function leadToolsOf(value: unknown, deps: ActionDeps): string[] | string {
   }
 }
 
-// The form carries no context, so links are refused before a channel exists.
+// GitHub issue and PR links are read at Start; any other link is refused before
+// a channel exists, since agents cannot open it.
 function startInput(
   payload: Record<string, unknown>,
   deps: ActionDeps,
@@ -140,7 +144,9 @@ function startInput(
   const task = text(payload, "task");
   if (!task) return "a swarm needs a task";
   if (task.length > BODY_MAX) return `a task is at most ${BODY_MAX} characters`;
-  if (LINK.test(task)) return LINK_REFUSAL;
+  if (LINK.test(withoutGithubLinks(task))) return LINK_REFUSAL;
+  if (githubLinks(task).length > MAX_LINKS)
+    return `a task links at most ${MAX_LINKS} issues or PRs`;
   const project = text(payload, "project");
   let creation: CreateProjectBody | undefined;
   if (project === "new") {
@@ -216,6 +222,12 @@ function againInput(
   was: { model?: string; provider?: string },
 ): StartSwarmInput {
   const { model, provider, workerModel, size, power, ...rest } = old;
+  // Go deeper names the next plan, whose models replace the old ones.
+  const plan = powerOf(payload);
+  if (plan) {
+    const nextSize = sizeOf(payload) ?? size;
+    return { ...rest, ...(nextSize ? { size: nextSize } : {}), power: plan };
+  }
   const picked = modelOf(payload);
   const same = picked.model === was.model && picked.provider === was.provider;
   const models = same
@@ -233,6 +245,17 @@ function againInput(
     ...(power && (same || !picked.model) ? { power } : {}),
     ...models,
   };
+}
+
+// Two links can share a number across repositories; context ids must not.
+function distinctIds(items: ContextItem[]): ContextItem[] {
+  const used = new Set<string>();
+  return items.map((item) => {
+    let id = item.id;
+    for (let n = 2; used.has(id); n++) id = `${item.id.slice(0, 36)}-${n}`;
+    used.add(id);
+    return id === item.id ? item : { ...item, id };
+  });
 }
 
 function errText(e: unknown): string {
@@ -301,18 +324,6 @@ const SERVER_TOAST = {
   "server-reset": "Resetting ClickClack: a fresh data directory and a new owner session",
 } as const;
 
-// The system prompt for a chat that gathers context and then starts a swarm.
-export function startInChatPrompt(): string {
-  return [
-    "You help the operator start a Keelson chat swarm: agents that work a task together in a ClickClack channel.",
-    "First ask what the swarm should work out, unless the operator already said. When the task names an issue or a pull request, fetch its full body, diff, reviews, and check results, and pass them as `context` items: swarm agents cannot fetch anything themselves.",
-    `Pick a size from the task: ${sizesHint()}. Medium suits most investigations; small suits a question or one review; large suits several dispatched runs or wide reading.`,
-    "Pass `project` when the work concerns a registered Keelson project, so agents can read its checkout. Pass `workflows` only when the operator wants the swarm to make changes through a workflow such as fix-issue.",
-    "Leave `model` unset unless the operator names one.",
-    "Confirm the task, size, project, and context in one short message, then call chat_swarm_start. Report the swarm id and channel, and say the Swarms tab shows its progress.",
-  ].join("\n\n");
-}
-
 export async function handleSwarmsAction(
   action: RibAction,
   deps: ActionDeps,
@@ -320,7 +331,7 @@ export async function handleSwarmsAction(
   const payload = payloadOf(action);
   if (
     action.origin === "canvas-html" &&
-    ((action.type !== "start-swarm" && action.type !== "start-in-chat") ||
+    (action.type !== "start-swarm" ||
       typeof payload.nonce !== "string" ||
       payload.nonce.length === 0 ||
       !deps.surface?.acceptsLaunchNonce(payload.nonce))
@@ -586,6 +597,22 @@ export async function handleSwarmsAction(
         html,
       );
       if (typeof parsed === "string") return fail(parsed);
+      const links = githubLinks(parsed.input.task);
+      if (links.length > 0) {
+        const read = deps.readLink;
+        if (!read)
+          return fail("This Keelson host can't read GitHub links. Paste the text instead.");
+        let items: ContextItem[];
+        try {
+          items = await Promise.all(links.map((link) => read(link)));
+        } catch (e) {
+          return fail(errText(e));
+        }
+        parsed.input = {
+          ...parsed.input,
+          context: distinctIds([...(parsed.input.context ?? []), ...items]),
+        };
+      }
       if (!parsed.creation) {
         const result = started(
           deps,
@@ -724,14 +751,6 @@ export async function handleSwarmsAction(
       return {
         ok: true,
         data: { effect: "open-canvas", key: SERVER_LOG_KEY, title: "ClickClack log" },
-      };
-    case "start-in-chat":
-      return {
-        ok: true,
-        data: {
-          effect: "open-chat",
-          seed: { name: "Start a swarm", systemPrompt: startInChatPrompt() },
-        },
       };
     default:
       return fail(`unknown action '${action.type}'`);

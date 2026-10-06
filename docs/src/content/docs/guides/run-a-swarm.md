@@ -40,24 +40,18 @@ provider's models. Providers without pins use the matching class model.
 | Working session | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
 | Deep dig | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
 
-**Customize** opens a drawer with **Effort** and **Model**; **Hide** keeps your
-choices. Effort changes size budgets, not reasoning effort. Choose small,
-medium or large to change agents, concurrent turns, total turns, turns per
-worker and the time limit.
+**Model** sits under the cards and starts on **the plan's models**. Provider
+groups contain each provider's default model, class models and pinned models,
+without duplicates within a group. **Other…** accepts a model name and uses the
+effective default provider. Naming a model runs every agent on it and keeps the
+card selected. Picking a card clears the named model and restores that plan.
 
-Model starts on **the plan's models**. Provider groups contain each provider's
-default model, class models and pinned models, without duplicates within a
-group. **Other…** accepts a model name and uses the effective default provider.
-Changing Effort keeps the plan's pair. Naming a model runs every agent on it.
-A choice that no longer matches a card shows **custom**. Picking a card clears
-the named model and restores that plan.
-
-The live footer follows the choice: agents, up to N turns, about N min, then
-**fast models**, **balanced models**, **deep models** or **one model**.
-The models line below shows the pair, or the named model for lead and workers.
-Untouched Working session sends no size, power or model overrides. Opening
-Customize alone does not change that. Quick look records small/fast; Deep dig
-records large/deep. A named model records size, model and provider, with no power.
+**Start swarm** sits at the end of the form with one sentence beside it: N
+agents for up to N min, then on \<model\> when one is named, then where they
+work, such as **5 agents for up to 30 min, chat only.** Untouched Working
+session sends no size, power or model overrides. Quick look records small/fast;
+Deep dig records large/deep. A named model records size, model and provider,
+with no power.
 
 **New project…** appears last in Project only when the host exposes optional
 `createProject`, even with no registered projects. Older hosts omit it and
@@ -79,8 +73,8 @@ uses the returned registered project ID and starts with write access. Writers
 can work locally without origin after the project has a branch and a first
 commit. Each writer uses a branch-isolated worktree. An existing repository
 supplied as Folder follows the engine's remote or local write rules.
-The scope footer reads `Creates <name> · writes on a branch`, followed by
-selected workflow names only when present, then ` · beads` when tracker intent is on.
+The sentence ends `creating <name>`, followed by `, then <workflows>` only
+when present, then `, with beads` when tracker intent is on.
 
 **Use the tracker** defaults on when `beads_init` is reachable, even with no
 reachable lead tools. You can switch it off. After creation, the rib rechecks
@@ -120,7 +114,7 @@ Grant initialization and the six lead tools in `config.json`:
 
 The switch and initialization create no grants. The rib never runs `bd init`
 itself; the host-owned beads tool initializes and refreshes the tracker.
-Existing-project starts and Run again do not initialize a tracker.
+Existing-project starts, Retry and Go deeper do not initialize a tracker.
 
 With no project selected, the **ALSO ALLOW** group is absent. Selecting an
 existing project reveals **Write**, **Run workflows** and **Use the tracker**,
@@ -147,19 +141,19 @@ The switch does not create host grants. Without a reachability hook it is
 disabled: **This host does not say which tools a lead may hold.** For existing
 projects, a supported host reporting no reachable tools leaves it usable,
 with all chips muted.
-The rib rechecks lead-tool reachability on Start and Run again.
+The rib rechecks lead-tool reachability on Start, Retry and Go deeper.
 
 Turning switches off omits their grants; workflow chips stay for that project.
 Changing or clearing the project resets all switches and chips, not the task.
 Returning to New project… reapplies its defaults and keeps local Name and Folder edits.
-The scope footer follows your choices: **Reads \<name\>**, optionally
-**· writes on a branch**, workflow names or **· no workflows**, then optionally
-**· beads**. The beads suffix records switch intent, not a promise that every
-tracker tool was granted. Ordinary refreshes preserve your draft, switches and
+The sentence follows your choices: **reading \<name\>**, then **and writing
+on a branch** when Write is on, then **, then \<workflows\>** when workflows
+are named, then **, with beads** when the tracker is on. The beads suffix
+records switch intent, not a promise that every tracker tool was granted. Ordinary refreshes preserve your draft, switches and
 chips. Project-list, provider, capability, dispatch or remembered-refusal
 configuration changes can replace the page. On Keelson v0.119.0 or later,
 replacement documents restore the task verbatim, plan and model choices,
-project, switches and chips, pending field text, and expanded/Customize
+project, switches and chips, pending field text, and expanded
 presentation. A restored expanded or multiline draft opens the full controls
 instead of compact defaults.
 
@@ -177,8 +171,11 @@ requires choosing a model or plan again. Workflow chips restore exactly as
 typed, in order; the host refuses unknown workflows at Start. The launcher
 does not detect removed workflows.
 
-For an issue or PR, paste its text or use **Prepare in chat** to gather and
-attach the evidence. A task naming a URL or `#N` is refused with a host toast.
+For a GitHub issue or PR, put its link in the task: Start reads it with the gh
+CLI and attaches it as a context item (title, body and comments, with its URL
+and retrieval time), and the task hint says **Will attach issue #N from
+owner/repo**. At most 5 links are read. Any other URL or a bare `#N` is refused
+with a host toast; paste the text instead.
 **Starting…** is a two-second duplicate-click guard, not a completion signal;
 the task stays in place and a successful start opens the swarm on the index.
 Each Start dispatch clears the saved draft before sending the action, even if
@@ -291,15 +288,16 @@ The run completes only when the swarm concluded or was stopped. Any other
 ending fails it with the status and reason, and the summary is its last
 progress frame.
 
-## Run it again
+## Retry or go deeper
 
-An ended swarm's **Run again** form has **Effort and Model only**. It keeps the
-same task, project, workflows and context, with the previous size and effective
-model/provider seeded. The hint names the evidence and when it was captured;
-context is not refreshed.
+A swarm that did not finish offers **Retry**, with a **Retry with** model picker
+seeded with its effective model/provider. A finished Quick look or Working
+session offers **Go deeper**, which starts the same launch on the next plan up
+with that plan's models; a finished Deep dig offers neither. Both keep the same
+task, project, workflows and context. The hint names the evidence and when it
+was captured; context is not refreshed.
 
-Run again reuses saved plan power unless a model is named; there is no Power
-field. Accepting an unchanged plan-derived lead keeps the pair, not one model
+Retry reuses the saved size and plan power unless a model is named. Accepting an unchanged plan-derived lead keeps the pair, not one model
 for everyone. Deliberately saved model/worker overrides are retained unchanged.
 Choosing another model drops the old worker override; clearing the model
 restores saved power or its omitted default.

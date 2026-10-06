@@ -287,7 +287,7 @@ function stats(s: SwarmSummary, now: Date): Leaf {
 
 export const openRecord = (s: SwarmSummary) => ({
   type: "open-record",
-  label: "Open the record",
+  label: "Timeline",
   glyph: "◷",
   hint: "The swarm's timeline, who woke whom, spend, runs, evidence and Activity.",
   payload: { id: s.id },
@@ -354,7 +354,7 @@ function bench(s: SwarmSummary, selectedAgentId?: string): Leaf {
   const items = s.agents.map((a) => agentCard(s, a, selectedAgentId));
   return {
     kind: "cards",
-    title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`,
+    title: `Agents · ${s.agents.length}`,
     grid: true,
     columns: BENCH_COLUMNS,
     items: items.length > 0 ? items : [{ title: "No agents recorded" }],
@@ -672,7 +672,7 @@ function produced(s: SwarmSummary): Leaf[] {
     if (empty.length === 0) return [];
     items.push({ icon: "·", text: empty.join(" ") });
   }
-  return [{ kind: "rows", title: "Produced so far", items }];
+  return [{ kind: "rows", title: live(s) ? "Produced so far" : "Produced", items }];
 }
 
 // The first DETAIL_CHARS of a text for a row's disclosure, and a note when it was cut.
@@ -769,7 +769,7 @@ function about(s: SwarmSummary): Leaf {
     title: "About",
     items: [
       { icon: "◷", text: `${when}${s.project ? ` · on ${s.project.name}` : ""}` },
-      ...healthRows(s),
+      ...healthRows(s, { omitCause: s.conclusion === undefined }),
       ...(href ? [{ text: "transcript ↗", href }] : []),
     ],
   };
@@ -829,10 +829,7 @@ function conclusionCard(s: SwarmSummary, conclusion: string): Card {
       `${conclusion.length.toLocaleString("en-US")} characters`,
       ...(s.report ? [reportKb(s)] : []),
     ].join(" · "),
-    actions: [
-      ...(s.report ? [openReport(s)] : []),
-      { type: "read-doc", label: "Read the conclusion", glyph: "▤", payload: { id: s.id } },
-    ],
+    ...(s.report ? { actions: [openReport(s)] } : {}),
   };
 }
 
@@ -866,7 +863,7 @@ function verbs(s: SwarmSummary, launch: StartSwarmInput | undefined): Leaf[] {
     {
       kind: "actions",
       wrap: true,
-      items: [...(launch ? [runAgainItem(s, launch)] : []), openRecord(s), openDetails(s)],
+      items: [...(launch ? runAgainItem(s, launch) : []), openRecord(s), openDetails(s)],
     },
   ];
 }
@@ -957,7 +954,7 @@ function nativeTimeline(s: SwarmSummary): CanvasTimelineSection {
     spans,
     marks,
     legend:
-      "Bars are turns in each agent's color, hatched when timed out or failed, open while unfinished. ○ spawned · ? asked you · ▲ you · ▪ report · ● conclusion · ◇ gate opened · ◆ gate answered · ✓ verified. Open the record for the full retained timeline.",
+      "Bars are turns in each agent's color, hatched when timed out or failed, open while unfinished. ○ spawned · ? asked you · ▲ you · ▪ report · ● conclusion · ◇ gate opened · ◆ gate answered · ✓ verified. Timeline holds the full retained record.",
   };
 }
 
@@ -1016,7 +1013,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
   const took = span(s.startedAt, s.endedAt);
   const chip = isLiveNow
     ? `${sizeWord(s)} · ${s.turnsUsed} of ${s.limits.maxTurns} turns · ${modelLabel(s)}`
-    : `${sizeWord(s)} · ${plural(s.turnsUsed, "turn")}${took ? ` · ${took}` : ""} · ${modelLabel(s)}`;
+    : `${sizeWord(s)} · ${plural(s.turnsUsed, "turn")}${took ? ` · ${took}` : ""}`;
   const details = liveDetails(s, opts.selectedAgentId);
   return {
     view: "board",

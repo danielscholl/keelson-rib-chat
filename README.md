@@ -48,11 +48,14 @@ In the **Swarms** tab, describe the task in **Start a swarm**, choose a project
 if agents should read its checkout, and press **Start swarm**. **No project ·
 chat only** is the default. Projects show their name and path (`~` for home).
 Choose **Quick look**, **Working session** (the default: 5 agents, up to 40
-turns, about 30 minutes), or **Deep dig**. **Customize** opens **Effort** (size
-budgets, not reasoning effort) and **Model**, grouped by provider with **Other…**
-for a typed name. The live footer follows the choice. The plan's pair stays
-unless a model is named for all agents. **Run again** has Effort and Model
-only and reuses saved plan power unless a model is named. Selecting a project
+turns, about 30 minutes), or **Deep dig**. **Model** sits under the plans,
+grouped by provider with **Other…** for a typed name; the plan's pair stays
+unless a model is named for all agents. One sentence beside **Start swarm**
+says how many agents run, for how long, on which model and where. With swarms
+on the tab the launcher starts as one compact line; **More options** expands
+it and **Fewer options** returns to it. An ended swarm offers **Retry** with a
+model picker when it did not finish, or **Go deeper** onto the next plan when
+a Quick look or Working session finished. Selecting a project
 reveals **Write**, **Run workflows** and **Use the tracker**, all off for an
 existing project. **New project…** locks Write on and defaults the tracker on
 when `beads_init` is reachable; you can switch the tracker off. Write
@@ -60,14 +63,15 @@ permits branch-isolated writers. Run workflows adds up to 10 removable
 workflow-name chips with Enter, comma or paste, still subject to
 `ribWorkflowGrants`. Use the tracker sends only host-reported reachable beads
 tools, still subject to `crossRibGrants`; a host without a reachability hook
-disables it. The scope footer reflects the selected access. Changing or
+disables it. The Start sentence reflects the selected access. Changing or
 clearing the project resets the switches and chips, not the task.
-Paste issue or PR text instead of a URL
-or `#N`, or use **Prepare in chat** to attach the evidence. Refusals appear as
+A GitHub issue or PR link in the task is read with the gh CLI at Start and
+attached as a context item, up to 5 links; paste any other URL's text, since
+another URL or a bare `#N` is refused. Refusals appear as
 host toasts. **Starting…** guards duplicate clicks for about two seconds and
 leaves the task intact. Ordinary refreshes preserve drafts, switches and chips;
 on Keelson v0.119.0 or later, replacement documents restore them too, including
-plan/model choices, pending text and expanded/Customize presentation.
+plan/model choices, pending text and expanded presentation.
 Removed or hidden projects restore as chat-only with access and workflows
 cleared. Named models retain their provider; an unavailable provider requires
 reselection. Workflow chips restore exactly as typed, in order; the host refuses
@@ -143,12 +147,12 @@ An existing repository supplied as Folder keeps its remote or local write rules.
 The launcher's **Use the tracker** switch requests `beads_ready`, `beads_show`,
 `beads_create`, `beads_update`, `beads_close` and `beads_dep`. Unreachable chips
 are muted and say `needs your grant: crossRibGrants`. The rib rechecks lead tools
-at Start and Run again, so revoked grants are dropped.
+at Start, Retry and Go deeper, so revoked grants are dropped.
 For **New project…**, tracker consent invokes the host's governed `beads_init`
 after creation and awaits it before write admission. Initialization needs its
 own `crossRibGrants` entry and is not a lead tool. Failed initialization starts
 without tracker tools and reports the original error. Neither the switch nor
-initialization creates grants; existing-project starts and Run again never initialize.
+initialization creates grants; existing-project starts, Retry and Go deeper never initialize.
 
 `lead_tools` hands the lead tools that other ribs register, such as the beads rib's `beads_ready`, `beads_show`, and `beads_close`, so a swarm that works a backlog can read the live queue and close a bead once its pull request merges. Keelson projects a tool onto the lead's turns only when `config.json` grants it to the chat rib under `crossRibGrants` (`"chat": { "beads": ["beads_ready", "beads_close"] }`). Workers never hold them.
 

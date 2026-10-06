@@ -16,6 +16,7 @@ import {
 import { ClickClackClient, ClickClackError } from "./clickclack.ts";
 import { serialStarts, type WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
+import { readGithubLink } from "./github-link.ts";
 import { historyPath, loadHistory, saveHistory } from "./history.ts";
 import { isReport, REPORT_DIR, type SwarmReport } from "./report.ts";
 import { ManagedServer, realServerDeps } from "./server.ts";
@@ -750,6 +751,7 @@ const rib: Rib = {
       getToolReachability,
       createProject,
       callTool,
+      readLink: readGithubLink,
     }),
 
   // Delivered for runs this rib started; the swarm that owns the run re-reads it.
