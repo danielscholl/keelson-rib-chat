@@ -106,13 +106,10 @@ function planModels(
 
 // The script redraws these cells when a picked model replaces the selected plan's pair.
 function modelCells(pair: { lead: string; worker: string }): string {
-  const cells: [string, string][] =
-    pair.lead === pair.worker
-      ? [["Lead and workers", pair.lead]]
-      : [
-          ["Lead", pair.lead],
-          ["Workers", pair.worker],
-        ];
+  const cells: [string, string][] = [
+    ["Lead", pair.lead],
+    ["Workers", pair.worker],
+  ];
   return cells
     .map(
       ([role, model]) =>
@@ -163,23 +160,20 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .plan[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .plan-title { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: var(--fg-strong); }
 .plan-blurb { display: block; margin-top: 8px; color: var(--muted); line-height: 1.5; min-height: 4.5em; }
-.figures { display: flex; gap: 18px; margin-top: 16px; }
+.plan-body { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin-top: 16px; }
+.figures { display: flex; gap: 14px; flex: none; }
 .figure { color: var(--muted); font-size: 12px; }
 .figure strong { display: block; font-size: 24px; line-height: 1.3; font-weight: 600; color: var(--fg-strong); }
-.plan-models { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: baseline;
-  border-top: 1px solid var(--border); padding-top: 12px; margin-top: auto; }
+.plan-models { flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px;
+  align-items: baseline; border-left: 1px solid var(--border); padding-left: 14px; }
 .plan-models .role { font-family: var(--sans); font-size: 12px; color: var(--muted); }
 .plan-models .model { color: var(--fg); overflow-wrap: anywhere; }
 .plan-models .model.is-picked { color: var(--accent); font-weight: 600; }
-.model-row { margin-top: 16px; }
+.pickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
 .detail { margin-top: 10px; line-height: 1.5; }
 .other-model { margin-top: 12px; }
-.project { margin-top: 24px; }
-.project > .hint { margin: -2px 0 12px; }
-.project-row { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(240px, 1fr); gap: 16px; align-items: start; }
-.project-note { padding: 12px 16px; color: var(--muted); border: 1px dashed var(--border); border-radius: 8px; }
-.project-row.has-project { grid-template-columns: 1fr; }
-.has-project .project-note { border: 0; padding: 0; }
+.project-note { margin-top: 10px; }
+.project-note:empty { display: none; }
 .new-project { margin-top: 16px; display: grid; gap: 12px; }
 .access { margin-top: 24px; }
 .access-heading { font-size: 12px; letter-spacing: .08em; margin: 0 0 8px; }
@@ -217,7 +211,7 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-
 @media (max-width: 640px) {
   header, footer { padding: 18px; }
   .fields { padding: 0 18px 18px; }
-  .project-row { grid-template-columns: 1fr; }
+  .pickers { grid-template-columns: 1fr; }
   .access-row { grid-template-columns: 44px minmax(0, 1fr); gap: 12px; }
   .access-meaning, .access-details { grid-column: 2; }
   .plan-cards { grid-template-columns: 1fr; }
@@ -402,7 +396,7 @@ const PAGE_SCRIPT = `
     if (!cells) return;
     const lead = picked || cells.dataset.lead;
     const worker = picked || cells.dataset.worker;
-    const pairs = lead === worker ? [["Lead and workers", lead]] : [["Lead", lead], ["Workers", worker]];
+    const pairs = [["Lead", lead], ["Workers", worker]];
     cells.replaceChildren(...pairs.flatMap(([role, name]) => {
       const label = document.createElement("span");
       label.className = "role";
@@ -481,7 +475,6 @@ const PAGE_SCRIPT = `
     const hasProject = Boolean(project.value);
     const creating = isNew();
     if (newFields) newFields.hidden = !creating;
-    document.getElementById("project-hint").hidden = hasProject && !creating;
     row.classList.toggle("has-project", hasProject);
     note.textContent = creating ? "Write is on. Agents write in branch-isolated worktrees; a new repository without origin uses local writing." : hasProject
       ? "Agents read " + selected.dataset.path + " and run read-only commands there. Nothing changes unless you allow more."
@@ -797,8 +790,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
       <span class="plan-title">${plan.name}<span class="chip" id="chip-${plan.size}"${selected ? "" : " hidden"}>selected</span></span>
       <span class="plan-blurb">${plan.blurb}</span>
-      <span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>
-      ${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}">${modelCells(pair)}</span>` : ""}
+      <span class="plan-body"><span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}">${modelCells(pair)}</span>` : ""}</span>
     </button>`;
   }).join("");
   const catalog = [...(state.classes ?? [])];
@@ -840,19 +832,15 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
       <section class="plans" aria-labelledby="plans-heading">
         <div class="plans-heading"><span class="eyebrow" id="plans-heading">HOW HARD IT WORKS</span></div>
         <div class="plan-cards">${cards}</div>
-        <div class="model-row">
-          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>
-        </div>
       </section>
-      <div class="project">
-        <label for="launch-project">PROJECT</label>
-        <p class="hint" id="project-hint">${state.canCreateProject ? "Existing projects start with read access. New project starts with Write on." : "Picking one lets agents read it. Anything more is a switch."}</p>
-        <div class="project-row" id="project-row">
-          <select id="launch-project" name="project" aria-describedby="project-hint project-note">
+      <div class="pickers">
+          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>
+          <div class="project-row" id="project-row"><label for="launch-project">PROJECT</label><select id="launch-project" name="project" aria-describedby="project-note">
             <option value="" selected>No project · chat only</option>${options}${state.canCreateProject ? '<option value="new">New project…</option>' : ""}
-          </select>
-          <p class="project-note" id="project-note">Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.</p>
-        </div>
+          </select></div>
+      </div>
+      <div class="project">
+        <p class="hint project-note" id="project-note"></p>
         ${
           state.canCreateProject
             ? `<div class="new-project" id="new-project-fields" hidden>

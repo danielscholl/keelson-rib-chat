@@ -40,7 +40,7 @@ provider's models. Providers without pins use the matching class model.
 | Working session | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
 | Deep dig | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
 
-**Model** sits under the cards and starts on **the plan's models**. Provider
+**Model** sits under the cards, beside **Project**, and starts on **the plan's models**. Provider
 groups contain each provider's default model, class models and pinned models,
 without duplicates within a group. **Other…** accepts a model name and uses the
 effective default provider. Naming a model runs every agent on it, keeps the

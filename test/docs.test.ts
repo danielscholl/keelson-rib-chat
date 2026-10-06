@@ -317,7 +317,7 @@ describe("contributed docs", () => {
     for (const text of [swarms, ...guides].map(normalize)) {
       for (const phrase of [
         "Working session is selected by default",
-        "Model sits under the cards and starts on the plan's models",
+        "Model sits under the cards, beside Project, and starts on the plan's models",
         "default model, class models and pinned models, without duplicates within a group",
         "Other… accepts a model name and uses the effective default provider",
         "Naming a model runs every agent on it, keeps the card selected and shows the model on that card",

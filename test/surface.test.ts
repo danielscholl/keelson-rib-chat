@@ -8555,9 +8555,7 @@ describe("launching from the tab", () => {
     expect(task.value).toBe("Keep my typed draft");
     project.value = "";
     project.listeners.get("change")!(event);
-    expect(elements["project-note"]!.textContent).toBe(
-      "Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.",
-    );
+    expect(elements["project-note"]!.textContent).toBe("");
     expect(elements["launch-mode"]!.textContent).toBe("chat only");
     expect(elements["project-row"]!.classes.has("has-project")).toBe(false);
     expect(page).not.toContain("fetch(");
@@ -8699,9 +8697,7 @@ describe("launching from the tab", () => {
         expect(options.some((option) => option.value === "new")).toBe(canCreateProject);
         expect(Boolean(frame.get("launch-project-name"))).toBe(canCreateProject);
         if (!canCreateProject) continue;
-        expect(frame.get("project-hint")!.textContent).toBe(
-          "Existing projects start with read access. New project starts with Write on.",
-        );
+        expect(frame.get("project-hint")).toBeUndefined();
         expect(options.at(-1)!.textContent).toBe("New project…");
         frame.select("new");
         expect(frame.get("new-project-fields")!.hidden).toBe(false);
@@ -9255,7 +9251,7 @@ describe("launching from the tab", () => {
     trigger("launch-model", "change");
     expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("true");
     expect(e["chip-large"]!.hidden).toBe(false);
-    expect(e["models-large"]!.textContent).toBe("Lead and workersclaude-opus-5.5");
+    expect(e["models-large"]!.textContent).toBe("Leadclaude-opus-5.5Workersclaude-opus-5.5");
     expect(e["models-medium"]!.textContent).toBe("Leadclaude-sonnet-5Workersclaude-sonnet-5.5");
     expect(e["launch-models"]!.textContent).toBe(" on claude-opus-5.5");
     expect(e["launch-summary"]!.textContent).toBe("8 agents for up to 60 min");
@@ -9314,7 +9310,7 @@ describe("launching from the tab", () => {
     release();
     e["launch-model"]!.value = "";
     trigger("launch-model", "change");
-    expect(e["models-small"]!.textContent).toBe("Lead and workersclaude-sonnet-5.5");
+    expect(e["models-small"]!.textContent).toBe("Leadclaude-sonnet-5.5Workersclaude-sonnet-5.5");
     expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
     trigger("launch-start");
     expect(calls.at(-1)?.payload).toMatchObject({ size: "small", power: "fast" });
@@ -9335,7 +9331,9 @@ describe("launching from the tab", () => {
       e["launch-other-model"]!.value = "  other-vendor/model <name>  ";
       trigger("launch-other-model", "input");
       if (e["models-medium"]) {
-        expect(e["models-medium"].textContent).toBe("Lead and workersother-vendor/model <name>");
+        expect(e["models-medium"].textContent).toBe(
+          "Leadother-vendor/model <name>Workersother-vendor/model <name>",
+        );
       }
       trigger("launch-start");
       expect(calls.at(-1)?.payload).toEqual({
@@ -11166,14 +11164,16 @@ describe("launching from the tab", () => {
         "Other…",
         "PROJECT",
         TASK_PLACEHOLDER,
-        "Picking one lets agents read it. Anything more is a switch.",
-        "Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.",
+        '<p class="hint project-note" id="project-note"></p>',
         '<p class="hint task-hint" id="task-hint" aria-live="polite"></p>',
         '<p class="summary" aria-live="polite"><span id="launch-summary">5 agents for up to 30 min</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>',
-        '<div class="model-row">',
+        '<div class="pickers">',
       ])
         expect(page).toContain(copy);
       for (const removed of [
+        "Picking one lets agents read it",
+        "Chat mode. Agents work",
+        "project-hint",
         "Prepare in chat",
         "launch-prepare",
         "launch-customize",
@@ -11295,7 +11295,9 @@ describe("launching from the tab", () => {
     const pinned = buildLaunch({ projects: [], provider: "copilot" }, "nonce");
     const cell = (role: string, model: string) =>
       `<span class="role">${role}</span><span class="model">${model}</span>`;
-    expect(pinned).toContain(cell("Lead and workers", "claude-sonnet-5.5"));
+    expect(pinned).toContain(
+      cell("Lead", "claude-sonnet-5.5") + cell("Workers", "claude-sonnet-5.5"),
+    );
     expect(pinned).toContain(
       cell("Lead", "claude-sonnet-5") + cell("Workers", "claude-sonnet-5.5"),
     );
@@ -11310,7 +11312,7 @@ describe("launching from the tab", () => {
       },
       "nonce",
     );
-    expect(flat.match(/<span class="model">claude: auto<\/span>/g)).toHaveLength(3);
+    expect(flat.match(/<span class="model">claude: auto<\/span>/g)).toHaveLength(6);
     const defaults = buildLaunch(
       {
         projects: [],
@@ -11320,7 +11322,7 @@ describe("launching from the tab", () => {
       "nonce",
     );
     expect(defaults.match(/<span class="model">default-only: default-model<\/span>/g)).toHaveLength(
-      3,
+      6,
     );
   });
 

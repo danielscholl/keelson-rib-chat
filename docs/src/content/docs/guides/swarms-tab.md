@@ -687,8 +687,8 @@ records switch intent, not a promise that every tracker tool was granted.
 
 **How hard it works** offers three plans. **Working session is selected by
 default**. Each card shows its agents, turns, minutes and the effective
-provider's models. Matching lead and worker models read as one Lead and workers
-row; split pairs get a Lead row and a Workers row. Providers without pins use the matching
+provider's models. Beside the figures, every card lists a Lead row and a Workers
+row, even when they name the same model. Providers without pins use the matching
 class model.
 
 | Plan | For | Agents | Turns | Minutes |
@@ -697,7 +697,7 @@ class model.
 | Working session | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
 | Deep dig | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
 
-**Model** sits under the cards and starts on **the plan's models**. Provider
+**Model** sits under the cards, beside **Project**, and starts on **the plan's models**. Provider
 groups contain each provider's default model, class models and pinned models,
 without duplicates within a group. **Other…** accepts a model name and uses the
 effective default provider. Naming a model runs every agent on it, keeps the

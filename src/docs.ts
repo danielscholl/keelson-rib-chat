@@ -860,8 +860,8 @@ access or workflows.
 
 How hard it works offers three plans. Working session is selected by default.
 Each card shows its agents, turns, minutes and the effective provider's models.
-Matching lead and worker models read as one Lead and workers row; split pairs
-get a Lead row and a Workers row. Providers without pins use the matching class model.
+Beside the figures, every card lists a Lead row and a Workers row, even when
+they name the same model. Providers without pins use the matching class model.
 
 | Plan | For | Agents | Turns | Minutes |
 | --- | --- | --- | --- | --- |
@@ -869,7 +869,7 @@ get a Lead row and a Workers row. Providers without pins use the matching class 
 | Working session | Most tasks: investigate, debate, and decide. | ${SIZE_PRESETS.medium.maxAgents} | ${SIZE_PRESETS.medium.maxTurns} | ${minutes(SIZE_PRESETS.medium.wallClockMs)} |
 | Deep dig | Wide or hard problems that are worth the spend. | ${SIZE_PRESETS.large.maxAgents} | ${SIZE_PRESETS.large.maxTurns} | ${minutes(SIZE_PRESETS.large.wallClockMs)} |
 
-Model sits under the cards and starts on "the plan's models". Provider groups
+Model sits under the cards, beside Project, and starts on "the plan's models". Provider groups
 contain each provider's default model, class models and pinned models, without
 duplicates within a group. Other… accepts a model name and uses the effective
 default provider. Naming a model runs every agent on it, keeps the card
