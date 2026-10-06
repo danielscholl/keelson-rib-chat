@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.20.0...v0.21.0) (2026-10-06)
+
+
+### Added
+
+* **surface:** Scout, Crew and Fleet plans with lead and worker model pickers ([#121](https://github.com/danielscholl/keelson-rib-chat/issues/121)) ([72c844e](https://github.com/danielscholl/keelson-rib-chat/commit/72c844ed77d995fc3c515c3e2f34ba880dead3c2))
+
 ## [0.20.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.19.2...v0.20.0) (2026-10-06)
 
 
