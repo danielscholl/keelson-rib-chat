@@ -20,7 +20,7 @@ import {
   WAIT_BOUNDS,
 } from "./tools.ts";
 import { SETTLE_GRACE_MS } from "./turn-runner.ts";
-import { BODY_MAX, CONCLUSION_MAX, DEFAULT_LIMITS, SIZE_PRESETS, SWARM_SIZES } from "./types.ts";
+import { BODY_MAX, CONCLUSION_MAX, DEFAULT_SIZE, SIZE_PRESETS, SWARM_SIZES } from "./types.ts";
 
 // The corpus is a source module, not a file read at runtime, so an installed
 // package serves it with no filesystem or network dependency. keelson_docs
@@ -28,7 +28,7 @@ import { BODY_MAX, CONCLUSION_MAX, DEFAULT_LIMITS, SIZE_PRESETS, SWARM_SIZES } f
 const minutes = (ms: number): number => Math.round(ms / 60_000);
 
 function corpus(): string {
-  const l = DEFAULT_LIMITS;
+  const l = SIZE_PRESETS[DEFAULT_SIZE];
   return `# Overview
 
 > What a chat swarm is, when to use one, and what it cannot do.
@@ -66,7 +66,7 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`task\` | required | What the swarm should work out. At most ${BODY_MAX} characters. Every agent sees it in its system prompt, and the lead receives it as the kickoff message. |
 | \`project\` | none | A registered Keelson project, by id or name. An unknown project fails the start. |
 | \`work_tools\` | \`read\` | \`read\` grants Read, Grep, and Glob. \`none\` is chat only. \`write\` reads too, and lets the lead spawn writers; it needs \`project\`. See Write mode. |
-| \`size\` | \`medium\` | \`small\`, \`medium\` or \`large\`: the preset the limits start from. See Limits and completion. |
+| \`size\` | \`small\` | \`small\`, \`medium\` or \`large\`: the preset the limits start from. See Limits and completion. |
 | \`max_agents\` | ${l.maxAgents} | Agent cap, lead included. 1 to ${START_BOUNDS.maxAgents}. |
 | \`max_turns\` | ${l.maxTurns} | Total turns across the swarm. 1 to ${START_BOUNDS.maxTurns}. |
 | \`max_turns_per_agent\` | ${l.maxTurnsPerAgent} | Turns each worker may take. 1 to ${START_BOUNDS.maxTurnsPerAgent}. The lead is bounded by \`max_turns\` only. |
@@ -74,7 +74,7 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`max_minutes\` | ${minutes(l.wallClockMs)} | Wall clock for the whole swarm. 1 to ${START_BOUNDS.maxMinutes}. |
 | \`context\` | none | Evidence the agents cannot fetch themselves. See Task context. |
 | \`provider\` | host default | Provider id used for every agent's turns. |
-| \`power\` | balanced | fast, balanced or deep. On copilot each power pins a lead model and a worker model (see Models); on another provider it is the provider's model for that class. It also sets the reasoning effort every turn asks for: low, medium or high. A model that refuses effort runs its turns without it. |
+| \`power\` | fast | fast, balanced or deep. On copilot each power pins a lead model and a worker model (see Models); on another provider it is the provider's model for that class. It also sets the reasoning effort every turn asks for: low, medium or high. A model that refuses effort runs its turns without it. |
 | \`effort\` | the power's | none, low, medium, high or xhigh: the reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it; a model that refuses it fails the turn. |
 | \`model\` | the power's lead model | Model for every agent, or for the lead alone when \`worker_model\` is set. Naming one switches the power's pins off. |
 | \`worker_model\` | the power's worker model, else \`model\` | Model for workers. |
@@ -94,8 +94,8 @@ fails the start before a channel is made.
 
 Models. Without \`model\`, the rib pins the models by \`power\` on copilot:
 fast runs claude-sonnet-5.5 as the lead and gpt-6-luna as the workers,
-balanced runs claude-opus-5.5 as the lead and gpt-6-sol as the workers, and
-deep runs claude-opus-5.5 throughout. The lead stays on a Claude model, which
+balanced runs claude-sonnet-5.5 as the lead and gpt-6-sol as the workers, and
+deep runs claude-opus-5.5 as the lead and gpt-6.1-sol as the workers. The lead stays on a Claude model, which
 closes a swarm reliably; a \`worker_model\` alone keeps the lead's pin, and
 \`model\` switches the pins off. A Haiku model is refused for
 either role, since it rejects the reasoning effort every power asks for and a
@@ -457,7 +457,7 @@ Four more tools act on the ClickClack server itself. See Managed server.
 | One turn | ${minutes(l.turnTimeoutMs)} minutes |
 | Idle nudges to the lead | ${l.maxNudges} |
 
-Those defaults are the \`medium\` size. \`size\` picks a preset, and the \`max_*\`
+Those defaults are the \`${DEFAULT_SIZE}\` size (Scout). \`size\` picks a preset, and the \`max_*\`
 inputs then override single limits on top of it. A swarm whose limits moved off
 its preset reports its size as \`custom\`.
 
@@ -863,7 +863,7 @@ No project · chat only is the default. Projects list as name · path, with the
 home directory shortened to ~; picking one gives agents read access, not write
 access or workflows.
 
-Size offers three plans. Crew is selected by default.
+Size offers three plans. Scout is selected by default.
 Each card shows its agents, turns, minutes and the effective provider's models.
 Beside the figures, every card lists a Lead row and a Workers row, even when
 they name the same model. Providers without pins use the matching class model.
@@ -886,9 +886,9 @@ Picking a card clears both picks and restores that plan.
 Start swarm sits at the end of the form with one sentence beside it: N agents
 for up to N min, then the picked models (on <lead> and <workers>, with lead
 <model> or with workers <model>), then where they work, such
-as 5 agents for up to 30 min, chat only.
-Untouched Crew sends no size, power or model overrides. Scout
-records small/fast; Fleet records large/deep. A named model records size,
+as 3 agents for up to 15 min, chat only.
+Untouched Scout sends no size, power or model overrides. Crew
+records medium/balanced; Fleet records large/deep. A named model records size,
 model and provider, with no power.
 
 New project… appears last in Project only when the host exposes optional

@@ -21,6 +21,7 @@ import {
   BODY_MAX,
   type ChatMessage,
   CONCLUSION_MAX,
+  DEFAULT_SIZE,
   type DispatchGrant,
   isLive,
   POWER_MODELS,
@@ -253,7 +254,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .enum(SWARM_SIZES)
         .optional()
         .describe(
-          `How much the swarm may do. ${SWARM_SIZES.map((k) => `${k}: ${sizeText(SIZE_PRESETS[k])}`).join("; ")}. Default medium. The max_* inputs override single limits.`,
+          `How much the swarm may do. ${SWARM_SIZES.map((k) => `${k}: ${sizeText(SIZE_PRESETS[k])}`).join("; ")}. Default ${DEFAULT_SIZE}. The max_* inputs override single limits.`,
         ),
       max_agents: z.number().int().min(1).max(START_BOUNDS.maxAgents).optional(),
       max_turns: z.number().int().min(1).max(START_BOUNDS.maxTurns).optional(),
@@ -294,7 +295,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .enum(SWARM_POWERS)
         .optional()
         .describe(
-          `How much model the agents get: fast, balanced (default) or deep. On copilot each power pins a lead and a worker model (${SWARM_POWERS.map((p) => `${p}: ${POWER_MODELS.copilot![p].lead} lead, ${POWER_MODELS.copilot![p].worker} workers`).join("; ")}); another provider maps the class to one of its models. A named model wins. The power also sets the reasoning effort: low, medium or high, dropped for a model that refuses it.`,
+          `How much model the agents get: fast (default), balanced or deep. On copilot each power pins a lead and a worker model (${SWARM_POWERS.map((p) => `${p}: ${POWER_MODELS.copilot![p].lead} lead, ${POWER_MODELS.copilot![p].worker} workers`).join("; ")}); another provider maps the class to one of its models. A named model wins. The power also sets the reasoning effort: low, medium or high, dropped for a model that refuses it.`,
         ),
       effort: z
         .enum(SWARM_EFFORTS)

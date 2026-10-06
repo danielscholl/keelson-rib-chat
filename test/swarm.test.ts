@@ -1331,10 +1331,11 @@ describe("size and model", () => {
     expect(custom.sizeBase).toBe("small");
   });
 
-  test("no size is medium", async () => {
+  test("no size is small", async () => {
     const summary = await (await harness(script).start()).finished;
-    expect(summary.size).toBe("medium");
-    expect(summary.limits).toEqual(SIZE_PRESETS.medium);
+    expect(summary.size).toBe("small");
+    expect(summary.sizeBase).toBe("small");
+    expect(summary.limits).toEqual(SIZE_PRESETS.small);
   });
 
   test("the lead runs model, workers run worker_model, and each agent records both", async () => {

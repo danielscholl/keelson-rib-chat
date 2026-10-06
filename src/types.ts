@@ -60,7 +60,7 @@ export const PLAN_NAME: Readonly<Record<SwarmSize, string>> = {
   large: "Fleet",
 };
 
-// Medium is DEFAULT_LIMITS, so a start that names no size behaves as it always has.
+// Medium is DEFAULT_LIMITS, the base the other presets adjust.
 export const SIZE_PRESETS: Readonly<Record<SwarmSize, SwarmLimits>> = {
   small: {
     ...DEFAULT_LIMITS,
@@ -84,6 +84,10 @@ export const SIZE_PRESETS: Readonly<Record<SwarmSize, SwarmLimits>> = {
 export const SWARM_POWERS = ["fast", "balanced", "deep"] as const;
 export type SwarmPower = (typeof SWARM_POWERS)[number];
 
+// A start that names neither runs Scout.
+export const DEFAULT_SIZE: SwarmSize = "small";
+export const DEFAULT_POWER: SwarmPower = "fast";
+
 // The reasoning effort each power asks of a provider that supports it.
 export const POWER_EFFORT: Record<SwarmPower, ReasoningEffortLevel> = {
   fast: "low",
@@ -100,8 +104,8 @@ export interface PowerModels {
 export const POWER_MODELS: Readonly<Record<string, Readonly<Record<SwarmPower, PowerModels>>>> = {
   copilot: {
     fast: { lead: "claude-sonnet-5.5", worker: "gpt-6-luna" },
-    balanced: { lead: "claude-opus-5.5", worker: "gpt-6-sol" },
-    deep: { lead: "claude-opus-5.5", worker: "claude-opus-5.5" },
+    balanced: { lead: "claude-sonnet-5.5", worker: "gpt-6-sol" },
+    deep: { lead: "claude-opus-5.5", worker: "gpt-6.1-sol" },
   },
 };
 export function pinnedModels(

@@ -10,7 +10,14 @@ import { createHash } from "node:crypto";
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
 import { modelLabel, servedModels, tokensText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
-import { type ChildRun, isLive, PLAN_NAME, type SwarmStatus, type SwarmSummary } from "../types.ts";
+import {
+  type ChildRun,
+  DEFAULT_POWER,
+  isLive,
+  PLAN_NAME,
+  type SwarmStatus,
+  type SwarmSummary,
+} from "../types.ts";
 import {
   activityText,
   channelHref,
@@ -95,7 +102,7 @@ function limitDuration(ms: number): string {
 
 function roleModelRow(s: SwarmSummary, lead: boolean): Row {
   const model = lead ? s.model : (s.workerModel ?? s.model);
-  const power = `${s.power ?? "balanced"} power`;
+  const power = `${s.power ?? DEFAULT_POWER} power`;
   const role = lead ? "Lead" : "Worker";
   const inheritance = lead
     ? ""

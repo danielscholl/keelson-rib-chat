@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { ribDocsSourceSchema } from "@keelson/shared";
 import pkg from "../package.json" with { type: "json" };
 import rib from "../src/index.ts";
-import { DEFAULT_LIMITS, SIZE_PRESETS, SWARM_SIZES } from "../src/types.ts";
+import { DEFAULT_SIZE, SIZE_PRESETS, SWARM_SIZES } from "../src/types.ts";
 
 const ctx = { getExec: () => ({}) as never };
 const source = rib.contributeDocs?.(ctx)[0];
@@ -40,10 +40,10 @@ describe("contributed docs", () => {
       "themed HTML launcher",
       "No project · chat only",
       "name · path",
-      "Crew is selected by default",
+      "Scout is selected by default",
       "Lead model and Workers model sit under the cards",
       "Start swarm sits at the end of the form",
-      "Untouched Crew sends no size, power or model overrides",
+      "Untouched Scout sends no size, power or model overrides",
       "host toast",
       "about two seconds",
       "one compact line",
@@ -316,7 +316,7 @@ describe("contributed docs", () => {
     const normalize = (text: string) => text.replace(/[`*"]/g, "").replace(/\s+/g, " ");
     for (const text of [swarms, ...guides].map(normalize)) {
       for (const phrase of [
-        "Crew is selected by default",
+        "Scout is selected by default",
         "Lead model and Workers model sit under the cards, beside Project, and start on the plan's lead and the plan's workers",
         "default model, class models and pinned models, without duplicates within a group",
         "Other… on Lead model accepts a model name and uses the effective default provider",
@@ -324,9 +324,9 @@ describe("contributed docs", () => {
         "Lead and workers must come from one provider",
         "Picking a card clears both picks and restores that plan",
         "Start swarm sits at the end of the form with one sentence beside it",
-        `${SIZE_PRESETS.medium.maxAgents} agents for up to ${SIZE_PRESETS.medium.wallClockMs / 60_000} min, chat only.`,
-        "Untouched Crew sends no size, power or model overrides",
-        "Scout records small/fast; Fleet records large/deep",
+        `${SIZE_PRESETS.small.maxAgents} agents for up to ${SIZE_PRESETS.small.wallClockMs / 60_000} min, chat only.`,
+        "Untouched Scout sends no size, power or model overrides",
+        "Crew records medium/balanced; Fleet records large/deep",
         "A named model records size, model and provider, with no power",
         "A finished Scout or Crew offers Go deeper",
         "Fleet offers neither",
@@ -801,11 +801,12 @@ describe("contributed docs", () => {
   });
 
   test("the advertised defaults are the engine's defaults", () => {
-    expect(row("max_agents")).toContain(`| ${DEFAULT_LIMITS.maxAgents} |`);
-    expect(row("max_turns")).toContain(`| ${DEFAULT_LIMITS.maxTurns} |`);
-    expect(content).toContain(`| Turns per worker | ${DEFAULT_LIMITS.maxTurnsPerAgent} |`);
-    expect(content).toContain(`| Turns running at once | ${DEFAULT_LIMITS.maxConcurrent} |`);
-    expect(content).toContain(`| Wall clock | ${DEFAULT_LIMITS.wallClockMs / 60_000} minutes |`);
+    const l = SIZE_PRESETS[DEFAULT_SIZE];
+    expect(row("max_agents")).toContain(`| ${l.maxAgents} |`);
+    expect(row("max_turns")).toContain(`| ${l.maxTurns} |`);
+    expect(content).toContain(`| Turns per worker | ${l.maxTurnsPerAgent} |`);
+    expect(content).toContain(`| Turns running at once | ${l.maxConcurrent} |`);
+    expect(content).toContain(`| Wall clock | ${l.wallClockMs / 60_000} minutes |`);
   });
 
   test("the site's tool reference names exactly the registered tools", () => {

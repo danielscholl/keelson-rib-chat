@@ -41,6 +41,8 @@ import {
 import { ENDED_KEPT, makeChatTools, type StartSwarmInput } from "./tools.ts";
 import {
   type ChatMessage,
+  DEFAULT_POWER,
+  DEFAULT_SIZE,
   ownsPr,
   POWER_EFFORT,
   pinnedModels,
@@ -213,7 +215,7 @@ function servingProvider(named: string | undefined): string | undefined {
 function modelsFor(input: StartSwarmInput): { model?: string; workerModel?: string } {
   const pins = input.model
     ? undefined
-    : pinnedModels(servingProvider(input.provider), input.power ?? "balanced");
+    : pinnedModels(servingProvider(input.provider), input.power ?? DEFAULT_POWER);
   const model = input.model ?? pins?.lead;
   const workerModel = input.workerModel ?? (input.model ? undefined : pins?.worker);
   return { ...(model ? { model } : {}), ...(workerModel ? { workerModel } : {}) };
@@ -573,7 +575,7 @@ function beginSwarm(
   origin: { rerunOf?: string } = {},
 ): { id: string; booted: Promise<Booted> } {
   const launch = prepare(input);
-  const sizeBase = input.size ?? "medium";
+  const sizeBase = input.size ?? DEFAULT_SIZE;
   const record: StartingSwarm = {
     id: mintId(),
     task: input.task,
@@ -582,8 +584,8 @@ function beginSwarm(
     sizeBase,
     ...(input.provider ? { provider: input.provider } : {}),
     ...modelsFor(input),
-    power: input.power ?? "balanced",
-    effort: input.effort ?? POWER_EFFORT[input.power ?? "balanced"],
+    power: input.power ?? DEFAULT_POWER,
+    effort: input.effort ?? POWER_EFFORT[input.power ?? DEFAULT_POWER],
     ...(launch.project ? { project: launch.project } : {}),
     ...(origin.rerunOf ? { rerunOf: origin.rerunOf } : {}),
   };

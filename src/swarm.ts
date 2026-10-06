@@ -50,6 +50,7 @@ import {
   type ChatMessage,
   type ChildRun,
   CONCLUSION_MAX,
+  DEFAULT_SIZE,
   type DispatchGrant,
   type GateAnswer,
   type GateFileText,
@@ -415,7 +416,7 @@ export class Swarm {
     this.owner = opts.owner;
     this.id = opts.id ?? newSwarmId();
     this.task = opts.task;
-    this.limits = { ...SIZE_PRESETS[opts.size ?? "medium"], ...opts.limits };
+    this.limits = { ...SIZE_PRESETS[opts.size ?? DEFAULT_SIZE], ...opts.limits };
     this.finished = this.done.promise;
   }
 
@@ -2244,8 +2245,8 @@ export class Swarm {
       ...(this.endedAt ? { endedAt: this.endedAt } : {}),
       turnsUsed: this.turnsUsed,
       limits: this.limits,
-      size: sizeOf(this.limits, this.opts.size ?? "medium"),
-      sizeBase: this.opts.size ?? "medium",
+      size: sizeOf(this.limits, this.opts.size ?? DEFAULT_SIZE),
+      sizeBase: this.opts.size ?? DEFAULT_SIZE,
       ...(this.opts.provider ? { provider: this.opts.provider } : {}),
       ...(this.opts.model ? { model: this.opts.model } : {}),
       ...(this.opts.workerModel ? { workerModel: this.opts.workerModel } : {}),

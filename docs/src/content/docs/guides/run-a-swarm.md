@@ -30,7 +30,7 @@ In the **Swarms** tab, type the task into **Start a swarm**, then press
 read nothing on disk. Pick a project to grant read access; each option shows
 its name and path, with the home directory shortened to `~`.
 
-Choose a plan under **Size**. **Crew is selected by
+Choose a plan under **Size**. **Scout is selected by
 default**. Each card shows its agents, turns, minutes and the effective
 provider's models. Providers without pins use the matching class model.
 
@@ -50,8 +50,8 @@ workers keeps the plan's lead. Lead and workers must come from one provider.
 Picking a card clears both picks and restores that plan.
 
 **Start swarm** sits at the end of the form with one sentence beside it: N
-agents for up to N min, then on \<model\> when one is named, then where they
-work, such as **5 agents for up to 30 min, chat only.** Untouched Crew sends no size, power or model overrides. Scout records small/fast;
+agents for up to N min, then the picked models, then where they
+work, such as **3 agents for up to 15 min, chat only.** Untouched Scout sends no size, power or model overrides. Crew records medium/balanced;
 Fleet records large/deep. A named model records size, model and provider,
 with no power.
 

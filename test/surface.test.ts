@@ -1468,11 +1468,11 @@ describe("the details inspector", () => {
     expect(settings.join("\n")).not.toContain("actual-provider");
     const missing = rows(inspect({ ...s, power: undefined, agents: [] }), "Setup");
     expect(missing).toContainEqual({
-      text: "Lead model: requested balanced power, host default",
+      text: "Lead model: requested fast power, host default",
       detail: "No lead agents recorded; served models and per-agent requests not recorded.",
     });
     expect(missing).toContainEqual({
-      text: "Worker model: requested balanced power, host default (inherits lead setting)",
+      text: "Worker model: requested fast power, host default (inherits lead setting)",
       detail: "No worker agents recorded; served models and per-agent requests not recorded.",
     });
     const inherited = rows(inspect({ ...s, model: "explicit-lead" }), "Setup");
@@ -1497,11 +1497,9 @@ describe("the details inspector", () => {
       );
       const models = setup.filter((row) => /^(Lead|Worker) model:/.test(row.text));
       expect(models).toHaveLength(2);
-      expect(models[0]?.text).toBe(
-        `Lead model: requested ${power ?? "balanced"} power, host default`,
-      );
+      expect(models[0]?.text).toBe(`Lead model: requested ${power ?? "fast"} power, host default`);
       expect(models[1]?.text).toBe(
-        `Worker model: requested ${power ?? "balanced"} power, host default (inherits lead setting)`,
+        `Worker model: requested ${power ?? "fast"} power, host default (inherits lead setting)`,
       );
       expect(models[0]?.detail?.split("\n")).toHaveLength(1);
       expect(models[1]?.detail?.split("\n")).toHaveLength(11);
@@ -1533,7 +1531,7 @@ describe("the details inspector", () => {
     );
     const workerOnly = rows(inspect({ ...s, model: undefined }), "Setup");
     expect(workerOnly.find((row) => row.text.startsWith("Lead model:"))?.text).toBe(
-      "Lead model: requested balanced power, requested-provider",
+      "Lead model: requested fast power, requested-provider",
     );
     expect(workerOnly.find((row) => row.text.startsWith("Worker model:"))?.text).toBe(
       "Worker model: requested requested-worker, requested-provider (worker role override)",
@@ -7270,7 +7268,7 @@ describe("launching from the tab", () => {
         size: "large",
         model: "custom/<name>",
         provider: "copilot",
-        worker_model: "claude-opus-5.5",
+        worker_model: "gpt-6.1-sol",
       });
     }
   });
@@ -7533,7 +7531,7 @@ describe("launching from the tab", () => {
         task: "",
         project: "",
         tools: "none",
-        ...(size === "medium" ? {} : { size, power: size === "small" ? "fast" : "deep" }),
+        ...(size === "small" ? {} : { size, power: size === "medium" ? "balanced" : "deep" }),
       });
     }
     const bridge = fakeStateBridge();
@@ -7547,8 +7545,8 @@ describe("launching from the tab", () => {
     next.fire("launch-start", "click");
     expect(next.calls[0]!.payload).toMatchObject({
       ...selection,
-      size: "medium",
-      worker_model: "gpt-6-sol",
+      size: "small",
+      worker_model: "gpt-6-luna",
     });
     expect(next.calls[0]!.payload).not.toHaveProperty("power");
   });
@@ -7657,7 +7655,7 @@ describe("launching from the tab", () => {
       else if (edit === "model") {
         next.get("launch-model")!.value = "other";
         next.fire("launch-model", "change");
-      } else next.fire(edit === "plan" ? "plan-small" : "compact-more", "click");
+      } else next.fire(edit === "plan" ? "plan-medium" : "compact-more", "click");
       const latest = bridge.stored;
       next.restore();
       expect(bridge.stored).toEqual(latest);
@@ -8078,7 +8076,7 @@ describe("launching from the tab", () => {
       const bridge = fakeStateBridge(invalid);
       const next = frameHarness(undefined, "next", bridge);
       expect(next.get("launch-task")!.value).toBe("");
-      expect(next.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
+      expect(next.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
       expect(next.get("launch-project")!.value).toBe("");
       expect(next.calls).toEqual([]);
       expect(bridge.saves).toEqual([]);
@@ -8151,7 +8149,7 @@ describe("launching from the tab", () => {
     compact.fire("compact-task", "input");
     const expanded = frameHarness({ projects }, "expanded", compactBridge);
     expect(expanded.get("launch-task")!.value).toBe("Compact to expanded markup");
-    expect(expanded.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
+    expect(expanded.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
     expect(compactBridge.saves).toHaveLength(1);
   });
 
@@ -8309,7 +8307,7 @@ describe("launching from the tab", () => {
       expect(frame.get("compact-task")).toBeUndefined();
       expect(frame.get("launch-task")!.value).toBe(draft);
       expect(frame.focused()).toBe(frame.get("launch-task"));
-      expect(frame.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
+      expect(frame.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
       expect(frame.get("launch-model")!.value).toBe("");
       expect(frame.get("launch-project")!.value).toBe("");
       expect(frame.get("allow-write")).toBeUndefined();
@@ -8353,8 +8351,8 @@ describe("launching from the tab", () => {
       task: "First line",
       expanded: false,
       customize: false,
-      size: "medium",
-      power: "balanced",
+      size: "small",
+      power: "fast",
       project: "",
       projectRoot: "",
       permissions: { write: false, workflows: false, tracker: false },
@@ -8376,7 +8374,7 @@ describe("launching from the tab", () => {
     frame.release();
     frame.fire("compact-more", "click");
     expect(frame.get("launch-task")!.value).toBe("First line");
-    expect(frame.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
+    expect(frame.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
     expect(frame.get("launch-project")!.value).toBe("");
   });
 
@@ -8547,7 +8545,7 @@ describe("launching from the tab", () => {
       size: "large",
       model: "gpt-6-astra",
       provider: "copilot",
-      worker_model: "claude-opus-5.5",
+      worker_model: "gpt-6.1-sol",
     });
     frame.release();
     frame.select("");
@@ -9275,7 +9273,7 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("frame plan transitions capture sparse payloads and restore Crew without losing drafts", () => {
+  test("frame plan transitions capture sparse payloads and restore Scout without losing drafts", () => {
     const h = frameHarness();
     const { elements: e, trigger, release, calls } = h;
     e["launch-task"]!.value = "Investigate the build";
@@ -9290,17 +9288,17 @@ describe("launching from the tab", () => {
       expect(calls.at(-1)).toEqual({ type: "start-swarm", payload: { ...common, ...extra } });
       release();
     };
-    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
-    expect(e["launch-summary"]!.textContent).toBe("5 agents for up to 30 min");
-    expect(e["launch-models"]!.textContent).toBe("");
-    capture({});
-    trigger("plan-small");
     expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
-    expect(e["chip-small"]!.hidden).toBe(false);
-    expect(e["chip-medium"]!.hidden).toBe(true);
     expect(e["launch-summary"]!.textContent).toBe("3 agents for up to 15 min");
     expect(e["launch-models"]!.textContent).toBe("");
-    capture({ size: "small", power: "fast" });
+    capture({});
+    trigger("plan-medium");
+    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["chip-medium"]!.hidden).toBe(false);
+    expect(e["chip-small"]!.hidden).toBe(true);
+    expect(e["launch-summary"]!.textContent).toBe("5 agents for up to 30 min");
+    expect(e["launch-models"]!.textContent).toBe("");
+    capture({ size: "medium", power: "balanced" });
     trigger("plan-large");
     expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("true");
     expect(e["launch-summary"]!.textContent).toBe("8 agents for up to 60 min");
@@ -9309,22 +9307,22 @@ describe("launching from the tab", () => {
     trigger("launch-model", "change");
     expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("true");
     expect(e["chip-large"]!.hidden).toBe(false);
-    expect(e["models-large"]!.textContent).toBe("Leadclaude-opus-5.5Workersclaude-opus-5.5");
-    expect(e["models-medium"]!.textContent).toBe("Leadclaude-opus-5.5Workersgpt-6-sol");
+    expect(e["models-large"]!.textContent).toBe("Leadclaude-opus-5.5Workersgpt-6.1-sol");
+    expect(e["models-medium"]!.textContent).toBe("Leadclaude-sonnet-5.5Workersgpt-6-sol");
     expect(e["launch-models"]!.textContent).toBe(" with lead claude-opus-5.5");
     expect(e["launch-summary"]!.textContent).toBe("8 agents for up to 60 min");
     capture({
       size: "large",
       model: "claude-opus-5.5",
       provider: "copilot",
-      worker_model: "claude-opus-5.5",
+      worker_model: "gpt-6.1-sol",
     });
-    trigger("plan-medium");
-    expect(e["chip-medium"]!.hidden).toBe(false);
+    trigger("plan-small");
+    expect(e["chip-small"]!.hidden).toBe(false);
     expect(e["chip-large"]!.hidden).toBe(true);
     expect(e["launch-model"]!.value).toBe("");
     expect(e["launch-models"]!.textContent).toBe("");
-    expect(e["models-large"]!.textContent).toBe("Leadclaude-opus-5.5Workersclaude-opus-5.5");
+    expect(e["models-large"]!.textContent).toBe("Leadclaude-opus-5.5Workersgpt-6.1-sol");
     capture({});
     e["launch-project"]!.value = "p1";
     trigger("launch-project", "change");
@@ -9338,8 +9336,8 @@ describe("launching from the tab", () => {
       power: "deep",
     });
     release();
-    trigger("plan-medium");
-    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
+    trigger("plan-small");
+    expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
     expect(e["launch-task"]!.value).toBe("Investigate the build");
     expect(e["launch-project"]!.value).toBe("p1");
   });
@@ -9356,29 +9354,29 @@ describe("launching from the tab", () => {
       classes: [{ provider: "second-provider", defaultModel: "same-name" }],
     });
     expect(e["launch-model"]!.hidden).toBe(false);
-    trigger("plan-small");
+    trigger("plan-medium");
     trigger("launch-start");
-    expect(calls.at(-1)?.payload).toMatchObject({ size: "small", power: "fast" });
+    expect(calls.at(-1)?.payload).toMatchObject({ size: "medium", power: "balanced" });
     release();
     e["launch-model"]!.value = JSON.stringify({ model: "same-name", provider: "second-provider" });
     trigger("launch-model", "change");
-    expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
     trigger("launch-start");
     expect(calls.at(-1)?.payload).toMatchObject({
-      size: "small",
+      size: "medium",
       model: "same-name",
       provider: "second-provider",
     });
     expect(calls.at(-1)?.payload).not.toHaveProperty("power");
     expect(calls.at(-1)?.payload).not.toHaveProperty("worker_model");
-    expect(e["models-small"]!.textContent).toBe("Leadsame-nameWorkerssame-name");
+    expect(e["models-medium"]!.textContent).toBe("Leadsame-nameWorkerssame-name");
     release();
     e["launch-model"]!.value = "";
     trigger("launch-model", "change");
-    expect(e["models-small"]!.textContent).toBe("Leadclaude-sonnet-5.5Workersgpt-6-luna");
-    expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
+    expect(e["models-medium"]!.textContent).toBe("Leadclaude-sonnet-5.5Workersgpt-6-sol");
+    expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
     trigger("launch-start");
-    expect(calls.at(-1)?.payload).toMatchObject({ size: "small", power: "fast" });
+    expect(calls.at(-1)?.payload).toMatchObject({ size: "medium", power: "balanced" });
     expect(calls.at(-1)?.payload).not.toHaveProperty("model");
   });
 
@@ -9395,9 +9393,9 @@ describe("launching from the tab", () => {
       expect(e["other-model-row"]!.hidden).toBe(false);
       e["launch-other-model"]!.value = "  other-vendor/model <name>  ";
       trigger("launch-other-model", "input");
-      if (e["models-medium"]) {
-        expect(e["models-medium"].textContent).toBe(
-          "Leadother-vendor/model <name>Workersgpt-6-sol",
+      if (e["models-small"]) {
+        expect(e["models-small"].textContent).toBe(
+          "Leadother-vendor/model <name>Workersgpt-6-luna",
         );
       }
       trigger("launch-start");
@@ -9406,9 +9404,9 @@ describe("launching from the tab", () => {
         task: "",
         project: "",
         tools: "none",
-        size: "medium",
+        size: "small",
         model: "other-vendor/model <name>",
-        ...(provider ? { provider, worker_model: "gpt-6-sol" } : {}),
+        ...(provider ? { provider, worker_model: "gpt-6-luna" } : {}),
       });
       release();
       e["launch-other-model"]!.value = "   ";
@@ -9448,30 +9446,30 @@ describe("launching from the tab", () => {
 
   test("a worker-only pick sends size, power, worker_model and the worker's provider", () => {
     const frame = frameHarness();
-    pick(frame, "launch-worker-model", "gpt-6-luna");
-    expect(cellsOf(frame, "medium")).toEqual([
-      ["claude-opus-5.5", false],
-      ["gpt-6-luna", true],
-    ]);
+    pick(frame, "launch-worker-model", "gpt-6-sol");
     expect(cellsOf(frame, "small")).toEqual([
       ["claude-sonnet-5.5", false],
-      ["gpt-6-luna", false],
+      ["gpt-6-sol", true],
     ]);
-    expect(frame.get("launch-models")!.textContent).toBe(" with workers gpt-6-luna");
+    expect(cellsOf(frame, "medium")).toEqual([
+      ["claude-sonnet-5.5", false],
+      ["gpt-6-sol", false],
+    ]);
+    expect(frame.get("launch-models")!.textContent).toBe(" with workers gpt-6-sol");
     frame.fire("launch-start", "click");
     expect(frame.calls.at(-1)?.payload).toEqual({
       nonce: "instance-nonce",
       task: "",
       project: "",
       tools: "none",
-      size: "medium",
-      power: "balanced",
-      worker_model: "gpt-6-luna",
+      size: "small",
+      power: "fast",
+      worker_model: "gpt-6-sol",
       provider: "copilot",
     });
     expect(frame.calls.at(-1)?.payload).not.toHaveProperty("model");
     frame.release();
-    frame.fire("plan-small", "click");
+    frame.fire("plan-medium", "click");
     expect(frame.get("launch-worker-model")!.value).toBe("");
     expect(frame.get("launch-models")!.textContent).toBe("");
     expect(cellsOf(frame, "small")).toEqual([
@@ -9484,24 +9482,24 @@ describe("launching from the tab", () => {
       task: "",
       project: "",
       tools: "none",
-      size: "small",
-      power: "fast",
+      size: "medium",
+      power: "balanced",
     });
   });
 
   test("a lead pick on a pinned card adds the plan's worker; an unpinned card's workers follow the lead", () => {
     const frame = frameHarness();
-    pick(frame, "launch-model", "claude-sonnet-5.5");
-    expect(cellsOf(frame, "medium")).toEqual([
-      ["claude-sonnet-5.5", true],
-      ["gpt-6-sol", false],
+    pick(frame, "launch-model", "claude-opus-5.5");
+    expect(cellsOf(frame, "small")).toEqual([
+      ["claude-opus-5.5", true],
+      ["gpt-6-luna", false],
     ]);
     frame.fire("launch-start", "click");
     expect(frame.calls.at(-1)?.payload).toMatchObject({
-      size: "medium",
-      model: "claude-sonnet-5.5",
+      size: "small",
+      model: "claude-opus-5.5",
       provider: "copilot",
-      worker_model: "gpt-6-sol",
+      worker_model: "gpt-6-luna",
     });
     expect(frame.calls.at(-1)?.payload).not.toHaveProperty("power");
 
@@ -9512,9 +9510,9 @@ describe("launching from the tab", () => {
         { provider: "claude", classes: { fast: "haiku-9", balanced: "sonnet-9", deep: "opus-9" } },
       ],
     });
-    expect(unpinned.get("models-medium")!.dataset.pinned).toBe("false");
+    expect(unpinned.get("models-small")!.dataset.pinned).toBe("false");
     pick(unpinned, "launch-model", "opus-9", "claude");
-    expect(cellsOf(unpinned, "medium")).toEqual([
+    expect(cellsOf(unpinned, "small")).toEqual([
       ["opus-9", true],
       ["opus-9", true],
     ]);
@@ -9528,7 +9526,7 @@ describe("launching from the tab", () => {
       task: "",
       project: "",
       tools: "none",
-      size: "medium",
+      size: "small",
       model: "opus-9",
       provider: "claude",
     });
@@ -9563,7 +9561,7 @@ describe("launching from the tab", () => {
     expect(frame.get("launch-worker-model")!.value).toBe("");
     expect(cellsOf(frame, "large")).toEqual([
       ["claude-opus-5.5", false],
-      ["claude-opus-5.5", false],
+      ["gpt-6.1-sol", false],
     ]);
   });
 
@@ -9605,7 +9603,7 @@ describe("launching from the tab", () => {
     );
     expect(next.get("launch-models")!.textContent).toBe(" with workers gpt-6-sol");
     next.fire("launch-start", "click");
-    expect(next.calls[0]!.payload).toMatchObject({ worker_model: "gpt-6-sol", power: "balanced" });
+    expect(next.calls[0]!.payload).toMatchObject({ worker_model: "gpt-6-sol", power: "fast" });
 
     const older: Record<string, unknown> = { ...draft, task: "Older draft" };
     delete older.workerSelection;
@@ -9859,14 +9857,14 @@ describe("launching from the tab", () => {
             task: "Investigate the build",
             workTools: project ? "read" : "none",
             ...(project ? { project } : {}),
-            ...(choice === "small" ? { size: "small", power: "fast" } : {}),
+            ...(choice === "medium" ? { size: "medium", power: "balanced" } : {}),
             ...(choice === "large" ? { size: "large", power: "deep" } : {}),
             ...(choice === "custom"
               ? {
                   size: "large",
                   model: "claude-opus-5.5",
                   provider: "copilot",
-                  workerModel: "claude-opus-5.5",
+                  workerModel: "gpt-6.1-sol",
                 }
               : {}),
           };
@@ -11014,7 +11012,7 @@ describe("launching from the tab", () => {
           ...(sameRoot ? { workflows: "fix-issue" } : {}),
           model: "b",
           provider: "claude",
-          size: "medium",
+          size: "small",
         });
       }
       h.inputs.classes = [
@@ -11219,7 +11217,7 @@ describe("launching from the tab", () => {
         size: "large",
         model: "custom/model",
         provider: "copilot",
-        worker_model: "claude-opus-5.5",
+        worker_model: "gpt-6.1-sol",
         workflows: "fix-issue",
         lead_tools: ["beads_ready"],
       });
@@ -11262,7 +11260,7 @@ describe("launching from the tab", () => {
         const draft = frameHarness(emptyPage, nonce, bridge);
         draft.get("launch-task")!.value = "  Kept when presence\nchanges  ";
         draft.fire("launch-task", "input");
-        draft.fire("plan-small", "click");
+        draft.fire("plan-medium", "click");
         h.swarms.starting = [starting];
         h.surface.changed(starting.id, "start");
         h.surface.refresh();
@@ -11282,8 +11280,8 @@ describe("launching from the tab", () => {
         const restored = frameHarness(compactPage, nonce, bridge);
         expect(restored.get("compact-task")).toBeUndefined();
         expect(restored.get("launch-task")!.value).toBe("  Kept when presence\nchanges  ");
-        expect(restored.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
-        expect(restored.get("launch-summary")!.textContent).toBe("3 agents for up to 15 min");
+        expect(restored.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
+        expect(restored.get("launch-summary")!.textContent).toBe("5 agents for up to 30 min");
         expect(restored.calls).toEqual([]);
         expect(h.nonce()).toBe(nonce);
         if (first === "live") {
@@ -11303,7 +11301,7 @@ describe("launching from the tab", () => {
         expect(frameHarness(h.page()).get("launch-task")!.value).toBe("");
         const returned = frameHarness(h.page(), nonce, bridge);
         expect(returned.get("launch-task")!.value).toBe("  Kept when presence\nchanges  ");
-        expect(returned.get("plan-small")!.attributes.get("aria-pressed")).toBe("true");
+        expect(returned.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
         expect(h.nonce()).toBe(nonce);
         returned.fire("launch-start", "click");
         expect(returned.calls[0]!.payload).toEqual({
@@ -11311,8 +11309,8 @@ describe("launching from the tab", () => {
           task: "  Kept when presence\nchanges  ",
           project: "",
           tools: "none",
-          size: "small",
-          power: "fast",
+          size: "medium",
+          power: "balanced",
         });
         h.swarms.live = [fixtures.running!];
         h.swarms.ended = [fixtures.done!];
@@ -11445,7 +11443,7 @@ describe("launching from the tab", () => {
         TASK_PLACEHOLDER,
         '<p class="hint project-note" id="project-note"></p>',
         '<p class="hint task-hint" id="task-hint" aria-live="polite"></p>',
-        '<p class="summary" aria-live="polite"><span id="launch-summary">5 agents for up to 30 min</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>',
+        '<p class="summary" aria-live="polite"><span id="launch-summary">3 agents for up to 15 min</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>',
         '<div class="pickers">',
       ])
         expect(page).toContain(copy);
@@ -11485,10 +11483,13 @@ describe("launching from the tab", () => {
         ".pickers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));",
       );
       expect(page).toContain('id="other-model-row" hidden');
-      expect(page).toContain('id="chip-medium">selected');
-      expect(page).toContain('id="chip-small" hidden>selected');
+      expect(page).toContain('id="chip-small">selected');
+      expect(page).toContain('id="chip-medium" hidden>selected');
       expect(page).toContain(
-        'id="plan-medium" type="button" data-size="medium" data-power="balanced" aria-pressed="true"',
+        'id="plan-small" type="button" data-size="small" data-power="fast" aria-pressed="true"',
+      );
+      expect(page).toContain(
+        'id="plan-medium" type="button" data-size="medium" data-power="balanced" aria-pressed="false"',
       );
       expect(page).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
       expect(page).toContain("box-shadow: 0 0 0 1px var(--accent)");
@@ -11545,7 +11546,7 @@ describe("launching from the tab", () => {
       { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
     ];
     expect(buildLaunch({ projects, provider: "copilot", classes }, "nonce")).toContain(
-      'data-lead="claude-opus-5.5" data-worker="gpt-6-sol" data-pinned="true"',
+      'data-lead="claude-sonnet-5.5" data-worker="gpt-6-sol" data-pinned="true"',
     );
     const fallback = buildLaunch(
       { projects, provider: "claude", classes: [...classes].reverse() },
@@ -11580,13 +11581,13 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("plan lines use equal or split pins and provider class/default fallbacks", () => {
+  test("plan lines use each power's lead and worker pins and provider class/default fallbacks", () => {
     const pinned = buildLaunch({ projects: [], provider: "copilot" }, "nonce");
     const cell = (role: string, model: string) =>
       `<span class="role">${role}</span><span class="model">${model}</span>`;
     expect(pinned).toContain(cell("Lead", "claude-sonnet-5.5") + cell("Workers", "gpt-6-luna"));
-    expect(pinned).toContain(cell("Lead", "claude-opus-5.5") + cell("Workers", "gpt-6-sol"));
-    expect(pinned).toContain(cell("Lead", "claude-opus-5.5") + cell("Workers", "claude-opus-5.5"));
+    expect(pinned).toContain(cell("Lead", "claude-sonnet-5.5") + cell("Workers", "gpt-6-sol"));
+    expect(pinned).toContain(cell("Lead", "claude-opus-5.5") + cell("Workers", "gpt-6.1-sol"));
     expect(pinned.match(/data-pinned="true"/g)).toHaveLength(3);
     expect(pinned).not.toContain('data-pinned="false"');
     const flat = buildLaunch(
@@ -11639,6 +11640,7 @@ describe("launching from the tab", () => {
       "claude-opus-5.5",
       "gpt-6-luna",
       "gpt-6-sol",
+      "gpt-6.1-sol",
       "class-only",
     ]) {
       expect(
@@ -11919,7 +11921,7 @@ describe("start and run again", () => {
       },
       "nonce-1",
     );
-    expect(html).toContain('if (power !== "balanced") payload.power = power;');
+    expect(html).toContain('if (power !== "fast") payload.power = power;');
   });
 
   test("Retry offers only a model picker, and Go deeper names the next plan up", () => {
@@ -12127,17 +12129,17 @@ describe("start and run again", () => {
   });
 
   test("Retry repeats omitted/default and saved plan power, and a sent power replaces the plan", async () => {
-    for (const power of [undefined, "fast", "deep"] as const) {
+    for (const power of [undefined, "balanced", "deep"] as const) {
       const old: StartSwarmInput = {
         task: "Investigate",
         workTools: "none",
-        ...(power ? { power, size: power === "fast" ? "small" : "large" } : {}),
+        ...(power ? { power, size: power === "balanced" ? "medium" : "large" } : {}),
       };
       const ended: SwarmSummary = {
         ...fixtures.done!,
-        sizeBase: old.size ?? "medium",
-        power: power ?? "balanced",
-        model: pinnedModels("copilot", power ?? "balanced")!.lead,
+        sizeBase: old.size ?? "small",
+        power: power ?? "fast",
+        model: pinnedModels("copilot", power ?? "fast")!.lead,
         provider: "copilot",
       };
       const deps = { ...actionDeps, launchOf: () => old, find: () => ({ ended }) };
@@ -12212,7 +12214,25 @@ describe("start and run again", () => {
       { ...actionDeps, launchOf: () => old, find: () => ({ ended }) },
     );
     expect(result.ok).toBe(true);
-    expect(begun).toEqual([old]);
+    expect(begun).toEqual([{ ...old, size: ended.sizeBase }]);
+  });
+
+  test("Retry keeps the plan an older launch ran when it names no size or power", async () => {
+    const old: StartSwarmInput = { task: "Investigate", workTools: "none" };
+    const legacy = { ...fixtures.done!, sizeBase: "medium" as const, power: "balanced" as const };
+    const current = { ...fixtures.done!, sizeBase: "small" as const, power: "fast" as const };
+    for (const [ended, expected] of [
+      [legacy, { ...old, size: "medium", power: "balanced" }],
+      [current, old],
+    ] as const) {
+      begun.length = 0;
+      const result = await handleSwarmsAction(
+        { type: "run-again", payload: { id: ended.id } },
+        { ...actionDeps, launchOf: () => old, find: () => ({ ended }) },
+      );
+      expect(result.ok).toBe(true);
+      expect(begun).toEqual([expected]);
+    }
   });
 
   test("Retry preserves deliberate model pairs and power, drops workers and power for a newly named model, and a plan drops all models", async () => {
@@ -13027,7 +13047,7 @@ describe("the rib's surface", () => {
       expect(json).not.toContain(`"label":"${DEFAULT_PROJECT_NAME}"`);
       expect(json).toContain("/tmp/sample");
       expect(String(page)).toContain(
-        'data-lead="claude-opus-5.5" data-worker="gpt-6-sol" data-pinned="true"',
+        'data-lead="claude-sonnet-5.5" data-worker="gpt-6-sol" data-pinned="true"',
       );
       expect(json).not.toContain("claude: b");
       for (const model of ["claude-default", "copilot-default", "default-only-model"]) {

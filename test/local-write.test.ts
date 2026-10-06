@@ -52,6 +52,7 @@ async function localHarness(
   const swarm = await Swarm.start({
     id: "s1",
     task: "Change code locally",
+    size: "medium",
     owner: new ClickClackClient("http://fake", OWNER_TOKEN, server.transport),
     workspaceId: WORKSPACE,
     runAgentTurn: provider.run,
