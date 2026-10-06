@@ -659,7 +659,7 @@ async function launchSwarm(
       ...(record.model ? { model: record.model } : {}),
       ...(record.workerModel ? { workerModel: record.workerModel } : {}),
       ...(record.power ? { power: record.power } : {}),
-      ...(record.effort ? { effort: record.effort } : {}),
+      ...(input.effort ? { effort: input.effort } : {}),
       ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),
       ...(input.leadTools?.length ? { leadTools: input.leadTools } : {}),
       prOwnedElsewhere,

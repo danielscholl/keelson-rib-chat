@@ -33,7 +33,13 @@ import {
 import { nudgeText, renderTurn, systemPrompt, type TeamMember } from "./prompts.ts";
 import { checkReport, reportMeta, type SwarmReport, unwrapReport } from "./report.ts";
 import { addressedHandles, mentionedHandles, route } from "./router.ts";
-import { type RunAgentTurn, runTurn, SETTLE_GRACE_MS } from "./turn-runner.ts";
+import {
+  type RunAgentTurn,
+  refusesEffort,
+  runTurn,
+  SETTLE_GRACE_MS,
+  type TurnRequest,
+} from "./turn-runner.ts";
 import {
   type ActivityEntry,
   type ActivityKind,
@@ -198,7 +204,8 @@ export interface SwarmOptions {
   workerModel?: string;
   // The model class an agent with no model of its own runs at.
   power?: SwarmPower;
-  // Overrides the effort the power maps to, for every agent.
+  // Overrides the effort the power maps to, for every agent. Unlike the power's,
+  // a model that refuses it fails the turn.
   effort?: ReasoningEffortLevel;
   // Workflows whose gates the host refused to let a swarm answer, shared across
   // swarms so the next gate on one is flagged for the operator at once.
@@ -369,6 +376,8 @@ export class Swarm {
   // Messages the rib posts as the owner, which are not the operator talking.
   private readonly ownPosts = new Set<string>();
   private lastLeadFailure: string | undefined;
+  // Models, or the power's class, that refused the power's effort.
+  private readonly effortRefused = new Set<string>();
   // The last time an agent's channel call failed because ClickClack itself did.
   private channelFault: string | undefined;
   private cancelFault: string | undefined;
@@ -914,48 +923,58 @@ export class Swarm {
       ]),
     ].map((name) => ({ name }));
     const model = agent.model;
-    const effort = this.effort();
-    const outcome = await runTurn(
-      (req) => this.trackTurn(agent.id, req),
-      {
-        system: systemPrompt({
-          agent,
-          task: this.task,
-          channelName: this.channel.name,
-          limits: this.limits,
-          workTools,
-          leadTools,
-          ...(dispatch ? { grants: dispatch.grants, answersGates } : {}),
-          contextIndex: renderContextIndex(this.opts.context ?? []),
-          ...(worktree ? { worktree } : {}),
-          ...(this.opts.write
-            ? {
-                writeSwarm: {
-                  swarmId: this.id,
-                  root: this.opts.write.root,
-                  ...(this.writeTarget?.mode === "local"
-                    ? { localBase: this.writeTarget.base }
-                    : {}),
-                },
-              }
-            : {}),
-        }),
-        prompt,
-        tools,
-        turnContext: { swarmId: this.id, agentId: agent.id },
-        ...(worktree
-          ? { cwd: worktree.path, allowedDirectories: [worktree.path] }
-          : this.opts.cwd
-            ? { cwd: this.opts.cwd, allowedDirectories: [this.opts.cwd] }
-            : {}),
-        ...(this.opts.provider ? { provider: this.opts.provider } : {}),
-        ...(model ? { model } : this.opts.power ? { modelClass: this.opts.power } : {}),
-        ...(effort ? { reasoningEffort: effort } : {}),
-        ...(agent.sessionId ? { resumeSessionId: agent.sessionId } : {}),
-      },
-      this.limits.turnTimeoutMs,
-      this.controller.signal,
-    );
+    const req: TurnRequest = {
+      system: systemPrompt({
+        agent,
+        task: this.task,
+        channelName: this.channel.name,
+        limits: this.limits,
+        workTools,
+        leadTools,
+        ...(dispatch ? { grants: dispatch.grants, answersGates } : {}),
+        contextIndex: renderContextIndex(this.opts.context ?? []),
+        ...(worktree ? { worktree } : {}),
+        ...(this.opts.write
+          ? {
+              writeSwarm: {
+                swarmId: this.id,
+                root: this.opts.write.root,
+                ...(this.writeTarget?.mode === "local" ? { localBase: this.writeTarget.base } : {}),
+              },
+            }
+          : {}),
+      }),
+      prompt,
+      tools,
+      turnContext: { swarmId: this.id, agentId: agent.id },
+      ...(worktree
+        ? { cwd: worktree.path, allowedDirectories: [worktree.path] }
+        : this.opts.cwd
+          ? { cwd: this.opts.cwd, allowedDirectories: [this.opts.cwd] }
+          : {}),
+      ...(this.opts.provider ? { provider: this.opts.provider } : {}),
+      ...(model ? { model } : this.opts.power ? { modelClass: this.opts.power } : {}),
+      ...(agent.sessionId ? { resumeSessionId: agent.sessionId } : {}),
+    };
+    const run = (r: TurnRequest) =>
+      runTurn(
+        (full) => this.trackTurn(agent.id, full),
+        r,
+        this.limits.turnTimeoutMs,
+        this.controller.signal,
+      );
+    const effortKey = model ?? `class:${this.opts.power ?? ""}`;
+    const effort = this.effortRefused.has(effortKey) ? undefined : this.effort();
+    let outcome = await run(effort ? { ...req, reasoningEffort: effort } : req);
+    if (effort && !this.opts.effort && outcome.status === "error" && refusesEffort(outcome.error)) {
+      this.effortRefused.add(effortKey);
+      this.log(
+        `${model ?? `the ${this.opts.power} model`} takes no reasoning effort; its turns go without one`,
+        { kind: "fault", actor: agent.id },
+        { error: outcome.error },
+      );
+      outcome = await run(req);
+    }
 
     if (outcome.sessionId) agent.sessionId = outcome.sessionId;
     if (outcome.providerId) agent.providerId = outcome.providerId;

@@ -34,8 +34,8 @@ durable ops, a run id.
 | `max_minutes` | integer | 30 | 1 to 240. Wall clock for the whole swarm. |
 | `context` | array | none | Task context items, below. |
 | `provider` | string | host default | Serves every agent. An unregistered provider fails the start. |
-| `power` | string | `balanced` | `fast`, `balanced` or `deep`. The provider's model for that class, for every agent without a named model. It also sets the reasoning effort every turn asks for: `low`, `medium` or `high`. |
-| `effort` | string | the power's | `none`, `low`, `medium`, `high` or `xhigh`. The reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it. |
+| `power` | string | `balanced` | `fast`, `balanced` or `deep`. The provider's model for that class, for every agent without a named model. It also sets the reasoning effort every turn asks for: `low`, `medium` or `high`. A model that refuses effort runs its turns without it. |
+| `effort` | string | the power's | `none`, `low`, `medium`, `high` or `xhigh`. The reasoning effort for every agent turn, overriding the power's. A provider without effort support ignores it; a model that refuses it fails the turn. |
 | `model` | string | the power's model | Every agent, or the lead alone when `worker_model` is set. |
 | `worker_model` | string | `model` | Workers only. |
 | `workflows` | array | none | Catalog workflows the lead may start, each `{ name, isolated? }`, at most 10. `isolated` defaults to `true`. Needs `project`. See [Dispatch workflows](../../guides/dispatch-workflows/). |

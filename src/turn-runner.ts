@@ -40,6 +40,16 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// Whether a turn failed because the served model takes no reasoning effort, as
+// Copilot's Haiku does at session.create.
+export function refusesEffort(error: string | undefined): boolean {
+  if (!error) return false;
+  return (
+    /reasoning[ _.-]?effort/i.test(error) &&
+    /not support|unsupported|not allowed|does not accept/i.test(error)
+  );
+}
+
 export async function runTurn(
   run: RunAgentTurn,
   req: TurnRequest,
