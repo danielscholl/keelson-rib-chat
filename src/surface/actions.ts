@@ -15,6 +15,8 @@ import {
   agentMessageBody,
   agentMessageRefusal,
   BODY_MAX,
+  DEFAULT_POWER,
+  DEFAULT_SIZE,
   SWARM_POWERS,
   SWARM_SIZES,
   type SwarmPower,
@@ -246,7 +248,8 @@ function againInput(
       }
     : picked;
   const pickedSize = sizeOf(payload);
-  const nextSize = pickedSize === "medium" && size === undefined ? undefined : (pickedSize ?? size);
+  const nextSize =
+    pickedSize === DEFAULT_SIZE && size === undefined ? undefined : (pickedSize ?? size);
   return {
     ...rest,
     ...(nextSize ? { size: nextSize } : {}),
@@ -697,7 +700,18 @@ export async function handleSwarmsAction(
       if (!id || !record.ended || !old) return fail(`swarm '${String(raw)}' can't run again`);
       const leadTools = leadToolsOf(old.leadTools, deps);
       if (typeof leadTools === "string") return fail(leadTools);
-      const { leadTools: _previous, ...input } = againInput(old, payload, record.ended);
+      // A launch kept before Scout became the default names no size or power; the
+      // ended summary records what it actually ran.
+      const kept: StartSwarmInput = {
+        ...old,
+        ...(old.size || record.ended.sizeBase === DEFAULT_SIZE
+          ? {}
+          : { size: record.ended.sizeBase }),
+        ...(old.power || old.model || !record.ended.power || record.ended.power === DEFAULT_POWER
+          ? {}
+          : { power: record.ended.power }),
+      };
+      const { leadTools: _previous, ...input } = againInput(kept, payload, record.ended);
       return started(deps, { ...input, ...(leadTools.length ? { leadTools } : {}) }, "drawer", {
         rerunOf: id,
       });

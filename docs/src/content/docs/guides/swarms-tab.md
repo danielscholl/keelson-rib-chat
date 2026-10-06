@@ -40,7 +40,9 @@ roster and stop control live in its cockpit, not in its request cards.
 One live swarm expands on the page as a cockpit. It runs in this order:
 
 1. The task and id, a lifecycle or **needs you** pill, and people dots.
-2. The state line, described below.
+2. **Task**: the prompt's first line, with the text you started it with one
+   click away (its first 800 characters; **Details** has all of it). Then the
+   state line, described below.
 3. Once the lead has concluded, the **Outcome** card: the conclusion, with
    **Open the report** when one exists. While a peer reviews a
    gate, its reviewing card appears here instead.
@@ -685,7 +687,7 @@ on a branch** when Write is on, then **, then \<workflows\>** when workflows
 are named, then **, with beads** when the tracker is on. The beads suffix
 records switch intent, not a promise that every tracker tool was granted.
 
-**Size** offers three plans. **Crew is selected by
+**Size** offers three plans. **Scout is selected by
 default**. Each card shows its agents, turns, minutes and the effective
 provider's models. Beside the figures, every card lists a Lead row and a Workers
 row, even when they name the same model. Providers without pins use the matching
@@ -708,10 +710,10 @@ Picking a card clears both picks and restores that plan.
 
 **Start swarm** sits at the end of the form with one sentence beside it: N
 agents for up to N min, then the picked models, then where they
-work, such as **5 agents for up to 30 min, chat only.** or **8 agents for up to
+work, such as **3 agents for up to 15 min, chat only.** or **8 agents for up to
 60 min on claude-opus-5.5, reading keelson and writing on a branch, then
-fix-issue, with beads.** Untouched Crew sends no size, power or
-model overrides. Scout records small/fast; Fleet records large/deep. A
+fix-issue, with beads.** Untouched Scout sends no size, power or
+model overrides. Crew records medium/balanced; Fleet records large/deep. A
 named model records size, model and provider, with no power. For advanced
 inputs, use
 [`chat_swarm_start`](../../reference/tools-and-commands/#chat_swarm_start).

@@ -47,8 +47,8 @@ The rib manages a server only when `CLICKCLACK_URL` is unset and no owner sessio
 In the **Swarms** tab, describe the task in **Start a swarm**, choose a project
 if agents should read its checkout, and press **Start swarm**. **No project ·
 chat only** is the default. Projects show their name and path (`~` for home).
-Choose **Scout**, **Crew** (the default: 5 agents, up to 40
-turns, about 30 minutes), or **Fleet**. **Lead model** and **Workers model**
+Choose **Scout** (the default: 3 agents, up to 20 turns, about
+15 minutes), **Crew**, or **Fleet**. **Lead model** and **Workers model**
 sit under the plans, grouped by provider with **Other…** for a typed lead; each
 one replaces only its own role, so the plan's other model stays. One sentence beside **Start swarm**
 says how many agents run, for how long, on which model and where. With swarms

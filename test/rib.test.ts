@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { ribIdSchema } from "@keelson/shared";
 import rib from "../src/index.ts";
 import { AGENT_TOOLS, DIFF_TOOL, DISPATCH_TOOLS, MERGE_TOOL, PR_TOOL } from "../src/swarm.ts";
+import { POWER_EFFORT, SIZE_PRESETS } from "../src/types.ts";
 
 describe("rib contract", () => {
   test("id matches the package suffix the harness infers", () => {
@@ -103,6 +104,56 @@ describe("rib contract", () => {
       const rows = JSON.parse(await call("chat_swarm_status", {})) as Record<string, unknown>[];
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ status: "error", size: "small", task: "find it" });
+    } finally {
+      restore(saved);
+      await rib.dispose?.();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a start that names no size or power records Scout limits and fast power", async () => {
+    const saved = {
+      CLICKCLACK_URL: process.env.CLICKCLACK_URL,
+      CLICKCLACK_TOKEN: process.env.CLICKCLACK_TOKEN,
+    };
+    process.env.CLICKCLACK_URL = "http://127.0.0.1:1";
+    process.env.CLICKCLACK_TOKEN = "cc_owner";
+    const dir = mkdtempSync(join(tmpdir(), "rib-chat-"));
+    const ctx = {
+      getExec: () => ({}) as never,
+      getDataDir: () => dir,
+      runAgentTurn: (() => {
+        throw new Error("no turn should run");
+      }) as never,
+    };
+    const call = async (name: string, input: unknown) => {
+      const tools = rib.registerTools?.(ctx) ?? [];
+      let out = "";
+      await tools
+        .find((t) => t.name === name)
+        ?.execute(input, {
+          cwd: "/tmp",
+          abortSignal: new AbortController().signal,
+          emit: (c) => {
+            if (c.type === "tool_result") out = String(c.content);
+          },
+        });
+      return out;
+    };
+    try {
+      await call("chat_swarm_start", { task: "default plan" });
+      const rows = JSON.parse(await call("chat_swarm_status", {})) as Record<string, unknown>[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ size: "small", model: "fast power" });
+      const detail = JSON.parse(await call("chat_swarm_status", { swarm: rows[0]!.id }));
+      expect(detail).toMatchObject({
+        task: "default plan",
+        size: "small",
+        sizeBase: "small",
+        limits: SIZE_PRESETS.small,
+        power: "fast",
+        effort: POWER_EFFORT.fast,
+      });
     } finally {
       restore(saved);
       await rib.dispose?.();

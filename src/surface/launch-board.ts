@@ -16,6 +16,8 @@ import {
 } from "@keelson/shared";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
+  DEFAULT_POWER,
+  DEFAULT_SIZE,
   PLAN_NAME,
   POWER_MODELS,
   pinnedModels,
@@ -417,8 +419,8 @@ const PAGE_SCRIPT = `
     }));
   };
   const budgets = JSON.parse(form.dataset.budgets);
-  let size = "medium";
-  let power = "balanced";
+  let size = "${DEFAULT_SIZE}";
+  let power = "${DEFAULT_POWER}";
   let model = "";
   let provider = "";
   let worker = "";
@@ -673,9 +675,9 @@ const PAGE_SCRIPT = `
       payload.power = power;
       payload.worker_model = worker;
       if (workerProvider) payload.provider = workerProvider;
-    } else if (size !== "medium" || power !== "balanced") {
+    } else if (size !== "${DEFAULT_SIZE}" || power !== "${DEFAULT_POWER}") {
       payload.size = size;
-      if (power !== "balanced") payload.power = power;
+      if (power !== "${DEFAULT_POWER}") payload.power = power;
     }
     dispatch(payload);
   };
@@ -703,7 +705,7 @@ const PAGE_SCRIPT = `
   watchText(task);
   capture = () => ({
     version: 1, task: task.value, expanded: false, customize: false,
-    size: "medium", power: "balanced", project: "", projectRoot: "",
+    size: "${DEFAULT_SIZE}", power: "${DEFAULT_POWER}", project: "", projectRoot: "",
     permissions: { write: false, workflows: false, tracker: false },
     workflows: [], workflowEntry: "", modelSelection: "", workerSelection: "", otherModel: "",
     modelProvider: ""
@@ -735,7 +737,7 @@ const PAGE_SCRIPT = `
   };
   restoreDraft = (state) => {
     if (state.expanded || /[\\r\\n]/.test(state.task) || state.customize
-      || state.size !== "medium" || state.power !== "balanced" || state.project
+      || state.size !== "${DEFAULT_SIZE}" || state.power !== "${DEFAULT_POWER}" || state.project
       || state.modelSelection || state.workerSelection || state.otherModel || state.workflows.length
       || state.workflowEntry || Object.values(state.permissions).some(Boolean)) {
       expand();
@@ -832,7 +834,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
   const cards = PLANS.map((plan) => {
     const l = SIZE_PRESETS[plan.size];
     const pair = models[plan.power];
-    const selected = plan.size === "medium";
+    const selected = plan.size === DEFAULT_SIZE;
     return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
       <span class="plan-title">${plan.name}<span class="chip" id="chip-${plan.size}"${selected ? "" : " hidden"}>selected</span></span>
       <span class="plan-blurb">${plan.blurb}</span>
@@ -902,7 +904,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     </div>
     <footer>
       <button class="start" id="launch-start" type="button">Start swarm</button>
-      <p class="summary" aria-live="polite"><span id="launch-summary">${budgets.medium}</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>
+      <p class="summary" aria-live="polite"><span id="launch-summary">${budgets[DEFAULT_SIZE]}</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>
     </footer>
   </form>`;
   const compact = `<div class="compact" id="launch-compact" data-nonce="${esc(nonce)}">

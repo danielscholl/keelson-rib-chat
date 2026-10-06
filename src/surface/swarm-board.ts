@@ -958,6 +958,24 @@ function nativeTimeline(s: SwarmSummary): CanvasTimelineSection {
   };
 }
 
+// A cockpit can hold several live swarms, so the task's disclosure stays short;
+// Details keeps the whole text.
+const TASK_DETAIL_CHARS = 800;
+
+// The prompt the swarm was started with: its first line, and the text one click
+// away, since the card title and header cut it at one line.
+function taskRow(s: SwarmSummary): Row {
+  const head = firstLine(s.task, 110);
+  const whole = s.task.trim();
+  if (whole === head) return { icon: "▤", text: `Task · ${head}` };
+  const { detail, cut } = detailOf(whole, TASK_DETAIL_CHARS);
+  return {
+    icon: "▤",
+    text: `Task · ${head}${cut ? ` (${cut}; Details has all of it)` : ""}`,
+    ...(detail ? { detail } : {}),
+  };
+}
+
 export function buildCockpit(
   s: SwarmSummary,
   needs: readonly Need[],
@@ -984,7 +1002,10 @@ export function buildCockpit(
     },
     {
       kind: "rows",
-      items: [{ icon: "◉", text: line.text, ...(line.warn ? { glyph: "warn" as const } : {}) }],
+      items: [
+        taskRow(s),
+        { icon: "◉", text: line.text, ...(line.warn ? { glyph: "warn" as const } : {}) },
+      ],
     },
     ...(s.conclusion !== undefined ? outcome(s) : []),
     ...requests(s, needs, opts.server, false),
@@ -1027,6 +1048,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
     },
     sections: isLiveNow
       ? [
+          { kind: "rows", items: [taskRow(s)] },
           ...requests(s, needs, opts.server),
           ...outcome(s),
           stats(s, now),
@@ -1034,7 +1056,13 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
           ...controls(s),
           ...details,
         ]
-      : [...outcome(s), stats(s, now), ...verbs(s, opts.launch), ...details],
+      : [
+          ...outcome(s),
+          { kind: "rows", items: [taskRow(s)] },
+          stats(s, now),
+          ...verbs(s, opts.launch),
+          ...details,
+        ],
   };
 }
 

@@ -310,7 +310,7 @@ function spanTitle(s: SwarmSummary, t: TurnSpan): string {
           : handleOf(s, w),
   );
   return cut(
-    `${handleOf(s, t.agentId)} turn ${t.n} · ${t.outcome ?? "running"}${took ? ` · ${took}` : ""}${by.length ? ` · woken by ${by.join(", ")}` : ""}`,
+    `turn ${t.n} · ${t.outcome ?? "running"}${took ? ` · ${took}` : ""}${by.length ? ` · woken by ${by.join(", ")}` : ""}`,
     80,
   );
 }

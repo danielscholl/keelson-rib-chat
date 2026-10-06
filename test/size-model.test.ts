@@ -158,11 +158,11 @@ describe("pinnedModels", () => {
       worker: "gpt-6-luna",
     });
     expect(pinnedModels("copilot", "balanced")).toEqual({
-      lead: "claude-opus-5.5",
+      lead: "claude-sonnet-5.5",
       worker: "gpt-6-sol",
     });
     const deep = pinnedModels("copilot", "deep");
-    expect(deep).toEqual({ lead: "claude-opus-5.5", worker: "claude-opus-5.5" });
+    expect(deep).toEqual({ lead: "claude-opus-5.5", worker: "gpt-6.1-sol" });
     expect(pinnedModels("claude", "balanced")).toBeUndefined();
     expect(pinnedModels(undefined, "balanced")).toBeUndefined();
   });
