@@ -7,6 +7,7 @@ import {
 } from "../src/surface/forecast.ts";
 import { hhmm } from "../src/surface/format.ts";
 import { endsAt } from "../src/surface/parts.ts";
+import { turnsTile } from "../src/surface/swarm-board.ts";
 import { SIZE_PRESETS, type SwarmSummary, type TurnSpan } from "../src/types.ts";
 
 type Summary = Pick<SwarmSummary, "spans" | "pace" | "turnsUsed" | "limits" | "startedAt">;
@@ -324,5 +325,32 @@ describe("turn budget forecast", () => {
     expect(forecast(s, now)).toEqual(forecast(s, now));
     expect(s).toEqual(original);
     expect(now.toISOString()).toBe(NOW.toISOString());
+  });
+});
+
+describe("turns tile forecast", () => {
+  const tile = (patch: Record<string, unknown>, now: Date) =>
+    turnsTile({ ...summary(), status: "running", ...patch } as unknown as SwarmSummary, now);
+
+  test("waits for two minutes of runtime before forecasting", () => {
+    const early = tile(
+      { turnsUsed: 1, spans: recentSpans(1, 0.2) },
+      new Date(Date.parse(START) + 30_000),
+    );
+    expect(early.delta).toBeUndefined();
+    expect(early.sub).toBe(`of ${SIZE_PRESETS.medium.maxTurns}`);
+    expect(tile({}, NOW).delta).toBeDefined();
+  });
+
+  test("drops the forecast once the lead has concluded", () => {
+    expect(tile({ conclusion: "done" }, NOW).delta).toBeUndefined();
+  });
+
+  test("still warns at once when no turns are left", () => {
+    const out = tile(
+      { turnsUsed: SIZE_PRESETS.medium.maxTurns },
+      new Date(Date.parse(START) + 30_000),
+    );
+    expect(out.delta?.tone).toBe("warn");
   });
 });

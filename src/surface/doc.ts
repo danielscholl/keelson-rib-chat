@@ -11,11 +11,15 @@ import { channelHref, day, firstLine, hhmm } from "./format.ts";
 
 // The reading pane: a markdown drawer view, one per swarm, so two viewers
 // reading different swarms never race on one key.
-export function buildDoc(s: SwarmSummary | undefined, id: string): string {
+export function buildDoc(s: SwarmSummary | undefined, id: string, linkable = true): string {
   if (!s)
     return `# Swarm ${id}\n\nThis swarm is no longer in the rib's history. Its channel \`#swarm-${id}\` keeps the transcript.\n`;
   const channel = channelHref(s);
-  const transcript = channel ? ` · [transcript ↗](${channel})` : "";
+  const transcript = !channel
+    ? ""
+    : linkable
+      ? ` · [transcript ↗](${channel})`
+      : " · transcript (start ClickClack from Server › Manage to open it)";
   const where = `#${s.channelName}`;
   const title = `# ${firstLine(s.task, 160)}`;
   const after = `\n\n## Task\n\n${s.task}`;

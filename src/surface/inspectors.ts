@@ -12,6 +12,7 @@ import type { ChildRun, GateFileText, OperatorAsk, SwarmSummary } from "../types
 import { channelHref, shortHandle, shortRun, threadHref } from "./format.ts";
 import {
   askText,
+  backToSwarm,
   dismissAskAction,
   gateIdentity,
   healthRows,
@@ -232,7 +233,7 @@ export function buildDetailsInspector(s: SwarmSummary): CanvasBoardView {
           ...taskRows(s.task),
           ...(s.context?.length
             ? s.context.flatMap(contextRows)
-            : [{ text: "No task context recorded." }]),
+            : [{ text: "No issue, PR or file attached." }]),
         ],
       },
       { kind: "rows", title: "Setup", items: setupRows(s, { detailed: true }) },
@@ -251,6 +252,7 @@ export function buildDetailsInspector(s: SwarmSummary): CanvasBoardView {
           },
         ],
       },
+      backToSwarm(s),
     ],
   };
 }

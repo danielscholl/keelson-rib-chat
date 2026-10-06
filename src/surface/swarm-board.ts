@@ -177,15 +177,22 @@ function requests(
 
 // ---- Budget while live, result once ended. ----
 
+// Under this much runtime a pace says nothing about how the budget will end.
+const FORECAST_AFTER_MS = 2 * 60_000;
+
 export function turnsTile(s: SwarmSummary, now = new Date()): Stat {
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
+  const forecasting =
+    live(s) &&
+    s.conclusion === undefined &&
+    (left === 0 || now.getTime() - Date.parse(s.startedAt) >= FORECAST_AFTER_MS);
   return {
     label: "Turns",
     value: s.turnsUsed,
-    sub: live(s)
+    sub: forecasting
       ? `of ${s.limits.maxTurns} · pace over the last ${PACE_WINDOW_MINUTES} min`
       : `of ${s.limits.maxTurns}`,
-    ...(live(s) ? { delta: forecastDelta(forecast(s, now)) } : {}),
+    ...(forecasting ? { delta: forecastDelta(forecast(s, now)) } : {}),
     ...(live(s) && left === 0 ? { tone: "warn" as const } : {}),
     ...(s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
   };

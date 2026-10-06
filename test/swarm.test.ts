@@ -1664,6 +1664,9 @@ describe("changes and records", () => {
       threadRootId: h.server.messages.find((m) => m.body.includes("report back"))?.id,
     });
     expect(recent.find((m) => m.text.startsWith("@operator"))?.kind).toBe("ask");
+    expect(summary.activity?.find((e) => e.kind === "ask")?.text).toMatch(
+      /asked the operator: Shall I wrap up\?$/,
+    );
     expect(recent.find((m) => m.text.includes("Yes, wrap up."))?.author).toBe("operator");
     expect(recent.at(-1)).toMatchObject({ author: "s1-lead", kind: "conclusion" });
     expect(recent.every((m) => m.text.length <= MESSAGE_CHARS)).toBe(true);

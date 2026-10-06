@@ -590,6 +590,19 @@ export function dismissAskAction(s: SwarmSummary, messageId: string): CanvasActi
   };
 }
 
+// An inspector opens over the list, so it names the way back to its swarm.
+export function backToSwarm(s: Pick<SwarmSummary, "id">): {
+  kind: "rows";
+  items: { icon: string; text: string; action: { type: string; payload: { id: string } } }[];
+} {
+  return {
+    kind: "rows",
+    items: [
+      { icon: "←", text: `Swarm ${s.id}`, action: { type: "swarm-open", payload: { id: s.id } } },
+    ],
+  };
+}
+
 export function stopAction(s: SwarmSummary, inline = false): CanvasActionItem {
   const live = (s.runs ?? []).filter((r) => r.status === "running" || r.status === "paused");
   return {
