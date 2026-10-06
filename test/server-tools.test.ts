@@ -22,7 +22,7 @@ function harness(opts: { external?: boolean; live?: number; ended?: number } = {
       url: "http://127.0.0.1:18080",
       running: true,
       pid: 4000,
-      dataDir: "/home/rib-chat/clickclack/data",
+      dataDir: "/home/rib-swarm/clickclack/data",
     }),
   };
   const target: ServerTarget = opts.external
@@ -114,7 +114,7 @@ describe("server tools", () => {
     const h = harness({ ended: 3 });
     const result = await h.run("chat_server_reset");
     expect(result.isError).toBeUndefined();
-    expect(result.content).toContain("/home/rib-chat/clickclack/data");
+    expect(result.content).toContain("/home/rib-swarm/clickclack/data");
     expect(result.content).toContain("forget 3 ended swarm(s)");
     expect(result.content).toContain("confirm: true");
     expect(h.calls).toEqual([]);

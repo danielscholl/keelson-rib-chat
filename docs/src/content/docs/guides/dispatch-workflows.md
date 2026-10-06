@@ -17,12 +17,12 @@ you.
 Two grants apply, and both must name the workflow.
 
 The first is Keelson's. The rib's starts are denied by default, so name each
-workflow for the `chat` rib in Keelson's `config.json`:
+workflow for the `swarm` rib in Keelson's `config.json`:
 
 ```json
 {
   "ribWorkflowGrants": {
-    "chat": ["fix-issue", "investigate"]
+    "swarm": ["fix-issue", "investigate"]
   }
 }
 ```
@@ -50,8 +50,8 @@ To let the swarm answer a workflow's approval gates, name it under
 
 ```json
 {
-  "ribWorkflowGrants": { "chat": ["fix-issue", "investigate"] },
-  "ribApprovalGrants": { "chat": ["fix-issue"] }
+  "ribWorkflowGrants": { "swarm": ["fix-issue", "investigate"] },
+  "ribApprovalGrants": { "swarm": ["fix-issue"] }
 }
 ```
 

@@ -35,9 +35,9 @@ here is a bug, not a style choice.
 
 Naming conventions that keep the family legible:
 
-- Site title is `Keelson Rib · <Name>` (for example `Keelson Rib · Chat`).
+- Site title is `Keelson Rib · <Name>` (for example `Keelson Rib · Swarm`).
 - Pages deploy to the project Pages URL: `site: https://<owner>.github.io`,
-  `base: /<repo>` (for example `/keelson-rib-chat`), `trailingSlash: always`.
+  `base: /<repo>` (for example `/keelson-rib-swarm`), `trailingSlash: always`.
 - Favicon is the shared `keelson-mark.svg`.
 
 ## Where a rib differs from the harness
@@ -57,7 +57,7 @@ than keelson's. These divergences are intentional and load-bearing:
 
 ## What each tier holds, for a rib
 
-Same tiers as keelson, aimed at the concrete rib. The Chat rib's framing:
+Same tiers as keelson, aimed at the concrete rib. The Swarm rib's framing:
 
 - **`concepts/`** — the shape of the rib: what a swarm agent is (an identity, an
   inbox, and a resumable session, not a process), which messages wake which
@@ -72,11 +72,11 @@ Same tiers as keelson, aimed at the concrete rib. The Chat rib's framing:
   way keelson keeps dev setup out of its guides. Don't add a "develop locally"
   page here.
 - **`tutorials/`** — a problem-first learning rail, each page handing off to the
-  next. The capstone is the rib's own deepest task (for Chat, investigating a
+  next. The capstone is the rib's own deepest task (for Swarm, investigating a
   real issue with snapshotted evidence).
 - **`reference/`** — the contract tier for *this* rib: its `chat_*` tools and
   their inputs, the `chat-swarm` workflow, limits and statuses, and
-  configuration. Terse and precise, like keelson's reference pages. The Chat rib
+  configuration. Terse and precise, like keelson's reference pages. The Swarm rib
   publishes no surface and no snapshot keys, so there is no surface page.
 - **`design/`** — decision records and what is deferred. The right home for
   design narrative the source comment policy keeps out of code.
@@ -104,7 +104,7 @@ one-sentence lead-in in the prose above it and a numbered `figcaption`
 ("Figure 1. ..."), never dropped in cold.
 
 A rib's signature figures are usually **app screenshots** of its live surfaces.
-The Chat rib has two: the Swarms tab in Keelson (the index and a swarm's
+The Swarm rib has two: the Swarms tab in Keelson (the index and a swarm's
 board) and the swarm's ClickClack channel mid-swarm. A diagram earns its
 place only for routing and the turn loop. keelson reserves the
 dark `screenshot-figure` frame for app screenshots and the light

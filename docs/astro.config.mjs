@@ -4,23 +4,23 @@ import { defineConfig } from "astro/config";
 import starlightLlmsTxt from "starlight-llms-txt";
 
 // Deploy defaults target this repo's GitHub Pages project URL
-// (https://danielscholl.github.io/keelson-rib-chat/). For a custom domain, set
+// (https://danielscholl.github.io/keelson-rib-swarm/). For a custom domain, set
 // base to "/" and add a CNAME.
 export default defineConfig({
   site: "https://danielscholl.github.io",
-  base: "/keelson-rib-chat",
+  base: "/keelson-rib-swarm",
   trailingSlash: "always",
   integrations: [
     starlight({
-      title: "Keelson Rib · Chat",
+      title: "Keelson Rib · Swarm",
       description:
-        "Chat as a Keelson rib: read-only agent swarms that coordinate over a ClickClack channel a human can watch, steer, and stop.",
+        "Swarm as a Keelson rib: read-only agent swarms that coordinate over a ClickClack channel a human can watch, steer, and stop.",
       favicon: "/assets/keelson-mark.svg",
       customCss: ["./src/styles/keelson-theme.css"],
       // Emits /llms.txt, /llms-full.txt, /llms-small.txt at build (llmstxt.org).
       plugins: [
         starlightLlmsTxt({
-          projectName: "Keelson Rib · Chat",
+          projectName: "Keelson Rib · Swarm",
           description:
             "A Keelson rib that runs agent swarms over ClickClack: each agent is a real chat bot, a dispatcher wakes an agent when it is addressed, agents read caller-supplied task context in place of a forge, and the whole swarm runs as one durable, steerable op.",
         }),
@@ -29,7 +29,7 @@ export default defineConfig({
         {
           icon: "github",
           label: "GitHub",
-          href: "https://github.com/danielscholl/keelson-rib-chat",
+          href: "https://github.com/danielscholl/keelson-rib-swarm",
         },
       ],
       sidebar: [

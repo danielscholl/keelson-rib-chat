@@ -127,7 +127,7 @@ async function ownerClient(): Promise<ClickClackClient> {
   }
   if (!t.token) {
     throw new Error(
-      "no ClickClack owner session: set CLICKCLACK_TOKEN, or store one in the keychain as rib_chat_token",
+      "no ClickClack owner session: set CLICKCLACK_TOKEN, or store one in the keychain as rib_swarm_token",
     );
   }
   const owner = new ClickClackClient(t.url, t.token);
@@ -714,8 +714,8 @@ async function launchSwarm(
 }
 
 const rib: Rib = {
-  id: "chat",
-  displayName: "Chat",
+  id: "swarm",
+  displayName: "Swarm",
 
   contributeDocs: () => [chatDocsSource()],
 

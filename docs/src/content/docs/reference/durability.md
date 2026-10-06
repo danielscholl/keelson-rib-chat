@@ -1,6 +1,6 @@
 ---
 title: Durability
-description: What the Chat rib keeps in ClickClack, in the Keelson op registry, and in memory, and what a restart does to a swarm in flight.
+description: What the Swarm rib keeps in ClickClack, in the Keelson op registry, and in memory, and what a restart does to a swarm in flight.
 sidebar:
   order: 6
 ---
@@ -57,7 +57,7 @@ again, until the swarm ages out of the last 50 or a server reset.
 ## A managed server
 
 When the rib runs its own ClickClack, everything it writes is under
-`<keelson home>/rib-chat/clickclack/`:
+`<keelson home>/rib-swarm/clickclack/`:
 
 | Path | Holds |
 |---|---|

@@ -16,7 +16,7 @@ const VERSION = 1;
 export interface History {
   // Oldest first.
   ended: SwarmSummary[];
-  // Workflows whose gates the host refused to let the chat rib answer.
+  // Workflows whose gates the host refused to let the swarm rib answer.
   refusedApprovals: string[];
 }
 

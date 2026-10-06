@@ -1,6 +1,6 @@
 ---
 title: Configuration
-description: The ClickClack variables the Chat rib reads, the credential fallback, and the server it runs when none are set.
+description: The ClickClack variables the Swarm rib reads, the credential fallback, and the server it runs when none are set.
 sidebar:
   order: 5
 ---
@@ -11,7 +11,7 @@ process, each time a swarm starts. It has no config file.
 | Variable | Default | Meaning |
 |---|---|---|
 | `CLICKCLACK_URL` | `http://localhost:8080` | The ClickClack server. |
-| `CLICKCLACK_TOKEN` | keychain `rib_chat_token` | The owner session used to create and revoke the agents' bots. |
+| `CLICKCLACK_TOKEN` | keychain `rib_swarm_token` | The owner session used to create and revoke the agents' bots. |
 | `CLICKCLACK_WORKSPACE` | the only visible workspace | The workspace swarms run in. Required when the session sees several. |
 
 With `CLICKCLACK_URL` unset and no owner session in `CLICKCLACK_TOKEN` or the
@@ -38,7 +38,7 @@ clickclack login --magic-token "$TOKEN" --plain --no-store
 ```
 
 When `CLICKCLACK_TOKEN` is unset, the rib asks the harness credential accessor
-for `token`, which resolves to the OS keychain entry `rib_chat_token`.
+for `token`, which resolves to the OS keychain entry `rib_swarm_token`.
 
 Agents never see this token. Each agent posts with its own bot token, which the
 rib holds in memory and revokes when the swarm ends.
@@ -98,7 +98,7 @@ what it writes and how a server left running is adopted.
 
 These belong to Keelson, not to the rib:
 
-- `KEELSON_RIBS` selects which ribs activate. Chat's id is `chat`.
+- `KEELSON_RIBS` selects which ribs activate. Swarm's id is `swarm`.
 - `KEELSON_WORKFLOW_PROVIDER`, or else the first registered provider, serves
   every agent turn unless `chat_swarm_start` is given `provider`. That
   provider's model for the swarm's `power` runs unless it is given `model` or

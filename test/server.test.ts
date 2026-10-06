@@ -12,7 +12,7 @@ interface FakeProc {
 
 // A process table and a port, enough to stand in for the OS and a clickclack binary.
 class World {
-  readonly home = mkdtempSync(join(tmpdir(), "rib-chat-"));
+  readonly home = mkdtempSync(join(tmpdir(), "rib-swarm-"));
   readonly procs = new Map<number, FakeProc>();
   readonly signals: [number, string][] = [];
   readonly spawned: string[][] = [];

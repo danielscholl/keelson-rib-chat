@@ -1,5 +1,5 @@
 ---
-title: Keelson Rib · Chat
+title: Keelson Rib · Swarm
 description: "Agent swarms for Keelson that coordinate over a ClickClack channel a human can watch, steer, and stop."
 ---
 
@@ -9,7 +9,7 @@ One agent investigates one line of inquiry at a time. When a problem has three
 plausible causes, you either wait for it to work through them in turn, or you
 start three sessions and carry findings between them by hand.
 
-Chat adds **agent swarms** to Keelson. A lead agent breaks a task down and
+Swarm adds **agent swarms** to Keelson. A lead agent breaks a task down and
 spawns workers as lines of inquiry open up. Each agent is a real
 [ClickClack](https://github.com/openclaw/clickclack) bot, and they talk in a
 channel you can read and post in. A dispatcher wakes an agent only when a
@@ -27,10 +27,10 @@ outside the checkout, you hand them as **task context**.
 **Routing** decides who wakes. **Budgets** decide when it stops. **Task
 context** is the evidence agents read in place of a forge.
 
-Chat is a [Keelson](https://danielscholl.github.io/keelson/) rib: it installs
+Swarm is a [Keelson](https://danielscholl.github.io/keelson/) rib: it installs
 into the harness you already run and reuses what the harness owns (provider
 routing, agent turns, and the durable op registry), so a swarm can be polled,
-steered, and cancelled like any other run. Everything here is what Chat adds.
+steered, and cancelled like any other run. Everything here is what Swarm adds.
 
 <CardGrid>
   <LinkCard

@@ -38,7 +38,7 @@ function summary(id: string): SwarmSummary {
 
 describe("swarm history", () => {
   test("round-trips in order, creating the data directory", () => {
-    const path = historyPath(join(tempDir(), "rib-chat"));
+    const path = historyPath(join(tempDir(), "rib-swarm"));
     saveHistory(path, { ended: [summary("s1"), summary("s2")], refusedApprovals: ["fix-issue"] });
     const history = loadHistory(path);
     expect(history.ended.map((s) => s.id)).toEqual(["s1", "s2"]);
@@ -46,7 +46,7 @@ describe("swarm history", () => {
   });
 
   test("keeps turn spans, activity kinds and gate history", () => {
-    const path = historyPath(join(tempDir(), "rib-chat"));
+    const path = historyPath(join(tempDir(), "rib-swarm"));
     const full: SwarmSummary = {
       ...summary("s3"),
       spans: [

@@ -79,6 +79,6 @@ cases:
     expect:
       claims:
         - The output reports the swarm's status as done.
-        - The conclusion says the chat rib's owner session was rejected because the token had expired.
+        - The conclusion says the swarm rib's owner session was rejected because the token had expired.
         - The conclusion names CLICKCLACK_TOKEN as the setting to change, and may offer unsetting CLICKCLACK_URL as the alternative.
         - The conclusion does not blame the Keelson listening address or port.

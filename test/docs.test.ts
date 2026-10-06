@@ -233,7 +233,7 @@ describe("contributed docs", () => {
         .find((config) => config.crossRibGrants);
       expect(grants).toEqual({
         crossRibGrants: {
-          chat: {
+          swarm: {
             beads: [
               "beads_init",
               "beads_ready",
@@ -676,9 +676,9 @@ describe("contributed docs", () => {
     const normalized = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
     for (const text of [normalized(swarms), normalized(page)]) {
       for (const phrase of [
-        "rib:chat:ask:<swarm>",
-        "rib:chat:gate:<swarm>",
-        "rib:chat:details:<swarm>",
+        "rib:swarm:ask:<swarm>",
+        "rib:swarm:gate:<swarm>",
+        "rib:swarm:details:<swarm>",
         "complete admitted question",
         "bounded question previews",
         "only the question inspector shows the full body",

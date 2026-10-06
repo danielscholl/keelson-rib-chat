@@ -320,7 +320,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .max(START_BOUNDS.maxWorkflows)
         .optional()
         .describe(
-          "Workflows the lead may start on the project, which must be set. Each also needs the operator's ribWorkflowGrants entry for the chat rib.",
+          "Workflows the lead may start on the project, which must be set. Each also needs the operator's ribWorkflowGrants entry for the swarm rib.",
         ),
       lead_tools: z
         .array(
@@ -332,7 +332,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .max(START_BOUNDS.maxLeadTools)
         .optional()
         .describe(
-          "Other ribs' tools the lead holds, e.g. beads_ready, beads_show, beads_close. The host projects a tool onto the lead's turns only when the operator's crossRibGrants lets the chat rib call it.",
+          "Other ribs' tools the lead holds, e.g. beads_ready, beads_show, beads_close. The host projects a tool onto the lead's turns only when the operator's crossRibGrants lets the swarm rib call it.",
         ),
       context: contextSchema
         .optional()

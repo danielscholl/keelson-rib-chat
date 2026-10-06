@@ -6,7 +6,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "rib-chat",
+      "package-name": "rib-swarm",
       "bump-minor-pre-major": true,
       "changelog-sections": [
         { "type": "feat", "section": "Added" },

@@ -1,8 +1,8 @@
-# keelson-rib-chat
+# keelson-rib-swarm
 
 Agent swarms that coordinate over [ClickClack](https://github.com/openclaw/clickclack), as a [Keelson](https://danielscholl.github.io/keelson/) rib.
 
-**Documentation: https://danielscholl.github.io/keelson-rib-chat/**
+**Documentation: https://danielscholl.github.io/keelson-rib-swarm/**
 
 Each agent in a swarm is a real ClickClack bot. Agents talk in a channel a human can watch and post in, a dispatcher wakes an agent when it is addressed, and agents can spawn more agents as a line of inquiry opens up. The whole swarm runs as one durable Keelson op, so it can be polled, steered, and cancelled like any other run.
 
@@ -17,7 +17,7 @@ Link the rib into a Keelson checkout and start it:
 ```sh
 bun install
 bun run link:keelson
-cd ../keelson && KEELSON_RIBS=chat bun dev
+cd ../keelson && KEELSON_RIBS=swarm bun dev
 ```
 
 With a `clickclack` binary on `PATH` (or `CLICKCLACK_BIN` set) that is all. The rib starts a local ClickClack with the first swarm, mints its own owner session, and stops the server when Keelson shuts down. Build the binary from a ClickClack checkout with `go build -o ~/bin/clickclack ./apps/api/cmd/clickclack`.
@@ -35,7 +35,7 @@ To use a ClickClack you run yourself, point the rib at it. It then never starts,
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `CLICKCLACK_URL` | `http://localhost:8080` | The ClickClack server. |
-| `CLICKCLACK_TOKEN` | keychain `rib_chat_token` | Owner session used to mint and revoke the agents' bots. |
+| `CLICKCLACK_TOKEN` | keychain `rib_swarm_token` | Owner session used to mint and revoke the agents' bots. |
 | `CLICKCLACK_WORKSPACE` | the only visible workspace | Required when the session sees several. |
 | `CLICKCLACK_BIN` | `clickclack` on `PATH` | The binary a managed server runs. |
 | `CLICKCLACK_PORT` | `18080` | The loopback port a managed server listens on. |
@@ -102,7 +102,7 @@ The generic `run_status`, `run_events`, `run_cancel`, and `run_steer` tools work
 
 `power` (`fast`, `balanced`, `deep`) picks the provider's model class and now also sets the reasoning effort of every turn (low, medium, high); an explicit `effort` on `chat_swarm_start` overrides it for the whole swarm, and `chat_swarm_status` reports the one in use.
 
-The rib's operating contract (routing, tool boundary, limits, completion, steering, restarts) is served through `keelson_docs` as the `chat` source, so an MCP caller does not need this repository.
+The rib's operating contract (routing, tool boundary, limits, completion, steering, restarts) is served through `keelson_docs` as the `swarm` source, so an MCP caller does not need this repository.
 
 Agents get `chat_post`, `chat_reply`, `chat_read`, `chat_roster`, `chat_context`, `chat_spawn`, and `chat_done`. Those refuse any caller that is not inside a swarm turn.
 
@@ -154,7 +154,7 @@ own `crossRibGrants` entry and is not a lead tool. Failed initialization starts
 without tracker tools and reports the original error. Neither the switch nor
 initialization creates grants; existing-project starts, Retry and Go deeper never initialize.
 
-`lead_tools` hands the lead tools that other ribs register, such as the beads rib's `beads_ready`, `beads_show`, and `beads_close`, so a swarm that works a backlog can read the live queue and close a bead once its pull request merges. Keelson projects a tool onto the lead's turns only when `config.json` grants it to the chat rib under `crossRibGrants` (`"chat": { "beads": ["beads_ready", "beads_close"] }`). Workers never hold them.
+`lead_tools` hands the lead tools that other ribs register, such as the beads rib's `beads_ready`, `beads_show`, and `beads_close`, so a swarm that works a backlog can read the live queue and close a bead once its pull request merges. Keelson projects a tool onto the lead's turns only when `config.json` grants it to the swarm rib under `crossRibGrants` (`"swarm": { "beads": ["beads_ready", "beads_close"] }`). Workers never hold them.
 
 ## Task context
 
@@ -191,4 +191,4 @@ bun dev/server.ts start | status | stop                  # run the managed serve
 keelson eval run evals/chat-swarm.eval.yaml              # run-to-run agreement of real swarms; needs ClickClack, spends model turns
 ```
 
-The docs site lives in `docs/` (Astro Starlight): `cd docs && bun install && bun run dev`. See its [design tier](https://danielscholl.github.io/keelson-rib-chat/design/) for the decisions behind the rib and what is deferred.
+The docs site lives in `docs/` (Astro Starlight): `cd docs && bun install && bun run dev`. See its [design tier](https://danielscholl.github.io/keelson-rib-swarm/design/) for the decisions behind the rib and what is deferred.

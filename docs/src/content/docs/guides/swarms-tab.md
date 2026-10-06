@@ -157,7 +157,7 @@ outcome.
 ### Read or answer a question
 
 **Read question** opens the question inspector at the side, at
-`rib:chat:ask:<swarm>`. **Question** shows the complete admitted question,
+`rib:swarm:ask:<swarm>`. **Question** shows the complete admitted question,
 up to 8,000 characters, without its `@operator` addressing. It names the
 asker, absolute asked time, and a live since clock while actionable.
 **Thread** is a quiet link; **Actions** offers **Reply** and **Dismiss**.
@@ -171,7 +171,7 @@ the question from the tab, not the channel.
 ### Read a gate
 
 **Read gate** and a reviewing card's body open the gate inspector at
-`rib:chat:gate:<swarm>`. Its sections are:
+`rib:swarm:gate:<swarm>`. Its sections are:
 
 | Section | Shows |
 |---|---|
@@ -187,7 +187,7 @@ where operator decisions belong.
 ### Inspect task, context and setup
 
 **Details** opens at the side from the cockpit, live board or ended board,
-at `rib:chat:details:<swarm>`. It is read-only with no composer.
+at `rib:swarm:details:<swarm>`. It is read-only with no composer.
 
 | Section | Shows |
 |---|---|
@@ -633,7 +633,7 @@ Grant initialization and the six lead tools in `config.json`:
 ```json
 {
   "crossRibGrants": {
-    "chat": {
+    "swarm": {
       "beads": [
         "beads_init",
         "beads_ready",
