@@ -91,16 +91,30 @@ const PLANS = [
   power: SwarmPower;
 }[];
 
-function planModels(state: LaunchState, power: SwarmPower): string {
+function planModels(
+  state: LaunchState,
+  power: SwarmPower,
+): { lead: string; worker: string; pinned: boolean } | undefined {
   const pins = pinnedModels(state.provider, power);
-  if (pins) {
-    return pins.lead === pins.worker
-      ? `${pins.lead} · lead and workers`
-      : `lead ${pins.lead} · workers ${pins.worker}`;
-  }
+  if (pins) return { ...pins, pinned: true };
   const provider = state.classes?.find((c) => c.provider === state.provider);
   const model = provider?.classes?.[power] ?? provider?.defaultModel;
-  return model ? `${state.provider}: ${model}` : "";
+  const label = `${state.provider}: ${model}`;
+  return model ? { lead: label, worker: label, pinned: false } : undefined;
+}
+
+// The script redraws these cells when a picked model replaces the selected plan's pair.
+function modelCells(pair: { lead: string; worker: string }): string {
+  const cells: [string, string][] = [
+    ["Lead", pair.lead],
+    ["Workers", pair.worker],
+  ];
+  return cells
+    .map(
+      ([role, model]) =>
+        `<span class="role">${role}</span><span class="model">${esc(model)}</span>`,
+    )
+    .join("");
 }
 
 function budgetSummary(size: SwarmSize): string {
@@ -118,8 +132,7 @@ header { display: flex; align-items: center; gap: 14px; padding: 24px; flex-wrap
 .compact { display: flex; align-items: center; gap: 12px; padding: 16px; }
 .compact input { flex: 1; min-width: 0; width: auto; }
 .compact input::placeholder { color: var(--muted); opacity: 1; }
-.compact-plan { background: var(--card-2); color: var(--fg); border-radius: 999px; }
-.compact-plan, .compact .start, .more { flex: none; white-space: nowrap; }
+.compact .start, .more { flex: none; white-space: nowrap; }
 .more { padding: 6px 0; border: 0; background: transparent; color: var(--fg); }
 .intro { flex: 1; min-width: 220px; }
 h1 { font-size: 22px; line-height: 1.3; margin: 0 0 5px; color: var(--fg-strong); }
@@ -146,19 +159,20 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .plan[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .plan-title { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: var(--fg-strong); }
 .plan-blurb { display: block; margin-top: 8px; color: var(--muted); line-height: 1.5; min-height: 4.5em; }
-.figures { display: flex; gap: 18px; margin-top: 16px; }
+.plan-body { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin-top: 16px; }
+.figures { display: flex; gap: 14px; flex: none; }
 .figure { color: var(--muted); font-size: 12px; }
 .figure strong { display: block; font-size: 24px; line-height: 1.3; font-weight: 600; color: var(--fg-strong); }
-.plan-models { display: block; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 14px; }
-.model-row { margin-top: 16px; }
+.plan-models { flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px;
+  align-items: baseline; border-left: 1px solid var(--border); padding-left: 14px; }
+.plan-models .role { font-family: var(--sans); font-size: 12px; color: var(--muted); }
+.plan-models .model { color: var(--fg); overflow-wrap: anywhere; }
+.plan-models .model.is-picked { color: var(--accent); font-weight: 600; }
+.pickers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
 .detail { margin-top: 10px; line-height: 1.5; }
 .other-model { margin-top: 12px; }
-.project { margin-top: 24px; }
-.project > .hint { margin: -2px 0 12px; }
-.project-row { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(240px, 1fr); gap: 16px; align-items: start; }
-.project-note { padding: 12px 16px; color: var(--muted); border: 1px dashed var(--border); border-radius: 8px; }
-.project-row.has-project { grid-template-columns: 1fr; }
-.has-project .project-note { border: 0; padding: 0; }
+.project-note { margin-top: 10px; }
+.project-note:empty { display: none; }
 .new-project { margin-top: 16px; display: grid; gap: 12px; }
 .access { margin-top: 24px; }
 .access-heading { font-size: 12px; letter-spacing: .08em; margin: 0 0 8px; }
@@ -196,7 +210,7 @@ button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-
 @media (max-width: 640px) {
   header, footer { padding: 18px; }
   .fields { padding: 0 18px 18px; }
-  .project-row { grid-template-columns: 1fr; }
+  .pickers { grid-template-columns: 1fr; }
   .access-row { grid-template-columns: 44px minmax(0, 1fr); gap: 12px; }
   .access-meaning, .access-details { grid-column: 2; }
   .plan-cards { grid-template-columns: 1fr; }
@@ -237,7 +251,11 @@ const PAGE_SCRIPT = `
     && (state.modelSelection === "" || state.modelSelection === "other"
       || (state.modelSelection && typeof state.modelSelection.model === "string"
         && Boolean(state.modelSelection.model)
-        && typeof state.modelSelection.provider === "string"));
+        && typeof state.modelSelection.provider === "string"))
+    && (state.workerSelection === undefined || state.workerSelection === ""
+      || (state.workerSelection && typeof state.workerSelection.model === "string"
+        && Boolean(state.workerSelection.model)
+        && typeof state.workerSelection.provider === "string"));
   keelson.onRestore?.((state) => {
     if (dirty || dispatched || !validDraft(state)) return;
     if (ready) restoreDraft(state);
@@ -376,32 +394,57 @@ const PAGE_SCRIPT = `
   const cards = sizes.map((size) => document.getElementById("plan-" + size));
   const modelSelect = document.getElementById("launch-model");
   const otherModel = document.getElementById("launch-other-model");
-  const models = JSON.parse(form.dataset.models);
+  const workerSelect = document.getElementById("launch-worker-model");
+  // Without a pin the plan's workers follow whatever the lead runs.
+  const planWorker = (card) => {
+    const cells = document.getElementById("models-" + card.dataset.size);
+    return cells && cells.dataset.pinned === "true" ? cells.dataset.worker : "";
+  };
+  const showModels = (card, lead, worker) => {
+    const cells = document.getElementById("models-" + card.dataset.size);
+    if (!cells) return;
+    const keepsPin = cells.dataset.pinned === "true" && (!lead || provider === form.dataset.provider);
+    const workers = worker || (lead && !keepsPin ? lead : "");
+    const pairs = [["Lead", lead, cells.dataset.lead], ["Workers", workers, cells.dataset.worker]];
+    cells.replaceChildren(...pairs.flatMap(([role, picked, plan]) => {
+      const label = document.createElement("span");
+      label.className = "role";
+      label.textContent = role;
+      const value = document.createElement("span");
+      value.className = picked ? "model is-picked" : "model";
+      value.textContent = picked || plan;
+      return [label, value];
+    }));
+  };
   const budgets = JSON.parse(form.dataset.budgets);
   let size = "medium";
   let power = "balanced";
   let model = "";
   let provider = "";
+  let worker = "";
+  let workerProvider = "";
   let otherProvider = form.dataset.provider;
   const providers = JSON.parse(form.dataset.providers);
   const modelError = document.getElementById("model-error");
   const updateChoice = () => {
-    modelBlocked = Boolean(model && provider && !providers.includes(provider));
-    modelError.textContent = modelBlocked
-      ? "Provider " + provider + " is unavailable. Choose a model or plan again."
-      : "";
+    const unavailable = [provider, workerProvider].find((p) => p && !providers.includes(p));
+    const mixed = Boolean(model && worker && provider && workerProvider && provider !== workerProvider);
+    modelBlocked = Boolean(unavailable) || mixed;
+    modelError.textContent = unavailable
+      ? "Provider " + unavailable + " is unavailable. Choose a model or plan again."
+      : mixed ? "Lead and workers need models from the same provider." : "";
     modelError.hidden = !modelBlocked;
     updateStart();
     cards.forEach((card) => {
       const selected = size === card.dataset.size && power === card.dataset.power;
       card.setAttribute("aria-pressed", String(selected));
       document.getElementById("chip-" + card.dataset.size).hidden = !selected;
+      showModels(card, selected ? model : "", selected ? worker : "");
     });
-    document.getElementById("model-detail").textContent = model
-      ? "Every agent runs " + model + ", lead and workers alike."
-      : "Keeps the plan's pair: " + models[power] + ".";
     document.getElementById("launch-summary").textContent = budgets[size];
-    document.getElementById("launch-models").textContent = model ? " on " + model : "";
+    document.getElementById("launch-models").textContent = model && worker
+      ? (model === worker ? " on " + model : " on " + model + " and " + worker)
+      : model ? " with lead " + model : worker ? " with workers " + worker : "";
     document.getElementById("other-model-row").hidden = modelSelect.value !== "other";
   };
   cards.forEach((card) => card.addEventListener("click", () => {
@@ -409,7 +452,10 @@ const PAGE_SCRIPT = `
     power = card.dataset.power;
     model = "";
     provider = "";
+    worker = "";
+    workerProvider = "";
     modelSelect.value = "";
+    workerSelect.value = "";
     otherModel.value = "";
     otherProvider = form.dataset.provider;
     updateChoice();
@@ -428,6 +474,13 @@ const PAGE_SCRIPT = `
     updateModel();
   });
   watchText(otherModel, updateModel);
+  const updateWorker = () => {
+    const choice = workerSelect.value ? JSON.parse(workerSelect.value) : { model: "", provider: "" };
+    worker = choice.model;
+    workerProvider = worker ? choice.provider : "";
+    updateChoice();
+  };
+  watchText(workerSelect, updateWorker);
   updateChoice();
   document.getElementById("launch-fewer")?.addEventListener("click", () => collapse?.());
   const renderPermissions = () => {
@@ -447,7 +500,6 @@ const PAGE_SCRIPT = `
     const hasProject = Boolean(project.value);
     const creating = isNew();
     if (newFields) newFields.hidden = !creating;
-    document.getElementById("project-hint").hidden = hasProject && !creating;
     row.classList.toggle("has-project", hasProject);
     note.textContent = creating ? "Write is on. Agents write in branch-isolated worktrees; a new repository without origin uses local writing." : hasProject
       ? "Agents read " + selected.dataset.path + " and run read-only commands there. Nothing changes unless you allow more."
@@ -528,6 +580,7 @@ const PAGE_SCRIPT = `
     workflows: [...workflows], workflowEntry: controls?.entry.value ?? "",
     modelSelection: modelSelect.value === "other" ? "other"
       : model ? { model, provider } : "",
+    workerSelection: worker ? { model: worker, provider: workerProvider } : "",
     otherModel: otherModel.value, modelProvider: otherProvider
   });
   restoreDraft = (state) => {
@@ -549,6 +602,17 @@ const PAGE_SCRIPT = `
       }
       modelSelect.value = value;
     } else modelSelect.value = state.modelSelection;
+    if (state.workerSelection) {
+      const value = JSON.stringify(state.workerSelection);
+      if (!Array.from(workerSelect.options).some((option) => option.value === value)) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = state.workerSelection.model + " · " + state.workerSelection.provider;
+        workerSelect.append(option);
+      }
+      workerSelect.value = value;
+    } else workerSelect.value = "";
+    updateWorker();
     updateModel();
     project.value = (state.project !== "new" || form.dataset.canCreateProject === "true")
       && Array.from(project.options).some((option) => option.value === state.project)
@@ -601,6 +665,14 @@ const PAGE_SCRIPT = `
       payload.size = size;
       payload.model = model;
       if (provider) payload.provider = provider;
+      const workers = worker
+        || (provider === form.dataset.provider ? planWorker(cards.find((card) => card.dataset.size === size)) : "");
+      if (workers) payload.worker_model = workers;
+    } else if (worker) {
+      payload.size = size;
+      payload.power = power;
+      payload.worker_model = worker;
+      if (workerProvider) payload.provider = workerProvider;
     } else if (size !== "medium" || power !== "balanced") {
       payload.size = size;
       if (power !== "balanced") payload.power = power;
@@ -633,7 +705,8 @@ const PAGE_SCRIPT = `
     version: 1, task: task.value, expanded: false, customize: false,
     size: "medium", power: "balanced", project: "", projectRoot: "",
     permissions: { write: false, workflows: false, tracker: false },
-    workflows: [], workflowEntry: "", modelSelection: "", otherModel: "", modelProvider: ""
+    workflows: [], workflowEntry: "", modelSelection: "", workerSelection: "", otherModel: "",
+    modelProvider: ""
   });
   const startCompact = () => dispatch({
     nonce: compact.dataset.nonce,
@@ -663,7 +736,7 @@ const PAGE_SCRIPT = `
   restoreDraft = (state) => {
     if (state.expanded || /[\\r\\n]/.test(state.task) || state.customize
       || state.size !== "medium" || state.power !== "balanced" || state.project
-      || state.modelSelection || state.otherModel || state.workflows.length
+      || state.modelSelection || state.workerSelection || state.otherModel || state.workflows.length
       || state.workflowEntry || Object.values(state.permissions).some(Boolean)) {
       expand();
       restoreDraft(state);
@@ -674,7 +747,6 @@ const PAGE_SCRIPT = `
     expand(true);
     saveEdit();
   };
-  document.getElementById("compact-plan").addEventListener("click", expandFromClick);
   document.getElementById("compact-more").addEventListener("click", expandFromClick);
   };
   // Fewer options keeps the task's first line and drops every other choice,
@@ -759,12 +831,12 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
   const budgets = Object.fromEntries(SWARM_SIZES.map((s) => [s, budgetSummary(s)]));
   const cards = PLANS.map((plan) => {
     const l = SIZE_PRESETS[plan.size];
+    const pair = models[plan.power];
     const selected = plan.size === "medium";
     return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
       <span class="plan-title">${plan.name}<span class="chip" id="chip-${plan.size}"${selected ? "" : " hidden"}>selected</span></span>
       <span class="plan-blurb">${plan.blurb}</span>
-      <span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>
-      <span class="models plan-models">${esc(models[plan.power]!)}</span>
+      <span class="plan-body"><span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}" data-pinned="${pair.pinned}">${modelCells(pair)}</span>` : ""}</span>
     </button>`;
   }).join("");
   const catalog = [...(state.classes ?? [])];
@@ -798,27 +870,24 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     <div class="intro"><h1>New swarm</h1><p class="hint">Agents investigate, debate, and bring back a conclusion.</p></div>
     ${state.hasSwarms ? '<button class="more" id="launch-fewer" type="button" aria-controls="launch-root">Fewer options<span class="chevron" aria-hidden="true">⌃</span></button>' : ""}
   </header>
-  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-models="${esc(JSON.stringify(models))}" data-budgets="${esc(JSON.stringify(budgets))}">
+  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-budgets="${esc(JSON.stringify(budgets))}">
     <div class="fields">
       <label for="launch-task">TASK</label>
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
       <p class="hint task-hint" id="task-hint" aria-live="polite"></p>
       <section class="plans" aria-labelledby="plans-heading">
-        <div class="plans-heading"><span class="eyebrow" id="plans-heading">HOW HARD IT WORKS</span></div>
+        <div class="plans-heading"><span class="eyebrow" id="plans-heading">SIZE</span></div>
         <div class="plan-cards">${cards}</div>
-        <div class="model-row">
-          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-detail">Keeps the plan's pair: ${esc(models.balanced!)}.</p><p class="hint detail" id="model-error" role="alert" hidden></p></div>
-        </div>
       </section>
-      <div class="project">
-        <label for="launch-project">PROJECT</label>
-        <p class="hint" id="project-hint">${state.canCreateProject ? "Existing projects start with read access. New project starts with Write on." : "Picking one lets agents read it. Anything more is a switch."}</p>
-        <div class="project-row" id="project-row">
-          <select id="launch-project" name="project" aria-describedby="project-hint project-note">
+      <div class="pickers">
+          <div><label for="launch-model">LEAD MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's lead</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>
+          <div><label for="launch-worker-model">WORKERS MODEL</label><select id="launch-worker-model" name="worker_model"><option value="" selected>the plan's workers</option>${modelOptions}</select></div>
+          <div class="project-row" id="project-row"><label for="launch-project">PROJECT</label><select id="launch-project" name="project" aria-describedby="project-note">
             <option value="" selected>No project · chat only</option>${options}${state.canCreateProject ? '<option value="new">New project…</option>' : ""}
-          </select>
-          <p class="project-note" id="project-note">Chat mode. Agents work from the task and anything you attach. Nothing on disk is read or changed. Pick a project to let them read it, and more switches appear here.</p>
-        </div>
+          </select></div>
+      </div>
+      <div class="project">
+        <p class="hint project-note" id="project-note"></p>
         ${
           state.canCreateProject
             ? `<div class="new-project" id="new-project-fields" hidden>
@@ -836,12 +905,10 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
       <p class="summary" aria-live="polite"><span id="launch-summary">${budgets.medium}</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>
     </footer>
   </form>`;
-  const l = SIZE_PRESETS.medium;
   const compact = `<div class="compact" id="launch-compact" data-nonce="${esc(nonce)}">
     <input id="compact-task" type="text" aria-label="Swarm task" placeholder="${esc(COMPACT_PLACEHOLDER)}">
-    <button class="compact-plan" id="compact-plan" type="button" aria-expanded="false" aria-controls="launch-root">${PLANS[1].name} · ${l.wallClockMs / 60_000} min<span class="chevron" aria-hidden="true">⌄</span></button>
     <button class="start" id="compact-start" type="button">Start</button>
-    <button class="more" id="compact-more" type="button" aria-expanded="false" aria-controls="launch-root">More options</button>
+    <button class="more" id="compact-more" type="button" aria-expanded="false" aria-controls="launch-root">Options</button>
   </div>`;
   return `<style>${designTokenCssBlock()}\n${PAGE_CSS}</style>
 <main id="launch-root" data-generation="${generation}">${state.hasSwarms ? compact : expanded}</main>

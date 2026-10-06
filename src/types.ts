@@ -55,9 +55,9 @@ export type SwarmSize = (typeof SWARM_SIZES)[number];
 
 // The launcher's plan for each size; the board names a swarm's size by its plan.
 export const PLAN_NAME: Readonly<Record<SwarmSize, string>> = {
-  small: "Quick look",
-  medium: "Working session",
-  large: "Deep dig",
+  small: "Scout",
+  medium: "Crew",
+  large: "Fleet",
 };
 
 // Medium is DEFAULT_LIMITS, so a start that names no size behaves as it always has.
@@ -90,18 +90,18 @@ export const POWER_EFFORT: Record<SwarmPower, ReasoningEffortLevel> = {
   balanced: "medium",
   deep: "high",
 };
-// The lead and worker model each power pins on a provider whose pairs the rib
-// has measured. A named model, or an unlisted provider, leaves the host's
-// model class in charge.
+// The lead and worker model each power pins on a provider. Leads stay on Claude,
+// which closes a swarm reliably. A named model, or an unlisted provider, leaves
+// the host's model class in charge.
 export interface PowerModels {
   lead: string;
   worker: string;
 }
 export const POWER_MODELS: Readonly<Record<string, Readonly<Record<SwarmPower, PowerModels>>>> = {
   copilot: {
-    fast: { lead: "claude-sonnet-5.5", worker: "claude-sonnet-5.5" },
-    balanced: { lead: "claude-sonnet-5", worker: "claude-sonnet-5.5" },
-    deep: { lead: "claude-opus-5.5", worker: "claude-sonnet-5" },
+    fast: { lead: "claude-sonnet-5.5", worker: "gpt-6-luna" },
+    balanced: { lead: "claude-opus-5.5", worker: "gpt-6-sol" },
+    deep: { lead: "claude-opus-5.5", worker: "claude-opus-5.5" },
   },
 };
 export function pinnedModels(

@@ -190,7 +190,7 @@ at `rib:chat:details:<swarm>`. It is read-only with no composer.
 | Section | Shows |
 |---|---|
 | **Task and context** | The full task in ordered disclosures of at most 4,000 characters; every retained context excerpt with its id, kind/title, source, retrieval time, head/base SHA and character count |
-| **Setup** | The plan (**Plan: Quick look**, or **Quick look, adjusted** when limits moved off it), all effective limits, requested models per role/provider, recorded overrides and effort |
+| **Setup** | The plan (**Plan: Scout**, or **Scout, adjusted** when limits moved off it), all effective limits, requested models per role/provider, recorded overrides and effort |
 | **Health** | Recorded faults, disconnection and idle evidence |
 | **Transcript** | One transcript row, or an explicit not-recorded state |
 
@@ -369,7 +369,7 @@ If that gate becomes quiet, its quiet request keeps **Read gate** while
 
 An ended row opens its board in the drawer. The per-swarm board still composes
 for MCP clients, live or ended. Its header carries the lifecycle pill, the
-plan (**Quick look**, **Working session** or **Deep dig**), the turns, and a
+plan (**Scout**, **Crew** or **Fleet**), the turns, and a
 dot per agent. Sizes are named by plan everywhere; the ended header chip does
 not name the model.
 
@@ -561,12 +561,12 @@ not its deadline window or native rendering.
 The **Start a swarm** header above the index is a themed HTML launcher. With a
 live or retained ended swarm and no restored expanded draft, it starts as
 one compact line. Type in **Describe a problem. Agents work it out
-together.** The **Working session · 30 min** chip sits beside **Start**.
+together.** **Start** and **Options** sit beside it.
 
 Compact Start uses chat mode with no project: nothing on disk is read or
 changed. It sends no size, power, model, provider, workflow or lead-tool
-overrides. **More options** or the **Working session** chip expands the
-launcher in place without losing the task. Expansion alone does not change
+overrides. **Options** expands the launcher in place without losing the
+task. Expansion alone does not change
 the default plan. **Fewer options** returns to the compact line, keeping the
 task's first line and dropping every other choice.
 
@@ -685,30 +685,33 @@ on a branch** when Write is on, then **, then \<workflows\>** when workflows
 are named, then **, with beads** when the tracker is on. The beads suffix
 records switch intent, not a promise that every tracker tool was granted.
 
-**How hard it works** offers three plans. **Working session is selected by
+**Size** offers three plans. **Crew is selected by
 default**. Each card shows its agents, turns, minutes and the effective
-provider's models. Matching lead and worker models read as one model for lead
-and workers; split pairs name both. Providers without pins use the matching
+provider's models. Beside the figures, every card lists a Lead row and a Workers
+row, even when they name the same model. Providers without pins use the matching
 class model.
 
 | Plan | For | Agents | Turns | Minutes |
 | --- | --- | --- | --- | --- |
-| Quick look | A narrow question, or a first pass before a bigger run. | 3 | 20 | 15 |
-| Working session | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
-| Deep dig | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
+| Scout | A narrow question, or a first pass before a bigger run. | 3 | 20 | 15 |
+| Crew | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
+| Fleet | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
 
-**Model** sits under the cards and starts on **the plan's models**. Provider
-groups contain each provider's default model, class models and pinned models,
-without duplicates within a group. **Other…** accepts a model name and uses the
-effective default provider. Naming a model runs every agent on it and keeps the
-card selected. Picking a card clears the named model and restores that plan.
+**Lead model** and **Workers model** sit under the cards, beside **Project**, and start on
+the plan's lead and the plan's workers. Provider groups contain each provider's
+default model, class models and pinned models, without duplicates within a
+group. **Other…** on **Lead model** accepts a model name and uses the effective default
+provider. Each picker replaces its own row on the selected card and keeps the
+card selected; picking only a lead keeps the plan's workers, and picking only
+workers keeps the plan's lead. Lead and workers must come from one provider.
+Picking a card clears both picks and restores that plan.
 
 **Start swarm** sits at the end of the form with one sentence beside it: N
-agents for up to N min, then on \<model\> when one is named, then where they
+agents for up to N min, then the picked models, then where they
 work, such as **5 agents for up to 30 min, chat only.** or **8 agents for up to
 60 min on claude-opus-5.5, reading keelson and writing on a branch, then
-fix-issue, with beads.** Untouched Working session sends no size, power or
-model overrides. Quick look records small/fast; Deep dig records large/deep. A
+fix-issue, with beads.** Untouched Crew sends no size, power or
+model overrides. Scout records small/fast; Fleet records large/deep. A
 named model records size, model and provider, with no power. For advanced
 inputs, use
 [`chat_swarm_start`](../../reference/tools-and-commands/#chat_swarm_start).
@@ -764,9 +767,9 @@ appears in the same live area.
 
 A swarm that did not finish offers **Retry**, with a **Retry with** model
 picker seeded with its effective model/provider, since the model is the usual
-cause. A finished Quick look or Working session offers **Go deeper**: one click
+cause. A finished Scout or Crew offers **Go deeper**: one click
 starts the same launch on the next plan up with that plan's models. A finished
-Deep dig offers neither. Both start a new swarm with the same task, project,
+Fleet offers neither. Both start a new swarm with the same task, project,
 workflows, and context. Their hint names what they reuse, including how many
 context items and when they were captured; context is not refreshed.
 
