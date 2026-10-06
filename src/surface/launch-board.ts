@@ -91,16 +91,34 @@ const PLANS = [
   power: SwarmPower;
 }[];
 
-function planModels(state: LaunchState, power: SwarmPower): string {
+function planModels(
+  state: LaunchState,
+  power: SwarmPower,
+): { lead: string; worker: string } | undefined {
   const pins = pinnedModels(state.provider, power);
-  if (pins) {
-    return pins.lead === pins.worker
-      ? `${pins.lead} · lead and workers`
-      : `lead ${pins.lead} · workers ${pins.worker}`;
-  }
+  if (pins) return pins;
   const provider = state.classes?.find((c) => c.provider === state.provider);
   const model = provider?.classes?.[power] ?? provider?.defaultModel;
-  return model ? `${state.provider}: ${model}` : "";
+  return model
+    ? { lead: `${state.provider}: ${model}`, worker: `${state.provider}: ${model}` }
+    : undefined;
+}
+
+// The script redraws these cells when a picked model replaces the selected plan's pair.
+function modelCells(pair: { lead: string; worker: string }): string {
+  const cells: [string, string][] =
+    pair.lead === pair.worker
+      ? [["Lead and workers", pair.lead]]
+      : [
+          ["Lead", pair.lead],
+          ["Workers", pair.worker],
+        ];
+  return cells
+    .map(
+      ([role, model]) =>
+        `<span class="role">${role}</span><span class="model">${esc(model)}</span>`,
+    )
+    .join("");
 }
 
 function budgetSummary(size: SwarmSize): string {
@@ -148,7 +166,11 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .figures { display: flex; gap: 18px; margin-top: 16px; }
 .figure { color: var(--muted); font-size: 12px; }
 .figure strong { display: block; font-size: 24px; line-height: 1.3; font-weight: 600; color: var(--fg-strong); }
-.plan-models { display: block; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 14px; }
+.plan-models { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: baseline;
+  border-top: 1px solid var(--border); padding-top: 12px; margin-top: auto; }
+.plan-models .role { font-family: var(--sans); font-size: 12px; color: var(--muted); }
+.plan-models .model { color: var(--fg); overflow-wrap: anywhere; }
+.plan-models .model.is-picked { color: var(--accent); font-weight: 600; }
 .model-row { margin-top: 16px; }
 .detail { margin-top: 10px; line-height: 1.5; }
 .other-model { margin-top: 12px; }
@@ -375,7 +397,22 @@ const PAGE_SCRIPT = `
   const cards = sizes.map((size) => document.getElementById("plan-" + size));
   const modelSelect = document.getElementById("launch-model");
   const otherModel = document.getElementById("launch-other-model");
-  const models = JSON.parse(form.dataset.models);
+  const showModels = (card, picked) => {
+    const cells = document.getElementById("models-" + card.dataset.size);
+    if (!cells) return;
+    const lead = picked || cells.dataset.lead;
+    const worker = picked || cells.dataset.worker;
+    const pairs = lead === worker ? [["Lead and workers", lead]] : [["Lead", lead], ["Workers", worker]];
+    cells.replaceChildren(...pairs.flatMap(([role, name]) => {
+      const label = document.createElement("span");
+      label.className = "role";
+      label.textContent = role;
+      const value = document.createElement("span");
+      value.className = picked ? "model is-picked" : "model";
+      value.textContent = name;
+      return [label, value];
+    }));
+  };
   const budgets = JSON.parse(form.dataset.budgets);
   let size = "medium";
   let power = "balanced";
@@ -395,10 +432,8 @@ const PAGE_SCRIPT = `
       const selected = size === card.dataset.size && power === card.dataset.power;
       card.setAttribute("aria-pressed", String(selected));
       document.getElementById("chip-" + card.dataset.size).hidden = !selected;
+      showModels(card, selected ? model : "");
     });
-    document.getElementById("model-detail").textContent = model
-      ? "Every agent runs " + model + ", lead and workers alike."
-      : "Keeps the plan's pair: " + models[power] + ".";
     document.getElementById("launch-summary").textContent = budgets[size];
     document.getElementById("launch-models").textContent = model ? " on " + model : "";
     document.getElementById("other-model-row").hidden = modelSelect.value !== "other";
@@ -757,12 +792,13 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
   const budgets = Object.fromEntries(SWARM_SIZES.map((s) => [s, budgetSummary(s)]));
   const cards = PLANS.map((plan) => {
     const l = SIZE_PRESETS[plan.size];
+    const pair = models[plan.power];
     const selected = plan.size === "medium";
     return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
       <span class="plan-title">${plan.name}<span class="chip" id="chip-${plan.size}"${selected ? "" : " hidden"}>selected</span></span>
       <span class="plan-blurb">${plan.blurb}</span>
       <span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>
-      <span class="models plan-models">${esc(models[plan.power]!)}</span>
+      ${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}">${modelCells(pair)}</span>` : ""}
     </button>`;
   }).join("");
   const catalog = [...(state.classes ?? [])];
@@ -796,7 +832,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     <div class="intro"><h1>New swarm</h1><p class="hint">Agents investigate, debate, and bring back a conclusion.</p></div>
     ${state.hasSwarms ? '<button class="more" id="launch-fewer" type="button" aria-controls="launch-root">Fewer options<span class="chevron" aria-hidden="true">⌃</span></button>' : ""}
   </header>
-  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-models="${esc(JSON.stringify(models))}" data-budgets="${esc(JSON.stringify(budgets))}">
+  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-budgets="${esc(JSON.stringify(budgets))}">
     <div class="fields">
       <label for="launch-task">TASK</label>
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
@@ -805,7 +841,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
         <div class="plans-heading"><span class="eyebrow" id="plans-heading">HOW HARD IT WORKS</span></div>
         <div class="plan-cards">${cards}</div>
         <div class="model-row">
-          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-detail">Keeps the plan's pair: ${esc(models.balanced!)}.</p><p class="hint detail" id="model-error" role="alert" hidden></p></div>
+          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>
         </div>
       </section>
       <div class="project">

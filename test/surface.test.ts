@@ -9255,9 +9255,8 @@ describe("launching from the tab", () => {
     trigger("launch-model", "change");
     expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("true");
     expect(e["chip-large"]!.hidden).toBe(false);
-    expect(e["model-detail"]!.textContent).toBe(
-      "Every agent runs claude-opus-5.5, lead and workers alike.",
-    );
+    expect(e["models-large"]!.textContent).toBe("Lead and workersclaude-opus-5.5");
+    expect(e["models-medium"]!.textContent).toBe("Leadclaude-sonnet-5Workersclaude-sonnet-5.5");
     expect(e["launch-models"]!.textContent).toBe(" on claude-opus-5.5");
     expect(e["launch-summary"]!.textContent).toBe("8 agents for up to 60 min");
     capture({ size: "large", model: "claude-opus-5.5", provider: "copilot" });
@@ -9266,6 +9265,7 @@ describe("launching from the tab", () => {
     expect(e["chip-large"]!.hidden).toBe(true);
     expect(e["launch-model"]!.value).toBe("");
     expect(e["launch-models"]!.textContent).toBe("");
+    expect(e["models-large"]!.textContent).toBe("Leadclaude-opus-5.5Workersclaude-sonnet-5");
     capture({});
     e["launch-project"]!.value = "p1";
     trigger("launch-project", "change");
@@ -9314,9 +9314,7 @@ describe("launching from the tab", () => {
     release();
     e["launch-model"]!.value = "";
     trigger("launch-model", "change");
-    expect(e["model-detail"]!.textContent).toBe(
-      "Keeps the plan's pair: claude-sonnet-5.5 · lead and workers.",
-    );
+    expect(e["models-small"]!.textContent).toBe("Lead and workersclaude-sonnet-5.5");
     expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
     trigger("launch-start");
     expect(calls.at(-1)?.payload).toMatchObject({ size: "small", power: "fast" });
@@ -9336,9 +9334,9 @@ describe("launching from the tab", () => {
       expect(e["other-model-row"]!.hidden).toBe(false);
       e["launch-other-model"]!.value = "  other-vendor/model <name>  ";
       trigger("launch-other-model", "input");
-      expect(e["model-detail"]!.textContent).toBe(
-        "Every agent runs other-vendor/model <name>, lead and workers alike.",
-      );
+      if (e["models-medium"]) {
+        expect(e["models-medium"].textContent).toBe("Lead and workersother-vendor/model <name>");
+      }
       trigger("launch-start");
       expect(calls.at(-1)?.payload).toEqual({
         nonce: "instance-nonce",
@@ -11261,7 +11259,7 @@ describe("launching from the tab", () => {
       { provider: "copilot", classes: { fast: "mini-6", balanced: "gpt-6", deep: "gpt-6-pro" } },
     ];
     expect(buildLaunch({ projects, provider: "copilot", classes }, "nonce")).toContain(
-      "lead claude-sonnet-5 · workers claude-sonnet-5.5",
+      'data-lead="claude-sonnet-5" data-worker="claude-sonnet-5.5"',
     );
     const fallback = buildLaunch(
       { projects, provider: "claude", classes: [...classes].reverse() },
@@ -11295,9 +11293,13 @@ describe("launching from the tab", () => {
 
   test("plan lines use equal or split pins and provider class/default fallbacks", () => {
     const pinned = buildLaunch({ projects: [], provider: "copilot" }, "nonce");
-    expect(pinned).toContain("claude-sonnet-5.5 · lead and workers");
-    expect(pinned).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
-    expect(pinned).toContain("lead claude-opus-5.5 · workers claude-sonnet-5");
+    const cell = (role: string, model: string) =>
+      `<span class="role">${role}</span><span class="model">${model}</span>`;
+    expect(pinned).toContain(cell("Lead and workers", "claude-sonnet-5.5"));
+    expect(pinned).toContain(
+      cell("Lead", "claude-sonnet-5") + cell("Workers", "claude-sonnet-5.5"),
+    );
+    expect(pinned).toContain(cell("Lead", "claude-opus-5.5") + cell("Workers", "claude-sonnet-5"));
     const flat = buildLaunch(
       {
         projects: [],
@@ -11308,7 +11310,7 @@ describe("launching from the tab", () => {
       },
       "nonce",
     );
-    expect(flat.match(/class="models plan-models">claude: auto/g)).toHaveLength(3);
+    expect(flat.match(/<span class="model">claude: auto<\/span>/g)).toHaveLength(3);
     const defaults = buildLaunch(
       {
         projects: [],
@@ -11317,7 +11319,7 @@ describe("launching from the tab", () => {
       },
       "nonce",
     );
-    expect(defaults.match(/class="models plan-models">default-only: default-model/g)).toHaveLength(
+    expect(defaults.match(/<span class="model">default-only: default-model<\/span>/g)).toHaveLength(
       3,
     );
   });
@@ -12720,7 +12722,7 @@ describe("the rib's surface", () => {
       expect(json).not.toContain("fallback");
       expect(json).not.toContain(`"label":"${DEFAULT_PROJECT_NAME}"`);
       expect(json).toContain("/tmp/sample");
-      expect(json).toContain("lead claude-sonnet-5 · workers claude-sonnet-5.5");
+      expect(String(page)).toContain('data-lead="claude-sonnet-5" data-worker="claude-sonnet-5.5"');
       expect(json).not.toContain("claude: b");
       for (const model of ["claude-default", "copilot-default", "default-only-model"]) {
         expect(json).toContain(model);
@@ -12740,9 +12742,7 @@ describe("the rib's surface", () => {
       delete process.env.KEELSON_WORKFLOW_PROVIDER;
       const hostDefaultPage = String(await sm.composers.get(LAUNCH_KEY)!.compose());
       expect(hostDefaultPage).toContain("claude: b");
-      expect(hostDefaultPage.match(/id="model-detail">Keeps the plan's pair: ([^<]*)\./)![1]).toBe(
-        "claude: b",
-      );
+      expect(hostDefaultPage.match(/id="models-medium" data-lead="([^"]*)"/)![1]).toBe("claude: b");
       expect(hostDefaultPage).toContain("default-only-model");
     } finally {
       if (saved === undefined) delete process.env.KEELSON_WORKFLOW_PROVIDER;

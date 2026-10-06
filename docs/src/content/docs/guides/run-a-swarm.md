@@ -43,8 +43,8 @@ provider's models. Providers without pins use the matching class model.
 **Model** sits under the cards and starts on **the plan's models**. Provider
 groups contain each provider's default model, class models and pinned models,
 without duplicates within a group. **Other…** accepts a model name and uses the
-effective default provider. Naming a model runs every agent on it and keeps the
-card selected. Picking a card clears the named model and restores that plan.
+effective default provider. Naming a model runs every agent on it, keeps the
+card selected and shows the model on that card. Picking a card clears the named model and restores that plan.
 
 **Start swarm** sits at the end of the form with one sentence beside it: N
 agents for up to N min, then on \<model\> when one is named, then where they

@@ -320,7 +320,7 @@ describe("contributed docs", () => {
         "Model sits under the cards and starts on the plan's models",
         "default model, class models and pinned models, without duplicates within a group",
         "Other… accepts a model name and uses the effective default provider",
-        "Naming a model runs every agent on it and keeps the card selected",
+        "Naming a model runs every agent on it, keeps the card selected and shows the model on that card",
         "Picking a card clears the named model and restores that plan",
         "Start swarm sits at the end of the form with one sentence beside it",
         `${SIZE_PRESETS.medium.maxAgents} agents for up to ${SIZE_PRESETS.medium.wallClockMs / 60_000} min, chat only.`,
