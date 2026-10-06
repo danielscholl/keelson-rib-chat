@@ -93,11 +93,11 @@ provider. A \`provider\` that is not registered, or that cannot run agent turns,
 fails the start before a channel is made.
 
 Models. Without \`model\`, the rib pins the models by \`power\` on copilot:
-balanced runs claude-sonnet-5 as the lead and claude-sonnet-5.5 as the workers,
-deep runs claude-opus-5.5 as the lead and claude-sonnet-5 as the workers, and
-fast runs claude-sonnet-5.5 throughout. The lead's model is chosen for how it
-closes a swarm and the workers' for speed; a \`worker_model\` alone keeps the
-lead's pin, and \`model\` switches the pins off. A Haiku model is refused for
+fast runs claude-sonnet-5.5 as the lead and gpt-6-luna as the workers,
+balanced runs claude-opus-5.5 as the lead and gpt-6-sol as the workers, and
+deep runs claude-opus-5.5 throughout. The lead stays on a Claude model, which
+closes a swarm reliably; a \`worker_model\` alone keeps the lead's pin, and
+\`model\` switches the pins off. A Haiku model is refused for
 either role, since it rejects the reasoning effort every power asks for and a
 lead on it fails three turns in a second. On any other provider, that
 provider serves its model for the swarm's \`power\`, and the host's
@@ -640,7 +640,7 @@ disclosures of at most 4,000 characters, and every retained context excerpt
 with its id, kind/title, source, retrieval time, head/base SHA and character
 count. A single-part task is labeled Task; longer tasks use numbered parts.
 Excerpts are not complete source bodies; missing legacy excerpts and
-truncation are explicit. Setup names the plan (Plan: Quick look, or Quick look,
+truncation are explicit. Setup names the plan (Plan: Scout, or Scout,
 adjusted when limits moved off it), all effective
 limits, requested models per role/provider, recorded overrides and effort.
 Actually served models stay separate from requested settings; missing legacy
@@ -858,28 +858,32 @@ No project · chat only is the default. Projects list as name · path, with the
 home directory shortened to ~; picking one gives agents read access, not write
 access or workflows.
 
-How hard it works offers three plans. Working session is selected by default.
+Size offers three plans. Crew is selected by default.
 Each card shows its agents, turns, minutes and the effective provider's models.
 Beside the figures, every card lists a Lead row and a Workers row, even when
 they name the same model. Providers without pins use the matching class model.
 
 | Plan | For | Agents | Turns | Minutes |
 | --- | --- | --- | --- | --- |
-| Quick look | A narrow question, or a first pass before a bigger run. | ${SIZE_PRESETS.small.maxAgents} | ${SIZE_PRESETS.small.maxTurns} | ${minutes(SIZE_PRESETS.small.wallClockMs)} |
-| Working session | Most tasks: investigate, debate, and decide. | ${SIZE_PRESETS.medium.maxAgents} | ${SIZE_PRESETS.medium.maxTurns} | ${minutes(SIZE_PRESETS.medium.wallClockMs)} |
-| Deep dig | Wide or hard problems that are worth the spend. | ${SIZE_PRESETS.large.maxAgents} | ${SIZE_PRESETS.large.maxTurns} | ${minutes(SIZE_PRESETS.large.wallClockMs)} |
+| Scout | A narrow question, or a first pass before a bigger run. | ${SIZE_PRESETS.small.maxAgents} | ${SIZE_PRESETS.small.maxTurns} | ${minutes(SIZE_PRESETS.small.wallClockMs)} |
+| Crew | Most tasks: investigate, debate, and decide. | ${SIZE_PRESETS.medium.maxAgents} | ${SIZE_PRESETS.medium.maxTurns} | ${minutes(SIZE_PRESETS.medium.wallClockMs)} |
+| Fleet | Wide or hard problems that are worth the spend. | ${SIZE_PRESETS.large.maxAgents} | ${SIZE_PRESETS.large.maxTurns} | ${minutes(SIZE_PRESETS.large.wallClockMs)} |
 
-Model sits under the cards, beside Project, and starts on "the plan's models". Provider groups
-contain each provider's default model, class models and pinned models, without
-duplicates within a group. Other… accepts a model name and uses the effective
-default provider. Naming a model runs every agent on it, keeps the card
-selected and shows the model on that card. Picking a card clears the named model and restores that plan.
+Lead model and Workers model sit under the cards, beside Project, and start on
+the plan's lead and the plan's workers. Provider groups contain each provider's
+default model, class models and pinned models, without duplicates within a
+group. Other… on Lead model accepts a model name and uses the effective default
+provider. Each picker replaces its own row on the selected card and keeps the
+card selected; picking only a lead keeps the plan's workers, and picking only
+workers keeps the plan's lead. Lead and workers must come from one provider.
+Picking a card clears both picks and restores that plan.
 
 Start swarm sits at the end of the form with one sentence beside it: N agents
-for up to N min, then on <model> when one is named, then where they work, such
+for up to N min, then the picked models (on <lead> and <workers>, with lead
+<model> or with workers <model>), then where they work, such
 as 5 agents for up to 30 min, chat only.
-Untouched Working session sends no size, power or model overrides. Quick look
-records small/fast; Deep dig records large/deep. A named model records size,
+Untouched Crew sends no size, power or model overrides. Scout
+records small/fast; Fleet records large/deep. A named model records size,
 model and provider, with no power.
 
 New project… appears last in Project only when the host exposes optional
@@ -1012,9 +1016,9 @@ Older hosts without the state bridge can discard local edits when the launcher
 page is replaced.
 
 A swarm that did not finish offers Retry, with a Retry with model picker, since the model
-is the usual cause. A finished Quick look or Working session offers Go deeper,
+is the usual cause. A finished Scout or Crew offers Go deeper,
 which starts the same launch on the next plan up with that plan's models; a
-finished Deep dig offers neither. Both reuse the same task, project, workflows
+finished Fleet offers neither. Both reuse the same task, project, workflows
 and context. Their hint names the evidence and when it was captured; context is
 not refreshed. Retry reuses the saved size and plan power unless a model is
 named. Accepting an unchanged plan-derived lead keeps the pair, not one model for

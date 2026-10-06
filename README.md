@@ -47,15 +47,15 @@ The rib manages a server only when `CLICKCLACK_URL` is unset and no owner sessio
 In the **Swarms** tab, describe the task in **Start a swarm**, choose a project
 if agents should read its checkout, and press **Start swarm**. **No project ·
 chat only** is the default. Projects show their name and path (`~` for home).
-Choose **Quick look**, **Working session** (the default: 5 agents, up to 40
-turns, about 30 minutes), or **Deep dig**. **Model** sits under the plans,
-grouped by provider with **Other…** for a typed name; the plan's pair stays
-unless a model is named for all agents. One sentence beside **Start swarm**
+Choose **Scout**, **Crew** (the default: 5 agents, up to 40
+turns, about 30 minutes), or **Fleet**. **Lead model** and **Workers model**
+sit under the plans, grouped by provider with **Other…** for a typed lead; each
+one replaces only its own role, so the plan's other model stays. One sentence beside **Start swarm**
 says how many agents run, for how long, on which model and where. With swarms
 on the tab the launcher starts as one compact line; **Options** expands
 it and **Fewer options** returns to it. An ended swarm offers **Retry** with a
 model picker when it did not finish, or **Go deeper** onto the next plan when
-a Quick look or Working session finished. Selecting a project
+a Scout or Crew finished. Selecting a project
 reveals **Write**, **Run workflows** and **Use the tracker**, all off for an
 existing project. **New project…** locks Write on and defaults the tracker on
 when `beads_init` is reachable; you can switch the tracker off. Write

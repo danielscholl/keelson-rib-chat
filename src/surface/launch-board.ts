@@ -94,14 +94,13 @@ const PLANS = [
 function planModels(
   state: LaunchState,
   power: SwarmPower,
-): { lead: string; worker: string } | undefined {
+): { lead: string; worker: string; pinned: boolean } | undefined {
   const pins = pinnedModels(state.provider, power);
-  if (pins) return pins;
+  if (pins) return { ...pins, pinned: true };
   const provider = state.classes?.find((c) => c.provider === state.provider);
   const model = provider?.classes?.[power] ?? provider?.defaultModel;
-  return model
-    ? { lead: `${state.provider}: ${model}`, worker: `${state.provider}: ${model}` }
-    : undefined;
+  const label = `${state.provider}: ${model}`;
+  return model ? { lead: label, worker: label, pinned: false } : undefined;
 }
 
 // The script redraws these cells when a picked model replaces the selected plan's pair.
@@ -169,7 +168,7 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .plan-models .role { font-family: var(--sans); font-size: 12px; color: var(--muted); }
 .plan-models .model { color: var(--fg); overflow-wrap: anywhere; }
 .plan-models .model.is-picked { color: var(--accent); font-weight: 600; }
-.pickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
+.pickers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
 .detail { margin-top: 10px; line-height: 1.5; }
 .other-model { margin-top: 12px; }
 .project-note { margin-top: 10px; }
@@ -252,7 +251,11 @@ const PAGE_SCRIPT = `
     && (state.modelSelection === "" || state.modelSelection === "other"
       || (state.modelSelection && typeof state.modelSelection.model === "string"
         && Boolean(state.modelSelection.model)
-        && typeof state.modelSelection.provider === "string"));
+        && typeof state.modelSelection.provider === "string"))
+    && (state.workerSelection === undefined || state.workerSelection === ""
+      || (state.workerSelection && typeof state.workerSelection.model === "string"
+        && Boolean(state.workerSelection.model)
+        && typeof state.workerSelection.provider === "string"));
   keelson.onRestore?.((state) => {
     if (dirty || dispatched || !validDraft(state)) return;
     if (ready) restoreDraft(state);
@@ -391,19 +394,25 @@ const PAGE_SCRIPT = `
   const cards = sizes.map((size) => document.getElementById("plan-" + size));
   const modelSelect = document.getElementById("launch-model");
   const otherModel = document.getElementById("launch-other-model");
-  const showModels = (card, picked) => {
+  const workerSelect = document.getElementById("launch-worker-model");
+  // Without a pin the plan's workers follow whatever the lead runs.
+  const planWorker = (card) => {
+    const cells = document.getElementById("models-" + card.dataset.size);
+    return cells && cells.dataset.pinned === "true" ? cells.dataset.worker : "";
+  };
+  const showModels = (card, lead, worker) => {
     const cells = document.getElementById("models-" + card.dataset.size);
     if (!cells) return;
-    const lead = picked || cells.dataset.lead;
-    const worker = picked || cells.dataset.worker;
-    const pairs = [["Lead", lead], ["Workers", worker]];
-    cells.replaceChildren(...pairs.flatMap(([role, name]) => {
+    const keepsPin = cells.dataset.pinned === "true" && (!lead || provider === form.dataset.provider);
+    const workers = worker || (lead && !keepsPin ? lead : "");
+    const pairs = [["Lead", lead, cells.dataset.lead], ["Workers", workers, cells.dataset.worker]];
+    cells.replaceChildren(...pairs.flatMap(([role, picked, plan]) => {
       const label = document.createElement("span");
       label.className = "role";
       label.textContent = role;
       const value = document.createElement("span");
       value.className = picked ? "model is-picked" : "model";
-      value.textContent = name;
+      value.textContent = picked || plan;
       return [label, value];
     }));
   };
@@ -412,24 +421,30 @@ const PAGE_SCRIPT = `
   let power = "balanced";
   let model = "";
   let provider = "";
+  let worker = "";
+  let workerProvider = "";
   let otherProvider = form.dataset.provider;
   const providers = JSON.parse(form.dataset.providers);
   const modelError = document.getElementById("model-error");
   const updateChoice = () => {
-    modelBlocked = Boolean(model && provider && !providers.includes(provider));
-    modelError.textContent = modelBlocked
-      ? "Provider " + provider + " is unavailable. Choose a model or plan again."
-      : "";
+    const unavailable = [provider, workerProvider].find((p) => p && !providers.includes(p));
+    const mixed = Boolean(model && worker && provider && workerProvider && provider !== workerProvider);
+    modelBlocked = Boolean(unavailable) || mixed;
+    modelError.textContent = unavailable
+      ? "Provider " + unavailable + " is unavailable. Choose a model or plan again."
+      : mixed ? "Lead and workers need models from the same provider." : "";
     modelError.hidden = !modelBlocked;
     updateStart();
     cards.forEach((card) => {
       const selected = size === card.dataset.size && power === card.dataset.power;
       card.setAttribute("aria-pressed", String(selected));
       document.getElementById("chip-" + card.dataset.size).hidden = !selected;
-      showModels(card, selected ? model : "");
+      showModels(card, selected ? model : "", selected ? worker : "");
     });
     document.getElementById("launch-summary").textContent = budgets[size];
-    document.getElementById("launch-models").textContent = model ? " on " + model : "";
+    document.getElementById("launch-models").textContent = model && worker
+      ? (model === worker ? " on " + model : " on " + model + " and " + worker)
+      : model ? " with lead " + model : worker ? " with workers " + worker : "";
     document.getElementById("other-model-row").hidden = modelSelect.value !== "other";
   };
   cards.forEach((card) => card.addEventListener("click", () => {
@@ -437,7 +452,10 @@ const PAGE_SCRIPT = `
     power = card.dataset.power;
     model = "";
     provider = "";
+    worker = "";
+    workerProvider = "";
     modelSelect.value = "";
+    workerSelect.value = "";
     otherModel.value = "";
     otherProvider = form.dataset.provider;
     updateChoice();
@@ -456,6 +474,13 @@ const PAGE_SCRIPT = `
     updateModel();
   });
   watchText(otherModel, updateModel);
+  const updateWorker = () => {
+    const choice = workerSelect.value ? JSON.parse(workerSelect.value) : { model: "", provider: "" };
+    worker = choice.model;
+    workerProvider = worker ? choice.provider : "";
+    updateChoice();
+  };
+  watchText(workerSelect, updateWorker);
   updateChoice();
   document.getElementById("launch-fewer")?.addEventListener("click", () => collapse?.());
   const renderPermissions = () => {
@@ -555,6 +580,7 @@ const PAGE_SCRIPT = `
     workflows: [...workflows], workflowEntry: controls?.entry.value ?? "",
     modelSelection: modelSelect.value === "other" ? "other"
       : model ? { model, provider } : "",
+    workerSelection: worker ? { model: worker, provider: workerProvider } : "",
     otherModel: otherModel.value, modelProvider: otherProvider
   });
   restoreDraft = (state) => {
@@ -576,6 +602,17 @@ const PAGE_SCRIPT = `
       }
       modelSelect.value = value;
     } else modelSelect.value = state.modelSelection;
+    if (state.workerSelection) {
+      const value = JSON.stringify(state.workerSelection);
+      if (!Array.from(workerSelect.options).some((option) => option.value === value)) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = state.workerSelection.model + " · " + state.workerSelection.provider;
+        workerSelect.append(option);
+      }
+      workerSelect.value = value;
+    } else workerSelect.value = "";
+    updateWorker();
     updateModel();
     project.value = (state.project !== "new" || form.dataset.canCreateProject === "true")
       && Array.from(project.options).some((option) => option.value === state.project)
@@ -628,6 +665,14 @@ const PAGE_SCRIPT = `
       payload.size = size;
       payload.model = model;
       if (provider) payload.provider = provider;
+      const workers = worker
+        || (provider === form.dataset.provider ? planWorker(cards.find((card) => card.dataset.size === size)) : "");
+      if (workers) payload.worker_model = workers;
+    } else if (worker) {
+      payload.size = size;
+      payload.power = power;
+      payload.worker_model = worker;
+      if (workerProvider) payload.provider = workerProvider;
     } else if (size !== "medium" || power !== "balanced") {
       payload.size = size;
       if (power !== "balanced") payload.power = power;
@@ -660,7 +705,8 @@ const PAGE_SCRIPT = `
     version: 1, task: task.value, expanded: false, customize: false,
     size: "medium", power: "balanced", project: "", projectRoot: "",
     permissions: { write: false, workflows: false, tracker: false },
-    workflows: [], workflowEntry: "", modelSelection: "", otherModel: "", modelProvider: ""
+    workflows: [], workflowEntry: "", modelSelection: "", workerSelection: "", otherModel: "",
+    modelProvider: ""
   });
   const startCompact = () => dispatch({
     nonce: compact.dataset.nonce,
@@ -690,7 +736,7 @@ const PAGE_SCRIPT = `
   restoreDraft = (state) => {
     if (state.expanded || /[\\r\\n]/.test(state.task) || state.customize
       || state.size !== "medium" || state.power !== "balanced" || state.project
-      || state.modelSelection || state.otherModel || state.workflows.length
+      || state.modelSelection || state.workerSelection || state.otherModel || state.workflows.length
       || state.workflowEntry || Object.values(state.permissions).some(Boolean)) {
       expand();
       restoreDraft(state);
@@ -790,7 +836,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
       <span class="plan-title">${plan.name}<span class="chip" id="chip-${plan.size}"${selected ? "" : " hidden"}>selected</span></span>
       <span class="plan-blurb">${plan.blurb}</span>
-      <span class="plan-body"><span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}">${modelCells(pair)}</span>` : ""}</span>
+      <span class="plan-body"><span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}" data-pinned="${pair.pinned}">${modelCells(pair)}</span>` : ""}</span>
     </button>`;
   }).join("");
   const catalog = [...(state.classes ?? [])];
@@ -830,11 +876,12 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
       <p class="hint task-hint" id="task-hint" aria-live="polite"></p>
       <section class="plans" aria-labelledby="plans-heading">
-        <div class="plans-heading"><span class="eyebrow" id="plans-heading">HOW HARD IT WORKS</span></div>
+        <div class="plans-heading"><span class="eyebrow" id="plans-heading">SIZE</span></div>
         <div class="plan-cards">${cards}</div>
       </section>
       <div class="pickers">
-          <div><label for="launch-model">MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's models</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>
+          <div><label for="launch-model">LEAD MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's lead</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>
+          <div><label for="launch-worker-model">WORKERS MODEL</label><select id="launch-worker-model" name="worker_model"><option value="" selected>the plan's workers</option>${modelOptions}</select></div>
           <div class="project-row" id="project-row"><label for="launch-project">PROJECT</label><select id="launch-project" name="project" aria-describedby="project-note">
             <option value="" selected>No project · chat only</option>${options}${state.canCreateProject ? '<option value="new">New project…</option>' : ""}
           </select></div>

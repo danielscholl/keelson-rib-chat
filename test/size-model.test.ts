@@ -153,16 +153,16 @@ describe("chat_swarm_start inputs", () => {
 
 describe("pinnedModels", () => {
   test("copilot pins a lead and a worker model per power; other providers pin nothing", () => {
+    expect(pinnedModels("copilot", "fast")).toEqual({
+      lead: "claude-sonnet-5.5",
+      worker: "gpt-6-luna",
+    });
     expect(pinnedModels("copilot", "balanced")).toEqual({
-      lead: "claude-sonnet-5",
-      worker: "claude-sonnet-5.5",
-    });
-    expect(pinnedModels("copilot", "deep")).toEqual({
       lead: "claude-opus-5.5",
-      worker: "claude-sonnet-5",
+      worker: "gpt-6-sol",
     });
-    const fast = pinnedModels("copilot", "fast");
-    expect(fast?.lead).toBe(fast?.worker);
+    const deep = pinnedModels("copilot", "deep");
+    expect(deep).toEqual({ lead: "claude-opus-5.5", worker: "claude-opus-5.5" });
     expect(pinnedModels("claude", "balanced")).toBeUndefined();
     expect(pinnedModels(undefined, "balanced")).toBeUndefined();
   });

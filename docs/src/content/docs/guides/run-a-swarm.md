@@ -30,27 +30,29 @@ In the **Swarms** tab, type the task into **Start a swarm**, then press
 read nothing on disk. Pick a project to grant read access; each option shows
 its name and path, with the home directory shortened to `~`.
 
-Choose a plan under **How hard it works**. **Working session is selected by
+Choose a plan under **Size**. **Crew is selected by
 default**. Each card shows its agents, turns, minutes and the effective
 provider's models. Providers without pins use the matching class model.
 
 | Plan | For | Agents | Turns | Minutes |
 | --- | --- | --- | --- | --- |
-| Quick look | A narrow question, or a first pass before a bigger run. | 3 | 20 | 15 |
-| Working session | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
-| Deep dig | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
+| Scout | A narrow question, or a first pass before a bigger run. | 3 | 20 | 15 |
+| Crew | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
+| Fleet | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
 
-**Model** sits under the cards, beside **Project**, and starts on **the plan's models**. Provider
-groups contain each provider's default model, class models and pinned models,
-without duplicates within a group. **Other…** accepts a model name and uses the
-effective default provider. Naming a model runs every agent on it, keeps the
-card selected and shows the model on that card. Picking a card clears the named model and restores that plan.
+**Lead model** and **Workers model** sit under the cards, beside **Project**, and start on
+the plan's lead and the plan's workers. Provider groups contain each provider's
+default model, class models and pinned models, without duplicates within a
+group. **Other…** on **Lead model** accepts a model name and uses the effective default
+provider. Each picker replaces its own row on the selected card and keeps the
+card selected; picking only a lead keeps the plan's workers, and picking only
+workers keeps the plan's lead. Lead and workers must come from one provider.
+Picking a card clears both picks and restores that plan.
 
 **Start swarm** sits at the end of the form with one sentence beside it: N
 agents for up to N min, then on \<model\> when one is named, then where they
-work, such as **5 agents for up to 30 min, chat only.** Untouched Working
-session sends no size, power or model overrides. Quick look records small/fast;
-Deep dig records large/deep. A named model records size, model and provider,
+work, such as **5 agents for up to 30 min, chat only.** Untouched Crew sends no size, power or model overrides. Scout records small/fast;
+Fleet records large/deep. A named model records size, model and provider,
 with no power.
 
 **New project…** appears last in Project only when the host exposes optional
@@ -291,9 +293,8 @@ progress frame.
 ## Retry or go deeper
 
 A swarm that did not finish offers **Retry**, with a **Retry with** model picker
-seeded with its effective model/provider. A finished Quick look or Working
-session offers **Go deeper**, which starts the same launch on the next plan up
-with that plan's models; a finished Deep dig offers neither. Both keep the same
+seeded with its effective model/provider. A finished Scout or Crew offers **Go deeper**, which starts the same launch on the next plan up
+with that plan's models; a finished Fleet offers neither. Both keep the same
 task, project, workflows and context. The hint names the evidence and when it
 was captured; context is not refreshed.
 

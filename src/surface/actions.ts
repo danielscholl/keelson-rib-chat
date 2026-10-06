@@ -102,11 +102,19 @@ function powerOf(payload: Record<string, unknown>): SwarmPower | undefined {
   return (SWARM_POWERS as readonly string[]).includes(v) ? (v as SwarmPower) : undefined;
 }
 
-// The model picker sends its model and the model's provider; both empty is the host default.
-function modelOf(payload: Record<string, unknown>): Pick<StartSwarmInput, "model" | "provider"> {
+// The model pickers send the lead and worker models and their provider; all empty is
+// the host default.
+function modelOf(
+  payload: Record<string, unknown>,
+): Pick<StartSwarmInput, "model" | "provider" | "workerModel"> {
   const model = text(payload, "model");
   const provider = text(payload, "provider");
-  return { ...(model ? { model } : {}), ...(provider ? { provider } : {}) };
+  const workerModel = text(payload, "worker_model");
+  return {
+    ...(model ? { model } : {}),
+    ...(provider ? { provider } : {}),
+    ...(workerModel ? { workerModel } : {}),
+  };
 }
 
 function leadToolsOf(value: unknown, deps: ActionDeps): string[] | string {
@@ -590,6 +598,7 @@ export async function handleSwarmsAction(
               size: payload.size,
               power: payload.power,
               model: payload.model,
+              worker_model: payload.worker_model,
               provider: payload.provider,
             }
           : payload,
