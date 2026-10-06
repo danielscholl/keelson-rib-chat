@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.21.0...v0.22.0) (2026-10-06)
+
+
+### Added
+
+* **surface:** show the task on running swarms, default to Scout, repin Crew and Fleet ([#123](https://github.com/danielscholl/keelson-rib-chat/issues/123)) ([8427f2d](https://github.com/danielscholl/keelson-rib-chat/commit/8427f2de1dcbc9c5b92e8d0439882fccc6323e08))
+
 ## [0.21.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.20.0...v0.21.0) (2026-10-06)
 
 
