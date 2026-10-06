@@ -5902,6 +5902,7 @@ describe("actions", () => {
     const calls: unknown[][] = [];
     const surface: SwarmsSurface = {
       acceptsLaunchNonce: () => false,
+      launched: () => {},
       offersLaunchProject: () => false,
       track: () => {},
       select: () => {},
@@ -6600,6 +6601,7 @@ describe("actions", () => {
     const selected: string[] = [];
     const surface: SwarmsSurface = {
       acceptsLaunchNonce: () => false,
+      launched: () => {},
       offersLaunchProject: () => false,
       selectAgent: async () => {},
       selectAsk: async () => {},
@@ -9321,9 +9323,17 @@ describe("launching from the tab", () => {
         );
         expect(result).toEqual({
           ok: true,
-          data: { effect: "open-surface", surfaceId: "surface:chat:swarms", regionKey: INDEX_KEY },
+          data: {
+            effect: "open-surface",
+            surfaceId: "surface:chat:swarms",
+            regionKey: INDEX_KEY,
+            message: expect.stringMatching(/^Swarm \S+ started$/),
+          },
         });
       }
+      await Bun.sleep(5);
+      expect(h.page()).toContain('data-generation="2"');
+      expect(h.nonce()).toBe(nonce);
       expect(begun).toEqual([
         { task: "Investigate the build", workTools: "none" },
         { task: "Investigate the build", project: "p1", workTools: "read" },
