@@ -1085,7 +1085,7 @@ describe("Workflow dispatch", () => {
   test("changes need feedback, and an ungranted workflow goes back to the operator", async () => {
     const fake = fakeDispatcher({
       refuseAnswers:
-        "rib 'chat' is not granted approvals for workflow 'fix-issue' (config.json ribApprovalGrants)",
+        "rib 'swarm' is not granted approvals for workflow 'fix-issue' (config.json ribApprovalGrants)",
     });
     let swarmRef: Swarm | undefined;
     const outs: string[] = [];
@@ -1909,7 +1909,7 @@ describe("health and needs", () => {
   test("a refused answer is remembered, and the next gate on that workflow is the operator's", async () => {
     const fake = fakeDispatcher({
       refuseAnswers:
-        "rib 'chat' is not granted approvals for workflow 'fix-issue' (config.json ribApprovalGrants)",
+        "rib 'swarm' is not granted approvals for workflow 'fix-issue' (config.json ribApprovalGrants)",
     });
     const refused = new Set<string>();
     const memory = {

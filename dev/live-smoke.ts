@@ -33,7 +33,7 @@ let url = process.env.CLICKCLACK_URL ?? "http://localhost:8080";
 let token = process.env.CLICKCLACK_TOKEN;
 let managed: { server: ManagedServer; home: string } | undefined;
 if (!token && !process.env.CLICKCLACK_URL) {
-  const home = mkdtempSync(join(tmpdir(), "rib-chat-smoke-"));
+  const home = mkdtempSync(join(tmpdir(), "rib-swarm-smoke-"));
   const server = new ManagedServer(realServerDeps(() => home));
   const why = server.unavailable();
   if (why) {
@@ -219,7 +219,7 @@ console.log(
 const later = (ms: number, fn: () => void) => setTimeout(fn, ms);
 const fake = fakeDispatcher({ answers: true });
 const REFUSAL =
-  "rib 'chat' is not granted approvals for workflow 'release' (config.json ribApprovalGrants)";
+  "rib 'swarm' is not granted approvals for workflow 'release' (config.json ribApprovalGrants)";
 const dispatcher = {
   ...fake.dispatcher,
   respond: async (runId: string, nodeId: string, text: string, pauseId?: string) =>

@@ -1,12 +1,12 @@
 ---
 title: Install the rib
-description: Add Chat to a running Keelson, let it run ClickClack or point it at yours, and confirm it is ready.
+description: Add Swarm to a running Keelson, let it run ClickClack or point it at yours, and confirm it is ready.
 sidebar:
   order: 2
 ---
 
-Chat is a [Keelson](https://danielscholl.github.io/keelson/) rib, so the harness
-loads it the way it loads any other. What is specific to Chat is the
+Swarm is a [Keelson](https://danielscholl.github.io/keelson/) rib, so the harness
+loads it the way it loads any other. What is specific to Swarm is the
 [ClickClack](https://github.com/openclaw/clickclack) server the swarms talk
 over, and the session the rib uses to create its bots.
 
@@ -41,14 +41,14 @@ export CLICKCLACK_TOKEN=$(clickclack login --magic-token "$TOKEN" --plain --no-s
 
 The rib reads `CLICKCLACK_TOKEN` from the environment of the Keelson server
 process. If it is unset, the rib falls back to the harness credential accessor,
-which resolves to the OS keychain entry `rib_chat_token`.
+which resolves to the OS keychain entry `rib_swarm_token`.
 
 ## Add the rib
 
 From your Keelson checkout, add the package and start the server:
 
 ```bash
-keelson rib add https://github.com/danielscholl/keelson-rib-chat
+keelson rib add https://github.com/danielscholl/keelson-rib-swarm
 keelson start
 ```
 
@@ -62,18 +62,35 @@ keelson stop && keelson start
 ```
 
 The harness reads `KEELSON_RIBS` to decide which discovered ribs activate. Leave
-it unset and every discovered rib activates. Chat's rib id is `chat`:
+it unset and every discovered rib activates. Swarm's rib id is `swarm`:
 
 ```bash
-KEELSON_RIBS=chat keelson start
+KEELSON_RIBS=swarm keelson start
 ```
+
+## Moving from keelson-rib-chat
+
+The rib was `@keelson/rib-chat` with id `chat` before 0.23.0. Keelson keys a
+rib's data directory, keychain entries, and grants by its id, so an install of
+the old package does not carry over on its own. With the server stopped:
+
+```bash
+keelson rib remove chat
+keelson rib add https://github.com/danielscholl/keelson-rib-swarm
+mv ~/.keelson/rib-chat ~/.keelson/rib-swarm
+```
+
+Then store the ClickClack token again as `rib_swarm_token` (or set
+`CLICKCLACK_TOKEN`), rename the `"chat"` keys under `crossRibGrants`,
+`ribWorkflowGrants`, and `ribApprovalGrants` in `config.json` to `"swarm"`, and
+change `KEELSON_RIBS=chat` to `KEELSON_RIBS=swarm` if you set it.
 
 ## Point it at your server
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `CLICKCLACK_URL` | `http://localhost:8080` | The ClickClack server. |
-| `CLICKCLACK_TOKEN` | keychain `rib_chat_token` | The owner session. |
+| `CLICKCLACK_TOKEN` | keychain `rib_swarm_token` | The owner session. |
 | `CLICKCLACK_WORKSPACE` | the only visible workspace | Required when the session sees several. |
 
 If the session can see more than one workspace and `CLICKCLACK_WORKSPACE` is
@@ -87,7 +104,7 @@ keelson doctor
 ```
 
 With the server up, `keelson doctor` lists the ribs it loaded and whether each
-is ready. For Chat that is its auth status: authenticated with the session's
+is ready. For Swarm that is its auth status: authenticated with the session's
 display name, or the reason it is not. With a managed server it says whether
 the server is running or will start with the first swarm, or what is missing: a
 binary, most often. For an external server, the three you are likely to see:
@@ -100,10 +117,10 @@ binary, most often. For an external server, the three you are likely to see:
 - **A bot token.** The token works, but it belongs to a bot. Mint a human
   session as above.
 
-From an MCP client, `keelson_docs({})` lists a `chat` source once the rib is
+From an MCP client, `keelson_docs({})` lists a `swarm` source once the rib is
 active. That source is the rib's operating contract, packaged with it.
 
-## What Chat needs
+## What Swarm needs
 
 - **A configured provider.** Every agent turn runs through a Keelson provider.
   The swarm uses the host's default provider and that provider's default model
@@ -111,7 +128,7 @@ active. That source is the rib's operating contract, packaged with it.
 - **A registered project**, only if agents should read a checkout. Without one a
   swarm is chat only.
 
-Chat adds a **Swarms** tab to Keelson, where swarms start, ask, and end. See
+Swarm adds a **Swarms** tab to Keelson, where swarms start, ask, and end. See
 [Watch swarms in the Swarms tab](../swarms-tab/). The conversation itself is the swarm's
 ClickClack channel.
 

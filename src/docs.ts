@@ -202,8 +202,8 @@ A swarm started with \`lead_tools\` also hands its lead those tools from other
 ribs, for example the beads rib's \`beads_ready\`, \`beads_show\`, and
 \`beads_close\`, so it can read the live queue and close a bead once its pull
 request merges. Keelson projects each one onto the lead's turns only when
-\`config.json\` grants it to the chat rib under \`crossRibGrants\`, as in
-\`"crossRibGrants": { "chat": { "beads": ["beads_ready", "beads_close"] } }\`.
+\`config.json\` grants it to the swarm rib under \`crossRibGrants\`, as in
+\`"crossRibGrants": { "swarm": { "beads": ["beads_ready", "beads_close"] } }\`.
 A tool the operator has not granted is dropped from the turn, and the lead is
 told to say so rather than work around it. Workers never hold them.
 
@@ -618,7 +618,7 @@ the agent's actual status. A retained end time with a still-live status
 suppresses the activity pill rather than inventing an outcome.
 
 Read question opens the question inspector at the side, at
-\`rib:chat:ask:<swarm>\`. Question contains the complete admitted question,
+\`rib:swarm:ask:<swarm>\`. Question contains the complete admitted question,
 up to 8,000 characters, without its @operator addressing, the asker, absolute
 asked time and a live since clock while actionable. Thread is a quiet link.
 Actions offers Reply and Dismiss. Needs you cards, the index and the per-swarm
@@ -626,7 +626,7 @@ board keep their bounded question previews; only the question inspector shows
 the full body. Legacy summaries cannot recover question text already truncated.
 
 Read gate and a reviewing card's body open the gate inspector at
-\`rib:chat:gate:<swarm>\`. Gate shows the full retained prompt. Files has one
+\`rib:swarm:gate:<swarm>\`. Gate shows the full retained prompt. Files has one
 prose card per named file, including empty files, read errors and truncation
 notices. Review names the reviewer and thread, or says not recorded. Actions
 offers Reply when the gate has an actionable thread; operator-only gates also
@@ -635,7 +635,7 @@ thread and never approves. Review plan and Answer still open the run drawer,
 where operator decisions belong.
 
 Details opens at the side from the cockpit, live board or ended board, at
-\`rib:chat:details:<swarm>\`. Task and context keeps the full task in ordered
+\`rib:swarm:details:<swarm>\`. Task and context keeps the full task in ordered
 disclosures of at most 4,000 characters, and every retained context excerpt
 with its id, kind/title, source, retrieval time, head/base SHA and character
 count. A single-part task is labeled Task; longer tasks use numbered parts.
@@ -935,7 +935,7 @@ Grant initialization and the six lead tools in \`config.json\`:
 \`\`\`json
 {
   "crossRibGrants": {
-    "chat": {
+    "swarm": {
       "beads": [
         "beads_init",
         "beads_ready",
@@ -1116,7 +1116,7 @@ session, because a bot token cannot create bots.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | \`CLICKCLACK_URL\` | \`http://localhost:8080\` | The ClickClack server. |
-| \`CLICKCLACK_TOKEN\` | keychain \`rib_chat_token\` | Owner session used to mint and revoke the agents' bots. |
+| \`CLICKCLACK_TOKEN\` | keychain \`rib_swarm_token\` | Owner session used to mint and revoke the agents' bots. |
 | \`CLICKCLACK_WORKSPACE\` | the only visible workspace | Required when the session sees several. |
 
 The rib checks the server's \`/readyz\` before it starts a swarm and when it
@@ -1128,9 +1128,9 @@ registered.
 
 export function chatDocsSource(): RibDocsSource {
   return {
-    title: "Chat",
+    title: "Swarm",
     summary:
-      "The Chat rib for Keelson: agent swarms that coordinate over a ClickClack channel. Covers starting a swarm, routing, the agent tool boundary, write mode, limits, completion and stall semantics, steering, and what survives a restart.",
+      "The Swarm rib for Keelson: agent swarms that coordinate over a ClickClack channel. Covers starting a swarm, routing, the agent tool boundary, write mode, limits, completion and stall semantics, steering, and what survives a restart.",
     content: corpus(),
   };
 }

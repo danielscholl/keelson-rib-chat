@@ -4,7 +4,7 @@
  * boot-time discovery finds it (exactly as a published install would), then:
  *
  *   bun dev/link.ts
- *   cd <keelson> && KEELSON_RIBS=chat bun dev
+ *   cd <keelson> && KEELSON_RIBS=swarm bun dev
  *
  * Discovery scans `<cwd>/node_modules/@keelson`. `keelson serve` runs from the
  * project root, but the monorepo's `bun dev:server` runs with cwd = apps/server
@@ -26,7 +26,7 @@ if (scanRoots.length === 0) {
 
 for (const dir of scanRoots) {
   const linkDir = `${dir}/node_modules/@keelson`;
-  const link = `${linkDir}/rib-chat`;
+  const link = `${linkDir}/rib-swarm`;
   Bun.spawnSync(["mkdir", "-p", linkDir]);
   const res = Bun.spawnSync(["ln", "-sfn", target, link]);
   if (res.exitCode !== 0) {
@@ -35,4 +35,4 @@ for (const dir of scanRoots) {
   }
   console.log(`linked ${link} -> ${target}`);
 }
-console.log(`next:  cd ${keelson} && KEELSON_RIBS=chat bun dev`);
+console.log(`next:  cd ${keelson} && KEELSON_RIBS=swarm bun dev`);

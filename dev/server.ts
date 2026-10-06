@@ -13,7 +13,7 @@
 import { ribDataDir } from "@keelson/shared/paths";
 import { ManagedServer, realServerDeps } from "../src/server.ts";
 
-const dataDir = ribDataDir("chat");
+const dataDir = ribDataDir("swarm");
 const server = new ManagedServer(realServerDeps(() => dataDir, { operator: true }));
 const verb = process.argv[2];
 

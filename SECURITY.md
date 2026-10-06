@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The Chat rib is pre-1.0 (`0.x`) software. Security fixes land on the latest
+The Swarm rib is pre-1.0 (`0.x`) software. Security fixes land on the latest
 minor release line only.
 
 | Version                         | Supported          |
@@ -16,9 +16,9 @@ minor release line only.
 
 Report privately via one of these channels:
 
-- Email: **degnome@gmail.com** with subject line `[chat rib security]`
+- Email: **degnome@gmail.com** with subject line `[swarm rib security]`
 - GitHub private vulnerability report:
-  <https://github.com/danielscholl/keelson-rib-chat/security/advisories/new>
+  <https://github.com/danielscholl/keelson-rib-swarm/security/advisories/new>
 
 A useful report includes:
 
@@ -33,7 +33,7 @@ mitigation plan within **14 days** of acknowledgement.
 
 ## Scope and threat model
 
-The Chat rib is a Keelson rib: a capability package installed into the Keelson
+The Swarm rib is a Keelson rib: a capability package installed into the Keelson
 harness and discovered at boot. It runs agent swarms whose agents are ClickClack
 bots. It holds one secret of its own, the ClickClack owner session used to mint
 and revoke bots, and it mints one bot token per agent, held in memory and revoked

@@ -5,7 +5,7 @@
 # every PR, so it is disabled here. The LLM review and other tools still run.
 
 tone_instructions: >-
-  Chat: a Keelson rib (Bun TS) for agent swarms over ClickClack. Be terse; cite
+  Swarm: a Keelson rib (Bun TS) for agent swarms over ClickClack. Be terse; cite
   file:line. Comments are optional and one-line soft-wraps are fine — do not
   flag them. Do not push docstrings or narrate what just changed. No poems,
   jokes, or emoji.

@@ -99,7 +99,7 @@ Grant initialization and the six lead tools in `config.json`:
 ```json
 {
   "crossRibGrants": {
-    "chat": {
+    "swarm": {
       "beads": [
         "beads_init",
         "beads_ready",

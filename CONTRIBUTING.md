@@ -1,4 +1,4 @@
-# Contributing to @keelson/rib-chat
+# Contributing to @keelson/rib-swarm
 
 This rib is a standalone package the [Keelson](https://github.com/danielscholl/keelson)
 harness discovers at runtime, so its contribution flow is lighter than the
@@ -11,8 +11,8 @@ is the parent.
 You need [Bun](https://bun.sh/) on PATH.
 
 ```bash
-git clone https://github.com/danielscholl/keelson-rib-chat.git
-cd keelson-rib-chat
+git clone https://github.com/danielscholl/keelson-rib-swarm.git
+cd keelson-rib-swarm
 bun install
 ```
 
@@ -26,7 +26,7 @@ launch the dev server. The README covers the ClickClack side.
 
 ```bash
 bun run link:keelson   # defaults to ../keelson; override with KEELSON_DIR
-cd ../keelson && KEELSON_RIBS=chat bun dev
+cd ../keelson && KEELSON_RIBS=swarm bun dev
 ```
 
 ## Required checks before opening a PR

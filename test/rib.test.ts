@@ -9,7 +9,7 @@ import { POWER_EFFORT, SIZE_PRESETS } from "../src/types.ts";
 
 describe("rib contract", () => {
   test("id matches the package suffix the harness infers", () => {
-    expect(rib.id).toBe("chat");
+    expect(rib.id).toBe("swarm");
     expect(ribIdSchema.safeParse(rib.id).success).toBe(true);
   });
 
@@ -74,7 +74,7 @@ describe("rib contract", () => {
     };
     process.env.CLICKCLACK_URL = "http://127.0.0.1:1";
     process.env.CLICKCLACK_TOKEN = "cc_owner";
-    const dir = mkdtempSync(join(tmpdir(), "rib-chat-"));
+    const dir = mkdtempSync(join(tmpdir(), "rib-swarm-"));
     const ctx = {
       getExec: () => ({}) as never,
       getDataDir: () => dir,
@@ -118,7 +118,7 @@ describe("rib contract", () => {
     };
     process.env.CLICKCLACK_URL = "http://127.0.0.1:1";
     process.env.CLICKCLACK_TOKEN = "cc_owner";
-    const dir = mkdtempSync(join(tmpdir(), "rib-chat-"));
+    const dir = mkdtempSync(join(tmpdir(), "rib-swarm-"));
     const ctx = {
       getExec: () => ({}) as never,
       getDataDir: () => dir,

@@ -527,9 +527,9 @@ const board = (key: string, view: unknown) =>
 
 describe("shared inspector keys and presentation", () => {
   test("keys stay in the per-swarm native inspector namespaces", () => {
-    expect(askKey("s1")).toBe("rib:chat:ask:s1");
-    expect(gateKey("s1")).toBe("rib:chat:gate:s1");
-    expect(detailsKey("s1")).toBe("rib:chat:details:s1");
+    expect(askKey("s1")).toBe("rib:swarm:ask:s1");
+    expect(gateKey("s1")).toBe("rib:swarm:gate:s1");
+    expect(detailsKey("s1")).toBe("rib:swarm:details:s1");
   });
 
   test("question actions are shared without changing their board payloads", () => {
@@ -4776,7 +4776,7 @@ describe("publishing", () => {
         nodes: [{}, {}, { id: "s1-w1", selected: true }],
       });
       await surface.selectAgent("s1", "s1-lead");
-      expect(sm.keys().filter((key) => key.startsWith("rib:chat:agent:"))).toEqual([
+      expect(sm.keys().filter((key) => key.startsWith("rib:swarm:agent:"))).toEqual([
         agentKey("s1"),
       ]);
     } finally {
@@ -4876,7 +4876,7 @@ describe("publishing", () => {
         return id;
       });
       surface.track(liveIds);
-      const inspectorKeys = () => sm.keys().filter((key) => key.startsWith("rib:chat:agent:"));
+      const inspectorKeys = () => sm.keys().filter((key) => key.startsWith("rib:swarm:agent:"));
       for (let i = 0; i < 6; i++) {
         const id = `ended${i}`;
         summaries.set(id, swarm(id, { status: "done", endedAt: T0 }));
@@ -4914,7 +4914,7 @@ describe("publishing", () => {
       ]) {
         await expect(surface.selectAgent(id!, agentId!)).rejects.toThrow("does not belong");
       }
-      expect(sm.keys().some((key) => key.startsWith("rib:chat:agent:"))).toBe(false);
+      expect(sm.keys().some((key) => key.startsWith("rib:swarm:agent:"))).toBe(false);
       await surface.selectAgent("s1", "s1-w1");
       for (let i = 0; i < MAX_SWARM_KEYS; i++) {
         const id = `s${i + 2}`;
@@ -4945,7 +4945,7 @@ describe("publishing", () => {
     let value = "A";
     const pub = createKeyPublisher(
       sm,
-      "rib:chat:t",
+      "rib:swarm:t",
       () => value,
       (d) => String(d),
       50,
@@ -4960,13 +4960,13 @@ describe("publishing", () => {
     release();
     sm.gate = undefined;
     await flushed;
-    expect(sm.frames.get("rib:chat:t")).toEqual(["B", "B"]);
+    expect(sm.frames.get("rib:swarm:t")).toEqual(["B", "B"]);
     value = "C";
     pub.schedule();
     await pub.flush();
-    expect(sm.frames.get("rib:chat:t")?.at(-1)).toBe("C");
+    expect(sm.frames.get("rib:swarm:t")?.at(-1)).toBe("C");
     await Bun.sleep(60);
-    expect(sm.frames.get("rib:chat:t")).toHaveLength(3);
+    expect(sm.frames.get("rib:swarm:t")).toHaveLength(3);
     pub.release();
   });
 
@@ -4980,7 +4980,7 @@ describe("publishing", () => {
     let passes = 0;
     const pub = createKeyPublisher(
       sm,
-      "rib:chat:t",
+      "rib:swarm:t",
       async () => {
         const captured = value;
         if (++passes === 1) await held;
@@ -4996,7 +4996,7 @@ describe("publishing", () => {
     const b = pub.flush();
     unblock();
     await Promise.all([a, b]);
-    expect(sm.frames.get("rib:chat:t")).toEqual(["A", "C"]);
+    expect(sm.frames.get("rib:swarm:t")).toEqual(["A", "C"]);
     expect(sm.inFlight).toBe(0);
     pub.release();
   });
@@ -5006,7 +5006,7 @@ describe("publishing", () => {
     let fail = false;
     const pub = createKeyPublisher(
       sm,
-      "rib:chat:t",
+      "rib:swarm:t",
       () => {
         if (fail) throw new Error("compose failed");
         return "ok";
@@ -5019,7 +5019,7 @@ describe("publishing", () => {
     await expect(pub.flush()).rejects.toThrow("compose failed");
     fail = false;
     await pub.flush();
-    sm.composers.delete("rib:chat:t");
+    sm.composers.delete("rib:swarm:t");
     await expect(pub.flush()).rejects.toThrow("did not publish a frame");
     pub.release();
   });
@@ -5032,7 +5032,7 @@ describe("publishing", () => {
     });
     const pub = createKeyPublisher(
       sm,
-      "rib:chat:t",
+      "rib:swarm:t",
       () => "ok",
       (d) => String(d),
       1,
@@ -5143,7 +5143,7 @@ describe("publishing", () => {
     });
     const pub = createKeyPublisher(
       sm,
-      "rib:chat:t",
+      "rib:swarm:t",
       () => value,
       (d) => d as number,
       1,
@@ -5154,13 +5154,13 @@ describe("publishing", () => {
     release();
     sm.gate = undefined;
     await Bun.sleep(5);
-    expect(sm.frames.get("rib:chat:t")).toEqual([1, 1]);
+    expect(sm.frames.get("rib:swarm:t")).toEqual([1, 1]);
     value = 2;
     pub.schedule();
     pub.schedule();
     await Bun.sleep(10);
-    expect(sm.frames.get("rib:chat:t")?.at(-1)).toBe(2);
-    expect(sm.frames.get("rib:chat:t")).toHaveLength(3);
+    expect(sm.frames.get("rib:swarm:t")?.at(-1)).toBe(2);
+    expect(sm.frames.get("rib:swarm:t")).toHaveLength(3);
     pub.release();
     expect(sm.keys()).toEqual([]);
   });
@@ -9686,7 +9686,7 @@ describe("launching from the tab", () => {
           ok: true,
           data: {
             effect: "open-surface",
-            surfaceId: "surface:chat:swarms",
+            surfaceId: "surface:swarm:swarms",
             regionKey: INDEX_KEY,
             message: expect.stringMatching(/^Swarm \S+ started$/),
           },
@@ -10362,7 +10362,7 @@ describe("launching from the tab", () => {
             ok: true,
             data: {
               effect: "open-surface",
-              surfaceId: "surface:chat:swarms",
+              surfaceId: "surface:swarm:swarms",
               regionKey: INDEX_KEY,
             },
           });
@@ -11852,7 +11852,7 @@ describe("start and run again", () => {
     expect(result.ok).toBe(true);
     expect(ribClientEffectSchema.parse(result.ok ? result.data : undefined)).toEqual({
       effect: "open-surface",
-      surfaceId: "surface:chat:swarms",
+      surfaceId: "surface:swarm:swarms",
       regionKey: INDEX_KEY,
     });
     expect(begun).toEqual([{ task: "Why is the build slow?", workTools: "none", size: "small" }]);
