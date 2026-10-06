@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.19.2](https://github.com/danielscholl/keelson-rib-chat/compare/v0.19.1...v0.19.2) (2026-10-06)
+
+
+### Fixed
+
+* **surface:** launcher and board polish from the QA pass ([#117](https://github.com/danielscholl/keelson-rib-chat/issues/117)) ([92e7aa5](https://github.com/danielscholl/keelson-rib-chat/commit/92e7aa5fd12612e21475e87801bf41a87fb2bf89))
+* **surface:** reset the launcher after a successful start ([#115](https://github.com/danielscholl/keelson-rib-chat/issues/115)) ([6a690fd](https://github.com/danielscholl/keelson-rib-chat/commit/6a690fdb38959fb3c68404590afb0d2ab93894d5))
+* **surface:** swarm drawer fixes from the QA pass ([#116](https://github.com/danielscholl/keelson-rib-chat/issues/116)) ([16fa72a](https://github.com/danielscholl/keelson-rib-chat/commit/16fa72a804d273371aa27398944c4818882bd0c5))
+
 ## [0.19.1](https://github.com/danielscholl/keelson-rib-chat/compare/v0.19.0...v0.19.1) (2026-10-06)
 
 
