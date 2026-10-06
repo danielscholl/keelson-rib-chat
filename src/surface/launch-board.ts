@@ -118,8 +118,7 @@ header { display: flex; align-items: center; gap: 14px; padding: 24px; flex-wrap
 .compact { display: flex; align-items: center; gap: 12px; padding: 16px; }
 .compact input { flex: 1; min-width: 0; width: auto; }
 .compact input::placeholder { color: var(--muted); opacity: 1; }
-.compact-plan { background: var(--card-2); color: var(--fg); border-radius: 999px; }
-.compact-plan, .compact .start, .more { flex: none; white-space: nowrap; }
+.compact .start, .more { flex: none; white-space: nowrap; }
 .more { padding: 6px 0; border: 0; background: transparent; color: var(--fg); }
 .intro { flex: 1; min-width: 220px; }
 h1 { font-size: 22px; line-height: 1.3; margin: 0 0 5px; color: var(--fg-strong); }
@@ -674,7 +673,6 @@ const PAGE_SCRIPT = `
     expand(true);
     saveEdit();
   };
-  document.getElementById("compact-plan").addEventListener("click", expandFromClick);
   document.getElementById("compact-more").addEventListener("click", expandFromClick);
   };
   // Fewer options keeps the task's first line and drops every other choice,
@@ -836,12 +834,10 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
       <p class="summary" aria-live="polite"><span id="launch-summary">${budgets.medium}</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>
     </footer>
   </form>`;
-  const l = SIZE_PRESETS.medium;
   const compact = `<div class="compact" id="launch-compact" data-nonce="${esc(nonce)}">
     <input id="compact-task" type="text" aria-label="Swarm task" placeholder="${esc(COMPACT_PLACEHOLDER)}">
-    <button class="compact-plan" id="compact-plan" type="button" aria-expanded="false" aria-controls="launch-root">${PLANS[1].name} · ${l.wallClockMs / 60_000} min<span class="chevron" aria-hidden="true">⌄</span></button>
     <button class="start" id="compact-start" type="button">Start</button>
-    <button class="more" id="compact-more" type="button" aria-expanded="false" aria-controls="launch-root">More options</button>
+    <button class="more" id="compact-more" type="button" aria-expanded="false" aria-controls="launch-root">Options</button>
   </div>`;
   return `<style>${designTokenCssBlock()}\n${PAGE_CSS}</style>
 <main id="launch-root" data-generation="${generation}">${state.hasSwarms ? compact : expanded}</main>

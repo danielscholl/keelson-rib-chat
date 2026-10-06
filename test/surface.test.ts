@@ -8196,8 +8196,7 @@ describe("launching from the tab", () => {
       .replace(/<template\b[^>]*>[\s\S]*?<\/template>/g, "")
       .replace(/<(style|script)>[\s\S]*?<\/\1>/g, "");
     for (const copy of [
-      `Working session · ${SIZE_PRESETS.medium.wallClockMs / 60_000} min<span class="chevron" aria-hidden="true">⌄</span>`,
-      "More options",
+      ">Options</button>",
       ">Start</button>",
       `type="text" aria-label="Swarm task" placeholder="${COMPACT_PLACEHOLDER}"`,
     ]) {
@@ -8206,6 +8205,8 @@ describe("launching from the tab", () => {
     for (const copy of [
       "New swarm",
       "compact-budget",
+      "compact-plan",
+      "Working session",
       `${SIZE_PRESETS.medium.maxAgents} agents`,
       "TASK",
       "HOW HARD IT WORKS",
@@ -8230,11 +8231,10 @@ describe("launching from the tab", () => {
     expect(frame.get("launch-task")).toBeUndefined();
     expect(frame.get("plan-medium")).toBeUndefined();
     expect(frame.get("allow-write")).toBeUndefined();
-    for (const id of ["compact-plan", "compact-more"]) {
-      expect(frame.get(id)!.attributes.get("type")).toBe("button");
-      expect(frame.get(id)!.attributes.get("aria-expanded")).toBe("false");
-      expect(frame.get(id)!.attributes.get("aria-controls")).toBe("launch-root");
-    }
+    const options = frame.get("compact-more")!;
+    expect(options.attributes.get("type")).toBe("button");
+    expect(options.attributes.get("aria-expanded")).toBe("false");
+    expect(options.attributes.get("aria-controls")).toBe("launch-root");
     for (const hasSwarms of [false, undefined]) {
       const expanded = buildLaunch({ projects, hasSwarms }, "nonce");
       expect(expanded).not.toContain('<template id="launch-expanded">');
@@ -8243,8 +8243,8 @@ describe("launching from the tab", () => {
     }
   });
 
-  test("both compact expansion triggers preserve the exact task and default plan without host actions", () => {
-    for (const id of ["compact-more", "compact-plan"]) {
+  test("Options preserves the exact task and default plan without host actions", () => {
+    for (const id of ["compact-more"]) {
       const frame = frameHarness({ projects, provider: "copilot", hasSwarms: true });
       const draft = '  Decide "A" & <B> / #42; keep punctuation and spaces  ';
       frame.get("compact-task")!.value = draft;
@@ -8317,7 +8317,7 @@ describe("launching from the tab", () => {
       },
     ]);
     frame.release();
-    frame.fire("compact-plan", "click");
+    frame.fire("compact-more", "click");
     expect(frame.get("launch-task")!.value).toBe("First line");
     expect(frame.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
     expect(frame.get("launch-project")!.value).toBe("");
@@ -8463,7 +8463,7 @@ describe("launching from the tab", () => {
       toolReachability: [{ name: "beads_ready", status: "reachable" }],
     });
     frame.get("compact-task")!.value = "Fix the flaky test";
-    frame.fire("compact-plan", "click");
+    frame.fire("compact-more", "click");
     frame.fire("plan-large", "click");
     frame.fire("launch-start", "click");
     expect(frame.calls.at(-1)?.payload).toMatchObject({ size: "large", power: "deep" });
@@ -11288,7 +11288,7 @@ describe("launching from the tab", () => {
       const page = buildLaunch({ projects, hasSwarms }, "nonce");
       expect(page).toContain("--button-ink: var(--bg)");
       expect(page).toContain("--button-ink: var(--card)");
-      expect(page).toContain(".compact-plan { background: var(--card-2); color: var(--fg);");
+      expect(page).not.toContain(".compact-plan");
       expect(page).not.toContain(".compact-budget");
     }
   });

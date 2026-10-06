@@ -845,12 +845,10 @@ conclusion itself; its copy button copies all of it, not the board preview.
 
 The Start a swarm header is a themed HTML launcher. With a live or retained
 ended swarm and no restored expanded draft, it starts as one compact line. Type in
-Describe a problem. Agents work it out together. The Working session ·
-${minutes(SIZE_PRESETS.medium.wallClockMs)} min chip sits beside Start.
+Describe a problem. Agents work it out together. Start and Options sit beside it.
 Compact Start uses chat mode with no project: nothing on disk is read or changed.
 It sends no size, power, model, provider, workflow or lead-tool overrides.
-More options or the Working session chip expands the launcher in place without
-losing the task. Expansion alone does not change the default plan. Fewer options
+Options expands the launcher in place without losing the task. Expansion alone does not change the default plan. Fewer options
 returns to the compact line, keeping the task's first line and dropping every
 other choice.
 

@@ -561,12 +561,12 @@ not its deadline window or native rendering.
 The **Start a swarm** header above the index is a themed HTML launcher. With a
 live or retained ended swarm and no restored expanded draft, it starts as
 one compact line. Type in **Describe a problem. Agents work it out
-together.** The **Working session · 30 min** chip sits beside **Start**.
+together.** **Start** and **Options** sit beside it.
 
 Compact Start uses chat mode with no project: nothing on disk is read or
 changed. It sends no size, power, model, provider, workflow or lead-tool
-overrides. **More options** or the **Working session** chip expands the
-launcher in place without losing the task. Expansion alone does not change
+overrides. **Options** expands the launcher in place without losing the
+task. Expansion alone does not change
 the default plan. **Fewer options** returns to the compact line, keeping the
 task's first line and dropping every other choice.
 

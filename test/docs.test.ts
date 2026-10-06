@@ -47,7 +47,7 @@ describe("contributed docs", () => {
       "host toast",
       "about two seconds",
       "one compact line",
-      "More options",
+      "Options expands the launcher",
       "Fewer options",
       "Will attach issue #N from owner/repo",
       "replacement documents restore",
@@ -86,16 +86,15 @@ describe("contributed docs", () => {
       "utf8",
     );
     const normalize = (text: string) => text.replace(/[`*]/g, "").replace(/\s+/g, " ");
-    const l = SIZE_PRESETS.medium;
     for (const text of [swarms, guide].map(normalize)) {
       for (const phrase of [
         "With a live or retained ended swarm and no restored expanded draft, it starts as one compact line",
         "Describe a problem. Agents work it out together.",
-        `The Working session · ${l.wallClockMs / 60_000} min chip sits beside Start`,
+        "Start and Options sit beside it",
         "Compact Start uses chat mode with no project",
         "nothing on disk is read or changed",
         "no size, power, model, provider, workflow or lead-tool overrides",
-        "More options or the Working session chip expands the launcher in place without losing the task",
+        "Options expands the launcher in place without losing the task",
         "Expansion alone does not change the default plan",
         "Fewer options returns to the compact line, keeping the task's first line and dropping every other choice",
         "With no live or retained ended swarms, the launcher opens expanded",

@@ -52,7 +52,7 @@ turns, about 30 minutes), or **Deep dig**. **Model** sits under the plans,
 grouped by provider with **Other…** for a typed name; the plan's pair stays
 unless a model is named for all agents. One sentence beside **Start swarm**
 says how many agents run, for how long, on which model and where. With swarms
-on the tab the launcher starts as one compact line; **More options** expands
+on the tab the launcher starts as one compact line; **Options** expands
 it and **Fewer options** returns to it. An ended swarm offers **Retry** with a
 model picker when it did not finish, or **Go deeper** onto the next plan when
 a Quick look or Working session finished. Selecting a project
