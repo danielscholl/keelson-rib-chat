@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.23.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.22.0...v0.23.0) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename the rib to swarm (@keelson/rib-swarm, id swarm) ([#125](https://github.com/danielscholl/keelson-rib-swarm/issues/125))
+
+### Added
+
+* rename the rib to swarm (@keelson/rib-swarm, id swarm) ([#125](https://github.com/danielscholl/keelson-rib-swarm/issues/125)) ([2e5802d](https://github.com/danielscholl/keelson-rib-swarm/commit/2e5802d1b9b6081b8182ff78344ae7acc5b55b11))
+
 ## [0.22.0](https://github.com/danielscholl/keelson-rib-chat/compare/v0.21.0...v0.22.0) (2026-10-06)
 
 
