@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.25.0...v0.26.0) (2026-10-07)
+
+
+### Added
+
+* **swarms:** show token cost and per-model spend ([#137](https://github.com/danielscholl/keelson-rib-swarm/issues/137)) ([bb652ef](https://github.com/danielscholl/keelson-rib-swarm/commit/bb652efaa312c6575153085ef8c8bd0aaa8dcc61))
+
 ## [0.25.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.24.2...v0.25.0) (2026-10-07)
 
 
