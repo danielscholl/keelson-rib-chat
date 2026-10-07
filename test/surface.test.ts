@@ -7281,14 +7281,21 @@ describe("launching from the tab", () => {
     expect(first.get("launch-summary")!.textContent).toBe("3 agents for up to 15 min");
     first.get("launch-task")!.value = "Drain the backlog";
     first.fire("launch-task", "input");
+    expect(first.get("plans")!.classes.has("is-factory")).toBe(false);
+    expect(first.get("factory-hint")!.hidden).toBe(true);
+    first.fire("factory-info", "click");
+    expect(first.get("factory-hint")!.hidden).toBe(false);
+    expect(first.get("factory-info")!.attributes.get("aria-expanded")).toBe("true");
     first.fire("launch-factory", "click");
     expect(first.get("launch-factory")!.attributes.get("aria-checked")).toBe("true");
+    expect(first.get("plans")!.classes.has("is-factory")).toBe(true);
     expect(first.get("launch-summary")!.textContent).toBe("3 agents until work stops landing");
     first.fire("plan-medium", "click");
     expect(first.get("launch-summary")!.textContent).toBe("5 agents until work stops landing");
     expect(bridge.stored).toMatchObject({ factory: true, size: "medium" });
     const next = frameHarness(source, "second", bridge);
     expect(next.get("launch-factory")!.attributes.get("aria-checked")).toBe("true");
+    expect(next.get("plans")!.classes.has("is-factory")).toBe(true);
     next.fire("launch-start", "click");
     expect(next.calls[0]!.payload).toEqual({
       nonce: "second",
