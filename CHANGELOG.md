@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.23.0...v0.24.0) (2026-10-07)
+
+
+### Added
+
+* **swarm:** add factory mode and fix stalls from demo testing ([#127](https://github.com/danielscholl/keelson-rib-swarm/issues/127)) ([750b43c](https://github.com/danielscholl/keelson-rib-swarm/commit/750b43c5a2f02af501c0b7a9c44d5dce919b6b50))
+
 ## [0.23.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.22.0...v0.23.0) (2026-10-06)
 
 
