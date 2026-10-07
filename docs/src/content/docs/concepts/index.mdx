@@ -41,15 +41,17 @@ on what Swarm adds.
 |---|---|
 | **Chat with one agent** | Fast, open-ended work where one context is enough |
 | **Workflow** | Repeatable execution with known steps |
-| **Chamber room** | A fixed roster taking turns over one transcript |
-| **Swarm** | Parallel, read-only investigation by agents that have to find and reach each other |
+| **Swarm** | Work that divides across agents that have to find and reach each other |
 
-A swarm and a [Chamber](https://danielscholl.github.io/keelson-rib-chamber/)
-room look alike from a distance, and they are built on opposite assumptions. A
-room has one driver that routes every turn and deliberately has no message bus.
-A swarm has no driver: agents work independently and in parallel, so they need a
-bus, and ClickClack is that bus. Pick a room when you know who should speak and
-in what order. Pick a swarm when you do not yet know how the work divides.
+A workflow has a fixed shape: nodes and edges written down ahead of time. A
+swarm has no driver: agents work independently and in parallel, and the lead
+spawns more as the work divides, so they need a bus, and ClickClack is that bus.
+Pick a workflow when you know the steps. Pick a swarm when you do not yet know
+how the work divides.
 
-A swarm investigates. It does not implement. To act on what a swarm concludes,
-run an implementation workflow yourself and carry the conclusion into it.
+A swarm investigates by default. It changes code only when you allow it: with
+**Write**, the lead spawns writers that each work in their own worktree, and
+with **Run workflows** it hands the change to a workflow. In **Factory mode** it
+works a backlog for as long as work keeps landing; Keelson's
+[software factory tutorial](https://danielscholl.github.io/keelson/docs/tutorials/run-the-factory/)
+runs one end to end.

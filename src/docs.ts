@@ -47,8 +47,8 @@ human can watch the channel and post in it. The whole swarm runs as one durable
 Keelson op, so it can be polled, steered, and cancelled like any other run.
 
 Use a swarm when a problem is worth several agents investigating in parallel and
-talking it through. Do not use one for a single-agent question, or for a fixed
-roster taking turns over one transcript (that is a Chamber room).
+talking it through. Do not use one for a single-agent question, or for steps
+you already know (that is a workflow).
 
 By default agents can talk, and at most read a project checkout. They cannot
 edit files, run shell commands, lease workspaces, or reach a forge, and no

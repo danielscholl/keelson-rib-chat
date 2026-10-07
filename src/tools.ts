@@ -698,7 +698,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
     {
       name: "chat_swarm_start",
       description:
-        "Start an agent swarm on a task. Agents are ClickClack bots that coordinate in a dedicated channel a human can watch and post in. Returns at once with the swarm id and a run id: poll chat_swarm_status or run_status, stop with chat_swarm_stop or run_cancel, redirect with run_steer. NOT for a single-agent question, or a fixed-roster discussion (a Chamber room).",
+        "Start an agent swarm on a task. Agents are ClickClack bots that coordinate in a dedicated channel a human can watch and post in. Returns at once with the swarm id and a run id: poll chat_swarm_status or run_status, stop with chat_swarm_stop or run_cancel, redirect with run_steer. NOT for a single-agent question, or for known fixed steps (a workflow).",
       inputSchema: startSchema,
       state_changing: true,
       execute: guarded(async (input, ctx) => {
