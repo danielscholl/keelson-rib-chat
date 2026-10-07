@@ -19,7 +19,7 @@ import {
   renderContextIndex,
   renderContextItem,
 } from "./context.ts";
-import { swarmCost, usd } from "./cost.ts";
+import { cents, swarmCost } from "./cost.ts";
 import {
   applyStatus,
   describeRun,
@@ -818,7 +818,7 @@ export class Swarm {
       return true;
     }
     if (cost !== undefined && c.maxCostUsd !== undefined && cost >= c.maxCostUsd) {
-      void this.finish("exhausted", `cost ceiling of ${usd(c.maxCostUsd)} reached`);
+      void this.finish("exhausted", `cost ceiling of ${cents(c.maxCostUsd)} reached`);
       return true;
     }
     const near =
@@ -828,7 +828,7 @@ export class Swarm {
       this.spendWarnedAt = new Date().toISOString();
       const what =
         cost !== undefined && c.maxCostUsd !== undefined && cost >= c.maxCostUsd * SPEND_WARN_AT
-          ? `${usd(cost)} of its ${usd(c.maxCostUsd)} cost ceiling`
+          ? `${cents(cost)} of its ${cents(c.maxCostUsd)} cost ceiling`
           : `${fresh} of its ${c.maxTokens} fresh-token ceiling`;
       this.notes.push(
         `Spend: the swarm has used ${what}. It ends when it reaches the ceiling unless the operator raises it. Finish the work in hand and call chat_done with what landed and what is left.`,
@@ -854,7 +854,7 @@ export class Swarm {
       c.maxCostUsd !== undefined &&
       next.maxCostUsd <= c.maxCostUsd
     ) {
-      throw new Error(`the cost ceiling is already ${usd(c.maxCostUsd)}`);
+      throw new Error(`the cost ceiling is already ${cents(c.maxCostUsd)}`);
     }
     this.ceiling = {
       maxTokens: next.maxTokens ?? c.maxTokens,
@@ -864,7 +864,7 @@ export class Swarm {
     };
     this.spendWarnedAt = undefined;
     const raised = [
-      ...(next.maxCostUsd !== undefined ? [`cost ceiling to ${usd(next.maxCostUsd)}`] : []),
+      ...(next.maxCostUsd !== undefined ? [`cost ceiling to ${cents(next.maxCostUsd)}`] : []),
       ...(next.maxTokens !== undefined ? [`token ceiling to ${next.maxTokens}`] : []),
     ].join(" and ");
     this.log(`the operator raised the ${raised}`, { kind: "operator", actor: "operator" });

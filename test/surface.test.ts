@@ -2653,9 +2653,10 @@ describe("Swarms boards", () => {
       expect(JSON.stringify(spend)).toContain('"cost":"$20.00"');
       const byKind = buildSwarmBoard(s).sections.find((x) => x.title === "Cost by kind");
       expect(byKind).toMatchObject({
+        kind: "bars",
         items: [
-          { label: "input $5.00", n: 500 },
-          { label: "cache write $15.00", n: 1500 },
+          { label: "input", value: 5, total: 20, trailing: "$5.00 · 25%" },
+          { label: "cache write", value: 15, total: 20, trailing: "$15.00 · 75%" },
         ],
       });
       const endedAgain = swarm("s1cost", { ...s, status: "done", endedAt: T0 });
@@ -2707,12 +2708,13 @@ describe("Swarms boards", () => {
     try {
       const byKind = buildSwarmBoard(priced).sections.find((x) => x.title === "Cost by kind");
       expect(byKind).toMatchObject({
-        kind: "segments",
+        kind: "bars",
+        inline: true,
         items: [
-          { label: "cache read $9.00", n: 900 },
-          { label: "input $1.00", n: 100 },
-          { label: "cache write $2.00", n: 200 },
-          { label: "output $1.00", n: 100 },
+          { label: "cache read", trailing: "$9.00 · 69%" },
+          { label: "input", trailing: "$1.00 · 8%" },
+          { label: "cache write", trailing: "$2.00 · 15%" },
+          { label: "output", trailing: "$1.00 · 8%" },
         ],
       });
       expect(endedRow(priced).trailing).toContain("4k · $13.00");
@@ -2721,6 +2723,15 @@ describe("Swarms boards", () => {
         (x) => x.title,
       );
       expect(titles.some((t) => t?.endsWith(" · ≈ $14.00"))).toBe(true);
+      // The tab shows the newest eight, but a day's total counts every kept swarm.
+      const many = [
+        legacy,
+        ...Array.from({ length: 8 }, (_, i) => ({ ...priced, id: `s${i}many` })),
+      ];
+      const tabTitles = buildIndex(state({ ended: many }), new Date(T0)).sections.map(
+        (x) => x.title,
+      );
+      expect(tabTitles.some((t) => t?.endsWith(" · ≈ $105.00"))).toBe(true);
     } finally {
       setPricer(undefined);
     }
@@ -7502,6 +7513,16 @@ describe("launching from the tab", () => {
       "5 agents until work stops landing or $10",
     );
     expect(bridge.stored).toMatchObject({ factory: true, size: "medium" });
+    first.get("launch-cost")!.value = "25";
+    first.fire("launch-cost", "input");
+    expect(first.get("launch-summary")!.textContent).toBe(
+      "5 agents until work stops landing or $25",
+    );
+    first.get("launch-cost")!.value = "";
+    first.fire("launch-cost", "input");
+    expect(first.get("launch-summary")!.textContent).toBe(
+      "5 agents until work stops landing or $10",
+    );
     const next = frameHarness(source, "second", bridge);
     expect(next.get("launch-factory")!.attributes.get("aria-checked")).toBe("true");
     expect(next.get("plans")!.classes.has("is-factory")).toBe(true);

@@ -174,8 +174,13 @@ export function endedRow(s: SwarmSummary): Row {
 }
 
 // Ended swarms, newest first, one rows section per day they ended.
-// A day that spent anything carries its total in the heading.
-function byDay(ended: readonly SwarmSummary[], now: Date): Extract<Section, { kind: "rows" }>[] {
+// A day that spent anything carries its total in the heading, over every kept
+// swarm that ended that day, not only the rows shown.
+function byDay(
+  ended: readonly SwarmSummary[],
+  now: Date,
+  kept: readonly SwarmSummary[] = ended,
+): Extract<Section, { kind: "rows" }>[] {
   const days: { day: string; swarms: SwarmSummary[] }[] = [];
   for (const s of ended) {
     const day = dayHeading(s.endedAt ?? s.startedAt, now);
@@ -183,7 +188,8 @@ function byDay(ended: readonly SwarmSummary[], now: Date): Extract<Section, { ki
     if (last?.day === day) last.swarms.push(s);
     else days.push({ day, swarms: [s] });
   }
-  return days.map(({ day, swarms }) => {
+  return days.map(({ day, swarms: shown }) => {
+    const swarms = kept.filter((s) => dayHeading(s.endedAt ?? s.startedAt, now) === day);
     const costs = swarms.map((s) => swarmCost(s)).filter((c) => c !== undefined);
     const total = costs.reduce((n, c) => n + c.usd, 0);
     const spent =
@@ -193,7 +199,7 @@ function byDay(ended: readonly SwarmSummary[], now: Date): Extract<Section, { ki
             swarms.some(estimated),
           )}`
         : "";
-    return { kind: "rows" as const, title: `${day}${spent}`, items: swarms.map(endedRow) };
+    return { kind: "rows" as const, title: `${day}${spent}`, items: shown.map(endedRow) };
   });
 }
 
@@ -266,7 +272,7 @@ export function buildIndex(state: SurfaceState, now = new Date()): CanvasBoardVi
         ].filter((seg) => seg.n > 0)
       : [];
   const empty = liveCount === 0 && ended.length === 0;
-  const days = byDay(shown, now);
+  const days = byDay(shown, now, ended);
   if (earlier > 0) {
     days.at(-1)?.items.push({
       icon: "…",

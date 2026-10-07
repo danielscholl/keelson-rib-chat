@@ -631,17 +631,24 @@ function costByKind(s: SwarmSummary): Leaf[] {
     kinds.read += read;
   }
   if (!priced) return [];
-  const hundredths = (n: number) => Math.round(n * 100);
+  const total = kinds.read + kinds.input + kinds.write + kinds.output;
+  const bar = (label: string, value: number) => ({
+    label,
+    value,
+    total,
+    trailing: `${usd(value)} · ${Math.round((100 * value) / total)}%`,
+  });
   return [
     {
-      kind: "segments",
+      kind: "bars",
       title: "Cost by kind",
+      inline: true,
       items: [
-        { label: `cache read ${usd(kinds.read)}`, n: hundredths(kinds.read) },
-        { label: `input ${usd(kinds.input)}`, n: hundredths(kinds.input) },
-        { label: `cache write ${usd(kinds.write)}`, n: hundredths(kinds.write) },
-        { label: `output ${usd(kinds.output)}`, n: hundredths(kinds.output) },
-      ].filter((item) => item.n > 0),
+        bar("cache read", kinds.read),
+        bar("input", kinds.input),
+        bar("cache write", kinds.write),
+        bar("output", kinds.output),
+      ].filter((item) => item.value > 0),
     },
   ];
 }
