@@ -31,8 +31,8 @@ read nothing on disk. Pick a project to grant read access; each option shows
 its name and path, with the home directory shortened to `~`.
 
 Choose a plan under **Size**. **Scout is selected by
-default**. Each card shows its agents, turns, minutes and the effective
-provider's models. Providers without pins use the matching class model.
+default**. Each card shows its agents, cost ceiling, minutes and the effective
+provider's models, and, once that plan has run here, its median and highest cost. Providers without pins use the matching class model.
 
 | Plan | For | Agents | Turns | Minutes |
 | --- | --- | --- | --- | --- |
@@ -50,8 +50,8 @@ workers keeps the plan's lead. Lead and workers must come from one provider.
 Picking a card clears both picks and restores that plan.
 
 **Start swarm** sits at the end of the form with one sentence beside it: N
-agents for up to N min, then the picked models, then where they
-work, such as **3 agents for up to 15 min, chat only.** Untouched Scout sends no size, power or model overrides. Crew records medium/balanced;
+agents for up to N min or $N, then the picked models, then where they
+work, such as **3 agents for up to 15 min or $1, chat only.** Untouched Scout sends no size, power or model overrides. Crew records medium/balanced;
 Fleet records large/deep. A named model records size, model and provider,
 with no power.
 

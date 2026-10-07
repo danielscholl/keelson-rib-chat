@@ -2,11 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   byModel,
   cacheHit,
+  cents,
   costOf,
   costText,
+  estimated,
   modelRows,
   type Pricer,
+  planHistory,
   pricedCounts,
+  raisedCeiling,
+  rowCost,
   setPricer,
   swarmCost,
   usd,
@@ -117,5 +122,45 @@ describe("cost", () => {
     expect(cacheHit({ input: 50, output: 0, cached: 0 })).toBeUndefined();
     expect(usd(12.694)).toBe("$12.69");
     expect(usd(0.07921)).toBe("$0.0792");
+  });
+
+  test("a raise is about half again, rounded", () => {
+    expect(raisedCeiling(40)).toBe(60);
+    expect(raisedCeiling(10)).toBe(15);
+    expect(raisedCeiling(1)).toBe(1.5);
+    expect(raisedCeiling(1_000_000)).toBe(1_500_000);
+    expect(raisedCeiling(150_000)).toBe(250_000);
+  });
+
+  test("rows show cents, marked for estimates and floors", () => {
+    expect(cents(0.004)).toBe("<$0.01");
+    expect(rowCost({ usd: 0.1061, unpricedTurns: 0 })).toBe("$0.11");
+    expect(rowCost({ usd: 57.2, unpricedTurns: 0 }, true)).toBe("≈ $57.20");
+    expect(rowCost({ usd: 3, unpricedTurns: 2 })).toBe("≥ $3.00");
+    expect(estimated({ agents: [agent({ usage: { input: 1, output: 1, cached: 0 } })] })).toBe(
+      true,
+    );
+    expect(estimated({ agents: [agent({ usageByModel: [row()] })] })).toBe(false);
+  });
+
+  test("plan history takes each plan's priced runs only", () => {
+    setPricer(flat);
+    const run = (sizeBase: "small" | "large", input: number, model = "gpt-6.1-sol") =>
+      ({
+        sizeBase,
+        agents: [agent({ usageByModel: [row({ input, output: 0, cached: 0, model })] })],
+      }) as unknown as SwarmSummary;
+    expect(
+      planHistory([
+        run("large", 10_000_000),
+        run("large", 30_000_000),
+        run("large", 20_000_000),
+        run("small", 500_000),
+        run("small", 1, "unpriced"),
+      ]),
+    ).toEqual({
+      large: { median: 20, highest: 30, runs: 3 },
+      small: { median: 0.5, highest: 0.5, runs: 1 },
+    });
   });
 });

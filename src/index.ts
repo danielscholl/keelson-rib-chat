@@ -49,6 +49,8 @@ import {
   FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
   ownsPr,
+  PLAN_COST_USD,
+  PLAN_TOKENS,
   POWER_EFFORT,
   pinnedModels,
   publicSummary,
@@ -680,6 +682,11 @@ async function launchSwarm(
             },
           }
         : {}),
+      spend: {
+        maxTokens:
+          input.maxTokens ?? (input.factory ? FACTORY_TOKENS : PLAN_TOKENS)[record.sizeBase],
+        maxCostUsd: input.maxCostUsd ?? PLAN_COST_USD[record.sizeBase],
+      },
       prOwnedElsewhere,
       onCreated: (s) => booting.set(s.id, s),
       ...(dispatcher && input.workflows

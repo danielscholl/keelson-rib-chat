@@ -27,7 +27,10 @@ import {
   FACTORY_LIMITS,
   FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
+  PLAN_COST_USD,
+  PLAN_TOKENS,
   SIZE_PRESETS,
+  SPEND_WARN_AT,
   SWARM_SIZES,
 } from "./types.ts";
 
@@ -90,7 +93,8 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |
 | \`lead_tools\` | none | Other ribs' tools the lead holds, such as \`beads_ready\` or \`beads_close\`, at most ${START_BOUNDS.maxLeadTools}. See Agent tools. |
 | \`factory\` | false | Factory mode: no turn or clock budget, only progress. See Limits and completion. |
-| \`max_tokens\` | by size | Factory mode's ceiling on fresh tokens: ${FACTORY_TOKENS.small} small, ${FACTORY_TOKENS.medium} medium, ${FACTORY_TOKENS.large} large. Ignored without \`factory\`. |
+| \`max_tokens\` | by size | Ceiling on fresh tokens: ${PLAN_TOKENS.small} small, ${PLAN_TOKENS.medium} medium, ${PLAN_TOKENS.large} large; in factory mode ${FACTORY_TOKENS.small}, ${FACTORY_TOKENS.medium} and ${FACTORY_TOKENS.large}. See Limits and completion. |
+| \`max_cost_usd\` | by size | Ceiling on list-price dollars: $${PLAN_COST_USD.small} small, $${PLAN_COST_USD.medium} medium, $${PLAN_COST_USD.large} large. Ignored on a host that does not price tokens. |
 
 Project confinement: with a \`project\`, every turn runs with the project root as
 its working directory and as its only allowed directory. A writer's turns use
@@ -495,8 +499,8 @@ linking or updating beads (\`beads_create\`, \`beads_dep\`, \`beads_update\`)
 counts too, so a swarm that plans its backlog first is not cut off. The swarm keeps going while it lands, and after
 a window of turns across the swarm without any (${FACTORY_PROGRESS_TURNS.small} on small,
 ${FACTORY_PROGRESS_TURNS.medium} on medium, ${FACTORY_PROGRESS_TURNS.large} on large) it tells the lead to conclude and
-ends as \`stalled\` 3 turns later. It also ends as \`exhausted\` at
-\`max_tokens\` fresh tokens: by default ${FACTORY_TOKENS.small} on small,
+ends as \`stalled\` 3 turns later. Its token ceiling defaults higher than a plain
+swarm's: ${FACTORY_TOKENS.small} on small,
 ${FACTORY_TOKENS.medium} on medium and ${FACTORY_TOKENS.large} on large. The turn and clock limits
 become backstops of ${FACTORY_LIMITS.maxTurns} turns, ${FACTORY_LIMITS.maxTurnsPerAgent} per worker, and ${FACTORY_LIMITS.wallClockMs / 3_600_000} hours. Every
 turn shows the agents how many turns have passed since work last landed, and
@@ -511,12 +515,22 @@ the channel is told. The same run of failures in the lead ends the swarm as
 first waits up to ${SETTLE_GRACE_MS / 1_000} seconds for the provider to release the agent's session,
 since the next turn resumes that same session.
 
+Every swarm also has spend ceilings: \`max_tokens\` fresh tokens and
+\`max_cost_usd\` list-price dollars, by default ${PLAN_TOKENS.small} and $${PLAN_COST_USD.small} on small,
+${PLAN_TOKENS.medium} and $${PLAN_COST_USD.medium} on medium, ${PLAN_TOKENS.large} and $${PLAN_COST_USD.large} on large. The swarm checks them
+between turns and ends as \`exhausted\` at either, so a turn in flight can carry it a little
+past. Cost is priced by the host the way its Usage page prices tokens; on a host that
+prices nothing, only the token ceiling applies, and a model without a price counts as $0.
+When spend first passes ${SPEND_WARN_AT * 100}% of a ceiling, the lead is told to wrap up and the
+operator gets a Needs you card to raise the ceiling or stop the swarm. Raising clears the
+warning; a ceiling never goes down. Turns and the wall clock stay as backstops.
+
 | Status | Meaning |
 | --- | --- |
 | \`running\` | In flight. |
 | \`done\` | The lead called \`chat_done\`. \`conclusion\` holds the answer. |
 | \`stalled\` | The swarm went idle and the lead did not conclude after ${l.maxNudges} nudges, or a factory swarm stopped landing work. |
-| \`exhausted\` | The turn budget or the wall clock ran out, or a factory swarm reached its token ceiling. |
+| \`exhausted\` | The turn budget or the wall clock ran out, or the swarm reached its token or cost ceiling. |
 | \`stopped\` | Stopped by \`chat_swarm_stop\`, \`run_cancel\`, or a host shutdown. |
 | \`error\` | The swarm failed to start, ClickClack revoked the owner session, or the lead's turns kept failing. |
 
@@ -559,8 +573,9 @@ status and reason, and the summary is the run's last progress frame.
 The rib publishes a Swarms tab. Needs you is one list across every live swarm:
 one card per request, oldest first, with the oldest 12 shown when there are
 more. Each card leads with the request (Review the plan for …, @planner asked:
-…, ClickClack stopped answering, No agent has worked since …) and its verb
-(Review plan, Read question, Open swarm, Message the lead). The task and swarm
+…, Crew is at $32.00 of its $40.00 cost ceiling, ClickClack stopped answering,
+No agent has worked since …) and its verb (Review plan, Read question, Raise to
+$60.00, Open swarm, Message the lead). The task and swarm
 id sit in the footnote. Open swarm expands that live swarm on the page.
 
 The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
@@ -568,8 +583,10 @@ the task and id with a lifecycle or needs-you pill and people dots; a state
 line; once the lead has concluded, the Outcome card; peer-review gate cards;
 an agent strip (busy, waiting, idle, capped, failed, with hatched open
 seats); Budget tiles (Turns with its spark and a forecast as its delta,
-Time as a ticking time-left clock, fresh Tokens with ↑ in and ↓ out in the sub, and
-Cost with cache hit and cached tokens when the host prices tokens); Timeline;
+Time as a ticking time-left clock, Fresh tokens with ↑ in and ↓ out and the token
+ceiling in the sub, and Cost with the cost ceiling, cache hit and cached tokens when the
+host prices tokens, its spend rate per minute and when it reaches the ceiling as its
+delta, warning past ${SPEND_WARN_AT * 100}%); Timeline;
 full-width Map, then Conversation and Message the lead;
 Spend, Produced so far and Activity; then Open the report when one exists,
 Timeline, Details, and Stop swarm last. Message the lead is expanded directly under
@@ -794,12 +811,15 @@ and the eligible Message the lead composer, Timeline, Details and Stop,
 then Spend, Produced so far and Activity. Ended section order: Outcome, Result,
 actions, Agents, Produced when applicable, Activity when events exist,
 About, then the separate Ended swarms back-link.
-The ended Result orders Turns, Time, Tokens, Cost when priced, Pull requests when
+The ended Result orders Turns, Time, Fresh tokens, Cost when priced, Pull requests when
 eligible, then Runs verified only when runs exist. There is no Agents tile.
 Tokens is 0 when no turns ran; after positive turns without usage it is
 unavailable, not an invented zero. Cost is the list price the host's Usage page would
 show for the same tokens, priced on every read; a model without a price makes it a floor
-(≥) with the unpriced turns named. Ended rows add fresh tokens and cost after the time.
+(≥) with the unpriced turns named. Ended rows add fresh tokens and cost in cents after the
+time, marked ≈ when the swarm was recorded before tallies were kept per model, and each
+day's heading carries that day's total. Under Result, Cost by kind splits the dollars into
+cache read, input, cache write and output, in the Usage page's order.
 The Pull requests tile appears when workflows were named, \`writeEnabled\`
 is true, a legacy writer has a worktree, or any run or writer PR exists.
 Eligible write or dispatch swarms with no PRs show 0 with "0 with CI passing".
@@ -902,7 +922,8 @@ home directory shortened to ~; picking one gives agents read access, not write
 access or workflows.
 
 Size offers three plans. Scout is selected by default.
-Each card shows its agents, turns, minutes and the effective provider's models.
+Each card shows its agents, cost ceiling, minutes and the effective provider's models,
+and, once that plan has run here, its median and highest cost and how many runs.
 Beside the figures, every card lists a Lead row and a Workers row, even when
 they name the same model. Providers without pins use the matching class model.
 
@@ -921,10 +942,12 @@ card selected; picking only a lead keeps the plan's workers, and picking only
 workers keeps the plan's lead. Lead and workers must come from one provider.
 Picking a card clears both picks and restores that plan.
 
+Cost ceiling sits beside the model pickers; left blank, the plan's ceiling applies.
+
 Start swarm sits at the end of the form with one sentence beside it: N agents
-for up to N min, then the picked models (on <lead> and <workers>, with lead
+for up to N min or $N, then the picked models (on <lead> and <workers>, with lead
 <model> or with workers <model>), then where they work, such
-as 3 agents for up to 15 min, chat only.
+as 3 agents for up to 15 min or $1, chat only.
 Untouched Scout sends no size, power or model overrides. Crew
 records medium/balanced; Fleet records large/deep. A named model records size,
 model and provider, with no power.

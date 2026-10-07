@@ -13,7 +13,17 @@ import type {
   CanvasTimelineWindow,
   CanvasTone,
 } from "@keelson/shared";
-import { agentCost, byModel, cacheHit, costOf, costText, swarmCost, usd } from "../cost.ts";
+import {
+  agentCost,
+  byModel,
+  cacheHit,
+  cents,
+  costOf,
+  costText,
+  spendRate,
+  swarmCost,
+  usd,
+} from "../cost.ts";
 import { missingEvidence } from "../dispatch.ts";
 import { freshTokens, inOutText, modelLabel, tokenCount } from "../labels.ts";
 import { type Need, needsYou } from "../needs.ts";
@@ -24,6 +34,7 @@ import {
   type ChildRun,
   type ChildRunStatus,
   isLive,
+  SPEND_WARN_AT,
   type StartingSwarm,
   type SwarmSummary,
   sizeOf,
@@ -227,28 +238,54 @@ export function timeTile(s: SwarmSummary): Stat {
 export function tokensTile(s: SwarmSummary): Stat {
   if (!s.usage) {
     return s.turnsUsed === 0
-      ? { label: "Tokens", value: 0, sub: "none yet" }
-      : { label: "Tokens", value: null, sub: "the provider reported none" };
+      ? { label: "Fresh tokens", value: 0, sub: "none yet" }
+      : { label: "Fresh tokens", value: null, sub: "the provider reported none" };
   }
-  const ceiling = s.factory ? ` · of ${tokenCount(s.factory.maxTokens)}` : "";
+  const max = s.spend?.maxTokens ?? s.factory?.maxTokens;
+  const fresh = freshTokens(s.usage);
   return {
-    label: "Tokens",
-    value: tokenCount(freshTokens(s.usage)),
-    sub: `${inOutText(s.usage)}${ceiling}`,
+    label: "Fresh tokens",
+    value: tokenCount(fresh),
+    sub: `${inOutText(s.usage)}${max !== undefined ? ` · of ${tokenCount(max)}` : ""}`,
+    ...(live(s) && max !== undefined && fresh >= max * SPEND_WARN_AT
+      ? { tone: "warn" as const }
+      : {}),
   };
 }
 
 // Absent when the host prices nothing or no turn reported usage.
-export function costTile(s: SwarmSummary): Stat[] {
+export function costTile(s: SwarmSummary, now = new Date()): Stat[] {
   const cost = swarmCost(s);
   if (!cost || !s.usage) return [];
   const hit = cacheHit(s.usage);
+  const max = s.spend?.maxCostUsd;
   const parts = [
+    ...(max !== undefined ? [`of ${cents(max)}`] : []),
     ...(hit !== undefined ? [`${Math.round(hit * 100)}% cache hit`] : []),
     `${tokenCount(s.usage.cached)} cached`,
     ...(cost.unpricedTurns > 0 ? [`${plural(cost.unpricedTurns, "unpriced turn")}`] : []),
   ];
-  return [{ label: "Cost", value: costText(cost), sub: parts.join(" · ") }];
+  const near = max !== undefined && cost.usd >= max * SPEND_WARN_AT;
+  const rate = live(s) ? spendRate(s, now) : undefined;
+  const left =
+    max !== undefined && rate ? Math.max(0, Math.round((max - cost.usd) / rate)) : undefined;
+  return [
+    {
+      label: "Cost",
+      value: costText(cost),
+      sub: parts.join(" · "),
+      ...(rate !== undefined
+        ? {
+            delta: {
+              text: `${cents(rate)}/min${left !== undefined ? ` · ceiling in about ${left} min` : ""}`,
+              direction: "up" as const,
+              ...(near ? { tone: "warn" as const } : {}),
+            },
+          }
+        : {}),
+      ...(live(s) && near ? { tone: "warn" as const } : {}),
+    },
+  ];
 }
 
 function stats(s: SwarmSummary, now: Date): Leaf {
@@ -272,7 +309,7 @@ function stats(s: SwarmSummary, now: Date): Leaf {
         ]
       : []),
     ...(!isLiveNow || s.usage ? [tokensTile(s)] : []),
-    ...costTile(s),
+    ...costTile(s, now),
   ];
   if (!isLiveNow) {
     const prs = new Map<string, boolean>();
@@ -594,16 +631,16 @@ function costByKind(s: SwarmSummary): Leaf[] {
     kinds.read += read;
   }
   if (!priced) return [];
-  const cents = (n: number) => Math.round(n * 100);
+  const hundredths = (n: number) => Math.round(n * 100);
   return [
     {
       kind: "segments",
       title: "Cost by kind",
       items: [
-        { label: `input ${usd(kinds.input)}`, n: cents(kinds.input) },
-        { label: `cache write ${usd(kinds.write)}`, n: cents(kinds.write) },
-        { label: `output ${usd(kinds.output)}`, n: cents(kinds.output) },
-        { label: `cache read ${usd(kinds.read)}`, n: cents(kinds.read) },
+        { label: `cache read ${usd(kinds.read)}`, n: hundredths(kinds.read) },
+        { label: `input ${usd(kinds.input)}`, n: hundredths(kinds.input) },
+        { label: `cache write ${usd(kinds.write)}`, n: hundredths(kinds.write) },
+        { label: `output ${usd(kinds.output)}`, n: hundredths(kinds.output) },
       ].filter((item) => item.n > 0),
     },
   ];
@@ -1162,7 +1199,7 @@ export function buildCockpit(
     {
       kind: "stats",
       title: "Budget",
-      items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s), ...costTile(s)],
+      items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s), ...costTile(s, opts.now)],
     },
     ...(live(s) ? [nativeTimeline(s, opts.now)] : []),
     ...mapConversation(s, opts.selectedAgentId),
@@ -1209,6 +1246,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
           ...outcome(s),
           { kind: "rows", items: [taskRow(s)] },
           stats(s, now),
+          ...costByKind(s),
           ...verbs(s, opts.launch),
           ...details,
         ],

@@ -27,6 +27,8 @@ import {
   FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
   isLive,
+  PLAN_COST_USD,
+  PLAN_TOKENS,
   POWER_MODELS,
   publicSummary,
   readTurnContext,
@@ -64,8 +66,9 @@ export interface StartSwarmInput {
   leadTools?: string[];
   // Runs until progress stops instead of to a turn and clock budget.
   factory?: boolean;
-  // The factory swarm's ceiling on fresh tokens.
+  // Ceilings that end the swarm as out of budget, defaulting by plan.
   maxTokens?: number;
+  maxCostUsd?: number;
 }
 
 export const WORK_TOOLS = ["none", "read", "write"] as const;
@@ -98,6 +101,7 @@ export const START_BOUNDS = {
   maxMinutes: 240,
   maxWorkflows: 10,
   maxTokens: 50_000_000,
+  maxCostUsd: { min: 0.1, max: 5_000 },
 } as const;
 export const WAIT_BOUNDS = { defaultS: 120, maxS: 600 } as const;
 export const READ_BOUNDS = { defaultLimit: 20, maxLimit: 50 } as const;
@@ -300,7 +304,15 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .max(START_BOUNDS.maxTokens)
         .optional()
         .describe(
-          `Factory mode's ceiling on fresh tokens. Defaults by size: small ${FACTORY_TOKENS.small}, medium ${FACTORY_TOKENS.medium}, large ${FACTORY_TOKENS.large}.`,
+          `Ceiling on fresh tokens; the swarm ends as out of budget at it. Defaults by size: small ${PLAN_TOKENS.small}, medium ${PLAN_TOKENS.medium}, large ${PLAN_TOKENS.large}; in factory mode ${FACTORY_TOKENS.small}, ${FACTORY_TOKENS.medium} and ${FACTORY_TOKENS.large}.`,
+        ),
+      max_cost_usd: z
+        .number()
+        .min(START_BOUNDS.maxCostUsd.min)
+        .max(START_BOUNDS.maxCostUsd.max)
+        .optional()
+        .describe(
+          `Ceiling on list-price US dollars, as the host's Usage page prices tokens; the swarm ends as out of budget at it. Defaults by size: small $${PLAN_COST_USD.small}, medium $${PLAN_COST_USD.medium}, large $${PLAN_COST_USD.large}. Ignored on a host that does not price tokens.`,
         ),
       work_tools: z
         .enum(WORK_TOOLS)
@@ -733,7 +745,8 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
           ...(args.context?.length ? { context: toContextItems(args.context) } : {}),
           ...(args.lead_tools?.length ? { leadTools: [...new Set(args.lead_tools)] } : {}),
           ...(args.factory ? { factory: true } : {}),
-          ...(args.factory && args.max_tokens ? { maxTokens: args.max_tokens } : {}),
+          ...(args.max_tokens ? { maxTokens: args.max_tokens } : {}),
+          ...(args.max_cost_usd ? { maxCostUsd: args.max_cost_usd } : {}),
         });
         const s = swarm.summary();
         emitText(

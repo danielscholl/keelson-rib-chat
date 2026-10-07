@@ -7,7 +7,7 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { CanvasActionItem, CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
-import { costText, swarmCost } from "../cost.ts";
+import { estimated, rowCost, swarmCost } from "../cost.ts";
 import { freshTokens, modelLabel, tokenCount } from "../labels.ts";
 import { NEED_ORDER, type Need, needsYou, oldestNeed, UNDATED } from "../needs.ts";
 import { type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
@@ -164,7 +164,7 @@ export function endedRow(s: SwarmSummary): Row {
       plural(s.turnsUsed, "turn"),
       ...(took ? [took] : []),
       ...(s.usage ? [tokenCount(freshTokens(s.usage))] : []),
-      ...(cost ? [costText(cost)] : []),
+      ...(cost ? [rowCost(cost, estimated(s))] : []),
       hhmm(s.endedAt ?? s.startedAt),
       ...(verified ? [verified] : []),
       ...(s.report ? ["◧ report"] : []),
@@ -174,15 +174,27 @@ export function endedRow(s: SwarmSummary): Row {
 }
 
 // Ended swarms, newest first, one rows section per day they ended.
+// A day that spent anything carries its total in the heading.
 function byDay(ended: readonly SwarmSummary[], now: Date): Extract<Section, { kind: "rows" }>[] {
-  const groups: Extract<Section, { kind: "rows" }>[] = [];
+  const days: { day: string; swarms: SwarmSummary[] }[] = [];
   for (const s of ended) {
-    const title = dayHeading(s.endedAt ?? s.startedAt, now);
-    const last = groups.at(-1);
-    if (last?.title === title) last.items.push(endedRow(s));
-    else groups.push({ kind: "rows", title, items: [endedRow(s)] });
+    const day = dayHeading(s.endedAt ?? s.startedAt, now);
+    const last = days.at(-1);
+    if (last?.day === day) last.swarms.push(s);
+    else days.push({ day, swarms: [s] });
   }
-  return groups;
+  return days.map(({ day, swarms }) => {
+    const costs = swarms.map((s) => swarmCost(s)).filter((c) => c !== undefined);
+    const total = costs.reduce((n, c) => n + c.usd, 0);
+    const spent =
+      total > 0
+        ? ` · ${rowCost(
+            { usd: total, unpricedTurns: costs.reduce((n, c) => n + c.unpricedTurns, 0) },
+            swarms.some(estimated),
+          )}`
+        : "";
+    return { kind: "rows" as const, title: `${day}${spent}`, items: swarms.map(endedRow) };
+  });
 }
 
 export function buildBadge(state: SurfaceState): RibSurfaceBadge {

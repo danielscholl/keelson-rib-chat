@@ -50,9 +50,11 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    omitting zero counts. Open seats are hatched.
 5. **Budget** tiles: **Turns** used with a sparkline and a forecast
    delta, with **of N · pace over the last 5 min** in the sub; **Time** as a ticking
-   time-left clock; fresh **Tokens** with **↑ in · ↓ out** in the sub; and
-   **Cost** with the cache hit and cached tokens, when the host prices tokens.
-   Before a turn, Tokens says **none yet**; after turns without usage, it
+   time-left clock; **Fresh tokens** with **↑ in · ↓ out** and the token ceiling
+   in the sub; and **Cost** with the cost ceiling, cache hit and cached tokens,
+   when the host prices tokens. While live, Cost's delta is the spend rate per
+   minute and when it reaches the ceiling; past 80% of a ceiling the tile warns.
+   Before a turn, Fresh tokens says **none yet**; after turns without usage, it
    says **the provider reported none**.
 6. **Timeline**: turns and event marks on lanes over time.
 7. **Map**: the agents and runs as a full-width graph.
@@ -406,13 +408,16 @@ Ended section order: Outcome, Result, actions, Agents, Produced when
 applicable, Activity when events exist, About, then the separate Ended swarms
 back-link.
 
-The ended Result orders Turns, Time, Tokens, Cost when priced, Pull requests when
+The ended Result orders Turns, Time, Fresh tokens, Cost when priced, Pull requests when
 eligible, then Runs verified only when runs exist. There is no Agents tile.
 Tokens is 0 when no turns ran; after positive turns without usage it is
 unavailable, not an invented zero. Cost is the list price the host's Usage page
 would show for the same tokens, priced on every read; a model without a price
 makes it a floor (≥) with the unpriced turns named. Ended rows add fresh tokens
-and cost after the time.
+and cost in cents after the time, marked ≈ when the swarm was recorded before
+tallies were kept per model, and each day's heading carries that day's total.
+Under Result, **Cost by kind** splits the dollars into cache read, input, cache
+write and output, in the Usage page's order.
 
 The Pull requests tile appears when workflows were named, `writeEnabled`
 is true, a legacy writer has a worktree, or any run or writer PR exists.
@@ -698,8 +703,8 @@ are named, then **, with beads** when the tracker is on. The beads suffix
 records switch intent, not a promise that every tracker tool was granted.
 
 **Size** offers three plans. **Scout is selected by
-default**. Each card shows its agents, turns, minutes and the effective
-provider's models. Beside the figures, every card lists a Lead row and a Workers
+default**. Each card shows its agents, cost ceiling, minutes and the effective
+provider's models, and, once that plan has run here, its median and highest cost. Beside the figures, every card lists a Lead row and a Workers
 row, even when they name the same model. Providers without pins use the matching
 class model.
 
@@ -730,9 +735,9 @@ workers keeps the plan's lead. Lead and workers must come from one provider.
 Picking a card clears both picks and restores that plan.
 
 **Start swarm** sits at the end of the form with one sentence beside it: N
-agents for up to N min, then the picked models, then where they
-work, such as **3 agents for up to 15 min, chat only.** or **8 agents for up to
-60 min on claude-opus-5.5, reading keelson and writing on a branch, then
+agents for up to N min or $N, then the picked models, then where they
+work, such as **3 agents for up to 15 min or $1, chat only.** or **8 agents for up to
+60 min or $60 on claude-opus-5.5, reading keelson and writing on a branch, then
 fix-issue, with beads.** Untouched Scout sends no size, power or
 model overrides. Crew records medium/balanced; Fleet records large/deep. A
 named model records size, model and provider, with no power. For advanced

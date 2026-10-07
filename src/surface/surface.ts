@@ -14,6 +14,7 @@ import {
   type RibViewDescriptor,
   type SnapshotManager,
 } from "@keelson/shared";
+import { planHistory } from "../cost.ts";
 import type { SwarmReport } from "../report.ts";
 import type { SwarmChange } from "../swarm.ts";
 import type { StartSwarmInput } from "../tools.ts";
@@ -185,6 +186,7 @@ export function createSwarmsSurface(deps: SurfaceDeps): SwarmsSurface {
     const swarms = deps.state();
     return {
       hasSwarms: swarms.live.length > 0 || swarms.ended.length > 0,
+      planCosts: planHistory(swarms.ended),
       canCreateProject: Boolean(state.canCreateProject),
       canInitTracker: Boolean(state.canInitTracker),
       projects: state.projects

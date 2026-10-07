@@ -58,6 +58,7 @@ export interface ActionDeps {
         | "replyToGate"
         | "replyInThread"
         | "dismissAsk"
+        | "raiseCeiling"
         | "stop"
       >
     | undefined;
@@ -213,6 +214,16 @@ function startInput(
   if (payload.factory !== undefined && typeof payload.factory !== "boolean") {
     return "factory must be a boolean";
   }
+  const maxCost = payload.max_cost_usd;
+  if (
+    maxCost !== undefined &&
+    (typeof maxCost !== "number" ||
+      !Number.isFinite(maxCost) ||
+      maxCost < START_BOUNDS.maxCostUsd.min ||
+      maxCost > START_BOUNDS.maxCostUsd.max)
+  ) {
+    return `a cost ceiling is between $${START_BOUNDS.maxCostUsd.min} and $${START_BOUNDS.maxCostUsd.max}`;
+  }
   const leadTools = leadToolsOf(payload.lead_tools, deps);
   if (typeof leadTools === "string") return leadTools;
   if (html && !project && Array.isArray(payload.lead_tools) && payload.lead_tools.length > 0) {
@@ -224,6 +235,7 @@ function startInput(
       ...(names.length ? { workflows: names.map((name) => ({ name, isolated: true })) } : {}),
       ...(leadTools.length ? { leadTools } : {}),
       ...(payload.factory === true ? { factory: true } : {}),
+      ...(typeof maxCost === "number" ? { maxCostUsd: maxCost } : {}),
     },
     ...(creation ? { creation } : {}),
   };
@@ -576,6 +588,27 @@ export async function handleSwarmsAction(
       void swarm.stop("stopped from the Swarms tab");
       return done(`Stopping swarm ${id}: cancelling its runs and revoking its bots`);
     }
+    case "raise-ceiling": {
+      const swarm = id ? deps.live(id) : undefined;
+      if (!id || !swarm) return fail(`swarm '${String(raw)}' is not running`);
+      const amount = (v: unknown) =>
+        typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+      const maxCostUsd = amount(payload.maxCostUsd);
+      const maxTokens = amount(payload.maxTokens);
+      if (maxCostUsd === undefined && maxTokens === undefined)
+        return fail("name a ceiling to raise");
+      try {
+        swarm.raiseCeiling({
+          ...(maxCostUsd !== undefined ? { maxCostUsd } : {}),
+          ...(maxTokens !== undefined ? { maxTokens: Math.round(maxTokens) } : {}),
+        });
+      } catch (e) {
+        return fail(`Could not raise the ceiling: ${errText(e)}`);
+      }
+      return done(
+        `Raised swarm ${id}'s ${maxCostUsd !== undefined ? `cost ceiling to $${maxCostUsd.toFixed(2)}` : `token ceiling to ${Math.round(maxTokens ?? 0)}`}`,
+      );
+    }
     case "start-swarm": {
       const html = action.origin === "canvas-html";
       const project = html ? text(payload, "project") : "";
@@ -608,6 +641,7 @@ export async function handleSwarmsAction(
               worker_model: payload.worker_model,
               provider: payload.provider,
               factory: payload.factory,
+              max_cost_usd: payload.max_cost_usd,
             }
           : payload,
         deps,
