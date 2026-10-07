@@ -23,7 +23,7 @@ import {
   CONCLUSION_MAX,
   DEFAULT_SIZE,
   type DispatchGrant,
-  FACTORY_DEFAULTS,
+  FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
   isLive,
   POWER_MODELS,
@@ -290,7 +290,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .boolean()
         .optional()
         .describe(
-          `Factory mode: no turn or clock budget. The swarm runs while work lands (a merge, a pull request, a workflow run that succeeds, a closed bead; before the first, the lead planning beads) and ends after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at max_tokens fresh tokens. For draining a backlog or a queue of runs; a chat-only question has no progress to measure.`,
+          `Factory mode: no turn or clock budget. The swarm runs while work lands (a merge, a pull request, a workflow run that succeeds, a closed bead; before the first, the lead planning beads) and ends after a window of turns without any (small ${FACTORY_PROGRESS_TURNS.small}, medium ${FACTORY_PROGRESS_TURNS.medium}, large ${FACTORY_PROGRESS_TURNS.large}), or at max_tokens fresh tokens. For draining a backlog or a queue of runs; a chat-only question has no progress to measure.`,
         ),
       max_tokens: z
         .number()

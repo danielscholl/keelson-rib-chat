@@ -18,7 +18,7 @@ import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
   DEFAULT_POWER,
   DEFAULT_SIZE,
-  FACTORY_DEFAULTS,
+  FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
   PLAN_NAME,
   POWER_MODELS,
@@ -130,7 +130,7 @@ function factorySummary(size: SwarmSize): string {
   return `${SIZE_PRESETS[size].maxAgents} agents until work stops landing`;
 }
 
-const FACTORY_MEANING = `Keeps the swarm running while work lands: merges, pull requests, finished workflow runs, closed beads. Stops after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at a fresh-token ceiling that grows with the plan: ${SWARM_SIZES.map((s) => `${PLAN_NAME[s]} ${FACTORY_TOKENS[s] / 1_000_000}M`).join(", ")}.`;
+const FACTORY_MEANING = `Keeps the swarm running while work lands: merges, pull requests, finished workflow runs, closed beads. Stops after a run of turns without any, or at a fresh-token ceiling; both grow with the plan: ${SWARM_SIZES.map((s) => `${PLAN_NAME[s]} ${FACTORY_PROGRESS_TURNS[s]} turns and ${FACTORY_TOKENS[s] / 1_000_000}M tokens`).join(", ")}.`;
 
 const PAGE_CSS = `
 :root { --button-ink: var(--bg); }

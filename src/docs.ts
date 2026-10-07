@@ -24,8 +24,8 @@ import {
   BODY_MAX,
   CONCLUSION_MAX,
   DEFAULT_SIZE,
-  FACTORY_DEFAULTS,
   FACTORY_LIMITS,
+  FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
   SIZE_PRESETS,
   SWARM_SIZES,
@@ -90,7 +90,7 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |
 | \`lead_tools\` | none | Other ribs' tools the lead holds, such as \`beads_ready\` or \`beads_close\`, at most ${START_BOUNDS.maxLeadTools}. See Agent tools. |
 | \`factory\` | false | Factory mode: no turn or clock budget, only progress. See Limits and completion. |
-| \`max_tokens\` | ${FACTORY_DEFAULTS.maxTokens} | Factory mode's ceiling on fresh tokens. Ignored without \`factory\`. |
+| \`max_tokens\` | by size | Factory mode's ceiling on fresh tokens: ${FACTORY_TOKENS.small} small, ${FACTORY_TOKENS.medium} medium, ${FACTORY_TOKENS.large} large. Ignored without \`factory\`. |
 
 Project confinement: with a \`project\`, every turn runs with the project root as
 its working directory and as its only allowed directory. A writer's turns use
@@ -493,7 +493,8 @@ local merge, a writer's pull request, a workflow run that succeeds, or the lead
 calling \`beads_close\`. Until the first of those lands, the lead filing,
 linking or updating beads (\`beads_create\`, \`beads_dep\`, \`beads_update\`)
 counts too, so a swarm that plans its backlog first is not cut off. The swarm keeps going while it lands, and after
-${FACTORY_DEFAULTS.progressTurns} turns across the swarm without any it tells the lead to conclude and
+a window of turns across the swarm without any (${FACTORY_PROGRESS_TURNS.small} on small,
+${FACTORY_PROGRESS_TURNS.medium} on medium, ${FACTORY_PROGRESS_TURNS.large} on large) it tells the lead to conclude and
 ends as \`stalled\` 3 turns later. It also ends as \`exhausted\` at
 \`max_tokens\` fresh tokens: by default ${FACTORY_TOKENS.small} on small,
 ${FACTORY_TOKENS.medium} on medium and ${FACTORY_TOKENS.large} on large. The turn and clock limits

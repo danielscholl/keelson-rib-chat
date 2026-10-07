@@ -5,6 +5,7 @@ import { makeChatTools, type StartSwarmInput } from "../src/tools.ts";
 import {
   DEFAULT_LIMITS,
   FACTORY_DEFAULTS,
+  FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
   pinnedModels,
   SIZE_PRESETS,
@@ -31,6 +32,12 @@ describe("size presets", () => {
     expect(FACTORY_TOKENS.small).toBe(FACTORY_DEFAULTS.maxTokens);
     expect(FACTORY_TOKENS.small).toBeLessThan(FACTORY_TOKENS.medium);
     expect(FACTORY_TOKENS.medium).toBeLessThan(FACTORY_TOKENS.large);
+  });
+
+  test("the factory progress window widens with the plan, Scout keeping the old default", () => {
+    expect(FACTORY_PROGRESS_TURNS.small).toBe(FACTORY_DEFAULTS.progressTurns);
+    expect(FACTORY_PROGRESS_TURNS.small).toBeLessThan(FACTORY_PROGRESS_TURNS.medium);
+    expect(FACTORY_PROGRESS_TURNS.medium).toBeLessThan(FACTORY_PROGRESS_TURNS.large);
   });
 
   test("only large changes concurrency, and every size gives a turn five minutes", () => {

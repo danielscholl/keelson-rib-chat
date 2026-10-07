@@ -706,7 +706,7 @@ class model.
 agents and models but drops its turns and minutes: the cards then read **until
 work stops** in their place. The swarm runs while work lands (merges, pull
 requests, finished workflow runs, closed beads; before the first of those, the
-lead planning beads) and stops after 15 turns without any, or at a fresh-token
+lead planning beads) and stops after a run of turns without any (15 on Scout, 25 on Crew, 45 on Fleet), or at a fresh-token
 ceiling of 2M on Scout, 3M on Crew or 6M on Fleet. **ⓘ** beside the switch shows that explanation
 under the heading. The sentence beside **Start swarm** then reads
 **N agents until work stops landing**, and a live swarm's Turns tile counts the
