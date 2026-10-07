@@ -19,6 +19,7 @@ import {
   DEFAULT_POWER,
   DEFAULT_SIZE,
   FACTORY_DEFAULTS,
+  FACTORY_TOKENS,
   PLAN_NAME,
   POWER_MODELS,
   pinnedModels,
@@ -129,7 +130,7 @@ function factorySummary(size: SwarmSize): string {
   return `${SIZE_PRESETS[size].maxAgents} agents until work stops landing`;
 }
 
-const FACTORY_MEANING = `Keeps the swarm running while work lands: merges, pull requests, finished workflow runs, closed beads. Stops after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at ${FACTORY_DEFAULTS.maxTokens / 1_000_000}M fresh tokens.`;
+const FACTORY_MEANING = `Keeps the swarm running while work lands: merges, pull requests, finished workflow runs, closed beads. Stops after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at a fresh-token ceiling that grows with the plan: ${SWARM_SIZES.map((s) => `${PLAN_NAME[s]} ${FACTORY_TOKENS[s] / 1_000_000}M`).join(", ")}.`;
 
 const PAGE_CSS = `
 :root { --button-ink: var(--bg); }

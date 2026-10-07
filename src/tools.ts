@@ -24,6 +24,7 @@ import {
   DEFAULT_SIZE,
   type DispatchGrant,
   FACTORY_DEFAULTS,
+  FACTORY_TOKENS,
   isLive,
   POWER_MODELS,
   publicSummary,
@@ -297,7 +298,9 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .min(10_000)
         .max(START_BOUNDS.maxTokens)
         .optional()
-        .describe(`Factory mode's ceiling on fresh tokens. Default ${FACTORY_DEFAULTS.maxTokens}.`),
+        .describe(
+          `Factory mode's ceiling on fresh tokens. Defaults by size: small ${FACTORY_TOKENS.small}, medium ${FACTORY_TOKENS.medium}, large ${FACTORY_TOKENS.large}.`,
+        ),
       work_tools: z
         .enum(WORK_TOOLS)
         .optional()

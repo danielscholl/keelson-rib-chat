@@ -26,6 +26,7 @@ import {
   DEFAULT_SIZE,
   FACTORY_DEFAULTS,
   FACTORY_LIMITS,
+  FACTORY_TOKENS,
   SIZE_PRESETS,
   SWARM_SIZES,
 } from "./types.ts";
@@ -494,7 +495,8 @@ linking or updating beads (\`beads_create\`, \`beads_dep\`, \`beads_update\`)
 counts too, so a swarm that plans its backlog first is not cut off. The swarm keeps going while it lands, and after
 ${FACTORY_DEFAULTS.progressTurns} turns across the swarm without any it tells the lead to conclude and
 ends as \`stalled\` 3 turns later. It also ends as \`exhausted\` at
-\`max_tokens\` fresh tokens, ${FACTORY_DEFAULTS.maxTokens} by default. The turn and clock limits
+\`max_tokens\` fresh tokens: by default ${FACTORY_TOKENS.small} on small,
+${FACTORY_TOKENS.medium} on medium and ${FACTORY_TOKENS.large} on large. The turn and clock limits
 become backstops of ${FACTORY_LIMITS.maxTurns} turns, ${FACTORY_LIMITS.maxTurnsPerAgent} per worker, and ${FACTORY_LIMITS.wallClockMs / 3_600_000} hours. Every
 turn shows the agents how many turns have passed since work last landed, and
 the summary's \`factory\` field carries the same count. A chat-only question has

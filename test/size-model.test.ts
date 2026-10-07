@@ -4,6 +4,8 @@ import type { Swarm } from "../src/swarm.ts";
 import { makeChatTools, type StartSwarmInput } from "../src/tools.ts";
 import {
   DEFAULT_LIMITS,
+  FACTORY_DEFAULTS,
+  FACTORY_TOKENS,
   pinnedModels,
   SIZE_PRESETS,
   SWARM_SIZES,
@@ -23,6 +25,12 @@ describe("size presets", () => {
   test("one limit moved off the preset reads as custom", () => {
     expect(sizeOf({ ...SIZE_PRESETS.large, maxTurns: 81 }, "large")).toBe("custom");
     expect(sizeOf(SIZE_PRESETS.small, "medium")).toBe("custom");
+  });
+
+  test("the factory token ceiling grows with the plan, Scout keeping the old default", () => {
+    expect(FACTORY_TOKENS.small).toBe(FACTORY_DEFAULTS.maxTokens);
+    expect(FACTORY_TOKENS.small).toBeLessThan(FACTORY_TOKENS.medium);
+    expect(FACTORY_TOKENS.medium).toBeLessThan(FACTORY_TOKENS.large);
   });
 
   test("only large changes concurrency, and every size gives a turn five minutes", () => {
