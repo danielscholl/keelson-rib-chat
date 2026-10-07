@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.26.0...v0.27.0) (2026-10-07)
+
+
+### Added
+
+* **swarms:** add token and cost ceilings to every swarm ([#141](https://github.com/danielscholl/keelson-rib-swarm/issues/141)) ([0b60620](https://github.com/danielscholl/keelson-rib-swarm/commit/0b6062010dd607291d695856909662c2b43a709e))
+
+
+### Documentation
+
+* trim launcher state detail from README ([#139](https://github.com/danielscholl/keelson-rib-swarm/issues/139)) ([5dca1a3](https://github.com/danielscholl/keelson-rib-swarm/commit/5dca1a35c3906c0fc26daaf99206b66dabcab805))
+
 ## [0.26.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.25.0...v0.26.0) (2026-10-07)
 
 
