@@ -705,8 +705,9 @@ class model.
 **Factory mode**, the switch at the right of the SIZE heading, keeps the plan's
 agents and models but drops its turns and minutes: the cards then read **until
 work stops** in their place. The swarm runs while work lands (merges, pull
-requests, finished workflow runs, closed beads) and stops after 15 turns without
-any, or at 2M fresh tokens. **ⓘ** beside the switch shows that explanation
+requests, finished workflow runs, closed beads; before the first of those, the
+lead planning beads) and stops after 15 turns without any, or at 2M fresh
+tokens. **ⓘ** beside the switch shows that explanation
 under the heading. The sentence beside **Start swarm** then reads
 **N agents until work stops landing**, and a live swarm's Turns tile counts the
 turns since work last landed instead of forecasting the budget. Use it to drain
