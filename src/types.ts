@@ -90,6 +90,13 @@ export interface FactoryBudget {
 
 export const FACTORY_DEFAULTS: FactoryBudget = { progressTurns: 15, maxTokens: 2_000_000 };
 
+// A bigger plan runs more agents on deeper models, so it spends more before work stops landing.
+export const FACTORY_TOKENS: Readonly<Record<SwarmSize, number>> = {
+  small: 2_000_000,
+  medium: 3_000_000,
+  large: 6_000_000,
+};
+
 export const FACTORY_LIMITS: Pick<SwarmLimits, "maxTurns" | "maxTurnsPerAgent" | "wallClockMs"> = {
   maxTurns: 1_000,
   maxTurnsPerAgent: 200,

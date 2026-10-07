@@ -45,6 +45,7 @@ import {
   DEFAULT_SIZE,
   FACTORY_DEFAULTS,
   FACTORY_LIMITS,
+  FACTORY_TOKENS,
   ownsPr,
   POWER_EFFORT,
   pinnedModels,
@@ -672,7 +673,7 @@ async function launchSwarm(
         ? {
             factory: {
               ...FACTORY_DEFAULTS,
-              ...(input.maxTokens ? { maxTokens: input.maxTokens } : {}),
+              maxTokens: input.maxTokens ?? FACTORY_TOKENS[record.sizeBase],
             },
           }
         : {}),
