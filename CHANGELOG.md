@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.24.0...v0.24.1) (2026-10-07)
+
+
+### Fixed
+
+* **surface:** tighten the Factory mode launcher and timeline ([#129](https://github.com/danielscholl/keelson-rib-swarm/issues/129)) ([46a26fd](https://github.com/danielscholl/keelson-rib-swarm/commit/46a26fde8ea80fae3c6fbb0a5996c5c29d88e835))
+
 ## [0.24.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.23.0...v0.24.0) (2026-10-07)
 
 
