@@ -43,6 +43,8 @@ import {
   type ChatMessage,
   DEFAULT_POWER,
   DEFAULT_SIZE,
+  FACTORY_DEFAULTS,
+  FACTORY_LIMITS,
   ownsPr,
   POWER_EFFORT,
   pinnedModels,
@@ -232,6 +234,7 @@ function mintId(): string {
 
 function overrides(input: StartSwarmInput): Partial<SwarmLimits> {
   return {
+    ...(input.factory ? FACTORY_LIMITS : {}),
     ...(input.maxAgents ? { maxAgents: input.maxAgents } : {}),
     ...(input.maxTurns ? { maxTurns: input.maxTurns } : {}),
     ...(input.maxTurnsPerAgent ? { maxTurnsPerAgent: input.maxTurnsPerAgent } : {}),
@@ -665,6 +668,14 @@ async function launchSwarm(
       ...(input.effort ? { effort: input.effort } : {}),
       ...(record.rerunOf ? { rerunOf: record.rerunOf } : {}),
       ...(input.leadTools?.length ? { leadTools: input.leadTools } : {}),
+      ...(input.factory
+        ? {
+            factory: {
+              ...FACTORY_DEFAULTS,
+              ...(input.maxTokens ? { maxTokens: input.maxTokens } : {}),
+            },
+          }
+        : {}),
       prOwnedElsewhere,
       onCreated: (s) => booting.set(s.id, s),
       ...(dispatcher && input.workflows

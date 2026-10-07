@@ -266,8 +266,10 @@ export function scriptedProvider(tools: readonly ToolDefinition[], script: Scrip
     const turn = (turns.get(agentId) ?? 0) + 1;
     turns.set(agentId, turn);
     const granted = new Set((req.tools ?? []).map((t) => t.name));
+    const called: string[] = [];
 
     const call: ScriptTurn["call"] = async (name, input) => {
+      called.push(name);
       if (!granted.has(name)) return { content: `tool ${name} not granted`, isError: true };
       const tool = tools.find((t) => t.name === name);
       if (!tool) return { content: `no tool ${name}`, isError: true };
@@ -308,14 +310,23 @@ export function scriptedProvider(tools: readonly ToolDefinition[], script: Scrip
       ),
       aborted,
     ]);
-    // An empty stream that ends when the scripted turn does.
+    // A stream that reports the turn's tool calls once the scripted turn ends.
     const stream: AsyncIterable<MessageChunk> = {
-      [Symbol.asyncIterator]: () => ({
-        next: async () => {
-          await result;
-          return { done: true as const, value: undefined };
-        },
-      }),
+      [Symbol.asyncIterator]: () => {
+        let i = 0;
+        return {
+          next: async () => {
+            await result;
+            const toolName = called[i];
+            if (toolName === undefined) return { done: true as const, value: undefined };
+            i++;
+            return {
+              done: false as const,
+              value: { type: "tool_use" as const, id: `tu_${i}`, toolName },
+            };
+          },
+        };
+      },
     };
     return { stream, result };
   };

@@ -210,6 +210,9 @@ function startInput(
   }
   const bad = names.find((n) => !WORKFLOW.test(n));
   if (bad) return `'${bad}' is not a workflow name`;
+  if (payload.factory !== undefined && typeof payload.factory !== "boolean") {
+    return "factory must be a boolean";
+  }
   const leadTools = leadToolsOf(payload.lead_tools, deps);
   if (typeof leadTools === "string") return leadTools;
   if (html && !project && Array.isArray(payload.lead_tools) && payload.lead_tools.length > 0) {
@@ -220,6 +223,7 @@ function startInput(
       ...input,
       ...(names.length ? { workflows: names.map((name) => ({ name, isolated: true })) } : {}),
       ...(leadTools.length ? { leadTools } : {}),
+      ...(payload.factory === true ? { factory: true } : {}),
     },
     ...(creation ? { creation } : {}),
   };
@@ -603,6 +607,7 @@ export async function handleSwarmsAction(
               model: payload.model,
               worker_model: payload.worker_model,
               provider: payload.provider,
+              factory: payload.factory,
             }
           : payload,
         deps,

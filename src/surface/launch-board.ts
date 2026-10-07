@@ -18,6 +18,7 @@ import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
   DEFAULT_POWER,
   DEFAULT_SIZE,
+  FACTORY_DEFAULTS,
   PLAN_NAME,
   POWER_MODELS,
   pinnedModels,
@@ -124,6 +125,12 @@ function budgetSummary(size: SwarmSize): string {
   return `${l.maxAgents} agents for up to ${l.wallClockMs / 60_000} min`;
 }
 
+function factorySummary(size: SwarmSize): string {
+  return `${SIZE_PRESETS[size].maxAgents} agents until work stops landing`;
+}
+
+const FACTORY_MEANING = `No turn or time budget. It runs while work lands (merges, pull requests, finished workflow runs, closed beads) and stops after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at ${FACTORY_DEFAULTS.maxTokens / 1_000_000}M fresh tokens.`;
+
 const PAGE_CSS = `
 :root { --button-ink: var(--bg); }
 :root[data-theme="light"] { --button-ink: var(--card); }
@@ -182,6 +189,7 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
   gap: 14px; align-items: center; padding: 16px 0; border-top: 1px solid var(--border); }
 .access-name { color: var(--fg-strong); font-weight: 600; }
 .access-meaning { color: var(--muted); line-height: 1.5; }
+.factory-row { margin-top: 12px; border-top: none; }
 .switch { width: 44px; height: 26px; padding: 3px; border-radius: 999px; background: var(--card-2); }
 .switch::after { content: ""; display: block; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); }
 .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
@@ -237,6 +245,7 @@ const PAGE_SCRIPT = `
   const validDraft = (state) => state && state.version === 1
     && typeof state.task === "string" && typeof state.expanded === "boolean"
     && typeof state.customize === "boolean"
+    && (state.factory === undefined || typeof state.factory === "boolean")
     && ["small", "medium", "large"].includes(state.size)
     && ["fast", "balanced", "deep"].includes(state.power)
     && typeof state.project === "string"
@@ -419,6 +428,19 @@ const PAGE_SCRIPT = `
     }));
   };
   const budgets = JSON.parse(form.dataset.budgets);
+  const factoryBudgets = JSON.parse(form.dataset.factoryBudgets);
+  const factorySwitch = document.getElementById("launch-factory");
+  let factory = false;
+  const renderFactory = () => {
+    factorySwitch.setAttribute("aria-checked", String(factory));
+    document.getElementById("factory-row").classList.toggle("is-on", factory);
+    document.getElementById("launch-summary").textContent = (factory ? factoryBudgets : budgets)[size];
+  };
+  factorySwitch.addEventListener("click", () => {
+    factory = !factory;
+    renderFactory();
+    saveEdit();
+  });
   let size = "${DEFAULT_SIZE}";
   let power = "${DEFAULT_POWER}";
   let model = "";
@@ -443,7 +465,7 @@ const PAGE_SCRIPT = `
       document.getElementById("chip-" + card.dataset.size).hidden = !selected;
       showModels(card, selected ? model : "", selected ? worker : "");
     });
-    document.getElementById("launch-summary").textContent = budgets[size];
+    document.getElementById("launch-summary").textContent = (factory ? factoryBudgets : budgets)[size];
     document.getElementById("launch-models").textContent = model && worker
       ? (model === worker ? " on " + model : " on " + model + " and " + worker)
       : model ? " with lead " + model : worker ? " with workers " + worker : "";
@@ -576,7 +598,7 @@ const PAGE_SCRIPT = `
   if (folder) watchText(folder);
   capture = () => ({
     version: 1, task: task.value, expanded: true, customize: false,
-    size, power, project: project.value, permissions: { ...permissions },
+    size, power, ...(factory ? { factory: true } : {}), project: project.value, permissions: { ...permissions },
     ...(name ? { name: name.value, rootPath: folder.value } : {}),
     projectRoot: project.value && !isNew() ? project.selectedOptions[0].dataset.root : "",
     workflows: [...workflows], workflowEntry: controls?.entry.value ?? "",
@@ -592,6 +614,8 @@ const PAGE_SCRIPT = `
     if (folder) folder.value = state.rootPath ?? "";
     size = state.size;
     power = state.power;
+    factory = state.factory === true;
+    renderFactory();
     otherModel.value = state.otherModel;
     otherProvider = state.modelProvider;
     if (state.modelSelection && state.modelSelection !== "other") {
@@ -658,6 +682,7 @@ const PAGE_SCRIPT = `
       if (folder.value.trim()) payload.rootPath = folder.value.trim();
     }
     if (permissions.workflows && workflows.length) payload.workflows = workflows.join(", ");
+    if (factory) payload.factory = true;
     if (permissions.tracker) {
       const names = Array.from(access.querySelectorAll('[data-tool][data-reachable="true"]'))
         .map((chip) => chip.dataset.tool);
@@ -737,7 +762,7 @@ const PAGE_SCRIPT = `
   };
   restoreDraft = (state) => {
     if (state.expanded || /[\\r\\n]/.test(state.task) || state.customize
-      || state.size !== "${DEFAULT_SIZE}" || state.power !== "${DEFAULT_POWER}" || state.project
+      || state.size !== "${DEFAULT_SIZE}" || state.power !== "${DEFAULT_POWER}" || state.factory || state.project
       || state.modelSelection || state.workerSelection || state.otherModel || state.workflows.length
       || state.workflowEntry || Object.values(state.permissions).some(Boolean)) {
       expand();
@@ -831,6 +856,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
   const projects = state.projects.filter((p) => p.name !== DEFAULT_PROJECT_NAME);
   const models = Object.fromEntries(SWARM_POWERS.map((p) => [p, planModels(state, p)]));
   const budgets = Object.fromEntries(SWARM_SIZES.map((s) => [s, budgetSummary(s)]));
+  const factoryBudgets = Object.fromEntries(SWARM_SIZES.map((s) => [s, factorySummary(s)]));
   const cards = PLANS.map((plan) => {
     const l = SIZE_PRESETS[plan.size];
     const pair = models[plan.power];
@@ -872,7 +898,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     <div class="intro"><h1>New swarm</h1><p class="hint">Agents investigate, debate, and bring back a conclusion.</p></div>
     ${state.hasSwarms ? '<button class="more" id="launch-fewer" type="button" aria-controls="launch-root">Fewer options<span class="chevron" aria-hidden="true">⌃</span></button>' : ""}
   </header>
-  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-budgets="${esc(JSON.stringify(budgets))}">
+  <form id="launch-form" data-nonce="${esc(nonce)}" data-can-create-project="${Boolean(state.canCreateProject)}" data-can-init-tracker="${Boolean(state.canInitTracker)}" data-provider="${esc(state.provider ?? "")}" data-providers="${esc(JSON.stringify(catalog.map((c) => c.provider)))}" data-budgets="${esc(JSON.stringify(budgets))}" data-factory-budgets="${esc(JSON.stringify(factoryBudgets))}">
     <div class="fields">
       <label for="launch-task">TASK</label>
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
@@ -880,6 +906,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
       <section class="plans" aria-labelledby="plans-heading">
         <div class="plans-heading"><span class="eyebrow" id="plans-heading">SIZE</span></div>
         <div class="plan-cards">${cards}</div>
+        <div class="access-row factory-row" id="factory-row"><button class="switch" id="launch-factory" type="button" role="switch" aria-label="Factory mode" aria-describedby="factory-meaning" aria-checked="false"></button><div class="access-name">Factory mode</div><p class="access-meaning" id="factory-meaning">${esc(FACTORY_MEANING)}</p></div>
       </section>
       <div class="pickers">
           <div><label for="launch-model">LEAD MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's lead</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>

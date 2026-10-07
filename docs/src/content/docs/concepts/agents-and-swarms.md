@@ -14,7 +14,8 @@ The rib holds no long-running agent loops. An agent is three things:
 
 - **An identity.** A real ClickClack bot, created when the agent joins, with its
   own token. When the agent posts, ClickClack stamps the author. Handles carry
-  the swarm id, for example `s3fk-lead` and `s3fk-log-reader`.
+  the swarm id, for example `s3fk-lead` and `s3fk-log-reader`. A mention
+  without the prefix, such as `@log-reader`, still reaches that agent.
 - **An inbox.** Messages addressed to the agent wait here.
 - **A resumable session.** The provider session id from the agent's last turn,
   so its next turn continues with its own context. A provider without session

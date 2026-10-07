@@ -18,6 +18,7 @@ export type ForecastReading =
   | "clock-first"
   | "fits"
   | "no-pace"
+  | "on-run"
   | "out-of-turns";
 
 interface ForecastBase {
@@ -28,20 +29,24 @@ interface ForecastBase {
 
 export type Forecast = ForecastBase &
   (
-    | { reading: "no-pace" | "out-of-turns" }
+    | { reading: "no-pace" | "on-run" | "out-of-turns" }
     | { reading: "runs-out-first"; rate: number; runOutAt: string }
     | { reading: "clock-first" | "fits"; rate: number; runOutAt: string; unused: number }
   );
 
 // Count turn starts in the recent window; legacy pace buckets include a partial last minute.
+// A live workflow run idles the swarm, so its early pace says nothing about the rest.
 export function forecast(
-  s: Pick<SwarmSummary, "spans" | "pace" | "turnsUsed" | "limits" | "startedAt">,
+  s: Pick<SwarmSummary, "spans" | "pace" | "turnsUsed" | "limits" | "startedAt" | "runs">,
   now: Date,
 ): Forecast {
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
   const clockEndsAt = endsAt(s);
   const base = { left, clockEndsAt };
   if (left === 0) return { ...base, reading: "out-of-turns" };
+  if (s.runs?.some((r) => r.status === "running" || r.status === "paused")) {
+    return { ...base, reading: "on-run" };
+  }
 
   const nowMs = now.getTime();
   const elapsed = (nowMs - Date.parse(s.startedAt)) / 60_000;
@@ -103,6 +108,8 @@ export function forecastDelta(f: Forecast): {
         text: `${f.left} left · no turn in ${PACE_WINDOW_MINUTES} min`,
         direction: "flat",
       };
+    case "on-run":
+      return { text: `${f.left} left · waiting on a workflow run`, direction: "flat" };
     case "out-of-turns":
       return { text: "none left · agents finish their turns", direction: "down", tone: "warn" };
   }

@@ -181,6 +181,46 @@ describe("an agent asking the operator", () => {
     await swarm.stop();
   });
 
+  test("answering an agent's later question clears its earlier ones too", async () => {
+    const { server, start } = harness(async ({ agentId, turn, call }) => {
+      if (agentId !== "s1-lead") return;
+      if (turn === 1) {
+        await call("chat_post", { body: "@operator first: may I force-close the bead?" });
+        await call("chat_post", { body: "@operator second: force-close it, or skip?" });
+      } else {
+        await call("chat_done", { summary: "Closed it." });
+      }
+    });
+    const swarm = await start();
+    await settle();
+    const asks = swarm.summary().health?.asks ?? [];
+    expect(asks).toHaveLength(2);
+    server.postAsOwner(server.channels[0]?.id ?? "", "closed", asks[1]?.threadRootId);
+    const summary = await swarm.finished;
+    expect(summary.status).toBe("done");
+    expect(summary.conclusion).toBe("Closed it.");
+  });
+
+  test("Dismiss wakes an idle lead, which can then conclude", async () => {
+    let woke = "";
+    const { start } = harness(async ({ agentId, turn, prompt, call }) => {
+      if (agentId !== "s1-lead") return;
+      if (turn === 1) await call("chat_post", { body: QUESTION });
+      else {
+        woke = prompt;
+        await call("chat_done", { summary: "Kept the cap." });
+      }
+    });
+    const swarm = await start();
+    await settle();
+    const ask = swarm.summary().health?.asks?.[0];
+    expect(swarm.dismissAsk(ask?.messageId ?? "")).toBe(true);
+    const summary = await swarm.finished;
+    expect(summary.status).toBe("done");
+    expect(woke).toContain("dismissed @s1-lead's question");
+    expect(woke).toContain("no longer hold the swarm");
+  });
+
   test("an unanswered ask ends only at the wall clock", async () => {
     const { start } = harness(
       async ({ agentId, turn, call }) => {

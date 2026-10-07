@@ -48,7 +48,9 @@ In the **Swarms** tab, describe the task in **Start a swarm**, choose a project
 if agents should read its checkout, and press **Start swarm**. **No project ·
 chat only** is the default. Projects show their name and path (`~` for home).
 Choose **Scout** (the default: 3 agents, up to 20 turns, about
-15 minutes), **Crew**, or **Fleet**. **Lead model** and **Workers model**
+15 minutes), **Crew**, or **Fleet**. **Factory mode** drops the plan's turns and
+minutes: the swarm runs while work lands and stops after 15 turns without any,
+or at 2M fresh tokens. **Lead model** and **Workers model**
 sit under the plans, grouped by provider with **Other…** for a typed lead; each
 one replaces only its own role, so the plan's other model stays. One sentence beside **Start swarm**
 says how many agents run, for how long, on which model and where. With swarms

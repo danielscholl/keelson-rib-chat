@@ -85,6 +85,23 @@ describe("route", () => {
     expect(route({ message, agents, threadParticipants: none })).toEqual(["scout"]);
   });
 
+  test("a mention without the swarm id still reaches the one agent of that name", () => {
+    const message = msg({
+      authorId: "usr_lead",
+      authorKind: "bot",
+      body: "@scout ask @critic to review, then report to @lead",
+    });
+    expect(route({ message, agents, threadParticipants: none }).sort()).toEqual([
+      "critic",
+      "scout",
+    ]);
+    const twins = [
+      ...agents,
+      { id: "other", handle: "s2-scout", botUserId: "usr_other", lead: false },
+    ];
+    expect(route({ message, agents: twins, threadParticipants: none })).toEqual(["critic"]);
+  });
+
   test("a thread reply wakes the thread's participants but never its author", () => {
     const message = msg({
       id: "msg_2",

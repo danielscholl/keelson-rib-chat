@@ -59,8 +59,8 @@ conclusion carries the last one as `draftConclusion`.
 |---|---|---|---|
 | `running` | In flight. | set once the lead has called `chat_done` | unset |
 | `done` | The lead concluded and the swarm settled. | the answer | unset |
-| `stalled` | Idle, and the lead did not conclude after two nudges. An open question to the operator doesn't count as idle. | unset | the reason, naming the cause |
-| `exhausted` | The turn budget or the wall clock ran out. | see below | the reason |
+| `stalled` | Idle, and the lead did not conclude after two nudges, or a factory swarm landed no work in its window. An open question to the operator doesn't count as idle. | unset | the reason, naming the cause |
+| `exhausted` | The turn budget or the wall clock ran out, or a factory swarm reached its token ceiling. | see below | the reason |
 | `stopped` | `chat_swarm_stop`, `run_cancel`, or a Keelson shutdown. | see below | the reason |
 | `error` | Failed to start, ClickClack revoked the owner session, or the lead's last three turns failed. | unset | the reason |
 

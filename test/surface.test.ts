@@ -120,6 +120,7 @@ import {
   CONVERSATION_SHOWN,
   DETAIL_CHARS,
   tokensTile,
+  turnsTile,
 } from "../src/surface/swarm-board.ts";
 import { ACTIVITY_KEPT, Swarm } from "../src/swarm.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../src/tools.ts";
@@ -3115,6 +3116,68 @@ describe("Swarms boards", () => {
     ]);
     expect(dispatch[3]).toEqual({ label: "Pull requests", value: 0 });
     expect(dispatch[4]).toEqual({ label: "Runs verified", value: "1 of 1", tone: "ok" });
+  });
+
+  test("a factory swarm shows turns since work landed and its token ceiling", () => {
+    const factory = {
+      progressTurns: 15,
+      maxTokens: 2_000_000,
+      sinceProgress: 4,
+      lastProgress: { at: T0, what: "merged @s1-w1" },
+    };
+    const s = swarm("sfact", { factory, usage: { input: 900, output: 100, cached: 0 } });
+    expect(turnsTile(s, new Date(T0))).toEqual({
+      label: "Turns",
+      value: 11,
+      sub: "factory · 4 of 15 since work landed",
+    });
+    expect(turnsTile({ ...s, factory: { ...factory, sinceProgress: 15 } }, new Date(T0)).tone).toBe(
+      "warn",
+    );
+    expect(tokensTile(s).sub).toBe("fresh · none cached · of 2.0M");
+    const ended = { ...s, status: "done" as const, endedAt: T0 };
+    expect(turnsTile(ended).sub).toBe("factory");
+  });
+
+  test("a local write swarm counts merges, not pull requests, and says so before any land", () => {
+    const id = "slocal";
+    const writer = agent(id, 1, {
+      worktree: { path: "/wt/w1", branch: "keelson/swarm/slocal/w1", base: "main", local: true },
+    });
+    const live = swarm(id, {
+      writeEnabled: true,
+      writeLocal: true,
+      agents: [agent(id, 0), writer],
+    });
+    const texts = (s: SwarmSummary) =>
+      leaves(buildSwarmBoard(s, { now: new Date(T0) }).sections)
+        .flatMap((section) => (section.kind === "rows" ? section.items : []))
+        .map((row) => `${row.text} ${row.trailing ?? ""}`);
+    expect(texts(live)).toContainEqual(
+      expect.stringContaining(`Writers @w1 may have reviewed work merged; none merged yet.`),
+    );
+    expect(texts(live).join(" ")).not.toContain("pull request");
+    const ended = {
+      ...live,
+      status: "done" as const,
+      endedAt: "2026-09-22T14:05:00.000Z",
+      merges: [
+        {
+          agent: writer.handle,
+          branch: "keelson/swarm/slocal/w1",
+          base: "main",
+          commit: "abcdef1234567890abcdef1234567890abcdef12",
+          at: "2026-09-22T14:03:00.000Z",
+        },
+      ],
+    };
+    expect(texts(ended)).toContainEqual("keelson/swarm/slocal/w1 merged into main · abcdef1");
+    const result = buildSwarmBoard(ended, { now: new Date(T0) }).sections.find(
+      (section) => section.kind === "stats",
+    );
+    if (result?.kind !== "stats") throw new Error("missing Result");
+    expect(result.items.map((tile) => tile.label)).toEqual(["Turns", "Time", "Tokens", "Merged"]);
+    expect(result.items[3]).toEqual({ label: "Merged", value: 1 });
   });
 
   test("ended PR totals count distinct URLs and require every owner to explicitly pass", () => {
@@ -7188,6 +7251,34 @@ describe("launching from the tab", () => {
     expect(next.calls).toEqual([]);
     expect(empty.calls).toEqual([]);
     expect(bridge.operations).toEqual(["save", "save", "save"]);
+  });
+
+  test("the Factory switch sends factory, changes the summary, and survives a replacement", () => {
+    const bridge = fakeStateBridge(undefined, false);
+    const source: LaunchState = { projects, provider: "copilot" };
+    const first = frameHarness(source, "first", bridge);
+    expect(first.get("launch-factory")!.attributes.get("aria-checked")).toBe("false");
+    expect(first.get("launch-summary")!.textContent).toBe("3 agents for up to 15 min");
+    first.get("launch-task")!.value = "Drain the backlog";
+    first.fire("launch-task", "input");
+    first.fire("launch-factory", "click");
+    expect(first.get("launch-factory")!.attributes.get("aria-checked")).toBe("true");
+    expect(first.get("launch-summary")!.textContent).toBe("3 agents until work stops landing");
+    first.fire("plan-medium", "click");
+    expect(first.get("launch-summary")!.textContent).toBe("5 agents until work stops landing");
+    expect(bridge.stored).toMatchObject({ factory: true, size: "medium" });
+    const next = frameHarness(source, "second", bridge);
+    expect(next.get("launch-factory")!.attributes.get("aria-checked")).toBe("true");
+    next.fire("launch-start", "click");
+    expect(next.calls[0]!.payload).toEqual({
+      nonce: "second",
+      task: "Drain the backlog",
+      project: "",
+      tools: "none",
+      factory: true,
+      size: "medium",
+      power: "balanced",
+    });
   });
 
   test("expanded drafts round-trip raw fields, plan and model choices, access and presentation without restore saves", () => {

@@ -39,6 +39,8 @@ durable ops, a run id.
 | `model` | string | the power's model | Every agent, or the lead alone when `worker_model` is set. |
 | `worker_model` | string | `model` | Workers only. |
 | `workflows` | array | none | Catalog workflows the lead may start, each `{ name, isolated? }`, at most 10. `isolated` defaults to `true`. Needs `project`. See [Dispatch workflows](../../guides/dispatch-workflows/). |
+| `factory` | boolean | false | Factory mode: no turn or clock budget. The swarm runs while work lands and ends after 15 turns without any, or at `max_tokens`. See [Budgets and stopping](../../concepts/budgets-and-stopping/#factory-mode). |
+| `max_tokens` | number | 2000000 | Factory mode's ceiling on fresh tokens, 10,000 to 50,000,000. Ignored without `factory`. |
 | `lead_tools` | string[] | none | Other ribs' tools the lead holds, such as `beads_ready` or `beads_close`, at most 20. Each needs the operator's `crossRibGrants` entry for the swarm rib; one without it is dropped from the lead's turns. |
 
 Without `provider`, the host uses `KEELSON_WORKFLOW_PROVIDER` when it is set,

@@ -52,6 +52,8 @@ import {
   CONCLUSION_MAX,
   DEFAULT_SIZE,
   type DispatchGrant,
+  type FactoryBudget,
+  type FactoryState,
   type GateAnswer,
   type GateFileText,
   type KeptWorktree,
@@ -73,6 +75,7 @@ import {
   sizeOf,
   type TurnSpan,
   WORKER_TONES,
+  type WriterMerge,
   type WriterPr,
 } from "./types.ts";
 import {
@@ -133,6 +136,7 @@ export const MAX_TURN_FAILURES = 3;
 // Thread replies an agent was not woken for, kept for its next turn.
 const BACKGROUND_KEPT = 12;
 const ASKS_KEPT = 5;
+const FACTORY_GRACE_TURNS = 3;
 export const GATE_FILES_MAX = 64_000;
 export const ACTIVITY_KEPT = 200;
 const PACE_MINUTES = 30;
@@ -205,6 +209,8 @@ export interface SwarmOptions {
   workerModel?: string;
   // The model class an agent with no model of its own runs at.
   power?: SwarmPower;
+  // Ends the swarm on lost progress or spent tokens instead of its turn budget.
+  factory?: FactoryBudget;
   // Overrides the effort the power maps to, for every agent. Unlike the power's,
   // a model that refuses it fails the turn.
   effort?: ReasoningEffortLevel;
@@ -398,6 +404,10 @@ export class Swarm {
   // so a writer's worktree is checked only once they have.
   private readonly inFlight = new Map<string, Set<Promise<unknown>>>();
   private readonly prs: WriterPr[] = [];
+  private readonly merges: WriterMerge[] = [];
+  private progressAtTurn = 0;
+  private wrapUpSent = false;
+  private lastProgress: FactoryState["lastProgress"];
   private readonly pushingPrs = new Set<Promise<string>>();
   private readonly openingPrs = new Set<Promise<WriterPr>>();
   private readonly pushedHeads = new Map<string, string>();
@@ -734,6 +744,7 @@ export class Swarm {
           void this.finish("exhausted", `turn budget of ${this.limits.maxTurns} spent`);
           return;
         }
+        if (this.factoryEnd()) return;
         // The lead integrates everyone's results, so only the swarm budget bounds it;
         // capping it would leave the swarm leaderless.
         if (!agent.lead && agent.turns >= this.limits.maxTurnsPerAgent) {
@@ -752,6 +763,48 @@ export class Swarm {
     if (this.busy === 0 && this.pendingEvents === 0) {
       this.quiesceTimer = setTimeout(() => this.onQuiescent(), this.opts.quiesceMs ?? 1_500);
     }
+  }
+
+  // Work that landed: a merge, a pull request, a run that succeeded, a closed bead.
+  private markProgress(what: string): void {
+    this.progressAtTurn = this.turnsUsed;
+    this.wrapUpSent = false;
+    this.lastProgress = { at: new Date().toISOString(), what };
+    this.changed("health");
+  }
+
+  private factoryState(): FactoryState | undefined {
+    const f = this.opts.factory;
+    if (!f) return undefined;
+    return {
+      ...f,
+      sinceProgress: this.turnsUsed - this.progressAtTurn,
+      ...(this.lastProgress ? { lastProgress: { ...this.lastProgress } } : {}),
+    };
+  }
+
+  // Ends a factory swarm whose agents stopped landing work or spent its tokens.
+  private factoryEnd(): boolean {
+    const f = this.factoryState();
+    if (!f) return false;
+    const used = this.usage().usage;
+    const fresh = used ? used.input + used.output : 0;
+    if (fresh >= f.maxTokens) {
+      void this.finish("exhausted", `token ceiling of ${f.maxTokens} fresh tokens reached`);
+      return true;
+    }
+    if (f.sinceProgress >= f.progressTurns + FACTORY_GRACE_TURNS) {
+      void this.finish("stalled", `no progress in ${f.sinceProgress} turns`);
+      return true;
+    }
+    // The lead gets a few turns to wrap up before the swarm ends without its conclusion.
+    if (f.sinceProgress >= f.progressTurns && !this.wrapUpSent) {
+      this.wrapUpSent = true;
+      this.notes.push(
+        `Factory mode: no work has landed in ${f.sinceProgress} turns, so the swarm ends after ${FACTORY_GRACE_TURNS} more. Call chat_done now with what landed and what is left.`,
+      );
+    }
+    return false;
   }
 
   private capAgent(agent: SwarmAgent): void {
@@ -803,6 +856,11 @@ export class Swarm {
     }
     if (this.turnsUsed >= this.limits.maxTurns) {
       void this.finish("exhausted", `turn budget of ${this.limits.maxTurns} spent`);
+      return;
+    }
+    if (this.factoryEnd()) return;
+    if (this.notes.length > 0) {
+      this.pump();
       return;
     }
     this.nudges++;
@@ -888,6 +946,7 @@ export class Swarm {
       ...(agent.lead && this.prs.length > 0
         ? { prs: this.prs.map((p) => `@${p.agent} draft ${p.url} (${p.branch})`) }
         : {}),
+      ...(this.opts.factory ? { factory: this.factoryState() } : {}),
     });
     // A turn's start goes to the op's progress only; its one activity entry lands
     // when it ends, with what came of it.
@@ -930,6 +989,7 @@ export class Swarm {
         task: this.task,
         channelName: this.channel.name,
         limits: this.limits,
+        ...(this.opts.factory ? { factory: this.opts.factory } : {}),
         workTools,
         leadTools,
         ...(dispatch ? { grants: dispatch.grants, answersGates } : {}),
@@ -993,6 +1053,9 @@ export class Swarm {
     if (!turn.endedAt) {
       turn.endedAt = new Date().toISOString();
       turn.outcome = outcome.status;
+    }
+    if (agent.lead && outcome.toolCalls.some((t) => t === "beads_close")) {
+      this.markProgress("the lead closed a bead");
     }
     this.progress(`@${agent.handle} turn ${turn.n} ${outcome.status}`, {
       tools: outcome.toolCalls,
@@ -1250,27 +1313,48 @@ export class Swarm {
 
   // A question clears when the operator replies in its thread or mentions the
   // asker; a top-level note that mentions nobody goes to the lead, so it clears
-  // the lead's questions and no one else's.
+  // the lead's questions and no one else's. An answer also clears the asker's
+  // earlier questions: the answer wakes it, and it can ask again what is still open.
   private answerAsks(message: ChatMessage, isRoot: boolean): void {
     if (this.asks.length === 0) return;
     const handles = new Set(mentionedHandles(message.body));
     const toLead =
       isRoot && ![...this.agents.values()].some((a) => handles.has(a.handle.toLowerCase()));
-    const answered = this.asks.filter((ask) => {
+    const direct = this.asks.filter((ask) => {
       if (ask.threadRootId === message.threadRootId) return true;
       if (handles.has(ask.handle.toLowerCase())) return true;
       return toLead && this.agents.get(ask.agentId)?.lead === true;
     });
-    if (answered.length === 0) return;
+    if (direct.length === 0) return;
+    const answered = this.asks.filter((ask, i) =>
+      direct.some((d) => d.agentId === ask.agentId && i <= this.asks.indexOf(d)),
+    );
     this.dropAsks(answered, "the operator answered");
   }
 
-  // Dismiss from the tab: the question stays in the channel, the card goes.
+  // Dismiss from the tab: the question stays in the channel, the card goes. An
+  // idle lead is woken, since a dismissal posts nothing that would wake it.
   dismissAsk(messageId: string): boolean {
     const ask = this.asks.find((a) => a.messageId === messageId);
     if (!ask) return false;
     this.dropAsks([ask], `dismissed @${ask.handle}'s question`);
+    this.wakeLeadAfterDismiss(ask);
     return true;
+  }
+
+  private wakeLeadAfterDismiss(ask: OperatorAsk): void {
+    const lead = [...this.agents.values()].find((a) => a.lead);
+    if (!lead || this.status !== "running" || this.conclusion !== undefined) return;
+    if (lead.status !== "idle" || this.busy >= this.limits.maxConcurrent) return;
+    if (this.turnsUsed >= this.limits.maxTurns) return;
+    const still = this.asks.filter((a) => a.agentId === lead.id).length;
+    const note = `The operator dismissed @${ask.handle}'s question (${ask.messageId}) without answering it. ${
+      still > 0
+        ? `${still === 1 ? "One question" : `${still} questions`} you asked the operator are still open.`
+        : "None of your questions to the operator are open now, so they no longer hold the swarm."
+    } Carry on, or call chat_done if the task is resolved.`;
+    const inbox = this.inboxes.get(lead.id) ?? [];
+    void this.runAgent(lead, inbox.splice(0), note, this.notes.splice(0));
   }
 
   private dropAsks(gone: readonly OperatorAsk[], why: string): void {
@@ -1474,6 +1558,7 @@ export class Swarm {
       agent.prUrl = url;
       const pr = { agent: agent.handle, url, branch: wt.branch, at: new Date().toISOString() };
       this.prs.push(pr);
+      this.markProgress(`@${agent.handle} opened ${url}`);
       this.pushedHeads.set(url, head);
       this.log(`@${agent.handle} opened draft ${url}`, {
         kind: "pr",
@@ -1592,6 +1677,14 @@ export class Swarm {
     if (!result.commit) return result.message;
     const landed = `@${writer.handle} merged branch ${writer.worktree.branch} into ${writer.worktree.base}: ${result.commit}`;
     this.log(landed, { kind: "run", actor: agent.id, subject: writer.id });
+    this.merges.push({
+      agent: writer.handle,
+      branch: writer.worktree.branch,
+      base: writer.worktree.base,
+      commit: result.commit,
+      at: new Date().toISOString(),
+    });
+    this.markProgress(`merged @${writer.handle}`);
     this.changed("agent");
     return `${landed}\n${result.message}`;
   }
@@ -1764,6 +1857,7 @@ export class Swarm {
       );
       if (gateKey(run.pendingApproval) !== gateBefore) this.trackGate(run);
       if (!isLive(run)) this.settleEnded(run);
+      if (run.status === "succeeded") this.markProgress(`run ${run.runId} succeeded`);
       const breach = isolationBreach(run);
       if (breach) {
         await dispatch.dispatcher.cancel(runId).catch(() => undefined);
@@ -2255,6 +2349,8 @@ export class Swarm {
       ...(effort ? { effort } : {}),
       ...(this.opts.project ? { project: this.opts.project } : {}),
       ...(this.opts.write ? { writeEnabled: true } : {}),
+      ...(this.writeTarget?.mode === "local" ? { writeLocal: true } : {}),
+      ...(this.opts.factory ? { factory: this.factoryState() } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
       ...(health ? { health } : {}),
@@ -2273,6 +2369,7 @@ export class Swarm {
       ...(this.prs.length > 0
         ? { prs: this.prs.map((p) => ({ ...p, ...(p.ci ? { ci: { ...p.ci } } : {}) })) }
         : {}),
+      ...(this.merges.length > 0 ? { merges: this.merges.map((m) => ({ ...m })) } : {}),
       ...(this.keptWorktrees.length > 0
         ? { worktrees: this.keptWorktrees.map((w) => ({ ...w })) }
         : {}),

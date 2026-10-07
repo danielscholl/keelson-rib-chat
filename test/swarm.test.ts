@@ -930,6 +930,7 @@ describe("Workflow dispatch", () => {
     expect(charter).toContain(
       "beads_ready, beads_close, canvas_design_guide come from other Keelson ribs",
     );
+    expect(charter).toContain("Never set a bead's assignee to an agent's handle");
     expect(summary.leadTools).toEqual(["beads_ready", "beads_close", "canvas_design_guide"]);
   });
 

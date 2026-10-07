@@ -20,7 +20,15 @@ import {
   WAIT_BOUNDS,
 } from "./tools.ts";
 import { SETTLE_GRACE_MS } from "./turn-runner.ts";
-import { BODY_MAX, CONCLUSION_MAX, DEFAULT_SIZE, SIZE_PRESETS, SWARM_SIZES } from "./types.ts";
+import {
+  BODY_MAX,
+  CONCLUSION_MAX,
+  DEFAULT_SIZE,
+  FACTORY_DEFAULTS,
+  FACTORY_LIMITS,
+  SIZE_PRESETS,
+  SWARM_SIZES,
+} from "./types.ts";
 
 // The corpus is a source module, not a file read at runtime, so an installed
 // package serves it with no filesystem or network dependency. keelson_docs
@@ -80,6 +88,8 @@ durable ops, a run id. The channel is named \`swarm-<id>\`.
 | \`worker_model\` | the power's worker model, else \`model\` | Model for workers. |
 | \`workflows\` | none | Catalog workflows the lead may start on the project, each \`{ name, isolated? }\`, at most ${START_BOUNDS.maxWorkflows}. Needs \`project\`. See Workflow dispatch. |
 | \`lead_tools\` | none | Other ribs' tools the lead holds, such as \`beads_ready\` or \`beads_close\`, at most ${START_BOUNDS.maxLeadTools}. See Agent tools. |
+| \`factory\` | false | Factory mode: no turn or clock budget, only progress. See Limits and completion. |
+| \`max_tokens\` | ${FACTORY_DEFAULTS.maxTokens} | Factory mode's ceiling on fresh tokens. Ignored without \`factory\`. |
 
 Project confinement: with a \`project\`, every turn runs with the project root as
 its working directory and as its only allowed directory. A writer's turns use
@@ -153,7 +163,8 @@ bodies, is kept in the swarm's status and durable result.
 | the rib's run and gate posts (\`Run started\`, \`Run update\`, \`Approval needed\`, \`Approved\`, \`Changes requested\`) | nobody, even when they name a reviewer |
 
 Mentions add to every row. Agent handles are prefixed with the swarm id, for
-example \`s3fk-lead\`. Writing to the channel is free; costing a peer a turn takes
+example \`s3fk-lead\`; a mention without the prefix, such as \`@lead\`, reaches
+the one agent of that name. Writing to the channel is free; costing a peer a turn takes
 deliberate addressing. An agent's plain reply text is never posted, so silence
 is the default. An idle agent with pending messages runs one turn with all of
 them batched in.
@@ -291,7 +302,8 @@ handle), or by asking a question that names them; a passing mention ("I'll show
 both to @operator") is not a question. A reply in
 the question's thread, a channel post that mentions the asker, or Dismiss on the
 Swarms tab answers it; a note to the lead answers the lead's own questions and
-no one else's. Its wall clock still applies, so give long runs a larger
+no one else's. An answer also clears the asker's earlier open questions, and a
+Dismiss wakes an idle lead so it can carry on or conclude. Its wall clock still applies, so give long runs a larger
 \`max_minutes\`. The lead cannot conclude while a run is live, nor while a question it asked
 the operator is still open. A swarm that ends
 any other way cancels its live runs.
@@ -474,6 +486,18 @@ from the per-worker cap, since capping it would leave the swarm leaderless. A
 worker that has spent its turns is capped the next time a message addresses it:
 the cap is announced in the channel and its messages are dropped.
 
+Factory mode (\`factory: true\`, or the launcher's Factory switch) trades the
+turn and clock budget for one tied to progress. Progress is work that landed: a
+local merge, a writer's pull request, a workflow run that succeeds, or the lead
+calling \`beads_close\`. The swarm keeps going while it lands, and after
+${FACTORY_DEFAULTS.progressTurns} turns across the swarm without any it tells the lead to conclude and
+ends as \`stalled\` 3 turns later. It also ends as \`exhausted\` at
+\`max_tokens\` fresh tokens, ${FACTORY_DEFAULTS.maxTokens} by default. The turn and clock limits
+become backstops of ${FACTORY_LIMITS.maxTurns} turns, ${FACTORY_LIMITS.maxTurnsPerAgent} per worker, and ${FACTORY_LIMITS.wallClockMs / 3_600_000} hours. Every
+turn shows the agents how many turns have passed since work last landed, and
+the summary's \`factory\` field carries the same count. A chat-only question has
+no progress to measure, so leave it on a size.
+
 A turn that times out or errors may never have shown the agent its messages, so
 they go back to the front of its inbox, and its next turn says they are
 repeated. After ${MAX_TURN_FAILURES} failed turns in a row a worker is retired as \`failed\` and
@@ -486,8 +510,8 @@ since the next turn resumes that same session.
 | --- | --- |
 | \`running\` | In flight. |
 | \`done\` | The lead called \`chat_done\`. \`conclusion\` holds the answer. |
-| \`stalled\` | The swarm went idle and the lead did not conclude after ${l.maxNudges} nudges. |
-| \`exhausted\` | The turn budget or the wall clock ran out. |
+| \`stalled\` | The swarm went idle and the lead did not conclude after ${l.maxNudges} nudges, or a factory swarm stopped landing work. |
+| \`exhausted\` | The turn budget or the wall clock ran out, or a factory swarm reached its token ceiling. |
 | \`stopped\` | Stopped by \`chat_swarm_stop\`, \`run_cancel\`, or a host shutdown. |
 | \`error\` | The swarm failed to start, ClickClack revoked the owner session, or the lead's turns kept failing. |
 
@@ -672,6 +696,8 @@ turn start timestamps over the last five minutes, or since the start when younge
 with at least one minute as the rate's denominator. Older records without spans
 use the last five pace buckets over their covered time, accounting for the partial
 last minute; without buckets, they use turns so far. Fewer than one turn is reported as no pace.
+While a workflow run is running or paused, the swarm mostly waits on it, so the
+tile reads on-run instead of projecting the earlier pace.
 With positive pace, it projects when the remaining turns run out. If that is
 before the wall clock ends, it reads runs-out-first. Otherwise, it rounds the
 projected unused turns and reads clock-first when at least a tenth of the total
@@ -683,6 +709,7 @@ turn budget (rounded up) would be unused; less reads fits.
 | clock-first | N left · about M unused at hh:mm | flat | caution |
 | fits | N left · pace fits the clock | flat | none |
 | no-pace | N left · no turn in 5 min | flat | none |
+| on-run | N left · waiting on a workflow run | flat | none |
 | out-of-turns | none left · agents finish their turns | down | warn |
 
 N is turns left and M is projected unused turns. Delta text stays within 44

@@ -235,6 +235,8 @@ denominator. Older records without spans use the last five pace buckets
 over their covered time, accounting for the partial last minute. Without
 buckets, those records use turns so far.
 Fewer than one turn in the window reads **no pace**, not infinite time.
+While a workflow run is running or paused, the swarm mostly waits on it, so the
+delta reads **on run** instead of projecting the earlier pace.
 
 | Reading | Delta text | Direction | Tone |
 |---|---|---|---|
@@ -242,6 +244,7 @@ Fewer than one turn in the window reads **no pace**, not infinite time.
 | clock-first | N left · about M unused at hh:mm | flat | caution |
 | fits | N left · pace fits the clock | flat | none |
 | no-pace | N left · no turn in 5 min | flat | none |
+| on-run | N left · waiting on a workflow run | flat | none |
 | out-of-turns | none left · agents finish their turns | down | warn |
 
 N is turns left and M is projected unused turns. Delta text stays within 44
@@ -353,7 +356,7 @@ its own way of clearing. The tab's badge counts swarms with any request.
 | Pill | What happened | First action | Clears when |
 |---|---|---|---|
 | **decide** | A run waits at an approval this swarm may not answer: the host refused the workflow under `ribApprovalGrants`, or offers the rib no way to answer. | **Review plan** for a plan approval, **Answer** for any other, opening the run beside the tab. **Reply** posts in the approval thread as you; it approves nothing. | The run leaves the approval. |
-| **question** | An agent opened a sentence with `@operator` (or your ClickClack handle), or asked a question naming you. A passing mention, such as "I'll present both to @operator", isn't one. | **Read question** opens the question inspector. **Reply** posts in the question's thread. **Dismiss** clears it from the tab. | You reply in that thread, post in the channel mentioning the asker, or dismiss it. Other questions stay open. A note to the lead answers the lead's own questions only. |
+| **question** | An agent opened a sentence with `@operator` (or your ClickClack handle), or asked a question naming you. A passing mention, such as "I'll present both to @operator", isn't one. | **Read question** opens the question inspector. **Reply** posts in the question's thread. **Dismiss** clears it from the tab. | You reply in that thread, post in the channel mentioning the asker, or dismiss it. An answer also clears the asker's earlier questions; other agents' questions stay open. A note to the lead answers the lead's own questions only. Dismiss wakes an idle lead. |
 | **connection** | The swarm's ClickClack socket closed twice without reopening. | **Start ClickClack** when the managed server is down, otherwise **Open swarm** expands the swarm on the page; the card links the transcript. | The socket reopens. |
 | **quiet** | A run waits at an approval the swarm could answer, and no agent has worked since. | **Message the lead** | Any agent takes a turn. |
 
@@ -698,6 +701,14 @@ class model.
 | Scout | A narrow question, or a first pass before a bigger run. | 3 | 20 | 15 |
 | Crew | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
 | Fleet | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
+
+**Factory mode**, the switch under the cards, keeps the plan's agents and models
+but drops its turns and minutes. The swarm runs while work lands (merges, pull
+requests, finished workflow runs, closed beads) and stops after 15 turns without
+any, or at 2M fresh tokens. The sentence beside **Start swarm** then reads
+**N agents until work stops landing**, and a live swarm's Turns tile counts the
+turns since work last landed instead of forecasting the budget. Use it to drain
+a backlog or a queue of runs; a chat-only question has nothing to land.
 
 **Lead model** and **Workers model** sit under the cards, beside **Project**, and start on
 the plan's lead and the plan's workers. Provider groups contain each provider's
