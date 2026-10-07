@@ -13,18 +13,21 @@ import type {
   CanvasTimelineWindow,
   CanvasTone,
 } from "@keelson/shared";
+import { agentCost, byModel, cacheHit, costOf, costText, swarmCost, usd } from "../cost.ts";
 import { missingEvidence } from "../dispatch.ts";
-import { freshTokens, modelLabel, tokenCount } from "../labels.ts";
+import { freshTokens, inOutText, modelLabel, tokenCount } from "../labels.ts";
 import { type Need, needsYou } from "../needs.ts";
 import type { StartSwarmInput } from "../tools.ts";
 import {
   type AgentStatus,
+  addTokens,
   type ChildRun,
   type ChildRunStatus,
   isLive,
   type StartingSwarm,
   type SwarmSummary,
   sizeOf,
+  type TokenTally,
 } from "../types.ts";
 import { forecast, forecastDelta, PACE_WINDOW_MINUTES } from "./forecast.ts";
 import {
@@ -224,15 +227,28 @@ export function timeTile(s: SwarmSummary): Stat {
 export function tokensTile(s: SwarmSummary): Stat {
   if (!s.usage) {
     return s.turnsUsed === 0
-      ? { label: "Tokens", value: 0, sub: "fresh · none yet" }
+      ? { label: "Tokens", value: 0, sub: "none yet" }
       : { label: "Tokens", value: null, sub: "the provider reported none" };
   }
   const ceiling = s.factory ? ` · of ${tokenCount(s.factory.maxTokens)}` : "";
   return {
     label: "Tokens",
     value: tokenCount(freshTokens(s.usage)),
-    sub: `${s.usage.cached > 0 ? `fresh · ${tokenCount(s.usage.cached)} cached` : "fresh · none cached"}${ceiling}`,
+    sub: `${inOutText(s.usage)}${ceiling}`,
   };
+}
+
+// Absent when the host prices nothing or no turn reported usage.
+export function costTile(s: SwarmSummary): Stat[] {
+  const cost = swarmCost(s);
+  if (!cost || !s.usage) return [];
+  const hit = cacheHit(s.usage);
+  const parts = [
+    ...(hit !== undefined ? [`${Math.round(hit * 100)}% cache hit`] : []),
+    `${tokenCount(s.usage.cached)} cached`,
+    ...(cost.unpricedTurns > 0 ? [`${plural(cost.unpricedTurns, "unpriced turn")}`] : []),
+  ];
+  return [{ label: "Cost", value: costText(cost), sub: parts.join(" · ") }];
 }
 
 function stats(s: SwarmSummary, now: Date): Leaf {
@@ -256,6 +272,7 @@ function stats(s: SwarmSummary, now: Date): Leaf {
         ]
       : []),
     ...(!isLiveNow || s.usage ? [tokensTile(s)] : []),
+    ...costTile(s),
   ];
   if (!isLiveNow) {
     const prs = new Map<string, boolean>();
@@ -323,7 +340,10 @@ function agentCard(
   selectedAgentId?: string,
 ): Card {
   const pinned = a.model && a.model !== (a.lead ? s.model : (s.workerModel ?? s.model));
-  const tokens = a.usage ? `${tokenCount(freshTokens(a.usage))} tokens` : undefined;
+  const cost = agentCost(a);
+  const tokens = a.usage
+    ? `${tokenCount(freshTokens(a.usage))} tokens${cost ? ` · ${costText(cost)}` : ""}`
+    : undefined;
   const turns = a.lead
     ? plural(a.turns, "turn")
     : `${a.turns} of ${s.limits.maxTurnsPerAgent} turns`;
@@ -473,26 +493,118 @@ function mapConversation(s: SwarmSummary, selectedAgentId?: string): Leaf[] {
   ];
 }
 
-// ---- Spend: each agent's fresh tokens against the swarm's. ----
+// ---- Spend: each agent's tokens and cost, then the swarm's cost by kind. ----
 
 function spend(s: SwarmSummary): Leaf[] {
-  const spent = s.agents
-    .map((a) => ({ a, fresh: a.usage ? freshTokens(a.usage) : 0 }))
-    .filter((x) => x.fresh > 0);
-  // One agent's bar is always full, so the section starts at two.
-  if (spent.length < 2) return [];
-  const total = spent.reduce((n, x) => n + x.fresh, 0);
+  const spent = s.agents.filter((a) => a.usage && freshTokens(a.usage) > 0);
+  const sum = spent.reduce<TokenTally | undefined>(
+    (t, a) => addTokens(t, a.usage as TokenTally),
+    undefined,
+  );
+  if (!sum) return [];
+  const total = swarmCost(s);
+  const share = (a: SwarmSummary["agents"][number]) => {
+    const cost = agentCost(a)?.usd;
+    if (total && total.usd > 0 && cost !== undefined) return cost / total.usd;
+    const all = freshTokens(sum);
+    return all > 0 && a.usage ? freshTokens(a.usage) / all : 0;
+  };
+  const pct = (n: number | undefined) => (n === undefined ? "" : `${Math.round(n * 100)}%`);
+  const models = byModel(s);
+  const rows = spent.map((a) => {
+    const u = a.usage as NonNullable<typeof a.usage>;
+    const cost = agentCost(a);
+    const many = (a.usageByModel?.length ?? 0) > 1;
+    const model = many
+      ? plural(a.usageByModel?.length ?? 0, "model")
+      : (a.usageByModel?.[0]?.model ?? a.servedModel ?? a.model ?? "");
+    const provider = many ? undefined : (a.usageByModel?.[0]?.provider ?? a.providerId);
+    return {
+      agent: shortHandle(a.handle, s.id),
+      model: provider ? { value: model, badges: [{ text: provider }] } : model,
+      turns: a.turns,
+      in: `↑ ${tokenCount(u.input)}`,
+      out: `↓ ${tokenCount(u.output)}`,
+      cached: tokenCount(u.cached),
+      hit: pct(cacheHit(u)),
+      ...(total ? { cost: cost ? costText(cost) : "" } : {}),
+      share: pct(share(a)),
+    };
+  });
+  const columns = [
+    { key: "agent", label: "Agent" },
+    { key: "model", label: "Model" },
+    { key: "turns", label: "Turns" },
+    { key: "in", label: "↑ In" },
+    { key: "out", label: "↓ Out" },
+    { key: "cached", label: "Cached" },
+    { key: "hit", label: "Cache hit" },
+    ...(total ? [{ key: "cost", label: "Cost" }] : []),
+    { key: "share", label: "Share" },
+  ];
   return [
     {
-      kind: "bars",
+      kind: "table",
       title: "Spend",
-      inline: true,
-      items: spent.map(({ a, fresh }) => ({
-        label: shortHandle(a.handle, s.id),
-        value: fresh,
-        total,
-        trailing: `${tokenCount(fresh)} · ${Math.round((100 * fresh) / total)}%`,
-      })),
+      columns,
+      rows: [
+        ...rows,
+        {
+          agent: "swarm",
+          model: models.length === 1 ? (models[0]?.model ?? "") : plural(models.length, "model"),
+          turns: s.agents.reduce((n, a) => n + a.turns, 0),
+          in: `↑ ${tokenCount(sum.input)}`,
+          out: `↓ ${tokenCount(sum.output)}`,
+          cached: tokenCount(sum.cached),
+          hit: pct(cacheHit(sum)),
+          ...(total ? { cost: costText(total) } : {}),
+          share: "",
+        },
+      ],
+    },
+    ...costByKind(s),
+  ];
+}
+
+// Where the dollars went: uncached input, cache writes, output, cache reads.
+function costByKind(s: SwarmSummary): Leaf[] {
+  const kinds = { input: 0, write: 0, output: 0, read: 0 };
+  let priced = false;
+  for (const row of byModel(s)) {
+    const part = (t: Parameters<typeof costOf>[0][number]) => costOf([t])?.usd;
+    const zero = { input: 0, output: 0, cached: 0 };
+    const base = { provider: row.provider, model: row.model, turns: row.turns };
+    const write = row.cacheWrite ?? 0;
+    const input = part({ ...base, ...zero, input: row.input - write });
+    const out = part({ ...base, ...zero, output: row.output });
+    const read = part({ ...base, ...zero, cached: row.cached });
+    const writes = part({
+      ...base,
+      ...zero,
+      input: write,
+      cacheWrite: write,
+      ...(row.cacheWrite1h !== undefined ? { cacheWrite1h: row.cacheWrite1h } : {}),
+    });
+    if (input === undefined || out === undefined || read === undefined || writes === undefined)
+      continue;
+    priced = true;
+    kinds.input += input;
+    kinds.write += writes;
+    kinds.output += out;
+    kinds.read += read;
+  }
+  if (!priced) return [];
+  const cents = (n: number) => Math.round(n * 100);
+  return [
+    {
+      kind: "segments",
+      title: "Cost by kind",
+      items: [
+        { label: `input ${usd(kinds.input)}`, n: cents(kinds.input) },
+        { label: `cache write ${usd(kinds.write)}`, n: cents(kinds.write) },
+        { label: `output ${usd(kinds.output)}`, n: cents(kinds.output) },
+        { label: `cache read ${usd(kinds.read)}`, n: cents(kinds.read) },
+      ].filter((item) => item.n > 0),
     },
   ];
 }
@@ -1050,7 +1162,7 @@ export function buildCockpit(
     {
       kind: "stats",
       title: "Budget",
-      items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s)],
+      items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s), ...costTile(s)],
     },
     ...(live(s) ? [nativeTimeline(s, opts.now)] : []),
     ...mapConversation(s, opts.selectedAgentId),

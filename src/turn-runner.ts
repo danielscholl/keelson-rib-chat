@@ -14,7 +14,10 @@ import type { MessageChunk, RibAgentTurn, RibContext, TokenUsage } from "@keelso
 // the swarm. Never throws.
 
 export type RunAgentTurn = NonNullable<RibContext["runAgentTurn"]>;
-export type TurnRequest = Omit<Parameters<RunAgentTurn>[0], "abortSignal" | "timeoutMs">;
+// `usageRunId` groups the turn's usage ledger row by swarm on hosts that read it.
+export type TurnRequest = Omit<Parameters<RunAgentTurn>[0], "abortSignal" | "timeoutMs"> & {
+  usageRunId?: string;
+};
 
 export interface TurnOutcome {
   status: "ok" | "error" | "timeout" | "aborted";

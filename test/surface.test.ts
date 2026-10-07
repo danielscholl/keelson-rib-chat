@@ -24,6 +24,7 @@ import {
   type ContextItem,
   EXCERPT_CHARS,
 } from "../src/context.ts";
+import { setPricer } from "../src/cost.ts";
 import { applyStatus } from "../src/dispatch.ts";
 import type { GithubLink } from "../src/github-link.ts";
 import { historyPath, loadHistory } from "../src/history.ts";
@@ -118,6 +119,7 @@ import {
   buildStartingBoard,
   buildSwarmBoard,
   CONVERSATION_SHOWN,
+  costTile,
   DETAIL_CHARS,
   tokensTile,
   turnsTile,
@@ -2333,7 +2335,7 @@ describe("the live cockpit", () => {
           },
         },
         { label: "Time", clock: { mode: "until" } },
-        { label: "Tokens", value: "250", sub: "fresh · 100 cached" },
+        { label: "Tokens", value: "250", sub: "↑ 200 in · ↓ 50 out" },
       ],
     });
     expect(sections(fixtures.running!)[3]).toMatchObject({
@@ -2607,11 +2609,58 @@ describe("Swarms boards", () => {
     });
   });
 
+  test("a Cost tile and priced Spend appear only when the host prices the swarm", () => {
+    const usageByModel = [
+      {
+        provider: "copilot",
+        model: "gpt-6.1-sol",
+        turns: 3,
+        input: 2_000,
+        output: 100,
+        cached: 38_000,
+        cacheWrite: 1_500,
+      },
+    ];
+    const s = swarm("s1cost", {
+      usage: { input: 2_000, output: 100, cached: 38_000, cacheWrite: 1_500 },
+      agents: [agent("s1cost", 0, { usage: usageByModel[0], usageByModel })],
+    });
+    const statsOf = (v: CanvasBoardView) =>
+      v.sections.find((x) => x.kind === "stats" && x.title === "Budget");
+    expect(JSON.stringify(statsOf(buildSwarmBoard(s)))).not.toContain('"Cost"');
+    setPricer((_p, _m, t) => (t.inputTokens + (t.cacheWriteTokens ?? 0)) / 100);
+    try {
+      expect(costTile(s)).toEqual([
+        { label: "Cost", value: "$20.00", sub: "95% cache hit · 38k cached" },
+      ]);
+      expect(JSON.stringify(statsOf(buildSwarmBoard(s)))).toContain('"label":"Cost"');
+      const spend = buildSwarmBoard(s).sections.find((x) => x.title === "Spend");
+      expect(JSON.stringify(spend)).toContain('"cost":"$20.00"');
+      const byKind = buildSwarmBoard(s).sections.find((x) => x.title === "Cost by kind");
+      expect(byKind).toMatchObject({
+        items: [
+          { label: "input $5.00", n: 500 },
+          { label: "cache write $15.00", n: 1500 },
+        ],
+      });
+      const ended = swarm("s1cost", { ...s, status: "done", endedAt: T0 });
+      expect(endedRow(ended).trailing).toContain("2k · $20.00");
+      expect(setupRows(ended).map((r) => r.text)).toEqual([
+        expect.any(String),
+        expect.any(String),
+        "gpt-6.1-sol · copilot · 500 in · 2k write · 100 out · 38k read · $20.00",
+        "swarm · 2k fresh · $20.00",
+      ]);
+    } finally {
+      setPricer(undefined);
+    }
+  });
+
   test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
     expect(tokensTile(swarm("s0tok", { turnsUsed: 0 }))).toEqual({
       label: "Tokens",
       value: 0,
-      sub: "fresh · none yet",
+      sub: "none yet",
     });
     expect(tokensTile(fixtures.running!)).toEqual({
       label: "Tokens",
@@ -2619,7 +2668,7 @@ describe("Swarms boards", () => {
       sub: "the provider reported none",
     });
     const s = swarm("s1tok", { usage: { input: 200, output: 50, cached: 100 } });
-    expect(tokensTile(s)).toEqual({ label: "Tokens", value: "250", sub: "fresh · 100 cached" });
+    expect(tokensTile(s)).toEqual({ label: "Tokens", value: "250", sub: "↑ 200 in · ↓ 50 out" });
     const stats = buildSwarmBoard(s).sections.find((x) => x.kind === "stats");
     expect(stats?.kind === "stats" ? stats.items[3] : undefined).toEqual(tokensTile(s));
   });
@@ -3093,12 +3142,12 @@ describe("Swarms boards", () => {
     expect(tiles({ ...base, turnsUsed: 0 })[2]).toEqual({
       label: "Tokens",
       value: 0,
-      sub: "fresh · none yet",
+      sub: "none yet",
     });
     expect(tiles({ ...base, usage: { input: 200, output: 50, cached: 100 } })[2]).toEqual({
       label: "Tokens",
       value: "250",
-      sub: "fresh · 100 cached",
+      sub: "↑ 200 in · ↓ 50 out",
     });
     expect(tiles({ ...base, workflows: [], runs: [], prs: [], writeEnabled: false })).toEqual(chat);
     for (const patch of [
@@ -3154,7 +3203,7 @@ describe("Swarms boards", () => {
     expect(turnsTile({ ...s, factory: { ...factory, sinceProgress: 15 } }, new Date(T0)).tone).toBe(
       "warn",
     );
-    expect(tokensTile(s).sub).toBe("fresh · none cached · of 2.0M");
+    expect(tokensTile(s).sub).toBe("↑ 900 in · ↓ 100 out · of 2.0M");
     const ended = { ...s, status: "done" as const, endedAt: T0 };
     expect(turnsTile(ended).sub).toBe("factory");
   });
@@ -4185,7 +4234,7 @@ describe("the details", () => {
   });
 
   test.each(["running", "stopping", "done", "stopped"] as const)(
-    "spend bars each agent's fresh tokens against the swarm's only while live (%s)",
+    "spend tables each agent's tokens and share only while live (%s)",
     (status) => {
       const s = swarm("s8spd", {
         status,
@@ -4198,20 +4247,18 @@ describe("the details", () => {
       });
       const view = buildSwarmBoard(s);
       board(swarmKey(s.id), view);
-      const expected = {
-        kind: "bars",
-        title: "Spend",
-        inline: true,
-        items: [
-          { label: "lead", value: 4000, total: 5000, trailing: "4k · 80%" },
-          { label: "w1", value: 1000, total: 5000, trailing: "1k · 20%" },
-        ],
-      } satisfies CanvasBoardView["sections"][number];
+      const spendTable = (sections: readonly CanvasBoardView["sections"][number][]) =>
+        sections.find((x) => x.kind === "table" && x.title === "Spend");
       if (status === "running" || status === "stopping") {
-        expect(view.sections.find((x) => x.kind === "bars")).toEqual(expected);
-        expect(
-          leaves(buildCockpit(s, [], { titled: false })).find((x) => x.kind === "bars"),
-        ).toEqual(expected);
+        const table = spendTable(view.sections);
+        expect(table).toMatchObject({
+          rows: [
+            { agent: "lead", in: "↑ 3k", out: "↓ 1k", cached: "9k", hit: "75%", share: "80%" },
+            { agent: "w1", in: "↑ 900", out: "↓ 100", cached: "0", hit: "", share: "20%" },
+            { agent: "swarm", in: "↑ 4k", out: "↓ 1k", cached: "9k" },
+          ],
+        });
+        expect(spendTable(leaves(buildCockpit(s, [], { titled: false })))).toEqual(table);
       } else {
         expect(view.sections.some((x) => x.title === "Spend")).toBe(false);
         expect(buildRecord(s, new Date(T0))).toContain("Spend by agent");
@@ -4221,7 +4268,8 @@ describe("the details", () => {
       const one = swarm("s8one", {
         agents: [agent("s8one", 0, { usage: { input: 10, output: 1, cached: 0 } })],
       });
-      expect(buildSwarmBoard(one).sections.some((x) => x.kind === "bars")).toBe(false);
+      expect(spendTable(buildSwarmBoard(one).sections)).toBeDefined();
+      expect(spendTable(buildSwarmBoard(swarm("s8none", {})).sections)).toBeUndefined();
     },
   );
 

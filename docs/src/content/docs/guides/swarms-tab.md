@@ -48,9 +48,10 @@ One live swarm expands on the page as a cockpit. It runs in this order:
    gate, its reviewing card appears here instead.
 4. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
    omitting zero counts. Open seats are hatched.
-5. Three **Budget** tiles: **Turns** used with a sparkline and a forecast
+5. **Budget** tiles: **Turns** used with a sparkline and a forecast
    delta, with **of N · pace over the last 5 min** in the sub; **Time** as a ticking
-   time-left clock; and fresh **Tokens** with cached tokens in the sub.
+   time-left clock; fresh **Tokens** with **↑ in · ↓ out** in the sub; and
+   **Cost** with the cache hit and cached tokens, when the host prices tokens.
    Before a turn, Tokens says **none yet**; after turns without usage, it
    says **the provider reported none**.
 6. **Timeline**: turns and event marks on lanes over time.
@@ -212,7 +213,9 @@ worker role override is recorded. Each role's disclosure labels served model
 and served provider per agent by short handle, with explicit per-agent request
 overrides. Missing served evidence says **not reported**; missing role agents
 are explicitly **not recorded**. **Model thinking** (the recorded reasoning
-effort) and aggregate token usage remain visible.
+effort) and token usage remain visible: one line per served model with uncached
+input, cache writes, output, cache reads and cost, then the swarm's fresh total
+against any Factory ceiling.
 
 Each inspector publishes before opening. Question and gate selection is
 shared by every viewer, independently of expanded-swarm and agent selection,
@@ -403,10 +406,13 @@ Ended section order: Outcome, Result, actions, Agents, Produced when
 applicable, Activity when events exist, About, then the separate Ended swarms
 back-link.
 
-The ended Result orders Turns, Time, Tokens, Pull requests when eligible, then
-Runs verified only when runs exist. There is no Agents tile.
+The ended Result orders Turns, Time, Tokens, Cost when priced, Pull requests when
+eligible, then Runs verified only when runs exist. There is no Agents tile.
 Tokens is 0 when no turns ran; after positive turns without usage it is
-unavailable, not an invented zero.
+unavailable, not an invented zero. Cost is the list price the host's Usage page
+would show for the same tokens, priced on every read; a model without a price
+makes it a floor (≥) with the unpriced turns named. Ended rows add fresh tokens
+and cost after the time.
 
 The Pull requests tile appears when workflows were named, `writeEnabled`
 is true, a legacy writer has a worktree, or any run or writer PR exists.
@@ -437,10 +443,11 @@ the lifecycle:
 - **Agents · N** (ended only): proportional identity-colored agent cards with
   turns, role, tokens and the last event. They select the same read-only
   inspector, without monospace/stacked cards or ghost seats.
-- **Spend** (live boards and cockpits only), once two agents have spent:
-  a bar per agent, its fresh tokens against the swarm's, with the count and
-  share beside it. For ended swarms, Spend by agent is on the record only,
-  with fresh and cached tokens apart.
+- **Spend** (live boards and cockpits only), once an agent has spent: a table
+  of each agent's model and provider, ↑ in, ↓ out, cached tokens, cache hit,
+  cost and share, with a swarm row, then **Cost by kind** split into input,
+  cache write, output and cache read. For ended swarms, Spend by agent is on
+  the record only, with fresh and cached tokens apart.
 - **Produced so far** while live, **Produced** once ended: reports,
   dispatched runs, writer draft PRs, and, once ended, kept worktrees, as
   described below

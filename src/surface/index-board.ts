@@ -7,7 +7,8 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { CanvasActionItem, CanvasBoardView, RibSurfaceBadge } from "@keelson/shared";
-import { modelLabel } from "../labels.ts";
+import { costText, swarmCost } from "../cost.ts";
+import { freshTokens, modelLabel, tokenCount } from "../labels.ts";
 import { NEED_ORDER, type Need, needsYou, oldestNeed, UNDATED } from "../needs.ts";
 import { type StartingSwarm, type SwarmSummary, sizeOf } from "../types.ts";
 import { dayHeading, firstLine, gist, hhmm, plural, shortHandle, span } from "./format.ts";
@@ -153,6 +154,7 @@ export function endedRow(s: SwarmSummary): Row {
   const took = span(s.startedAt, s.endedAt);
   const verified = verifiedText(s);
   const tail = ` · ${outcomeOf(s)}`;
+  const cost = swarmCost(s);
   return {
     ...(s.status === "done"
       ? { icon: "✓" }
@@ -161,6 +163,8 @@ export function endedRow(s: SwarmSummary): Row {
     trailing: [
       plural(s.turnsUsed, "turn"),
       ...(took ? [took] : []),
+      ...(s.usage ? [tokenCount(freshTokens(s.usage))] : []),
+      ...(cost ? [costText(cost)] : []),
       hhmm(s.endedAt ?? s.startedAt),
       ...(verified ? [verified] : []),
       ...(s.report ? ["◧ report"] : []),

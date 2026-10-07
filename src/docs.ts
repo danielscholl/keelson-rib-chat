@@ -567,8 +567,9 @@ The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
 the task and id with a lifecycle or needs-you pill and people dots; a state
 line; once the lead has concluded, the Outcome card; peer-review gate cards;
 an agent strip (busy, waiting, idle, capped, failed, with hatched open
-seats); three Budget tiles (Turns with its spark and a forecast as its delta,
-Time as a ticking time-left clock, fresh Tokens with cached in the sub); Timeline;
+seats); Budget tiles (Turns with its spark and a forecast as its delta,
+Time as a ticking time-left clock, fresh Tokens with ↑ in and ↓ out in the sub, and
+Cost with cache hit and cached tokens when the host prices tokens); Timeline;
 full-width Map, then Conversation and Message the lead;
 Spend, Produced so far and Activity; then Open the report when one exists,
 Timeline, Details, and Stop swarm last. Message the lead is expanded directly under
@@ -682,7 +683,9 @@ Workers inherit the lead setting unless a worker role override is recorded.
 Each role's disclosure labels served model and served provider per agent by
 short handle, with explicit per-agent request overrides. Missing served
 evidence says not reported; missing role agents are explicitly not recorded.
-Model thinking (the recorded reasoning effort) and aggregate token usage remain visible.
+Model thinking (the recorded reasoning effort) and token usage remain visible: one line
+per served model with uncached input, cache writes, output, cache reads and cost, then the
+swarm's fresh total against any Factory ceiling.
 Health shows recorded faults, and Transcript has
 one row. Details is read-only with no composer.
 
@@ -791,10 +794,12 @@ and the eligible Message the lead composer, Timeline, Details and Stop,
 then Spend, Produced so far and Activity. Ended section order: Outcome, Result,
 actions, Agents, Produced when applicable, Activity when events exist,
 About, then the separate Ended swarms back-link.
-The ended Result orders Turns, Time, Tokens, Pull requests when eligible, then
-Runs verified only when runs exist. There is no Agents tile.
+The ended Result orders Turns, Time, Tokens, Cost when priced, Pull requests when
+eligible, then Runs verified only when runs exist. There is no Agents tile.
 Tokens is 0 when no turns ran; after positive turns without usage it is
-unavailable, not an invented zero.
+unavailable, not an invented zero. Cost is the list price the host's Usage page would
+show for the same tokens, priced on every read; a model without a price makes it a floor
+(≥) with the unpriced turns named. Ended rows add fresh tokens and cost after the time.
 The Pull requests tile appears when workflows were named, \`writeEnabled\`
 is true, a legacy writer has a worktree, or any run or writer PR exists.
 Eligible write or dispatch swarms with no PRs show 0 with "0 with CI passing".
@@ -817,7 +822,8 @@ everywhere, and the ended header chip names the plan, not the model. Ended
 boards keep, under Agents · N, proportional
 identity-colored agent cards that select the same read-only inspector, without
 monospace/stacked cards or ghost seats. Spend stays on live boards and cockpits
-once two agents have spent: each agent's fresh tokens against the swarm's.
+once an agent has spent: a table of each agent's model and provider, ↑ in, ↓ out,
+cached tokens, cache hit, cost and share, a swarm row, then Cost by kind.
 For ended swarms, Spend by agent is on the record only, with fresh and cached
 tokens apart. Both lifecycles retain the produced inventory when applicable:
 Produced so far while live, Produced once ended.

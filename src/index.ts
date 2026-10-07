@@ -14,6 +14,7 @@ import {
   type RibViewDescriptor,
 } from "@keelson/shared";
 import { ClickClackClient, ClickClackError } from "./clickclack.ts";
+import { type Pricer, setPricer } from "./cost.ts";
 import { serialStarts, type WorkflowDispatcher } from "./dispatch.ts";
 import { chatDocsSource } from "./docs.ts";
 import { readGithubLink } from "./github-link.ts";
@@ -777,6 +778,7 @@ const rib: Rib = {
 
   registerTools: (ctx: RibContext) => {
     runAgentTurn = ctx.runAgentTurn;
+    setPricer((ctx as RibContext & { priceTokens?: Pricer }).priceTokens);
     registerOp = ctx.registerOp;
     getProjects = ctx.getProjects;
     createProject = ctx.createProject;
@@ -887,6 +889,7 @@ const rib: Rib = {
     await server?.dispose().catch(() => undefined);
     server = undefined;
     runAgentTurn = undefined;
+    setPricer(undefined);
     registerOp = undefined;
     getProjects = undefined;
     createProject = undefined;

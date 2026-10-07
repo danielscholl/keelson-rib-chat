@@ -13,6 +13,7 @@ import {
   z,
 } from "@keelson/shared";
 import { type ContextItem, contextSchema, toContextItems } from "./context.ts";
+import { costText, swarmCost } from "./cost.ts";
 import { describeRun } from "./dispatch.ts";
 import { modelLabel, sizeText, tokensText } from "./labels.ts";
 import { REPORT_HTML_MAX, REPORT_TITLE_MAX } from "./report.ts";
@@ -774,6 +775,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
                 size: s.size,
                 model: modelLabel(s),
                 ...(s.usage ? { tokens: tokensText(s.usage) } : {}),
+                ...costField(s),
                 task: s.task.slice(0, 120),
               })),
             ],
@@ -899,4 +901,9 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
       }),
     },
   ];
+}
+
+function costField(s: SwarmSummary): { cost?: string } {
+  const cost = swarmCost(s);
+  return cost ? { cost: costText(cost) } : {};
 }

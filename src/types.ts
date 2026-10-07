@@ -198,6 +198,7 @@ export interface SwarmAgent {
   providerId?: string;
   servedModel?: string;
   usage?: TokenTally;
+  usageByModel?: ModelUsage[];
   turns: number;
   status: AgentStatus;
   // Messages waiting in the agent's inbox, when any are.
@@ -306,19 +307,42 @@ export interface RunGate {
   by?: "swarm" | "operator";
 }
 
-// Tokens summed over turns. `input` counts cache writes too; `cached` is cache reads.
+// Tokens summed over turns. `input` counts cache writes too; `cached` is cache
+// reads. `cacheWrite` is the part of `input` written to cache, `cacheWrite1h`
+// the part of that written to the 1-hour cache; tallies recorded before either
+// was kept lack them.
 export interface TokenTally {
   input: number;
   output: number;
   cached: number;
+  cacheWrite?: number;
+  cacheWrite1h?: number;
 }
 
 export function addTokens(a: TokenTally | undefined, b: TokenTally): TokenTally {
+  const cacheWrite =
+    a?.cacheWrite === undefined && b.cacheWrite === undefined
+      ? undefined
+      : (a?.cacheWrite ?? 0) + (b.cacheWrite ?? 0);
+  const cacheWrite1h =
+    a?.cacheWrite1h === undefined && b.cacheWrite1h === undefined
+      ? undefined
+      : (a?.cacheWrite1h ?? 0) + (b.cacheWrite1h ?? 0);
   return {
     input: (a?.input ?? 0) + b.input,
     output: (a?.output ?? 0) + b.output,
     cached: (a?.cached ?? 0) + b.cached,
+    ...(cacheWrite !== undefined ? { cacheWrite } : {}),
+    ...(cacheWrite1h !== undefined ? { cacheWrite1h } : {}),
   };
+}
+
+// One agent's tokens on one served model, so a swarm that mixes models prices
+// each part at its own rate.
+export interface ModelUsage extends TokenTally {
+  provider: string;
+  model: string;
+  turns: number;
 }
 
 // `stopping`: Stop was accepted; the child runs are being cancelled and the bot
