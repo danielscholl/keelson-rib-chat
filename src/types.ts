@@ -80,6 +80,28 @@ export const SIZE_PRESETS: Readonly<Record<SwarmSize, SwarmLimits>> = {
   },
 };
 
+// Factory mode drops the turn and clock budget for one tied to progress: the swarm
+// runs while agents keep landing work, and ends after `progressTurns` turns
+// without any, or at `maxTokens` fresh tokens. The limits are only backstops.
+export interface FactoryBudget {
+  progressTurns: number;
+  maxTokens: number;
+}
+
+export const FACTORY_DEFAULTS: FactoryBudget = { progressTurns: 15, maxTokens: 2_000_000 };
+
+export const FACTORY_LIMITS: Pick<SwarmLimits, "maxTurns" | "maxTurnsPerAgent" | "wallClockMs"> = {
+  maxTurns: 1_000,
+  maxTurnsPerAgent: 200,
+  wallClockMs: 12 * 60 * 60_000,
+};
+
+export interface FactoryState extends FactoryBudget {
+  // Turns since work last landed.
+  sinceProgress: number;
+  lastProgress?: { at: string; what: string };
+}
+
 // How much model the agents get: the provider's model for that class, unless a model is named.
 export const SWARM_POWERS = ["fast", "balanced", "deep"] as const;
 export type SwarmPower = (typeof SWARM_POWERS)[number];
@@ -403,6 +425,7 @@ export interface SwarmSummary {
   effort?: ReasoningEffortLevel;
   project?: SwarmProject;
   writeEnabled?: boolean;
+  factory?: FactoryState;
   // Writers land through chat_merge into a local base, never through pull requests.
   writeLocal?: boolean;
   // The durable op the swarm reports to.

@@ -181,6 +181,18 @@ function requests(
 const FORECAST_AFTER_MS = 2 * 60_000;
 
 export function turnsTile(s: SwarmSummary, now = new Date()): Stat {
+  if (s.factory) {
+    const f = s.factory;
+    return {
+      label: "Turns",
+      value: s.turnsUsed,
+      sub: live(s)
+        ? `factory · ${f.sinceProgress} of ${f.progressTurns} since work landed`
+        : "factory",
+      ...(live(s) && f.sinceProgress >= f.progressTurns ? { tone: "warn" as const } : {}),
+      ...(s.pace && s.pace.length >= 2 ? { spark: [...s.pace] } : {}),
+    };
+  }
   const left = Math.max(0, s.limits.maxTurns - s.turnsUsed);
   const forecasting =
     live(s) &&
@@ -215,11 +227,11 @@ export function tokensTile(s: SwarmSummary): Stat {
       ? { label: "Tokens", value: 0, sub: "fresh · none yet" }
       : { label: "Tokens", value: null, sub: "the provider reported none" };
   }
+  const ceiling = s.factory ? ` · of ${tokenCount(s.factory.maxTokens)}` : "";
   return {
     label: "Tokens",
     value: tokenCount(freshTokens(s.usage)),
-    sub:
-      s.usage.cached > 0 ? `fresh · ${tokenCount(s.usage.cached)} cached` : "fresh · none cached",
+    sub: `${s.usage.cached > 0 ? `fresh · ${tokenCount(s.usage.cached)} cached` : "fresh · none cached"}${ceiling}`,
   };
 }
 

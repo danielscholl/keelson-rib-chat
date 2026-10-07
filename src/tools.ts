@@ -23,6 +23,7 @@ import {
   CONCLUSION_MAX,
   DEFAULT_SIZE,
   type DispatchGrant,
+  FACTORY_DEFAULTS,
   isLive,
   POWER_MODELS,
   publicSummary,
@@ -59,6 +60,10 @@ export interface StartSwarmInput {
   workflows?: DispatchGrant[];
   // Other ribs' tools the lead holds, each cleared by the operator's crossRibGrants.
   leadTools?: string[];
+  // Runs until progress stops instead of to a turn and clock budget.
+  factory?: boolean;
+  // The factory swarm's ceiling on fresh tokens.
+  maxTokens?: number;
 }
 
 export const WORK_TOOLS = ["none", "read", "write"] as const;
@@ -90,6 +95,7 @@ export const START_BOUNDS = {
   turnTimeoutS: { min: 30, max: 1_800 },
   maxMinutes: 240,
   maxWorkflows: 10,
+  maxTokens: 50_000_000,
 } as const;
 export const WAIT_BOUNDS = { defaultS: 120, maxS: 600 } as const;
 export const READ_BOUNDS = { defaultLimit: 20, maxLimit: 50 } as const;
@@ -279,6 +285,19 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .max(START_BOUNDS.maxMinutes)
         .optional()
         .describe("Wall clock for the whole swarm."),
+      factory: z
+        .boolean()
+        .optional()
+        .describe(
+          `Factory mode: no turn or clock budget. The swarm runs while work lands (a merge, a pull request, a workflow run that succeeds, a closed bead) and ends after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at max_tokens fresh tokens. For draining a backlog or a queue of runs; a chat-only question has no progress to measure.`,
+        ),
+      max_tokens: z
+        .number()
+        .int()
+        .min(10_000)
+        .max(START_BOUNDS.maxTokens)
+        .optional()
+        .describe(`Factory mode's ceiling on fresh tokens. Default ${FACTORY_DEFAULTS.maxTokens}.`),
       work_tools: z
         .enum(WORK_TOOLS)
         .optional()
@@ -709,6 +728,8 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
             : {}),
           ...(args.context?.length ? { context: toContextItems(args.context) } : {}),
           ...(args.lead_tools?.length ? { leadTools: [...new Set(args.lead_tools)] } : {}),
+          ...(args.factory ? { factory: true } : {}),
+          ...(args.factory && args.max_tokens ? { maxTokens: args.max_tokens } : {}),
         });
         const s = swarm.summary();
         emitText(

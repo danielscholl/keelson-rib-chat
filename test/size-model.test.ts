@@ -111,6 +111,16 @@ describe("chat_swarm_start inputs", () => {
     });
   });
 
+  test("factory and its token ceiling reach the launcher", async () => {
+    expect(await start({ task: "t", factory: true, max_tokens: 500_000 })).toMatchObject({
+      factory: true,
+      maxTokens: 500_000,
+    });
+    const plain = await start({ task: "t", max_tokens: 500_000 });
+    expect(plain?.factory).toBeUndefined();
+    expect(plain?.maxTokens).toBeUndefined();
+  });
+
   test("no size leaves the launcher on its default", async () => {
     const seen = await start({ task: "t" });
     for (const key of ["size", "power", "model", "provider", "workerModel", "effort"] as const) {

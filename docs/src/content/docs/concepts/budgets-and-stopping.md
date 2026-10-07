@@ -47,6 +47,20 @@ and the channel is told. The same run of failures in the lead ends the swarm as
 first waits up to 15 seconds for the provider to release the agent's session,
 since the next turn resumes that same session.
 
+## Factory mode
+
+A factory swarm (`factory: true`, or the launcher's Factory switch) has no turn
+or clock budget. It is bounded by progress instead: a local merge, a writer's
+pull request, a workflow run that succeeds, or the lead closing a bead. Each
+resets a window of 15 turns across the swarm. When a window passes with nothing
+landed, the lead is told to conclude, and the swarm ends as `stalled` three
+turns later. A ceiling on fresh tokens (`max_tokens`, 2M by default) ends it as
+`exhausted`. The turn and clock limits stay as backstops: 1,000 turns, 200 per
+worker, and 12 hours.
+
+Every turn tells the agents how many turns have passed since work last landed,
+in place of the swarm budget.
+
 ## How a swarm ends
 
 The intended ending is the lead calling `chat_done` with the final answer. After

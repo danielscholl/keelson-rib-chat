@@ -14,6 +14,8 @@ import {
   type ChatMessage,
   CONCLUSION_MAX,
   type DispatchGrant,
+  type FactoryBudget,
+  type FactoryState,
   type SwarmAgent,
   type SwarmLimits,
 } from "./types.ts";
@@ -33,6 +35,8 @@ export function systemPrompt(opts: {
   task: string;
   channelName: string;
   limits: SwarmLimits;
+  // Set in factory mode: the swarm runs while work lands, not to a turn budget.
+  factory?: FactoryBudget;
   // Tools granted beside the chat_* set, e.g. Read, Grep, Glob.
   workTools?: readonly string[];
   // Other ribs' tools the lead holds, e.g. beads_ready.
@@ -147,9 +151,11 @@ export function systemPrompt(opts: {
           "- You cannot conclude while a run is live. Wait for it, or cancel it.",
         ]
       : [];
-  const turnLine = agent.lead
-    ? `- Each time you wake is one turn from a shared budget of ${limits.maxTurns} for the whole swarm.`
-    : `- Each time you wake is one turn: you have ${limits.maxTurnsPerAgent}, from a shared budget of ${limits.maxTurns} for the whole swarm.`;
+  const turnLine = opts.factory
+    ? `- This swarm runs in factory mode: no turn budget, only progress. It keeps going while work lands (a merge, a pull request, a workflow run that succeeds, a closed bead) and ends after ${opts.factory.progressTurns} turns across the swarm without any, or at ${opts.factory.maxTokens} fresh tokens. Each turn shows how many turns have passed since work last landed. Keep work landing in small pieces, and conclude once the task is done.`
+    : agent.lead
+      ? `- Each time you wake is one turn from a shared budget of ${limits.maxTurns} for the whole swarm.`
+      : `- Each time you wake is one turn: you have ${limits.maxTurnsPerAgent}, from a shared budget of ${limits.maxTurns} for the whole swarm.`;
   return [
     `You are ${agent.displayName} (@${agent.handle}), one agent in a swarm: a small team of AI agents working one task together in the chat channel #${channelName}. Each agent is a separate session. You share only this channel and the task context.`,
     `Role: ${agent.role}`,
@@ -229,6 +235,7 @@ export interface TurnInput {
   runs?: readonly string[];
   // Draft pull requests the writers opened, one line each.
   prs?: readonly string[];
+  factory?: FactoryState;
 }
 
 export function renderTurn(input: TurnInput): string {
@@ -242,6 +249,7 @@ export function renderTurn(input: TurnInput): string {
     events = [],
     runs = [],
     prs = [],
+    factory,
   } = input;
   const sections: string[] = [];
   if (note) sections.push(note);
@@ -278,7 +286,9 @@ export function renderTurn(input: TurnInput): string {
     sections.push(["Writers' pull requests:", ...prs.map((p) => `- ${p}`)].join("\n"));
   }
   sections.push(
-    `Budget: swarm ${budget.turnsUsed}/${budget.maxTurns} turns${budget.maxTurnsPerAgent ? `, you ${budget.agentTurns}/${budget.maxTurnsPerAgent}` : ""}.`,
+    factory
+      ? `Budget: factory mode, ${factory.sinceProgress} of ${factory.progressTurns} turns since work last landed${factory.lastProgress ? ` (${factory.lastProgress.what})` : ""}.`
+      : `Budget: swarm ${budget.turnsUsed}/${budget.maxTurns} turns${budget.maxTurnsPerAgent ? `, you ${budget.agentTurns}/${budget.maxTurnsPerAgent}` : ""}.`,
   );
   return sections.join("\n\n");
 }
