@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.2](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.24.1...v0.24.2) (2026-10-07)
+
+
+### Fixed
+
+* **factory:** count backlog planning as progress until work lands ([#132](https://github.com/danielscholl/keelson-rib-swarm/issues/132)) ([ac84326](https://github.com/danielscholl/keelson-rib-swarm/commit/ac84326e010973c5138feab633c354c34478bc74))
+
+
+### Documentation
+
+* drop the Chamber framing and link the factory tutorial ([#131](https://github.com/danielscholl/keelson-rib-swarm/issues/131)) ([6e53c4c](https://github.com/danielscholl/keelson-rib-swarm/commit/6e53c4c8ef765e19b047192de8f9874abe9f40cf))
+
 ## [0.24.1](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.24.0...v0.24.1) (2026-10-07)
 
 
