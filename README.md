@@ -72,9 +72,10 @@ clearing the project resets the switches and chips, not the task.
 A GitHub issue or PR link in the task is read with the gh CLI at Start and
 attached as a context item, up to 5 links; paste any other URL's text, since
 another URL or a bare `#N` is refused. Refusals appear as
-host toasts. **Starting…** guards duplicate clicks for about two seconds and leaves the task
-intact. Drafts, switches and chips survive refreshes; on Keelson v0.119.0 or later,
-they also survive replacement. See the [launcher guide](https://danielscholl.github.io/keelson-rib-swarm/guides/swarms-tab/#starting-a-swarm)
+host toasts. **Starting…** guards duplicate clicks for about two seconds and
+leaves the task intact. Drafts, switches and chips survive refreshes; on
+Keelson v0.119.0 or later, they also survive replacement. See the
+[launcher guide](https://danielscholl.github.io/keelson-rib-swarm/guides/swarms-tab/#starting-a-swarm)
 for draft retention and restore details.
 
 From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swarm-<id>` channel in ClickClack to watch. Post in the channel to redirect it: an unaddressed message from a human goes to the lead.
