@@ -450,11 +450,20 @@ const PAGE_SCRIPT = `
   const factoryBudgets = JSON.parse(form.dataset.factoryBudgets);
   const factorySwitch = document.getElementById("launch-factory");
   let factory = false;
+  // A typed cost ceiling replaces the plan's in the sentence.
+  const summary = () => {
+    const base = (factory ? factoryBudgets : budgets)[size];
+    const cost = Number(document.getElementById("launch-cost")?.value);
+    return cost > 0 ? base.slice(0, base.lastIndexOf("$")) + "$" + cost : base;
+  };
   const renderFactory = () => {
     factorySwitch.setAttribute("aria-checked", String(factory));
     document.getElementById("plans").classList.toggle("is-factory", factory);
-    document.getElementById("launch-summary").textContent = (factory ? factoryBudgets : budgets)[size];
+    document.getElementById("launch-summary").textContent = summary();
   };
+  document.getElementById("launch-cost")?.addEventListener("input", () => {
+    document.getElementById("launch-summary").textContent = summary();
+  });
   const factoryInfo = document.getElementById("factory-info");
   factoryInfo.addEventListener("click", () => {
     const hint = document.getElementById("factory-hint");
@@ -490,7 +499,7 @@ const PAGE_SCRIPT = `
       document.getElementById("chip-" + card.dataset.size).hidden = !selected;
       showModels(card, selected ? model : "", selected ? worker : "");
     });
-    document.getElementById("launch-summary").textContent = (factory ? factoryBudgets : budgets)[size];
+    document.getElementById("launch-summary").textContent = summary();
     document.getElementById("launch-models").textContent = model && worker
       ? (model === worker ? " on " + model : " on " + model + " and " + worker)
       : model ? " with lead " + model : worker ? " with workers " + worker : "";
