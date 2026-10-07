@@ -73,19 +73,10 @@ A GitHub issue or PR link in the task is read with the gh CLI at Start and
 attached as a context item, up to 5 links; paste any other URL's text, since
 another URL or a bare `#N` is refused. Refusals appear as
 host toasts. **Starting…** guards duplicate clicks for about two seconds and
-leaves the task intact. Ordinary refreshes preserve drafts, switches and chips;
-on Keelson v0.119.0 or later, replacement documents restore them too, including
-plan/model choices, pending text and expanded presentation.
-Removed or hidden projects restore as chat-only with access and workflows
-cleared. Named models retain their provider; an unavailable provider requires
-reselection. Workflow chips restore exactly as typed, in order; the host refuses
-unknown workflows at Start, rather than the launcher detecting removed names.
-Each Start dispatch clears the saved draft, even on host refusal, but leaves
-visible fields available for retry. Local validation failures do not clear it.
-State lives only in browser-tab memory: a browser-page reload loses it.
-The host retains at most 64 view keys, with a 65,536 UTF-8 byte JSON limit per
-snapshot; oversized saves retain the last accepted snapshot without truncating
-visible text. Older hosts without the state bridge can lose drafts on replacement.
+leaves the task intact. Drafts, switches and chips survive refreshes; on
+Keelson v0.119.0 or later, they also survive replacement. See the
+[launcher guide](https://danielscholl.github.io/keelson-rib-swarm/guides/swarms-tab/#starting-a-swarm)
+for draft retention and restore details.
 
 From chat or over MCP, start a swarm with `chat_swarm_start`, then open the `swarm-<id>` channel in ClickClack to watch. Post in the channel to redirect it: an unaddressed message from a human goes to the lead.
 

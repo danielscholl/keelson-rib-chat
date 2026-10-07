@@ -153,23 +153,16 @@ describe("contributed docs", () => {
         expect(text).toContain(phrase);
     }
     const readme = normalize(readFileSync(new URL("../README.md", import.meta.url), "utf8"));
-    for (const phrase of [
-      "Keelson v0.119.0 or later",
-      "replacement documents restore",
-      "expanded presentation",
-      "Removed or hidden projects restore as chat-only",
-      "Workflow chips restore exactly as typed, in order",
-      "the host refuses unknown workflows at Start",
-      "Each Start dispatch clears the saved draft",
-      "Local validation failures do not clear it",
-      "browser-tab memory",
-      "browser-page reload loses it",
+    expect(readme).toContain("Drafts, switches and chips survive refreshes");
+    expect(readme).toContain("on Keelson v0.119.0 or later, they also survive replacement");
+    expect(readme).toContain("[launcher guide]");
+    for (const removed of [
       "64 view keys",
       "65,536 UTF-8",
       "last accepted snapshot",
       "Older hosts without the state bridge",
     ])
-      expect(readme).toContain(phrase);
+      expect(readme).not.toContain(removed);
     expect(readme).not.toContain("changes can discard them");
     for (const removed of ["Customize", "Prepare in chat", "Run again"])
       expect(readme).not.toContain(removed);
