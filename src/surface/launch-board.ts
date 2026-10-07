@@ -129,7 +129,7 @@ function factorySummary(size: SwarmSize): string {
   return `${SIZE_PRESETS[size].maxAgents} agents until work stops landing`;
 }
 
-const FACTORY_MEANING = `No turn or time budget. It runs while work lands (merges, pull requests, finished workflow runs, closed beads) and stops after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at ${FACTORY_DEFAULTS.maxTokens / 1_000_000}M fresh tokens.`;
+const FACTORY_MEANING = `Keeps the swarm running while work lands: merges, pull requests, finished workflow runs, closed beads. Stops after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at ${FACTORY_DEFAULTS.maxTokens / 1_000_000}M fresh tokens.`;
 
 const PAGE_CSS = `
 :root { --button-ink: var(--bg); }
@@ -189,7 +189,14 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
   gap: 14px; align-items: center; padding: 16px 0; border-top: 1px solid var(--border); }
 .access-name { color: var(--fg-strong); font-weight: 600; }
 .access-meaning { color: var(--muted); line-height: 1.5; }
-.factory-row { margin-top: 12px; border-top: none; }
+.plans-heading .eyebrow { flex: 1; }
+.factory-toggle { display: flex; align-items: center; gap: 8px; color: var(--fg-strong); font-size: 13px; font-weight: 600; }
+.factory-info { width: 22px; height: 22px; padding: 0; border-radius: 50%; color: var(--muted); font-size: 13px; line-height: 1; }
+.factory-hint { margin: -4px 0 12px; }
+.plans .factory-only { display: none; }
+.plans.is-factory .factory-only { display: block; }
+.plans.is-factory .bounded { display: none; }
+.figure.factory-only strong { font-size: 15px; line-height: 1.6; }
 .switch { width: 44px; height: 26px; padding: 3px; border-radius: 999px; background: var(--card-2); }
 .switch::after { content: ""; display: block; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); }
 .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
@@ -433,9 +440,15 @@ const PAGE_SCRIPT = `
   let factory = false;
   const renderFactory = () => {
     factorySwitch.setAttribute("aria-checked", String(factory));
-    document.getElementById("factory-row").classList.toggle("is-on", factory);
+    document.getElementById("plans").classList.toggle("is-factory", factory);
     document.getElementById("launch-summary").textContent = (factory ? factoryBudgets : budgets)[size];
   };
+  const factoryInfo = document.getElementById("factory-info");
+  factoryInfo.addEventListener("click", () => {
+    const hint = document.getElementById("factory-hint");
+    hint.hidden = !hint.hidden;
+    factoryInfo.setAttribute("aria-expanded", String(!hint.hidden));
+  });
   factorySwitch.addEventListener("click", () => {
     factory = !factory;
     renderFactory();
@@ -864,7 +877,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
       <span class="plan-title">${plan.name}<span class="chip" id="chip-${plan.size}"${selected ? "" : " hidden"}>selected</span></span>
       <span class="plan-blurb">${plan.blurb}</span>
-      <span class="plan-body"><span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>${l.maxTurns}</strong>turns</span><span class="figure"><strong>${l.wallClockMs / 60_000}</strong>min</span></span>${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}" data-pinned="${pair.pinned}">${modelCells(pair)}</span>` : ""}</span>
+      <span class="plan-body"><span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure bounded"><strong>${l.maxTurns}</strong>turns</span><span class="figure bounded"><strong>${l.wallClockMs / 60_000}</strong>min</span><span class="figure factory-only"><strong>until</strong>work stops</span></span>${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}" data-pinned="${pair.pinned}">${modelCells(pair)}</span>` : ""}</span>
     </button>`;
   }).join("");
   const catalog = [...(state.classes ?? [])];
@@ -903,10 +916,10 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
       <label for="launch-task">TASK</label>
       <textarea id="launch-task" name="task" rows="4" required aria-describedby="task-hint" placeholder="${esc(TASK_PLACEHOLDER)}"></textarea>
       <p class="hint task-hint" id="task-hint" aria-live="polite"></p>
-      <section class="plans" aria-labelledby="plans-heading">
-        <div class="plans-heading"><span class="eyebrow" id="plans-heading">SIZE</span></div>
+      <section class="plans" id="plans" aria-labelledby="plans-heading">
+        <div class="plans-heading"><span class="eyebrow" id="plans-heading">SIZE</span><span class="factory-toggle" id="factory-row"><span id="factory-label">Factory mode</span><button class="more factory-info" id="factory-info" type="button" aria-label="About Factory mode" aria-controls="factory-hint" aria-expanded="false" title="${esc(FACTORY_MEANING)}">ⓘ</button><button class="switch" id="launch-factory" type="button" role="switch" aria-labelledby="factory-label" aria-describedby="factory-meaning" aria-checked="false"></button></span></div>
+        <p class="hint factory-hint" id="factory-hint" hidden><span id="factory-meaning">${esc(FACTORY_MEANING)}</span></p>
         <div class="plan-cards">${cards}</div>
-        <div class="access-row factory-row" id="factory-row"><button class="switch" id="launch-factory" type="button" role="switch" aria-label="Factory mode" aria-describedby="factory-meaning" aria-checked="false"></button><div class="access-name">Factory mode</div><p class="access-meaning" id="factory-meaning">${esc(FACTORY_MEANING)}</p></div>
       </section>
       <div class="pickers">
           <div><label for="launch-model">LEAD MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's lead</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>

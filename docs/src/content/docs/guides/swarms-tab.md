@@ -702,10 +702,12 @@ class model.
 | Crew | Most tasks: investigate, debate, and decide. | 5 | 40 | 30 |
 | Fleet | Wide or hard problems that are worth the spend. | 8 | 80 | 60 |
 
-**Factory mode**, the switch under the cards, keeps the plan's agents and models
-but drops its turns and minutes. The swarm runs while work lands (merges, pull
+**Factory mode**, the switch at the right of the SIZE heading, keeps the plan's
+agents and models but drops its turns and minutes: the cards then read **until
+work stops** in their place. The swarm runs while work lands (merges, pull
 requests, finished workflow runs, closed beads) and stops after 15 turns without
-any, or at 2M fresh tokens. The sentence beside **Start swarm** then reads
+any, or at 2M fresh tokens. **ⓘ** beside the switch shows that explanation
+under the heading. The sentence beside **Start swarm** then reads
 **N agents until work stops landing**, and a live swarm's Turns tile counts the
 turns since work last landed instead of forecasting the budget. Use it to drain
 a backlog or a queue of runs; a chat-only question has nothing to land.
