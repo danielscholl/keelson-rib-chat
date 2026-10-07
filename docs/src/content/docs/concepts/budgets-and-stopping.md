@@ -52,7 +52,8 @@ since the next turn resumes that same session.
 A factory swarm (`factory: true`, or the launcher's Factory switch) has no turn
 or clock budget. It is bounded by progress instead: a local merge, a writer's
 pull request, a workflow run that succeeds, or the lead closing a bead. Each
-resets a window of 15 turns across the swarm. Until the first of those lands,
+resets a window of turns across the swarm: 15 on Scout, 25 on Crew and 45 on
+Fleet, since the window counts every agent's turns. Until the first of those lands,
 the lead filing, linking or updating beads resets it too, so a swarm can plan
 and critique its backlog before anything merges. When a window passes with nothing
 landed, the lead is told to conclude, and the swarm ends as `stalled` three

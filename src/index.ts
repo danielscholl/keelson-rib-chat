@@ -45,6 +45,7 @@ import {
   DEFAULT_SIZE,
   FACTORY_DEFAULTS,
   FACTORY_LIMITS,
+  FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
   ownsPr,
   POWER_EFFORT,
@@ -673,6 +674,7 @@ async function launchSwarm(
         ? {
             factory: {
               ...FACTORY_DEFAULTS,
+              progressTurns: FACTORY_PROGRESS_TURNS[record.sizeBase],
               maxTokens: input.maxTokens ?? FACTORY_TOKENS[record.sizeBase],
             },
           }

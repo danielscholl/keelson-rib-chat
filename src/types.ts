@@ -91,6 +91,14 @@ export interface FactoryBudget {
 export const FACTORY_DEFAULTS: FactoryBudget = { progressTurns: 15, maxTokens: 2_000_000 };
 
 // A bigger plan runs more agents on deeper models, so it spends more before work stops landing.
+// The window is counted across every agent, so a plan with more agents needs a wider one
+// to fit a single write, critique and review round.
+export const FACTORY_PROGRESS_TURNS: Readonly<Record<SwarmSize, number>> = {
+  small: 15,
+  medium: 25,
+  large: 45,
+};
+
 export const FACTORY_TOKENS: Readonly<Record<SwarmSize, number>> = {
   small: 2_000_000,
   medium: 3_000_000,
