@@ -132,6 +132,7 @@ import {
   MESSAGE_CHARS,
   MESSAGES_KEPT,
   type OperatorAsk,
+  PLAN_COST_USD,
   pinnedModels,
   SIZE_PRESETS,
   type StartingSwarm,
@@ -2335,11 +2336,11 @@ describe("the live cockpit", () => {
           },
         },
         { label: "Time", clock: { mode: "until" } },
-        { label: "Tokens", value: "250", sub: "↑ 200 in · ↓ 50 out" },
+        { label: "Fresh tokens", value: "250", sub: "↑ 200 in · ↓ 50 out" },
       ],
     });
     expect(sections(fixtures.running!)[3]).toMatchObject({
-      items: [{}, {}, { label: "Tokens", value: null, sub: "the provider reported none" }],
+      items: [{}, {}, { label: "Fresh tokens", value: null, sub: "the provider reported none" }],
     });
   });
 
@@ -2624,15 +2625,29 @@ describe("Swarms boards", () => {
     const s = swarm("s1cost", {
       usage: { input: 2_000, output: 100, cached: 38_000, cacheWrite: 1_500 },
       agents: [agent("s1cost", 0, { usage: usageByModel[0], usageByModel })],
+      spend: { maxTokens: 1_000_000, maxCostUsd: 40 },
     });
+    const tenMinutesIn = new Date(Date.parse(T0) + 10 * 60_000);
     const statsOf = (v: CanvasBoardView) =>
       v.sections.find((x) => x.kind === "stats" && x.title === "Budget");
     expect(JSON.stringify(statsOf(buildSwarmBoard(s)))).not.toContain('"Cost"');
     setPricer((_p, _m, t) => (t.inputTokens + (t.cacheWriteTokens ?? 0)) / 100);
     try {
-      expect(costTile(s)).toEqual([
-        { label: "Cost", value: "$20.00", sub: "95% cache hit · 38k cached" },
+      expect(costTile(s, tenMinutesIn)).toEqual([
+        {
+          label: "Cost",
+          value: "$20.00",
+          sub: "of $40.00 · 95% cache hit · 38k cached",
+          delta: { text: "$2.00/min · ceiling in about 10 min", direction: "up" },
+        },
       ]);
+      expect(
+        costTile({ ...s, spend: { maxTokens: 1_000_000, maxCostUsd: 24 } }, tenMinutesIn),
+      ).toMatchObject([
+        { tone: "warn", delta: { text: "$2.00/min · ceiling in about 2 min", tone: "warn" } },
+      ]);
+      const ended = { ...s, status: "done" as const, endedAt: T0 };
+      expect(costTile(ended)[0]?.delta).toBeUndefined();
       expect(JSON.stringify(statsOf(buildSwarmBoard(s)))).toContain('"label":"Cost"');
       const spend = buildSwarmBoard(s).sections.find((x) => x.title === "Spend");
       expect(JSON.stringify(spend)).toContain('"cost":"$20.00"');
@@ -2643,32 +2658,95 @@ describe("Swarms boards", () => {
           { label: "cache write $15.00", n: 1500 },
         ],
       });
-      const ended = swarm("s1cost", { ...s, status: "done", endedAt: T0 });
-      expect(endedRow(ended).trailing).toContain("2k · $20.00");
-      expect(setupRows(ended).map((r) => r.text)).toEqual([
+      const endedAgain = swarm("s1cost", { ...s, status: "done", endedAt: T0 });
+      expect(endedRow(endedAgain).trailing).toContain("2k · $20.00");
+      expect(setupRows(endedAgain).map((r) => r.text)).toEqual([
         expect.any(String),
         expect.any(String),
         "gpt-6.1-sol · copilot · 500 in · 2k write · 100 out · 38k read · $20.00",
-        "swarm · 2k fresh · $20.00",
+        "swarm · 2k fresh of 1.0M · $20.00 of $40.00",
       ]);
     } finally {
       setPricer(undefined);
     }
   });
 
+  test("ended swarms show cost by kind, day totals, and ≈ on estimated costs", () => {
+    const row = {
+      provider: "claude",
+      model: "claude-fable-5-1",
+      turns: 2,
+      input: 3_000,
+      output: 1_000,
+      cached: 9_000,
+      cacheWrite: 2_000,
+    };
+    const priced = swarm("s2day", {
+      status: "done",
+      endedAt: T0,
+      usage: row,
+      agents: [agent("s2day", 0, { usage: row, usageByModel: [row] })],
+    });
+    const legacy = swarm("s3day", {
+      status: "done",
+      endedAt: T0,
+      usage: { input: 1_000, output: 0, cached: 0 },
+      agents: [
+        agent("s3day", 0, {
+          usage: { input: 1_000, output: 0, cached: 0 },
+          servedModel: "claude-fable-5-1",
+        }),
+      ],
+    });
+    // $1 per thousand of every kind.
+    setPricer(
+      (_p, _m, t) =>
+        (t.inputTokens + t.outputTokens + (t.cacheReadTokens ?? 0) + (t.cacheWriteTokens ?? 0)) /
+        1_000,
+    );
+    try {
+      const byKind = buildSwarmBoard(priced).sections.find((x) => x.title === "Cost by kind");
+      expect(byKind).toMatchObject({
+        kind: "segments",
+        items: [
+          { label: "cache read $9.00", n: 900 },
+          { label: "input $1.00", n: 100 },
+          { label: "cache write $2.00", n: 200 },
+          { label: "output $1.00", n: 100 },
+        ],
+      });
+      expect(endedRow(priced).trailing).toContain("4k · $13.00");
+      expect(endedRow(legacy).trailing).toContain("1k · ≈ $1.00");
+      const titles = buildHistory(state({ ended: [priced, legacy] }), new Date(T0)).sections.map(
+        (x) => x.title,
+      );
+      expect(titles.some((t) => t?.endsWith(" · ≈ $14.00"))).toBe(true);
+    } finally {
+      setPricer(undefined);
+    }
+    const unpriced = buildHistory(state({ ended: [priced] }), new Date(T0)).sections.map(
+      (x) => x.title,
+    );
+    expect(unpriced.some((t) => t?.includes("$"))).toBe(false);
+  });
+
   test("the shared Tokens tile distinguishes no turns from unreported usage", () => {
     expect(tokensTile(swarm("s0tok", { turnsUsed: 0 }))).toEqual({
-      label: "Tokens",
+      label: "Fresh tokens",
       value: 0,
       sub: "none yet",
     });
     expect(tokensTile(fixtures.running!)).toEqual({
-      label: "Tokens",
+      label: "Fresh tokens",
       value: null,
       sub: "the provider reported none",
     });
     const s = swarm("s1tok", { usage: { input: 200, output: 50, cached: 100 } });
-    expect(tokensTile(s)).toEqual({ label: "Tokens", value: "250", sub: "↑ 200 in · ↓ 50 out" });
+    expect(tokensTile(s)).toEqual({
+      label: "Fresh tokens",
+      value: "250",
+      sub: "↑ 200 in · ↓ 50 out",
+    });
     const stats = buildSwarmBoard(s).sections.find((x) => x.kind === "stats");
     expect(stats?.kind === "stats" ? stats.items[3] : undefined).toEqual(tokensTile(s));
   });
@@ -3135,17 +3213,21 @@ describe("Swarms boards", () => {
       return result.items;
     };
     const chat = tiles(base);
-    expect(chat.map((tile) => tile.label)).toEqual(["Turns", "Time", "Tokens"]);
+    expect(chat.map((tile) => tile.label)).toEqual(["Turns", "Time", "Fresh tokens"]);
     expect(chat[0]).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: [1, 2, 3] });
     expect(chat[1]).toEqual({ label: "Time", value: "5 min", sub: "of 30 min" });
-    expect(chat[2]).toEqual({ label: "Tokens", value: null, sub: "the provider reported none" });
+    expect(chat[2]).toEqual({
+      label: "Fresh tokens",
+      value: null,
+      sub: "the provider reported none",
+    });
     expect(tiles({ ...base, turnsUsed: 0 })[2]).toEqual({
-      label: "Tokens",
+      label: "Fresh tokens",
       value: 0,
       sub: "none yet",
     });
     expect(tiles({ ...base, usage: { input: 200, output: 50, cached: 100 } })[2]).toEqual({
-      label: "Tokens",
+      label: "Fresh tokens",
       value: "250",
       sub: "↑ 200 in · ↓ 50 out",
     });
@@ -3166,7 +3248,7 @@ describe("Swarms boards", () => {
       expect(result.map((tile) => tile.label)).toEqual([
         "Turns",
         "Time",
-        "Tokens",
+        "Fresh tokens",
         "Pull requests",
       ]);
       expect(result[3]).toEqual({ label: "Pull requests", value: 0 });
@@ -3179,7 +3261,7 @@ describe("Swarms boards", () => {
     expect(dispatch.map((tile) => tile.label)).toEqual([
       "Turns",
       "Time",
-      "Tokens",
+      "Fresh tokens",
       "Pull requests",
       "Runs verified",
     ]);
@@ -3245,7 +3327,12 @@ describe("Swarms boards", () => {
       (section) => section.kind === "stats",
     );
     if (result?.kind !== "stats") throw new Error("missing Result");
-    expect(result.items.map((tile) => tile.label)).toEqual(["Turns", "Time", "Tokens", "Merged"]);
+    expect(result.items.map((tile) => tile.label)).toEqual([
+      "Turns",
+      "Time",
+      "Fresh tokens",
+      "Merged",
+    ]);
     expect(result.items[3]).toEqual({ label: "Merged", value: 1 });
   });
 
@@ -3269,7 +3356,7 @@ describe("Swarms boards", () => {
         expect(items.map((item) => item.label)).toEqual([
           "Turns",
           "Time",
-          "Tokens",
+          "Fresh tokens",
           ...(s.prs?.length || s.runs?.some((r) => r.prUrls.length) ? ["Pull requests"] : []),
           ...(s.runs?.length ? ["Runs verified"] : []),
         ]);
@@ -3733,7 +3820,7 @@ describe("ended board contract", () => {
           expect(result.items.map((tile) => tile.label)).toEqual([
             "Turns",
             "Time",
-            "Tokens",
+            "Fresh tokens",
             "Pull requests",
             "Runs verified",
           ]);
@@ -3790,7 +3877,7 @@ describe("ended board contract", () => {
     expect(result.items.map((tile) => tile.label)).toEqual([
       "Turns",
       "Time",
-      "Tokens",
+      "Fresh tokens",
       ...(s.writeEnabled || s.workflows?.length ? ["Pull requests"] : []),
       ...(s.runs?.length ? ["Runs verified"] : []),
     ]);
@@ -6219,6 +6306,7 @@ describe("actions", () => {
     let blocked: Promise<void> | undefined;
     const fake: NonNullable<ReturnType<ActionDeps["live"]>> = {
       summary: () => current,
+      raiseCeiling: () => ({ maxTokens: 1 }),
       steer: async () => {
         throw new Error("unexpected steer");
       },
@@ -6717,6 +6805,74 @@ describe("actions", () => {
     ).toBe(false);
   });
 
+  test("spend near a ceiling asks the operator to raise it or stop", async () => {
+    const usageByModel = [
+      {
+        provider: "copilot",
+        model: "gpt-6.1-sol",
+        turns: 4,
+        input: 30_000,
+        output: 2_000,
+        cached: 0,
+      },
+    ];
+    const warned = {
+      ...fixtures.running!,
+      startedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+      usage: { input: 30_000, output: 2_000, cached: 0 },
+      agents: [{ ...fixtures.running!.agents[0]!, usage: usageByModel[0], usageByModel }],
+      spend: { maxTokens: 1_000_000, maxCostUsd: 40, warnedAt: T0 },
+    };
+    setPricer((_p, _m, t) => t.inputTokens / 1_000);
+    try {
+      const need = needsYou(warned).find((n) => n.kind === "spend");
+      expect(need?.since).toBe(T0);
+      const request = requestOf(warned, need!);
+      expect(request.title).toBe("Crew is at $30.00 of its $40.00 cost ceiling");
+      expect(request.line).toStartWith("$3.00/min · reaches it in about 3 min");
+      expect(request.primary).toMatchObject({
+        type: "raise-ceiling",
+        label: "Raise to $60.00",
+        payload: { id: warned.id, maxCostUsd: 60 },
+      });
+      expect(request.more.map((m) => m.type)).toEqual(["stop-swarm", "swarm-open"]);
+    } finally {
+      setPricer(undefined);
+    }
+    expect(needsYou({ ...warned, spend: { maxTokens: 1 } }).some((n) => n.kind === "spend")).toBe(
+      false,
+    );
+
+    const raised: unknown[] = [];
+    const fake = {
+      ...liveSwarm,
+      summary: () => warned,
+      stop: async () => warned,
+      replyToGate: async () => {},
+      replyInThread: async () => {},
+      dismissAsk: () => false,
+      messageAgent: async () => {},
+      raiseCeiling: (next: { maxCostUsd?: number; maxTokens?: number }) => {
+        if ((next.maxCostUsd ?? 100) < 40) throw new Error("the cost ceiling is already $40.00");
+        raised.push(next);
+        return { maxTokens: 1_000_000, maxCostUsd: next.maxCostUsd ?? 40 };
+      },
+    };
+    const raise = (payload: Record<string, unknown>) =>
+      handleSwarmsAction(
+        { type: "raise-ceiling", payload: { id: warned.id, ...payload } },
+        { ...deps, live: () => fake },
+      );
+    expect(await raise({ maxCostUsd: 60 })).toMatchObject({
+      ok: true,
+      data: { message: `Raised swarm ${warned.id}'s cost ceiling to $60.00` },
+    });
+    expect((await raise({ maxCostUsd: 20 })).ok).toBe(false);
+    expect((await raise({})).ok).toBe(false);
+    expect((await raise({ maxCostUsd: "60" })).ok).toBe(false);
+    expect(raised).toEqual([{ maxCostUsd: 60 }]);
+  });
+
   test("message-agent validates current eligibility, complete body and server posting failures", async () => {
     let current = fixtures.running!;
     const posted: [string, string][] = [];
@@ -6727,6 +6883,7 @@ describe("actions", () => {
       replyToGate: async () => {},
       replyInThread: async () => {},
       dismissAsk: () => false,
+      raiseCeiling: () => ({ maxTokens: 1 }),
       messageAgent: async (id: string, note: string) => {
         if (note === "posting fails") throw new Error("ClickClack unavailable");
         posted.push([id, note]);
@@ -7326,7 +7483,7 @@ describe("launching from the tab", () => {
     const source: LaunchState = { projects, provider: "copilot" };
     const first = frameHarness(source, "first", bridge);
     expect(first.get("launch-factory")!.attributes.get("aria-checked")).toBe("false");
-    expect(first.get("launch-summary")!.textContent).toBe("3 agents for up to 15 min");
+    expect(first.get("launch-summary")!.textContent).toBe("3 agents for up to 15 min or $1");
     first.get("launch-task")!.value = "Drain the backlog";
     first.fire("launch-task", "input");
     expect(first.get("plans")!.classes.has("is-factory")).toBe(false);
@@ -7337,9 +7494,13 @@ describe("launching from the tab", () => {
     first.fire("launch-factory", "click");
     expect(first.get("launch-factory")!.attributes.get("aria-checked")).toBe("true");
     expect(first.get("plans")!.classes.has("is-factory")).toBe(true);
-    expect(first.get("launch-summary")!.textContent).toBe("3 agents until work stops landing");
+    expect(first.get("launch-summary")!.textContent).toBe(
+      "3 agents until work stops landing or $1",
+    );
     first.fire("plan-medium", "click");
-    expect(first.get("launch-summary")!.textContent).toBe("5 agents until work stops landing");
+    expect(first.get("launch-summary")!.textContent).toBe(
+      "5 agents until work stops landing or $10",
+    );
     expect(bridge.stored).toMatchObject({ factory: true, size: "medium" });
     const next = frameHarness(source, "second", bridge);
     expect(next.get("launch-factory")!.attributes.get("aria-checked")).toBe("true");
@@ -9455,19 +9616,19 @@ describe("launching from the tab", () => {
       release();
     };
     expect(e["plan-small"]!.attributes.get("aria-pressed")).toBe("true");
-    expect(e["launch-summary"]!.textContent).toBe("3 agents for up to 15 min");
+    expect(e["launch-summary"]!.textContent).toBe("3 agents for up to 15 min or $1");
     expect(e["launch-models"]!.textContent).toBe("");
     capture({});
     trigger("plan-medium");
     expect(e["plan-medium"]!.attributes.get("aria-pressed")).toBe("true");
     expect(e["chip-medium"]!.hidden).toBe(false);
     expect(e["chip-small"]!.hidden).toBe(true);
-    expect(e["launch-summary"]!.textContent).toBe("5 agents for up to 30 min");
+    expect(e["launch-summary"]!.textContent).toBe("5 agents for up to 30 min or $10");
     expect(e["launch-models"]!.textContent).toBe("");
     capture({ size: "medium", power: "balanced" });
     trigger("plan-large");
     expect(e["plan-large"]!.attributes.get("aria-pressed")).toBe("true");
-    expect(e["launch-summary"]!.textContent).toBe("8 agents for up to 60 min");
+    expect(e["launch-summary"]!.textContent).toBe("8 agents for up to 60 min or $60");
     capture({ size: "large", power: "deep" });
     e["launch-model"]!.value = JSON.stringify({ model: "claude-opus-5.5", provider: "copilot" });
     trigger("launch-model", "change");
@@ -9476,7 +9637,7 @@ describe("launching from the tab", () => {
     expect(e["models-large"]!.textContent).toBe("Leadclaude-opus-5.5Workersgpt-6.1-sol");
     expect(e["models-medium"]!.textContent).toBe("Leadclaude-sonnet-5.5Workersgpt-6-sol");
     expect(e["launch-models"]!.textContent).toBe(" with lead claude-opus-5.5");
-    expect(e["launch-summary"]!.textContent).toBe("8 agents for up to 60 min");
+    expect(e["launch-summary"]!.textContent).toBe("8 agents for up to 60 min or $60");
     capture({
       size: "large",
       model: "claude-opus-5.5",
@@ -11447,7 +11608,9 @@ describe("launching from the tab", () => {
         expect(restored.get("compact-task")).toBeUndefined();
         expect(restored.get("launch-task")!.value).toBe("  Kept when presence\nchanges  ");
         expect(restored.get("plan-medium")!.attributes.get("aria-pressed")).toBe("true");
-        expect(restored.get("launch-summary")!.textContent).toBe("5 agents for up to 30 min");
+        expect(restored.get("launch-summary")!.textContent).toBe(
+          "5 agents for up to 30 min or $10",
+        );
         expect(restored.calls).toEqual([]);
         expect(h.nonce()).toBe(nonce);
         if (first === "live") {
@@ -11609,7 +11772,7 @@ describe("launching from the tab", () => {
         TASK_PLACEHOLDER,
         '<p class="hint project-note" id="project-note"></p>',
         '<p class="hint task-hint" id="task-hint" aria-live="polite"></p>',
-        '<p class="summary" aria-live="polite"><span id="launch-summary">3 agents for up to 15 min</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>',
+        '<p class="summary" aria-live="polite"><span id="launch-summary">3 agents for up to 15 min or $1</span><span id="launch-models"></span>, <span id="launch-mode">chat only</span>.</p>',
         '<div class="pickers">',
       ])
         expect(page).toContain(copy);
@@ -11663,7 +11826,7 @@ describe("launching from the tab", () => {
         const l = SIZE_PRESETS[size];
         const card = page.match(new RegExp(`id="plan-${size}"[\\s\\S]*?</button>`))![0];
         expect(card).toContain(`<strong>${l.maxAgents}</strong>agents`);
-        expect(card).toContain(`<strong>${l.maxTurns}</strong>turns`);
+        expect(card).toContain(`<strong>$${PLAN_COST_USD[size]}</strong>ceiling`);
         expect(card).toContain(`<strong>${l.wallClockMs / 60_000}</strong>min`);
       }
       expect(page).not.toContain("--brand");

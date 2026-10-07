@@ -57,12 +57,34 @@ Fleet, since the window counts every agent's turns. Until the first of those lan
 the lead filing, linking or updating beads resets it too, so a swarm can plan
 and critique its backlog before anything merges. When a window passes with nothing
 landed, the lead is told to conclude, and the swarm ends as `stalled` three
-turns later. A ceiling on fresh tokens (`max_tokens`; by default 2M on Scout, 3M on Crew, 6M on Fleet) ends it as
-`exhausted`. The turn and clock limits stay as backstops: 1,000 turns, 200 per
+turns later. Its token ceiling defaults higher than a plain swarm's: 2M on
+Scout, 3M on Crew, 6M on Fleet. The turn and clock limits stay as backstops: 1,000 turns, 200 per
 worker, and 12 hours.
 
 Every turn tells the agents how many turns have passed since work last landed,
 in place of the swarm budget.
+
+## Spend ceilings
+
+Every swarm, factory or not, has two spend ceilings: fresh tokens (`max_tokens`)
+and list-price dollars (`max_cost_usd`).
+
+| Plan | Fresh tokens | Cost |
+| --- | --- | --- |
+| Scout | 150,000 | $1 |
+| Crew | 1,000,000 | $10 |
+| Fleet | 3,000,000 | $60 |
+
+The swarm checks both between turns and ends as `exhausted` at either, so a turn
+in flight can carry it a little past. Cost is what the host's Usage page would
+charge for the same tokens: list price, even when the turns ran on a subscription.
+On a host that prices nothing only the token ceiling applies, and a model without
+a price counts as $0 toward it.
+
+When spend first passes 80% of a ceiling, the lead is told to wrap up and the
+Swarms tab shows a Needs you card with **Raise** (about half again) and **Stop
+swarm**. Raising clears the warning; a ceiling never goes down. The launcher's
+Cost ceiling field sets the dollar ceiling for one swarm.
 
 ## How a swarm ends
 

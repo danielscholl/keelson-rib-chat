@@ -9,12 +9,18 @@
 import type { ChildRun, OperatorAsk, SwarmSummary } from "./types.ts";
 
 // What a live swarm asks of the operator, as a ladder: a decision only the
-// operator can make, a question an agent put to them, a ClickClack connection
+// operator can make, a question an agent put to them, spend near a ceiling, a ClickClack connection
 // that stopped answering, and a gate nobody is working on. The index, the
 // board, the badge and the reading pane all use this list in this order.
-export type NeedKind = "decide" | "question" | "connection" | "quiet";
+export type NeedKind = "decide" | "question" | "spend" | "connection" | "quiet";
 
-export const NEED_ORDER: readonly NeedKind[] = ["decide", "question", "connection", "quiet"];
+export const NEED_ORDER: readonly NeedKind[] = [
+  "decide",
+  "question",
+  "spend",
+  "connection",
+  "quiet",
+];
 
 export interface Need {
   kind: NeedKind;
@@ -38,6 +44,7 @@ export function needsYou(s: SwarmSummary): Need[] {
     needs.push({ kind: "decide", run, ...(since ? { since } : {}) });
   }
   for (const ask of s.health?.asks ?? []) needs.push({ kind: "question", since: ask.at, ask });
+  if (s.spend?.warnedAt) needs.push({ kind: "spend", since: s.spend.warnedAt });
   if ((s.health?.socketDrops ?? 0) >= 2) {
     const since = s.health?.disconnectedAt;
     needs.push({ kind: "connection", ...(since ? { since } : {}) });

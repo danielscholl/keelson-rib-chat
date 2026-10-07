@@ -8,7 +8,16 @@
 
 import { createHash } from "node:crypto";
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
-import { byModel, costOf, costText, swarmCost } from "../cost.ts";
+import {
+  byModel,
+  cents,
+  costOf,
+  costText,
+  raisedCeiling,
+  spendProgress,
+  spendRate,
+  swarmCost,
+} from "../cost.ts";
 import { freshTokens, modelLabel, servedModels, tokenCount, tokensText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
 import {
@@ -171,11 +180,17 @@ function usageRows(s: SwarmSummary): Row[] {
     ].join(" · ");
   });
   const total = swarmCost(s);
-  const ceiling = s.factory ? ` of ${tokenCount(s.factory.maxTokens)} ceiling` : "";
+  const maxTokens = s.spend?.maxTokens ?? s.factory?.maxTokens;
+  const maxCost = s.spend?.maxCostUsd;
   return [
     ...lines.map((text, i) => ({ ...(i === 0 ? { icon: "∑" } : {}), text })),
     {
-      text: `swarm · ${tokenCount(freshTokens(s.usage))} fresh${ceiling}${total ? ` · ${costText(total)}` : ""}`,
+      text: [
+        `swarm · ${tokenCount(freshTokens(s.usage))} fresh${maxTokens !== undefined ? ` of ${tokenCount(maxTokens)}` : ""}`,
+        ...(total
+          ? [`${costText(total)}${maxCost !== undefined ? ` of ${cents(maxCost)}` : ""}`]
+          : []),
+      ].join(" · "),
     },
   ];
 }
@@ -350,6 +365,7 @@ export function endsAt(s: Pick<SwarmSummary, "startedAt" | "limits">): string {
 const SINCE_LABEL: Record<NeedKind, string> = {
   decide: "opened",
   question: "asked",
+  spend: "since",
   connection: "since",
   quiet: "last turn",
 };
@@ -399,6 +415,7 @@ export function gateIdentity(run: Pick<ChildRun, "runId" | "pendingApproval">): 
 export const NEED_PILL: Record<NeedKind, Pill> = {
   decide: { label: "decide", tone: "caution" },
   question: { label: "question", tone: "caution" },
+  spend: { label: "spend", tone: "warn" },
   connection: { label: "connection", tone: "error" },
   quiet: { label: "quiet", tone: "warn" },
 };
@@ -479,6 +496,38 @@ export function requestOf(s: SwarmSummary, need: Need, server?: ServerLine): Req
         replyAction(s, { threadRootId: ask.threadRootId, messageId: ask.messageId }, "the thread"),
         dismissAskAction(s, ask.messageId),
       ],
+    };
+  }
+  if (need.kind === "spend") {
+    const p = spendProgress(s);
+    const rate = spendRate(s);
+    const money = p?.kind === "cost";
+    const show = (n: number) => (money ? cents(n) : tokenCount(n));
+    const next = p ? raisedCeiling(p.ceiling) : undefined;
+    const left =
+      money && p && rate ? Math.max(0, Math.round((p.ceiling - p.used) / rate)) : undefined;
+    return {
+      kind: "spend",
+      title: p
+        ? `${PLAN_NAME[s.sizeBase]} is at ${show(p.used)} of its ${show(p.ceiling)} ${money ? "cost" : "token"} ceiling`
+        : "Spend is near its ceiling",
+      pill: NEED_PILL.spend,
+      line: [
+        ...(rate !== undefined ? [`${cents(rate)}/min`] : []),
+        ...(left !== undefined ? [`reaches it in about ${left} min`] : []),
+        "the lead was told to wrap up",
+      ].join(" · "),
+      primary:
+        p && next !== undefined
+          ? {
+              type: "raise-ceiling",
+              label: `Raise to ${show(next)}`,
+              pendingLabel: "Raising…",
+              tone: "brand",
+              payload: { id: s.id, [money ? "maxCostUsd" : "maxTokens"]: next },
+            }
+          : openSwarm(s, "brand"),
+      more: [stopAction(s), ...(p ? [openSwarm(s)] : [])],
     };
   }
   if (need.kind === "connection") {

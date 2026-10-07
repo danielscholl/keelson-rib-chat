@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { ribDocsSourceSchema } from "@keelson/shared";
 import pkg from "../package.json" with { type: "json" };
 import rib from "../src/index.ts";
-import { DEFAULT_SIZE, SIZE_PRESETS, SWARM_SIZES } from "../src/types.ts";
+import { DEFAULT_SIZE, PLAN_COST_USD, SIZE_PRESETS, SWARM_SIZES } from "../src/types.ts";
 
 const ctx = { getExec: () => ({}) as never };
 const source = rib.contributeDocs?.(ctx)[0];
@@ -317,7 +317,7 @@ describe("contributed docs", () => {
         "Lead and workers must come from one provider",
         "Picking a card clears both picks and restores that plan",
         "Start swarm sits at the end of the form with one sentence beside it",
-        `${SIZE_PRESETS.small.maxAgents} agents for up to ${SIZE_PRESETS.small.wallClockMs / 60_000} min, chat only.`,
+        `${SIZE_PRESETS.small.maxAgents} agents for up to ${SIZE_PRESETS.small.wallClockMs / 60_000} min or $${PLAN_COST_USD.small}, chat only.`,
         "Untouched Scout sends no size, power or model overrides",
         "Crew records medium/balanced; Fleet records large/deep",
         "A named model records size, model and provider, with no power",
@@ -698,7 +698,7 @@ describe("contributed docs", () => {
         "times, health and one transcript link",
         "separate row outside About",
         "Ended section order: Outcome, Result, actions, Agents, Produced when applicable, Activity when events exist, About, then the separate Ended swarms back-link.",
-        "The ended Result orders Turns, Time, Tokens, Cost when priced, Pull requests when eligible, then Runs verified only when runs exist.",
+        "The ended Result orders Turns, Time, Fresh tokens, Cost when priced, Pull requests when eligible, then Runs verified only when runs exist.",
         "a model without a price makes it a floor (≥) with the unpriced turns named",
         "There is no Agents tile",
         "unavailable, not an invented zero",

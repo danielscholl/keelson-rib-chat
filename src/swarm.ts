@@ -19,6 +19,7 @@ import {
   renderContextIndex,
   renderContextItem,
 } from "./context.ts";
+import { swarmCost, usd } from "./cost.ts";
 import {
   applyStatus,
   describeRun,
@@ -64,6 +65,9 @@ import {
   POWER_EFFORT,
   type RecentMessage,
   SIZE_PRESETS,
+  SPEND_WARN_AT,
+  type SpendCeiling,
+  type SpendState,
   type SwarmAgent,
   type SwarmHealth,
   type SwarmLimits,
@@ -212,6 +216,8 @@ export interface SwarmOptions {
   power?: SwarmPower;
   // Ends the swarm on lost progress or spent tokens instead of its turn budget.
   factory?: FactoryBudget;
+  // Ends the swarm at a token or dollar ceiling, whatever its mode.
+  spend?: SpendCeiling;
   // Overrides the effort the power maps to, for every agent. Unlike the power's,
   // a model that refuses it fails the turn.
   effort?: ReasoningEffortLevel;
@@ -408,6 +414,8 @@ export class Swarm {
   private readonly merges: WriterMerge[] = [];
   private progressAtTurn = 0;
   private wrapUpSent = false;
+  private spendWarnedAt: string | undefined;
+  private ceiling: SpendCeiling | undefined;
   private landed = false;
   private lastProgress: FactoryState["lastProgress"];
   private readonly pushingPrs = new Set<Promise<string>>();
@@ -746,7 +754,7 @@ export class Swarm {
           void this.finish("exhausted", `turn budget of ${this.limits.maxTurns} spent`);
           return;
         }
-        if (this.factoryEnd()) return;
+        if (this.spendEnd() || this.factoryEnd()) return;
         // The lead integrates everyone's results, so only the swarm budget bounds it;
         // capping it would leave the swarm leaderless.
         if (!agent.lead && agent.turns >= this.limits.maxTurnsPerAgent) {
@@ -777,6 +785,95 @@ export class Swarm {
     this.changed("health");
   }
 
+  private spendCeiling(): SpendCeiling | undefined {
+    if (this.ceiling) return this.ceiling;
+    const tokens = this.opts.spend?.maxTokens ?? this.opts.factory?.maxTokens;
+    if (tokens === undefined) return undefined;
+    this.ceiling = {
+      maxTokens: tokens,
+      ...(this.opts.spend?.maxCostUsd !== undefined
+        ? { maxCostUsd: this.opts.spend.maxCostUsd }
+        : {}),
+    };
+    return this.ceiling;
+  }
+
+  private spendState(): SpendState | undefined {
+    const c = this.spendCeiling();
+    return c
+      ? { ...c, ...(this.spendWarnedAt ? { warnedAt: this.spendWarnedAt } : {}) }
+      : undefined;
+  }
+
+  // Ends a swarm at its token or dollar ceiling, and tells the lead to wrap up
+  // once spend first passes SPEND_WARN_AT of either.
+  private spendEnd(): boolean {
+    const c = this.spendCeiling();
+    if (!c) return false;
+    const used = this.usage().usage;
+    const fresh = used ? used.input + used.output : 0;
+    const cost = c.maxCostUsd !== undefined ? swarmCost({ agents: this.roster() })?.usd : undefined;
+    if (fresh >= c.maxTokens) {
+      void this.finish("exhausted", `token ceiling of ${c.maxTokens} fresh tokens reached`);
+      return true;
+    }
+    if (cost !== undefined && c.maxCostUsd !== undefined && cost >= c.maxCostUsd) {
+      void this.finish("exhausted", `cost ceiling of ${usd(c.maxCostUsd)} reached`);
+      return true;
+    }
+    const near =
+      fresh >= c.maxTokens * SPEND_WARN_AT ||
+      (cost !== undefined && c.maxCostUsd !== undefined && cost >= c.maxCostUsd * SPEND_WARN_AT);
+    if (near && !this.spendWarnedAt) {
+      this.spendWarnedAt = new Date().toISOString();
+      const what =
+        cost !== undefined && c.maxCostUsd !== undefined && cost >= c.maxCostUsd * SPEND_WARN_AT
+          ? `${usd(cost)} of its ${usd(c.maxCostUsd)} cost ceiling`
+          : `${fresh} of its ${c.maxTokens} fresh-token ceiling`;
+      this.notes.push(
+        `Spend: the swarm has used ${what}. It ends when it reaches the ceiling unless the operator raises it. Finish the work in hand and call chat_done with what landed and what is left.`,
+      );
+      this.log(`spend passed ${Math.round(SPEND_WARN_AT * 100)}% of its ceiling: ${what}`, {
+        kind: "fault",
+      });
+      this.changed("health");
+    }
+    return false;
+  }
+
+  // The operator lifts a ceiling while the swarm runs; a lower value is refused.
+  raiseCeiling(next: { maxTokens?: number; maxCostUsd?: number }): SpendCeiling {
+    const c = this.spendCeiling();
+    if (!c) throw new Error(`swarm ${this.id} has no spend ceiling to raise`);
+    if (this.status !== "running") throw new Error(`swarm ${this.id} is ${this.status}`);
+    if (next.maxTokens !== undefined && next.maxTokens <= c.maxTokens) {
+      throw new Error(`the token ceiling is already ${c.maxTokens}`);
+    }
+    if (
+      next.maxCostUsd !== undefined &&
+      c.maxCostUsd !== undefined &&
+      next.maxCostUsd <= c.maxCostUsd
+    ) {
+      throw new Error(`the cost ceiling is already ${usd(c.maxCostUsd)}`);
+    }
+    this.ceiling = {
+      maxTokens: next.maxTokens ?? c.maxTokens,
+      ...((next.maxCostUsd ?? c.maxCostUsd) !== undefined
+        ? { maxCostUsd: next.maxCostUsd ?? c.maxCostUsd }
+        : {}),
+    };
+    this.spendWarnedAt = undefined;
+    const raised = [
+      ...(next.maxCostUsd !== undefined ? [`cost ceiling to ${usd(next.maxCostUsd)}`] : []),
+      ...(next.maxTokens !== undefined ? [`token ceiling to ${next.maxTokens}`] : []),
+    ].join(" and ");
+    this.log(`the operator raised the ${raised}`, { kind: "operator", actor: "operator" });
+    this.notes.push(`Spend: the operator raised the ${raised}. Carry on.`);
+    this.changed("health");
+    this.pump();
+    return this.ceiling;
+  }
+
   private factoryState(): FactoryState | undefined {
     const f = this.opts.factory;
     if (!f) return undefined;
@@ -787,16 +884,10 @@ export class Swarm {
     };
   }
 
-  // Ends a factory swarm whose agents stopped landing work or spent its tokens.
+  // Ends a factory swarm whose agents stopped landing work.
   private factoryEnd(): boolean {
     const f = this.factoryState();
     if (!f) return false;
-    const used = this.usage().usage;
-    const fresh = used ? used.input + used.output : 0;
-    if (fresh >= f.maxTokens) {
-      void this.finish("exhausted", `token ceiling of ${f.maxTokens} fresh tokens reached`);
-      return true;
-    }
     if (f.sinceProgress >= f.progressTurns + FACTORY_GRACE_TURNS) {
       void this.finish("stalled", `no progress in ${f.sinceProgress} turns`);
       return true;
@@ -862,7 +953,7 @@ export class Swarm {
       void this.finish("exhausted", `turn budget of ${this.limits.maxTurns} spent`);
       return;
     }
-    if (this.factoryEnd()) return;
+    if (this.spendEnd() || this.factoryEnd()) return;
     if (this.notes.length > 0) {
       this.pump();
       return;
@@ -2376,6 +2467,7 @@ export class Swarm {
       ...(this.opts.write ? { writeEnabled: true } : {}),
       ...(this.writeTarget?.mode === "local" ? { writeLocal: true } : {}),
       ...(this.opts.factory ? { factory: this.factoryState() } : {}),
+      ...(this.spendCeiling() ? { spend: this.spendState() } : {}),
       ...(this.opts.opId ? { opId: this.opts.opId } : {}),
       clickclack: { url: this.owner.baseUrl, workspaceId: this.opts.workspaceId },
       ...(health ? { health } : {}),

@@ -105,6 +105,33 @@ export const FACTORY_TOKENS: Readonly<Record<SwarmSize, number>> = {
   large: 6_000_000,
 };
 
+// A swarm's spend ceilings: fresh tokens, and list-price dollars on a host that
+// prices tokens. Either ends the swarm as out of budget; turns stay a backstop.
+export interface SpendCeiling {
+  maxTokens: number;
+  maxCostUsd?: number;
+}
+
+export interface SpendState extends SpendCeiling {
+  // When spend first passed SPEND_WARN_AT of a ceiling, cleared when a ceiling is raised.
+  warnedAt?: string;
+}
+
+export const SPEND_WARN_AT = 0.8;
+
+// Defaults sized from past runs: above the highest each plan has spent so far.
+export const PLAN_TOKENS: Readonly<Record<SwarmSize, number>> = {
+  small: 150_000,
+  medium: 1_000_000,
+  large: 3_000_000,
+};
+
+export const PLAN_COST_USD: Readonly<Record<SwarmSize, number>> = {
+  small: 1,
+  medium: 10,
+  large: 60,
+};
+
 export const FACTORY_LIMITS: Pick<SwarmLimits, "maxTurns" | "maxTurnsPerAgent" | "wallClockMs"> = {
   maxTurns: 1_000,
   maxTurnsPerAgent: 200,
@@ -465,6 +492,8 @@ export interface SwarmSummary {
   project?: SwarmProject;
   writeEnabled?: boolean;
   factory?: FactoryState;
+  // Absent on swarms started before spend ceilings, and on factory swarms read the old way.
+  spend?: SpendState;
   // Writers land through chat_merge into a local base, never through pull requests.
   writeLocal?: boolean;
   // The durable op the swarm reports to.

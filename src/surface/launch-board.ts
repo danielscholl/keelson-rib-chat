@@ -14,12 +14,14 @@ import {
   type ModelClassMap,
   type ToolReachability,
 } from "@keelson/shared";
+import { cents, type PlanHistory } from "../cost.ts";
 import { START_BOUNDS, type StartSwarmInput } from "../tools.ts";
 import {
   DEFAULT_POWER,
   DEFAULT_SIZE,
   FACTORY_PROGRESS_TURNS,
   FACTORY_TOKENS,
+  PLAN_COST_USD,
   PLAN_NAME,
   POWER_MODELS,
   pinnedModels,
@@ -49,6 +51,8 @@ export interface LaunchState {
   toolReachabilityError?: string;
   refused?: readonly string[];
   dispatchBlocked?: string;
+  // What each plan has cost on this host before.
+  planCosts?: Partial<Record<SwarmSize, PlanHistory>>;
 }
 
 export { TRACKER_TOOLS };
@@ -123,11 +127,17 @@ function modelCells(pair: { lead: string; worker: string }): string {
 
 function budgetSummary(size: SwarmSize): string {
   const l = SIZE_PRESETS[size];
-  return `${l.maxAgents} agents for up to ${l.wallClockMs / 60_000} min`;
+  return `${l.maxAgents} agents for up to ${l.wallClockMs / 60_000} min or $${PLAN_COST_USD[size]}`;
 }
 
 function factorySummary(size: SwarmSize): string {
-  return `${SIZE_PRESETS[size].maxAgents} agents until work stops landing`;
+  return `${SIZE_PRESETS[size].maxAgents} agents until work stops landing or $${PLAN_COST_USD[size]}`;
+}
+
+function historyLine(history: PlanHistory | undefined): string {
+  if (!history) return "";
+  const runs = history.runs === 1 ? "1 run" : `${history.runs} runs`;
+  return `<span class="plan-history">Here: median ${cents(history.median)} · highest ${cents(history.highest)} · ${runs}</span>`;
 }
 
 const FACTORY_MEANING = `Keeps the swarm running while work lands: merges, pull requests, finished workflow runs, closed beads. Stops after a run of turns without any, or at a fresh-token ceiling; both grow with the plan: ${SWARM_SIZES.map((s) => `${PLAN_NAME[s]} ${FACTORY_PROGRESS_TURNS[s]} turns and ${FACTORY_TOKENS[s] / 1_000_000}M tokens`).join(", ")}.`;
@@ -172,6 +182,7 @@ textarea::placeholder { color: var(--muted); opacity: 1; }
 .plan-body { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; margin-top: 16px; }
 .figures { display: flex; gap: 14px; flex: none; }
 .figure { color: var(--muted); font-size: 12px; }
+.plan-history { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; font-family: var(--mono); }
 .figure strong { display: block; font-size: 24px; line-height: 1.3; font-weight: 600; color: var(--fg-strong); }
 .plan-models { flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px;
   align-items: baseline; border-left: 1px solid var(--border); padding-left: 14px; }
@@ -697,6 +708,8 @@ const PAGE_SCRIPT = `
     }
     if (permissions.workflows && workflows.length) payload.workflows = workflows.join(", ");
     if (factory) payload.factory = true;
+    const cost = Number(document.getElementById("launch-cost")?.value);
+    if (cost > 0) payload.max_cost_usd = cost;
     if (permissions.tracker) {
       const names = Array.from(access.querySelectorAll('[data-tool][data-reachable="true"]'))
         .map((chip) => chip.dataset.tool);
@@ -877,8 +890,8 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
     const selected = plan.size === DEFAULT_SIZE;
     return `<button class="plan" id="plan-${plan.size}" type="button" data-size="${plan.size}" data-power="${plan.power}" aria-pressed="${selected}">
       <span class="plan-title">${plan.name}<span class="chip" id="chip-${plan.size}"${selected ? "" : " hidden"}>selected</span></span>
-      <span class="plan-blurb">${plan.blurb}</span>
-      <span class="plan-body"><span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure bounded"><strong>${l.maxTurns}</strong>turns</span><span class="figure bounded"><strong>${l.wallClockMs / 60_000}</strong>min</span><span class="figure factory-only"><strong>until</strong>work stops</span></span>${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}" data-pinned="${pair.pinned}">${modelCells(pair)}</span>` : ""}</span>
+      <span class="plan-blurb">${plan.blurb}</span>${historyLine(state.planCosts?.[plan.size])}
+      <span class="plan-body"><span class="figures"><span class="figure"><strong>${l.maxAgents}</strong>agents</span><span class="figure"><strong>$${PLAN_COST_USD[plan.size]}</strong>ceiling</span><span class="figure bounded"><strong>${l.wallClockMs / 60_000}</strong>min</span><span class="figure factory-only"><strong>until</strong>work stops</span></span>${pair ? `<span class="models plan-models" id="models-${plan.size}" data-lead="${esc(pair.lead)}" data-worker="${esc(pair.worker)}" data-pinned="${pair.pinned}">${modelCells(pair)}</span>` : ""}</span>
     </button>`;
   }).join("");
   const catalog = [...(state.classes ?? [])];
@@ -924,6 +937,7 @@ export function buildLaunch(state: LaunchState, nonce: string, generation = 0): 
       </section>
       <div class="pickers">
           <div><label for="launch-model">LEAD MODEL</label><select id="launch-model" name="model"><option value="" selected>the plan's lead</option>${modelOptions}<option value="other">Other…</option></select><div class="other-model" id="other-model-row" hidden><label for="launch-other-model">Model name</label><input id="launch-other-model" type="text" autocomplete="off"></div><p class="hint detail" id="model-error" role="alert" hidden></p></div>
+          <div><label for="launch-cost">COST CEILING</label><input id="launch-cost" name="max_cost_usd" type="number" min="${START_BOUNDS.maxCostUsd.min}" max="${START_BOUNDS.maxCostUsd.max}" step="any" inputmode="decimal" placeholder="the plan's" aria-describedby="cost-hint"><p class="hint detail" id="cost-hint">List-price US dollars; the swarm ends at it.</p></div>
           <div><label for="launch-worker-model">WORKERS MODEL</label><select id="launch-worker-model" name="worker_model"><option value="" selected>the plan's workers</option>${modelOptions}</select></div>
           <div class="project-row" id="project-row"><label for="launch-project">PROJECT</label><select id="launch-project" name="project" aria-describedby="project-note">
             <option value="" selected>No project · chat only</option>${options}${state.canCreateProject ? '<option value="new">New project…</option>' : ""}

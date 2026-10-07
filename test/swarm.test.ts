@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ClickClackClient } from "../src/clickclack.ts";
+import { setPricer } from "../src/cost.ts";
 import { needsYou } from "../src/needs.ts";
 import { handleSwarmsAction } from "../src/surface/actions.ts";
 import { buildDetailsInspector } from "../src/surface/inspectors.ts";
@@ -179,6 +180,63 @@ describe("Swarm", () => {
     const summary = await (await start()).finished;
     expect(results).toEqual([false, false, true]);
     expect(summary.agents.length).toBe(3);
+  });
+
+  test("a cost ceiling warns the lead at 80% and then ends the swarm as out of budget", async () => {
+    // $1.50 per scripted turn: 1,200 in and 300 out at $1 per thousand.
+    setPricer((_p, _m, t) => (t.inputTokens + t.outputTokens) / 1_000);
+    try {
+      const { start, provider } = harness(
+        async () => {},
+        {},
+        {
+          spend: { maxTokens: 1_000_000, maxCostUsd: 3.5 },
+        },
+      );
+      const swarm = await start();
+      const summary = await swarm.finished;
+      expect(summary.status).toBe("exhausted");
+      expect(summary.error).toBe("cost ceiling of $3.50 reached");
+      expect(summary.spend).toMatchObject({ maxTokens: 1_000_000, maxCostUsd: 3.5 });
+      expect(summary.spend?.warnedAt).toBeDefined();
+      expect(provider.requests.at(-1)?.prompt).toContain(
+        "Spend: the swarm has used $3.00 of its $3.50 cost ceiling",
+      );
+      expect(summary.activity?.some((e) => e.text.startsWith("spend passed 80%"))).toBe(true);
+    } finally {
+      setPricer(undefined);
+    }
+  });
+
+  test("a token ceiling ends a swarm in any mode", async () => {
+    const { start } = harness(async () => {}, {}, { spend: { maxTokens: 2_000 } });
+    const summary = await (await start()).finished;
+    expect(summary.status).toBe("exhausted");
+    expect(summary.error).toBe("token ceiling of 2000 fresh tokens reached");
+  });
+
+  test("the operator raises a ceiling while the swarm runs, never lowers it", async () => {
+    const { start } = harness(
+      async () => {},
+      {},
+      {
+        spend: { maxTokens: 1_000_000, maxCostUsd: 10 },
+      },
+    );
+    const swarm = await start();
+    expect(() => swarm.raiseCeiling({ maxCostUsd: 5 })).toThrow("already $10.00");
+    expect(swarm.raiseCeiling({ maxCostUsd: 15 })).toEqual({
+      maxTokens: 1_000_000,
+      maxCostUsd: 15,
+    });
+    expect(swarm.summary().spend).toEqual({ maxTokens: 1_000_000, maxCostUsd: 15 });
+    expect(
+      swarm
+        .summary()
+        .activity?.some((e) => e.text === "the operator raised the cost ceiling to $15.00"),
+    ).toBe(true);
+    await swarm.stop();
+    expect(() => swarm.raiseCeiling({ maxCostUsd: 20 })).toThrow();
   });
 
   test("token usage sums per agent and per swarm, failed turns included", async () => {

@@ -40,7 +40,8 @@ durable ops, a run id.
 | `worker_model` | string | `model` | Workers only. |
 | `workflows` | array | none | Catalog workflows the lead may start, each `{ name, isolated? }`, at most 10. `isolated` defaults to `true`. Needs `project`. See [Dispatch workflows](../../guides/dispatch-workflows/). |
 | `factory` | boolean | false | Factory mode: no turn or clock budget. The swarm runs while work lands and ends after a window of turns without any (15 small, 25 medium, 45 large), or at `max_tokens`. See [Budgets and stopping](../../concepts/budgets-and-stopping/#factory-mode). |
-| `max_tokens` | number | by size | Factory mode's ceiling on fresh tokens, 10,000 to 50,000,000: 2,000,000 small, 3,000,000 medium, 6,000,000 large by default. Ignored without `factory`. |
+| `max_tokens` | number | by size | Ceiling on fresh tokens, 10,000 to 50,000,000: 150,000 small, 1,000,000 medium, 3,000,000 large by default; in factory mode 2,000,000, 3,000,000 and 6,000,000. See [Budgets and stopping](../../concepts/budgets-and-stopping/#spend-ceilings). |
+| `max_cost_usd` | number | by size | Ceiling on list-price dollars, 0.1 to 5,000: $1 small, $10 medium, $60 large by default. Ignored on a host that does not price tokens. |
 | `lead_tools` | string[] | none | Other ribs' tools the lead holds, such as `beads_ready` or `beads_close`, at most 20. Each needs the operator's `crossRibGrants` entry for the swarm rib; one without it is dropped from the lead's turns. |
 
 Without `provider`, the host uses `KEELSON_WORKFLOW_PROVIDER` when it is set,
