@@ -48,6 +48,10 @@ export function tokensText(t: TokenTally): string {
   return `${tokenCount(t.input)} in · ${tokenCount(t.output)} out${t.cached > 0 ? ` · ${tokenCount(t.cached)} cached` : ""}`;
 }
 
+export function inOutText(t: TokenTally): string {
+  return `↑ ${tokenCount(t.input)} in · ↓ ${tokenCount(t.output)} out`;
+}
+
 // Fresh tokens: input and output. Cached reads cost a fraction of a fresh token,
 // so the tab shows them beside the total and never inside it.
 export function freshTokens(t: TokenTally): number {

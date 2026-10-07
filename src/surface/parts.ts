@@ -8,7 +8,8 @@
 
 import { createHash } from "node:crypto";
 import type { CanvasActionItem, CanvasBoardView } from "@keelson/shared";
-import { modelLabel, servedModels, tokensText } from "../labels.ts";
+import { byModel, costOf, costText, swarmCost } from "../cost.ts";
+import { freshTokens, modelLabel, servedModels, tokenCount, tokensText } from "../labels.ts";
 import type { Need, NeedKind } from "../needs.ts";
 import {
   type ChildRun,
@@ -147,7 +148,35 @@ export function setupRows(s: SwarmSummary, options: { detailed?: boolean } = {})
           { icon: "◫", text: sizeDetail(s) },
           { icon: "◆", text: modelRow(s) },
         ]),
-    ...(s.usage ? [{ icon: "∑", text: `${tokensText(s.usage)} tokens` }] : []),
+    ...usageRows(s),
+  ];
+}
+
+// One line per served model with all four counts, then the swarm's total.
+function usageRows(s: SwarmSummary): Row[] {
+  if (!s.usage) return [];
+  const models = byModel(s);
+  if (models.length === 0) return [{ icon: "∑", text: `${tokensText(s.usage)} tokens` }];
+  const lines = models.map((m) => {
+    const cost = costOf([m]);
+    const write = m.cacheWrite ?? 0;
+    return [
+      m.model,
+      m.provider,
+      `${tokenCount(m.input - write)} in`,
+      ...(m.cacheWrite !== undefined ? [`${tokenCount(write)} write`] : []),
+      `${tokenCount(m.output)} out`,
+      `${tokenCount(m.cached)} read`,
+      ...(cost ? [costText(cost)] : []),
+    ].join(" · ");
+  });
+  const total = swarmCost(s);
+  const ceiling = s.factory ? ` of ${tokenCount(s.factory.maxTokens)} ceiling` : "";
+  return [
+    ...lines.map((text, i) => ({ ...(i === 0 ? { icon: "∑" } : {}), text })),
+    {
+      text: `swarm · ${tokenCount(freshTokens(s.usage))} fresh${ceiling}${total ? ` · ${costText(total)}` : ""}`,
+    },
   ];
 }
 

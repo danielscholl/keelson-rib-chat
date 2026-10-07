@@ -7,6 +7,7 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 import type { CanvasBoardView } from "@keelson/shared";
+import { agentCost, costText } from "../cost.ts";
 import { freshTokens, tokenCount } from "../labels.ts";
 import { agentMessageRefusal, isLive, type SwarmSummary, type TurnSpan } from "../types.ts";
 import {
@@ -79,7 +80,7 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
       : [{ text: "No turn spans recorded." }]),
     {
       text: a.usage
-        ? `${tokenCount(freshTokens(a.usage))} fresh tokens · ${tokenCount(a.usage.cached)} cached`
+        ? `${tokenCount(freshTokens(a.usage))} fresh tokens · ${tokenCount(a.usage.cached)} cached${costLine(agentCost(a))}`
         : "Token usage not reported.",
     },
     {
@@ -226,4 +227,8 @@ export function buildAgentInspector(s: SwarmSummary, a: Agent): CanvasBoardView 
       backToSwarm(s),
     ],
   };
+}
+
+function costLine(cost: ReturnType<typeof agentCost>): string {
+  return cost ? ` · ${costText(cost)}` : "";
 }

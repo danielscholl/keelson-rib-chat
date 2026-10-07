@@ -13,6 +13,7 @@ import {
   DESIGN_TOKENS,
   designTokenCssBlock,
 } from "@keelson/shared";
+import { agentCost, costText, swarmCost } from "../cost.ts";
 import { freshTokens, modelLabel, tokenCount } from "../labels.ts";
 import {
   type ActivityEntry,
@@ -708,7 +709,7 @@ function spend(s: SwarmSummary): string {
   const items = rows.map((a) => {
     const u = a.usage as NonNullable<Agent["usage"]>;
     const fresh = freshTokens(u);
-    return `<span class="mono c-${TONE_CLASS[a.tone] ?? "neu"}">@${esc(cut(shortHandle(a.handle, s.id), 14))}</span><span class="bar"><i class="fresh" style="width:${num((100 * fresh) / most)}%"></i><i class="cached" style="width:${num((100 * u.cached) / most)}%"></i></span><span class="mono">${tokenCount(fresh)} fresh · ${tokenCount(u.cached)} cached</span>`;
+    return `<span class="mono c-${TONE_CLASS[a.tone] ?? "neu"}">@${esc(cut(shortHandle(a.handle, s.id), 14))}</span><span class="bar"><i class="fresh" style="width:${num((100 * fresh) / most)}%"></i><i class="cached" style="width:${num((100 * u.cached) / most)}%"></i></span><span class="mono">${tokenCount(fresh)} fresh · ${tokenCount(u.cached)} cached${spendCost(agentCost(a))}</span>`;
   });
   return `<section><h2>Spend by agent</h2><div class="spend">${items.join("")}</div><p class="note">Fresh tokens, then cached tokens after them in a lighter bar; the two are never summed.</p></section>`;
 }
@@ -784,6 +785,15 @@ function evidence(s: SwarmSummary): string {
   return `<section><h2>Evidence given</h2><table><thead><tr><th>id</th><th>kind</th><th>title</th><th>source</th><th>retrieved</th><th>at</th></tr></thead><tbody>${rows.join("")}</tbody></table></section>`;
 }
 
+function spendCost(cost: ReturnType<typeof agentCost>): string {
+  return cost ? ` · ${costText(cost)}` : "";
+}
+
+function headerCost(s: SwarmSummary): string[] {
+  const cost = swarmCost(s);
+  return cost ? [costText(cost)] : [];
+}
+
 function header(s: SwarmSummary): string {
   const took = span(s.startedAt, s.endedAt);
   const facts = [
@@ -791,6 +801,7 @@ function header(s: SwarmSummary): string {
     sizeWord(s),
     plural(s.turnsUsed, "turn"),
     ...(took ? [took] : []),
+    ...headerCost(s),
     modelLabel(s),
     `started ${day(s.startedAt)} ${hhmm(s.startedAt)}`,
     ...(s.rerunOf ? [`reruns ${s.rerunOf}`] : []),

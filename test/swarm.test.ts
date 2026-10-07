@@ -182,7 +182,7 @@ describe("Swarm", () => {
   });
 
   test("token usage sums per agent and per swarm, failed turns included", async () => {
-    const { start } = harness(async ({ agentId, turn, call }) => {
+    const { start, provider } = harness(async ({ agentId, turn, call }) => {
       if (agentId !== "s1-lead") return;
       if (turn === 1) throw new Error("provider hiccup");
       await call("chat_done", { summary: "ok" });
@@ -192,11 +192,16 @@ describe("Swarm", () => {
     expect(summary.agents[0]?.usage).toEqual(two);
     expect(summary.usage).toEqual(two);
     const board = JSON.stringify(buildSwarmBoard(summary));
-    expect(JSON.stringify(buildDetailsInspector(summary))).toContain(
-      "2k in · 600 out · 2k cached tokens",
-    );
+    const details = JSON.stringify(buildDetailsInspector(summary));
+    expect(details).toContain("unknown · fake · 1k in · 300 out · 800 read");
+    expect(details).toContain("swarm · 3k fresh");
+    expect(summary.agents[0]?.usageByModel?.map((r) => r.turns)).toEqual([1, 1]);
+    expect(provider.requests.map((r) => (r as { usageRunId?: string }).usageRunId)).toEqual([
+      "s1",
+      "s1",
+    ]);
     expect(board).toContain("2 turns · 3k tokens");
-    expect(board).toContain('"value":"3k","sub":"fresh · 2k cached"');
+    expect(board).toContain('"value":"3k","sub":"↑ 2k in · ↓ 600 out"');
   });
 
   test("a rerun names the swarm it repeats", async () => {

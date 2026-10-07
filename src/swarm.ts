@@ -1012,6 +1012,7 @@ export class Swarm {
       prompt,
       tools,
       turnContext: { swarmId: this.id, agentId: agent.id },
+      usageRunId: this.id,
       ...(worktree
         ? { cwd: worktree.path, allowedDirectories: [worktree.path] }
         : this.opts.cwd
@@ -1045,12 +1046,30 @@ export class Swarm {
     if (outcome.providerId) agent.providerId = outcome.providerId;
     if (outcome.model) agent.servedModel = outcome.model;
     if (outcome.usage) {
-      const u = outcome.usage;
-      agent.usage = addTokens(agent.usage, {
+      const u = outcome.usage as typeof outcome.usage & { cacheCreation1hInputTokens?: number };
+      const tally = {
         input: u.inputTokens + (u.cacheCreationInputTokens ?? 0),
         output: u.outputTokens,
         cached: u.cacheReadInputTokens ?? 0,
-      });
+        ...(u.cacheCreationInputTokens !== undefined
+          ? { cacheWrite: u.cacheCreationInputTokens }
+          : {}),
+        ...(u.cacheCreation1hInputTokens !== undefined
+          ? { cacheWrite1h: u.cacheCreation1hInputTokens }
+          : {}),
+      };
+      agent.usage = addTokens(agent.usage, tally);
+      const provider = outcome.providerId ?? agent.providerId ?? "unknown";
+      const served = outcome.model ?? model ?? agent.servedModel ?? "unknown";
+      const rows = agent.usageByModel ?? [];
+      const row = rows.find((r) => r.provider === provider && r.model === served);
+      const next = {
+        provider,
+        model: served,
+        turns: (row?.turns ?? 0) + 1,
+        ...addTokens(row, tally),
+      };
+      agent.usageByModel = row ? rows.map((r) => (r === row ? next : r)) : [...rows, next];
     }
     this.busy--;
     if (agent.status === "busy") agent.status = "idle";
