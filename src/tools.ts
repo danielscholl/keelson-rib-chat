@@ -289,7 +289,7 @@ export function makeChatTools(deps: ToolDeps): ToolDefinition[] {
         .boolean()
         .optional()
         .describe(
-          `Factory mode: no turn or clock budget. The swarm runs while work lands (a merge, a pull request, a workflow run that succeeds, a closed bead) and ends after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at max_tokens fresh tokens. For draining a backlog or a queue of runs; a chat-only question has no progress to measure.`,
+          `Factory mode: no turn or clock budget. The swarm runs while work lands (a merge, a pull request, a workflow run that succeeds, a closed bead; before the first, the lead planning beads) and ends after ${FACTORY_DEFAULTS.progressTurns} turns without any, or at max_tokens fresh tokens. For draining a backlog or a queue of runs; a chat-only question has no progress to measure.`,
         ),
       max_tokens: z
         .number()

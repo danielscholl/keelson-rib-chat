@@ -52,7 +52,9 @@ since the next turn resumes that same session.
 A factory swarm (`factory: true`, or the launcher's Factory switch) has no turn
 or clock budget. It is bounded by progress instead: a local merge, a writer's
 pull request, a workflow run that succeeds, or the lead closing a bead. Each
-resets a window of 15 turns across the swarm. When a window passes with nothing
+resets a window of 15 turns across the swarm. Until the first of those lands,
+the lead filing, linking or updating beads resets it too, so a swarm can plan
+and critique its backlog before anything merges. When a window passes with nothing
 landed, the lead is told to conclude, and the swarm ends as `stalled` three
 turns later. A ceiling on fresh tokens (`max_tokens`, 2M by default) ends it as
 `exhausted`. The turn and clock limits stay as backstops: 1,000 turns, 200 per

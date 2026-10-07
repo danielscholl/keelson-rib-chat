@@ -152,7 +152,7 @@ export function systemPrompt(opts: {
         ]
       : [];
   const turnLine = opts.factory
-    ? `- This swarm runs in factory mode: no turn budget, only progress. It keeps going while work lands (a merge, a pull request, a workflow run that succeeds, a closed bead) and ends after ${opts.factory.progressTurns} turns across the swarm without any, or at ${opts.factory.maxTokens} fresh tokens. Each turn shows how many turns have passed since work last landed. Keep work landing in small pieces, and conclude once the task is done.`
+    ? `- This swarm runs in factory mode: no turn budget, only progress. It keeps going while work lands (a merge, a pull request, a workflow run that succeeds, a closed bead; until the first of those, filing or updating beads counts too) and ends after ${opts.factory.progressTurns} turns across the swarm without any, or at ${opts.factory.maxTokens} fresh tokens. Each turn shows how many turns have passed since work last landed. Keep work landing in small pieces, and conclude once the task is done.`
     : agent.lead
       ? `- Each time you wake is one turn from a shared budget of ${limits.maxTurns} for the whole swarm.`
       : `- Each time you wake is one turn: you have ${limits.maxTurnsPerAgent}, from a shared budget of ${limits.maxTurns} for the whole swarm.`;
