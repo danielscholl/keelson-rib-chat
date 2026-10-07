@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.27.0...v0.27.1) (2026-10-07)
+
+
+### Fixed
+
+* **swarms:** clean up cost views found in a live run ([#142](https://github.com/danielscholl/keelson-rib-swarm/issues/142)) ([6559041](https://github.com/danielscholl/keelson-rib-swarm/commit/65590417f4034aeb242ebbf61006756f64d28641))
+
 ## [0.27.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.26.0...v0.27.0) (2026-10-07)
 
 
