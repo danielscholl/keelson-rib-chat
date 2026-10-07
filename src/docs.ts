@@ -489,7 +489,9 @@ the cap is announced in the channel and its messages are dropped.
 Factory mode (\`factory: true\`, or the launcher's Factory switch) trades the
 turn and clock budget for one tied to progress. Progress is work that landed: a
 local merge, a writer's pull request, a workflow run that succeeds, or the lead
-calling \`beads_close\`. The swarm keeps going while it lands, and after
+calling \`beads_close\`. Until the first of those lands, the lead filing,
+linking or updating beads (\`beads_create\`, \`beads_dep\`, \`beads_update\`)
+counts too, so a swarm that plans its backlog first is not cut off. The swarm keeps going while it lands, and after
 ${FACTORY_DEFAULTS.progressTurns} turns across the swarm without any it tells the lead to conclude and
 ends as \`stalled\` 3 turns later. It also ends as \`exhausted\` at
 \`max_tokens\` fresh tokens, ${FACTORY_DEFAULTS.maxTokens} by default. The turn and clock limits

@@ -136,6 +136,7 @@ export const MAX_TURN_FAILURES = 3;
 // Thread replies an agent was not woken for, kept for its next turn.
 const BACKGROUND_KEPT = 12;
 const ASKS_KEPT = 5;
+const PLANNING_TOOLS = new Set(["beads_create", "beads_dep", "beads_update"]);
 const FACTORY_GRACE_TURNS = 3;
 export const GATE_FILES_MAX = 64_000;
 export const ACTIVITY_KEPT = 200;
@@ -407,6 +408,7 @@ export class Swarm {
   private readonly merges: WriterMerge[] = [];
   private progressAtTurn = 0;
   private wrapUpSent = false;
+  private landed = false;
   private lastProgress: FactoryState["lastProgress"];
   private readonly pushingPrs = new Set<Promise<string>>();
   private readonly openingPrs = new Set<Promise<WriterPr>>();
@@ -766,7 +768,9 @@ export class Swarm {
   }
 
   // Work that landed: a merge, a pull request, a run that succeeded, a closed bead.
-  private markProgress(what: string): void {
+  // Until the first of those, the lead planning the tracker counts too.
+  private markProgress(what: string, planning = false): void {
+    if (!planning) this.landed = true;
     this.progressAtTurn = this.turnsUsed;
     this.wrapUpSent = false;
     this.lastProgress = { at: new Date().toISOString(), what };
@@ -1056,6 +1060,8 @@ export class Swarm {
     }
     if (agent.lead && outcome.toolCalls.some((t) => t === "beads_close")) {
       this.markProgress("the lead closed a bead");
+    } else if (agent.lead && !this.landed && outcome.toolCalls.some((t) => PLANNING_TOOLS.has(t))) {
+      this.markProgress("the lead planned the backlog", true);
     }
     this.progress(`@${agent.handle} turn ${turn.n} ${outcome.status}`, {
       tools: outcome.toolCalls,

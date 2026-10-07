@@ -104,6 +104,39 @@ describe("factory mode", () => {
     expect(summary.factory?.lastProgress?.what).toBe("the lead closed a bead");
   });
 
+  test("planning the tracker counts until work lands", async () => {
+    const { start } = harness(
+      busywork(async ({ turn, call }) => {
+        if (turn <= 12 && turn % 3 === 0) await call("beads_create", { title: `bead ${turn}` });
+      }),
+      { progressTurns: 6, maxTokens: 10_000_000 },
+      ["beads_create"],
+    );
+    const summary = await (await start()).finished;
+    expect(summary.status).toBe("stalled");
+    expect(summary.turnsUsed).toBeGreaterThan(12);
+    expect(summary.factory?.lastProgress?.what).toBe("the lead planned the backlog");
+  });
+
+  test("once work has landed, planning alone no longer resets the window", async () => {
+    let closed = false;
+    const { start } = harness(
+      busywork(async ({ turn, call }) => {
+        if (!closed) {
+          closed = true;
+          await call("beads_close", { id: "b1" });
+        } else if (turn % 2 === 0) {
+          await call("beads_update", { id: "b2", status: "in_progress" });
+        }
+      }),
+      { progressTurns: 6, maxTokens: 10_000_000 },
+      ["beads_close", "beads_update"],
+    );
+    const summary = await (await start()).finished;
+    expect(summary.status).toBe("stalled");
+    expect(summary.factory?.lastProgress?.what).toBe("the lead closed a bead");
+  });
+
   test("the token ceiling ends it as exhausted", async () => {
     const { start } = harness(busywork(), { progressTurns: 100, maxTokens: 6_000 });
     const summary = await (await start()).finished;
