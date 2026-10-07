@@ -1994,6 +1994,26 @@ describe("the live cockpit", () => {
     expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
   });
 
+  test("a factory swarm's timeline runs a little past now instead of to its 12-hour backstop", () => {
+    const s = swarm("sfaxis", {
+      limits: { ...SIZE_PRESETS.medium, wallClockMs: 12 * 60 * 60_000 },
+      factory: { progressTurns: 15, maxTokens: 2_000_000, sinceProgress: 0 },
+    });
+    const until = (minutes: number) => {
+      const now = new Date(Date.parse(T0) + minutes * 60_000);
+      const section = buildCockpit(s, [], { titled: false, now }).find(
+        (x) => x.kind === "timeline",
+      );
+      if (section?.kind !== "timeline") throw new Error("missing timeline");
+      const window = section.window as { clock?: { until: string } };
+      return (Date.parse(window.clock?.until ?? "") - Date.parse(T0)) / 60_000;
+    };
+    expect(until(2)).toBe(30);
+    expect(until(25)).toBe(60);
+    expect(until(100)).toBe(150);
+    expect(until(700)).toBe(720);
+  });
+
   test("the native payload validates on the selected cockpit with a deadline clock", () => {
     const s = swarm("stimeline", {
       spans: [{ agentId: "stimeline-lead", n: 1, startedAt: T0, messages: 1, wokeBy: ["rib"] }],

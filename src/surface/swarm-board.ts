@@ -931,7 +931,7 @@ function agentStrip(s: SwarmSummary): Leaf {
   return { kind: "segments", title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`, items };
 }
 
-function nativeTimeline(s: SwarmSummary): CanvasTimelineSection {
+function nativeTimeline(s: SwarmSummary, now = new Date()): CanvasTimelineSection {
   const model = buildTimelineModel(s);
   const lanes = model.lanes.slice(0, 12).map(({ id, label, tone, group }) => ({
     id,
@@ -966,9 +966,7 @@ function nativeTimeline(s: SwarmSummary): CanvasTimelineSection {
     ? { from: s.startedAt, to: s.endedAt }
     : {
         from: s.startedAt,
-        clock: {
-          until: new Date(Date.parse(s.startedAt) + s.limits.wallClockMs).toISOString(),
-        },
+        clock: { until: timelineUntil(s, now) },
       };
   return {
     kind: "timeline",
@@ -980,6 +978,21 @@ function nativeTimeline(s: SwarmSummary): CanvasTimelineSection {
     legend:
       "Bars are turns in each agent's color, hatched when timed out or failed, open while unfinished. ○ spawned · ? asked you · ▲ you · ▪ report · ● conclusion · ◇ gate opened · ◆ gate answered · ✓ verified. Timeline holds the full retained record.",
   };
+}
+
+// A factory swarm's 12-hour backstop would squash every turn into the left edge,
+// so its axis runs a little past now and grows as the swarm does.
+const FACTORY_AXIS_MS = 30 * 60_000;
+function timelineUntil(s: SwarmSummary, now: Date): string {
+  const start = Date.parse(s.startedAt);
+  const clock = start + s.limits.wallClockMs;
+  if (!s.factory) return new Date(clock).toISOString();
+  const elapsed = Math.max(0, now.getTime() - start);
+  const span = Math.max(
+    FACTORY_AXIS_MS,
+    Math.ceil((elapsed * 1.5) / FACTORY_AXIS_MS) * FACTORY_AXIS_MS,
+  );
+  return new Date(Math.min(clock, start + span)).toISOString();
 }
 
 // A cockpit can hold several live swarms, so the task's disclosure stays short;
@@ -1039,7 +1052,7 @@ export function buildCockpit(
       title: "Budget",
       items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s)],
     },
-    ...(live(s) ? [nativeTimeline(s)] : []),
+    ...(live(s) ? [nativeTimeline(s, opts.now)] : []),
     ...mapConversation(s, opts.selectedAgentId),
     ...liveDetails(s, opts.selectedAgentId),
     { kind: "actions", wrap: true, items },
