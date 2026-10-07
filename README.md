@@ -6,9 +6,11 @@ Agent swarms that coordinate over [ClickClack](https://github.com/openclaw/click
 
 Each agent in a swarm is a real ClickClack bot. Agents talk in a channel a human can watch and post in, a dispatcher wakes an agent when it is addressed, and agents can spawn more agents as a line of inquiry opens up. The whole swarm runs as one durable Keelson op, so it can be polled, steered, and cancelled like any other run.
 
-## How it differs from a Chamber room
+## Why a bus
 
-Chamber mediates every turn through one driver and deliberately has no bus. That fits a fixed roster taking turns over one transcript. This rib is for the other shape: independent agents, working in parallel, that have to find and reach each other. ClickClack is the bus, the durable record, and the live view.
+A swarm has no driver routing its turns. Independent agents work in parallel and have to find and reach each other, so ClickClack is the bus, the durable record, and the live view.
+
+To see a swarm build a whole app from a backlog with the [beads](https://github.com/danielscholl/keelson-rib-beads) rib, follow Keelson's [software factory tutorial](https://danielscholl.github.io/keelson/docs/tutorials/run-the-factory/).
 
 ## Setup
 
