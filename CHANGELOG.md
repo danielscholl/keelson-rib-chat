@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.24.2...v0.25.0) (2026-10-07)
+
+
+### Added
+
+* **factory:** scale the default token ceiling with the plan ([#134](https://github.com/danielscholl/keelson-rib-swarm/issues/134)) ([454a61b](https://github.com/danielscholl/keelson-rib-swarm/commit/454a61b50749278e5eb07eba5f28a484a19eea54))
+* **factory:** widen the progress window with the plan ([#136](https://github.com/danielscholl/keelson-rib-swarm/issues/136)) ([8a9a5e8](https://github.com/danielscholl/keelson-rib-swarm/commit/8a9a5e8188ff8da347f3e40da21289de951d756f))
+
 ## [0.24.2](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.24.1...v0.24.2) (2026-10-07)
 
 
