@@ -269,10 +269,12 @@ export function livePill(s: SwarmSummary): Pill {
   return LIFECYCLE.running;
 }
 
+// `quiet` leaves out who is on a turn or waiting, for a view whose faces already show it.
 export function stateLine(
   s: SwarmSummary,
   needs: readonly Need[],
   server?: ServerLine,
+  opts: { quiet?: boolean } = {},
 ): { text: string; warn: boolean } {
   const clauses: string[] = [];
   const need = needs[0];
@@ -288,7 +290,7 @@ export function stateLine(
         `waits on you: ${request}${need.since && need.kind !== "quiet" ? ` since ${hhmm(need.since)}` : ""}${needs.length > 1 ? ` (+${needs.length - 1} more)` : ""}`,
       );
     }
-    const busy = s.agents.filter((a) => a.status === "busy");
+    const busy = opts.quiet ? [] : s.agents.filter((a) => a.status === "busy");
     for (const a of busy.slice(0, 3)) {
       const turn = [...(s.spans ?? [])].reverse().find((t) => t.agentId === a.id && !t.endedAt);
       clauses.push(
@@ -296,7 +298,7 @@ export function stateLine(
       );
     }
     if (busy.length > 3) clauses.push(`+${busy.length - 3} more on turns`);
-    const waiting = s.agents.filter((a) => a.status === "waiting");
+    const waiting = opts.quiet ? [] : s.agents.filter((a) => a.status === "waiting");
     for (const a of waiting.slice(0, 3)) {
       clauses.push(
         `@${shortHandle(a.handle, s.id)} waits with ${plural(a.queued ?? 0, "message")}`,
@@ -323,7 +325,7 @@ export function stateLine(
         `${conclusion ? `concluded at ${hhmm(conclusion.at)}` : "the lead concluded"}; turns in flight finish`,
       );
     }
-    if (clauses.length === 0) {
+    if (clauses.length === 0 && !opts.quiet) {
       const latest = s.activity?.at(-1);
       clauses.push(
         latest
