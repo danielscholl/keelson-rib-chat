@@ -579,22 +579,35 @@ $60.00, Open swarm, Message the lead). The task and swarm
 id sit in the footnote. Open swarm expands that live swarm on the page.
 
 The expanded live swarm is a cockpit on the page, not in the drawer. It runs:
-the task and id with a lifecycle or needs-you pill and people dots; a state
-line; once the lead has concluded, the Outcome card; peer-review gate cards;
-an agent strip (busy, waiting, idle, capped, failed, with hatched open
-seats); Budget tiles (Turns with its spark and a forecast as its delta,
-Time as a ticking time-left clock, Fresh tokens with ↑ in and ↓ out and the token
-ceiling in the sub, and Cost with the cost ceiling, cache hit and cached tokens when the
-host prices tokens, its spend rate per minute and when it reaches the ceiling as its
-delta, warning past ${SPEND_WARN_AT * 100}%); Timeline;
-full-width Map, then Conversation and Message the lead;
-Spend, Produced so far and Activity; then Open the report when one exists,
-Timeline, Details, and Stop swarm last. Message the lead is expanded directly under
-Conversation while running, unless the lead has concluded. Tokens says none yet
-before any turn, or that the provider reported none when turns ran without usage.
+the task and id with a lifecycle or needs-you pill and the crew as faces; a
+state line only when something needs a look; once the lead has concluded, the
+Outcome card; peer-review gate cards; the shape block; Timeline | Map tabs;
+Conversation | Spend | Activity tabs; Produced so far; then Open the report when
+one exists, Timeline, Details, and Stop swarm last.
 
-Timeline is a native section between Budget and Map, on the live cockpit only,
-not the per-swarm drawer or ended board. It requires Keelson v0.120.0 or later.
+Each agent is a face in its identity tone with its initial, two letters where
+first letters collide (Le and La). Busy faces pulse, waiting faces carry an amber
+dot, idle, capped and failed faces fade, the lead has a second ring, and open
+seats are dashed. A face's hover names what the agent is doing: its turn and
+start time, its queued messages, or its status and turn count.
+
+The shape block sets what the swarm is beside how far it has run. On the left:
+the plan (Scout, Crew, Fleet), seats in use of the plan's agents, and the
+models, lead first, then workers grouped by model with a count. On the right,
+meters against their ceilings: Turns (with the forecast's reading after the
+count), Time (minutes left and when it ends), Fresh tokens when a token ceiling
+is set, and Cost when the host prices tokens, split by kind in the Usage page's
+order (cache read, input, cache write, output) with its spend rate and cache
+hit. A meter warns past ${SPEND_WARN_AT * 100}% of a ceiling or when the
+forecast runs out before the clock.
+
+Each tab carries a count or total. A group with one non-empty tab shows its
+sections without a strip. Message the lead sits in the Conversation tab while
+running, unless the lead has concluded. Spend on the cockpit leaves out the
+Model column, since the shape block names the models.
+
+Timeline is a native section in the Timeline tab beside Map, on the live cockpit only,
+not the per-swarm drawer or ended board. It requires Keelson v0.124.0 or later.
 The operator's lane comes first, then agents in first-worked order, then runs.
 Turns use the agent's identity color, with hatching for timeouts or errors and
 open endpoints for unfinished work. Run bars use status colors.
@@ -763,8 +776,8 @@ conclusion for the lead's Conclusion posts. MessageKind is
 \`"ask" | "run" | "conclusion"\`. report is reserved for the lead's published
 report and omitted: \`chat_report\` never posts to the channel.
 
-A Task row sits above the state line on the cockpit, and at the top of the
-per-swarm board (under the Outcome once it ends): the prompt's first line, with
+A Task row sits at the top of the per-swarm board (under the Outcome once it
+ends); the cockpit leaves the task to its title and Details: the prompt's first line, with
 its first 800 characters one click away; Details keeps the whole text. Turn
 bars on the timeline are titled by turn number, since the lane names the agent.
 
@@ -774,6 +787,9 @@ runs with their gates and reviewers, and the conclusion. Otherwise it shows
 the newest activity or waits for the lead's first turn. Stopping overrides
 those clauses. Socket drops, channel faults, a failed lead turn and idle nudges
 append health warnings. Times are HH:MM so the line stays true between frames.
+The cockpit's state line leaves out busy and waiting agents, which its faces
+show, and the newest-activity fallback, so it appears only for requests, gates,
+the conclusion, stopping and health warnings. Folded cards keep the full line.
 
 With two or more live swarms a selection strip picks the expanded one. The
 choice is shared by every viewer. The pinned canvas contract does not allow

@@ -383,7 +383,7 @@ describe("contributed docs", () => {
     expect(swarms).toContain("one card per request, oldest first");
     expect(swarms).toContain("oldest 12 shown");
     expect(swarms).toContain("cockpit on the page, not in the drawer");
-    expect(swarms).toContain("hatched open");
+    expect(swarms).toContain("the lead has a second ring");
     expect(swarms).toContain("choice is shared by every viewer");
     expect(swarms).toContain("wrapping action strip");
     expect(swarms).toContain("per-swarm board also still");
@@ -429,10 +429,10 @@ describe("contributed docs", () => {
     for (const raw of [swarms, page]) {
       const text = raw.replace(/[`*]/g, "").replace(/\s+/g, " ");
       for (const phrase of [
-        "native section between Budget and Map",
+        "native section in the Timeline tab beside Map",
         "on the live cockpit only",
         "not the per-swarm drawer or ended board",
-        "Keelson v0.120.0 or later",
+        "Keelson v0.124.0 or later",
         "operator's lane comes first, then agents in first-worked order, then runs",
         "agent's identity color",
         "hatching for timeouts or errors",
