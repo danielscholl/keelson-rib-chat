@@ -147,9 +147,18 @@ import { FakeClickClack, OWNER_TOKEN, scriptedProvider, WORKSPACE } from "./fake
 
 const T0 = "2026-09-22T14:00:00.000Z";
 
+// A tab's label titles its first section, as the tab strip reads on screen.
 function leaves(sections: CanvasBoardView["sections"]) {
   return sections.flatMap((s) =>
-    s.kind === "columns" ? s.columns.flatMap((c) => c.sections) : [s],
+    s.kind === "columns"
+      ? s.columns.flatMap((c) => c.sections)
+      : s.kind === "tabs"
+        ? s.tabs.flatMap((t) =>
+            t.sections.map((x, i) =>
+              i === 0 && x.title === undefined ? { ...x, title: t.label } : x,
+            ),
+          )
+        : [s],
   );
 }
 
@@ -931,7 +940,7 @@ describe("the question inspector", () => {
     });
     expect(question.items[0]!.fields![0]!.value).toContain("\nFinal sentence?");
     expect(question.items[0]!.fields![0]!.value).toContain("**Full question**");
-    const actions = view.sections.find((section) => section.kind === "actions");
+    const actions = leaves(view.sections).find((section) => section.kind === "actions");
     if (actions?.kind !== "actions") throw new Error("missing actions");
     expect(actions.title).toBe("Actions");
     expect(actions.items.map((item) => item.type)).toEqual(["reply-ask", "dismiss-ask"]);
@@ -971,7 +980,7 @@ describe("the question inspector", () => {
       title: "Thread",
       items: [{ text: "Thread link not recorded." }],
     });
-    expect(view.sections.some((section) => section.kind === "actions")).toBe(true);
+    expect(leaves(view.sections).some((section) => section.kind === "actions")).toBe(true);
   });
 
   test("ended, stopping, concluded and disappeared questions are read-only without clocks", () => {
@@ -987,7 +996,7 @@ describe("the question inspector", () => {
     ];
     for (const snapshot of snapshots) {
       const view = inspect(snapshot);
-      expect(view.sections.some((section) => section.kind === "actions")).toBe(false);
+      expect(leaves(view.sections).some((section) => section.kind === "actions")).toBe(false);
       expect(JSON.stringify(view)).not.toContain('"clock"');
       expect(JSON.stringify(view)).toContain("Read-only:");
       const question = view.sections[0];
@@ -1010,7 +1019,7 @@ describe("the gate inspector", () => {
     });
   };
   const actions = (view: CanvasBoardView) => {
-    const section = view.sections.find((section) => section.kind === "actions");
+    const section = leaves(view.sections).find((section) => section.kind === "actions");
     return section?.kind === "actions" ? section.items : [];
   };
 
@@ -1207,7 +1216,7 @@ describe("the details inspector", () => {
     return view;
   };
   const rows = (view: CanvasBoardView, title: string) => {
-    const section = view.sections.find((section) => section.title === title);
+    const section = leaves(view.sections).find((section) => section.title === title);
     if (section?.kind !== "rows") throw new Error(`missing ${title} rows`);
     return section.items;
   };
@@ -1604,7 +1613,7 @@ describe("the details inspector", () => {
       expect(rows(view, "Transcript")).toEqual([
         { text: "transcript ↗", href: channelHref(snapshot) },
       ]);
-      expect(view.sections.some((section) => section.kind === "actions")).toBe(false);
+      expect(leaves(view.sections).some((section) => section.kind === "actions")).toBe(false);
       expect(JSON.stringify(view)).not.toContain('"fields"');
       expect(JSON.stringify(view)).not.toContain('"clock"');
     }
@@ -1705,16 +1714,18 @@ describe("the agent inspector", () => {
     expect(text).toContain("Draft PR #42 · CI running");
     expect(text).toContain("Open PR");
     expect(text).toContain("Woken by @lead, you, run updates, idle nudge, kickoff / rib notice");
-    const said = view.sections.find((x) => x.kind === "rows" && x.title?.startsWith("Said"));
+    const said = leaves(view.sections).find(
+      (x) => x.kind === "rows" && x.title?.startsWith("Said"),
+    );
     expect(said?.kind === "rows" ? said.items.map((r) => r.text) : []).toEqual([
       "Latest @lead",
       "First",
     ]);
     expect(said?.kind === "rows" ? said.items[1]?.href : "").toBe(threadHref(s, "root"));
-    const turns = view.sections.find((x) => x.title === "Turns");
+    const turns = leaves(view.sections).find((x) => x.title === "Turns");
     expect(turns?.kind === "rows" ? turns.items.length : 0).toBe(2);
     expect(text).toContain("took 30 s");
-    const composer = view.sections.find((x) => x.kind === "actions");
+    const composer = leaves(view.sections).find((x) => x.kind === "actions");
     expect(composer).toMatchObject({
       items: [
         {
@@ -1788,7 +1799,7 @@ describe("the agent inspector", () => {
     for (const summary of [s, { ...s, status: "done" as const, endedAt: T0 }]) {
       const view = inspect(summary, 0);
       expect(Buffer.byteLength(JSON.stringify(view))).toBeLessThan(48_000);
-      const turns = view.sections.find((x) => x.title?.startsWith("Turns"));
+      const turns = leaves(view.sections).find((x) => x.title?.startsWith("Turns"));
       expect(turns?.title).toBe(`Turns · newest ${INSPECTOR_TURNS_SHOWN} of 189`);
       expect(turns?.kind === "rows" ? turns.items : []).toHaveLength(INSPECTOR_TURNS_SHOWN);
       if (turns?.kind !== "rows") throw new Error("expected turns");
@@ -1810,7 +1821,7 @@ describe("the agent inspector", () => {
       expect(summary.spans).toHaveLength(200);
     }
     const short = inspect({ ...s, spans: s.spans!.slice(0, INSPECTOR_TURNS_SHOWN) }, 0);
-    const turns = short.sections.find((x) => x.title === "Turns");
+    const turns = leaves(short.sections).find((x) => x.title === "Turns");
     expect(turns?.kind === "rows" ? turns.items.at(-1)?.text : "").toStartWith("Turn 1");
     expect(JSON.stringify(short)).not.toContain('"type":"open-record"');
   });
@@ -1820,7 +1831,7 @@ describe("the agent inspector", () => {
       const s = writer();
       const view = inspect({ ...s, agents: [s.agents[0]!, { ...s.agents[1]!, status }] });
       expect(view.sections[0]).toMatchObject({ items: [{ pill: { label: status } }] });
-      const composer = view.sections.find((x) => x.kind === "actions");
+      const composer = leaves(view.sections).find((x) => x.kind === "actions");
       const item = composer?.kind === "actions" ? composer.items[0] : undefined;
       expect(item?.disabled ?? false).toBe(status === "capped" || status === "failed");
       if (item?.disabled) expect(item.reason).toContain("cannot take another turn");
@@ -1942,7 +1953,7 @@ describe("the agent inspector", () => {
     expect(text).toContain("unknown source missing");
     expect(text).toContain("Woken by not recorded");
     expect(text).not.toContain('"clock"');
-    const turns = view.sections.find((x) => x.title === "Turns");
+    const turns = leaves(view.sections).find((x) => x.title === "Turns");
     expect(turns?.kind === "rows" ? turns.items[0]?.text : "").toContain("Turn 2");
   });
 });
@@ -1954,25 +1965,25 @@ describe("the live cockpit", () => {
     return sections;
   };
 
-  test("the head, state, agent strip and Budget precede Timeline, Map and conversation", () => {
+  test("the head and its crew, the shape block, then Timeline | Map and the record", () => {
     const s = fixtures.running!;
     const cockpit = sections(s);
     expect(cockpit.map((x) => x.kind)).toEqual([
       "cards",
-      "rows",
-      "segments",
-      "stats",
-      "timeline",
-      "graph",
+      "columns",
+      "tabs",
       "rows",
       "actions",
       "actions",
     ]);
-    expect(cockpit.slice(3, 6).map((section) => section.title)).toEqual([
-      "Budget",
-      "Timeline",
-      "Map",
+    const timelineMap = cockpit[2];
+    if (timelineMap?.kind !== "tabs") throw new Error("missing Timeline | Map");
+    expect(timelineMap.tabs.map((t) => [t.label, t.badge, t.sections.map((x) => x.kind)])).toEqual([
+      ["Timeline", undefined, ["timeline"]],
+      ["Map", "2", ["graph"]],
     ]);
+    expect(timelineMap.tabs.map((t) => t.sections[0]?.title)).toEqual([undefined, undefined]);
+    expect(cockpit[3]?.title).toBe("Conversation");
     expect(cockpit[0]).toMatchObject({
       kind: "cards",
       title: "Live",
@@ -1983,8 +1994,20 @@ describe("the live cockpit", () => {
     const head = cockpit[0]?.kind === "cards" ? cockpit[0].items[0] : undefined;
     expect(head).not.toHaveProperty("chip");
     expect(head?.footnote).toBeUndefined();
-    expect(head?.fields?.[0]?.people).toHaveLength(2);
-    expect(cockpit.some((x) => x.kind === "columns")).toBe(false);
+    expect(head?.fields?.[0]?.people).toEqual([
+      {
+        name: "lead",
+        tone: "brand",
+        face: "L",
+        status: "idle",
+        lead: true,
+        hint: "@lead · idle · 3 turns",
+      },
+      { name: "w1", tone: "id-blue", face: "W", status: "idle", hint: "@w1 · idle · 3 turns" },
+      { name: "open seat", face: "+", status: "open" },
+      { name: "open seat", face: "+", status: "open" },
+      { name: "open seat", face: "+", status: "open" },
+    ]);
     expect(cockpit.at(-1)).toMatchObject({
       kind: "actions",
       wrap: true,
@@ -1997,6 +2020,129 @@ describe("the live cockpit", () => {
     expect(buildCockpit(s, [], { titled: false })[0]?.title).toBeUndefined();
   });
 
+  test("the shape block names the plan, its seats and models beside the budget meters", () => {
+    const s = fixtures.running!;
+    const shape = sections(s)[1];
+    if (shape?.kind !== "columns") throw new Error("missing shape block");
+    expect(shape.columns.map((c) => c.weight)).toEqual([5, 7]);
+    expect(shape.columns[0]?.sections).toEqual([
+      {
+        kind: "cards",
+        items: [
+          {
+            title: "Crew",
+            stacked: true,
+            fields: [
+              { value: "2 of 5 agents" },
+              { label: "lead", value: "gpt-5.6-sol" },
+              { label: "workers", value: "gpt-5.6-sol · 1" },
+            ],
+          },
+        ],
+      },
+    ]);
+    const meters = shape.columns[1]?.sections[0];
+    expect(
+      meters?.kind === "bars" ? meters.items.map((b) => [b.label, b.value, b.total]) : [],
+    ).toEqual([
+      ["Turns", 11, 40],
+      ["Time", s.limits.wallClockMs, s.limits.wallClockMs],
+    ]);
+  });
+
+  test("lead and workers on different models, a pinned worker, and colliding initials", () => {
+    const s = {
+      ...fixtures.running!,
+      model: "claude-opus-5-5",
+      workerModel: "claude-sonnet-5-5",
+      agents: [
+        { ...fixtures.running!.agents[0]!, handle: "s9hjx-lead", model: "claude-opus-5-5" },
+        {
+          ...fixtures.running!.agents[1]!,
+          id: "a",
+          handle: "s9hjx-layers",
+          status: "busy" as const,
+        },
+        {
+          ...fixtures.running!.agents[1]!,
+          id: "b",
+          handle: "s9hjx-seams",
+          status: "waiting" as const,
+          queued: 2,
+        },
+        {
+          ...fixtures.running!.agents[1]!,
+          id: "c",
+          handle: "s9hjx-docs",
+          model: "claude-haiku-5-5",
+        },
+      ],
+    };
+    const cockpit = sections(s);
+    const shape = cockpit[1];
+    if (shape?.kind !== "columns") throw new Error("missing shape block");
+    const card = shape.columns[0]?.sections[0];
+    expect(card?.kind === "cards" ? card.items[0]?.fields : []).toEqual([
+      { value: "4 of 5 agents" },
+      { label: "lead", value: "claude-opus-5-5" },
+      { label: "workers", value: "claude-sonnet-5-5 · 2" },
+      { label: "workers", value: "claude-haiku-5-5 · 1" },
+    ]);
+    const head = cockpit[0]?.kind === "cards" ? cockpit[0].items[0] : undefined;
+    expect(head?.fields?.[0]?.people?.map((p) => [p.face, p.status])).toEqual([
+      ["Le", "idle"],
+      ["La", "busy"],
+      ["S", "waiting"],
+      ["D", "idle"],
+      ["+", "open"],
+    ]);
+    expect(head?.fields?.[0]?.people?.[2]?.hint).toBe("@seams · 2 messages waiting");
+  });
+
+  test("a priced swarm splits its cost meter by kind in the Usage page's order", () => {
+    const s = fixtures.running!;
+    const priced = {
+      ...s,
+      spend: { maxTokens: 3_000_000, maxCostUsd: 60 },
+      usage: { input: 1_000_000, output: 57_000, cached: 12_200_000 },
+      agents: s.agents.map((a) => ({
+        ...a,
+        usage: { input: 500_000, output: 28_500, cached: 6_100_000 },
+        usageByModel: [
+          {
+            provider: "anthropic",
+            model: "claude-sonnet-5-5",
+            turns: 3,
+            input: 500_000,
+            output: 28_500,
+            cached: 6_100_000,
+          },
+        ],
+      })),
+    };
+    setPricer(
+      (_p, _m, t) =>
+        (t.inputTokens * 3 + t.outputTokens * 15 + (t.cacheReadTokens ?? 0) * 0.3) / 1_000_000,
+    );
+    try {
+      const shape = sections(priced)[1];
+      if (shape?.kind !== "columns") throw new Error("missing shape block");
+      const meters = shape.columns[1]?.sections[0];
+      if (meters?.kind !== "bars") throw new Error("missing meters");
+      expect(meters.items.map((b) => b.label)).toEqual(["Turns", "Time", "Fresh tokens", "Cost"]);
+      const cost = meters.items[3];
+      expect(cost?.total).toBe(60);
+      expect(cost?.segments?.map((x) => x.tone)).toEqual(["ramp-1", "accent", "ok"]);
+      expect(cost?.segments?.map((x) => x.label.split(" $")[0])).toEqual([
+        "cache read",
+        "input",
+        "output",
+      ]);
+    } finally {
+      setPricer(undefined);
+    }
+  });
+
   test("a factory swarm's timeline runs a little past now instead of to its 12-hour backstop", () => {
     const s = swarm("sfaxis", {
       limits: { ...SIZE_PRESETS.medium, wallClockMs: 12 * 60 * 60_000 },
@@ -2004,7 +2150,7 @@ describe("the live cockpit", () => {
     });
     const until = (minutes: number) => {
       const now = new Date(Date.parse(T0) + minutes * 60_000);
-      const section = buildCockpit(s, [], { titled: false, now }).find(
+      const section = leaves(buildCockpit(s, [], { titled: false, now })).find(
         (x) => x.kind === "timeline",
       );
       if (section?.kind !== "timeline") throw new Error("missing timeline");
@@ -2025,7 +2171,7 @@ describe("the live cockpit", () => {
     });
     const index = buildIndex(state({ live: [s] }));
     board(INDEX_KEY, index);
-    const timelines = index.sections.filter((section) => section.kind === "timeline");
+    const timelines = leaves(index.sections).filter((section) => section.kind === "timeline");
     expect(timelines).toHaveLength(1);
     expect(timelines[0]).toEqual({
       kind: "timeline",
@@ -2057,7 +2203,7 @@ describe("the live cockpit", () => {
     });
     const endedAt = new Date(Date.parse(T0) + 60_000).toISOString();
     expect(
-      sections({ ...s, endedAt }).find((section) => section.kind === "timeline")?.window,
+      leaves(sections({ ...s, endedAt })).find((section) => section.kind === "timeline")?.window,
     ).toEqual({ from: T0, to: endedAt });
     expect(buildSwarmBoard(s).sections.some((section) => section.kind === "timeline")).toBe(false);
     expect(
@@ -2067,7 +2213,7 @@ describe("the live cockpit", () => {
     ).toBe(false);
   });
 
-  test("Map owns a top-level row before Conversation and the eligible composer on every live surface", () => {
+  test("Map shares a tab with Timeline on the cockpit and keeps its row on the per-swarm board", () => {
     for (const status of ["running", "stopping"] as const) {
       for (const conclusion of [undefined, "Done"]) {
         for (const recent of [undefined, [], fixtures.running!.recent]) {
@@ -2079,28 +2225,34 @@ describe("the live cockpit", () => {
           const perSwarm = buildSwarmBoard(s, { selectedAgentId });
           board(INDEX_KEY, index);
           board(swarmKey(s.id), perSwarm);
+          const composing = status === "running" && conclusion === undefined;
+          const isComposer = (section: CanvasBoardView["sections"][number]) =>
+            section.kind === "actions" &&
+            section.items.some((item) => item.type === "message-lead" && item.expanded);
           for (const raw of [
             buildCockpit(s, needsYou(s), { titled: true, selectedAgentId }),
             index.sections,
-            perSwarm.sections,
           ]) {
-            expect(raw.some((section) => section.kind === "columns")).toBe(false);
-            const mapAt = raw.findIndex((section) => section.kind === "graph");
-            expect(mapAt).toBeGreaterThanOrEqual(0);
-            expect(raw[mapAt]).toEqual(buildAgentMap(s, selectedAgentId));
-            const conversationAt = raw.findIndex((section) => section.title === "Conversation");
-            expect(conversationAt).toBe(recent?.length ? mapAt + 1 : -1);
-            const composerAt = raw.findIndex(
-              (section) =>
-                section.kind === "actions" &&
-                section.items.some((item) => item.type === "message-lead" && item.expanded),
-            );
-            expect(composerAt).toBe(
-              status === "running" && conclusion === undefined
-                ? mapAt + (recent?.length ? 2 : 1)
-                : -1,
-            );
+            const timelineMap = raw.find((section) => section.kind === "tabs");
+            if (timelineMap?.kind !== "tabs") throw new Error("missing Timeline | Map");
+            expect(timelineMap.tabs.map((t) => t.label)).toEqual(["Timeline", "Map"]);
+            expect(timelineMap.tabs[1]?.sections).toEqual([
+              { ...buildAgentMap(s, selectedAgentId), title: undefined },
+            ]);
+            const flat = leaves(raw);
+            expect(
+              flat.some((section) => section.title === "Conversation" && section.kind === "rows"),
+            ).toBe(Boolean(recent?.length));
+            expect(flat.some(isComposer)).toBe(composing);
           }
+          const raw = perSwarm.sections;
+          expect(raw.some((section) => section.kind === "columns")).toBe(false);
+          const mapAt = raw.findIndex((section) => section.kind === "graph");
+          expect(mapAt).toBeGreaterThanOrEqual(0);
+          expect(raw[mapAt]).toEqual(buildAgentMap(s, selectedAgentId));
+          const conversationAt = raw.findIndex((section) => section.title === "Conversation");
+          expect(conversationAt).toBe(recent?.length ? mapAt + 1 : -1);
+          expect(raw.findIndex(isComposer)).toBe(composing ? mapAt + (recent?.length ? 2 : 1) : -1);
         }
       }
     }
@@ -2125,7 +2277,7 @@ describe("the live cockpit", () => {
       "open-details",
     ]);
     const composer = (s: SwarmSummary) =>
-      sections(s).find((x) => x.kind === "actions" && x.items[0]?.type === "message-lead");
+      leaves(sections(s)).find((x) => x.kind === "actions" && x.items[0]?.type === "message-lead");
     expect(composer(s)).toMatchObject({
       kind: "actions",
       wrap: true,
@@ -2141,8 +2293,10 @@ describe("the live cockpit", () => {
     expect(buildBadge(state({ live: [peer] }))).toEqual({ count: 0 });
     const index = buildIndex(state({ live: [peer] }));
     board(INDEX_KEY, index);
-    expect(index.sections.some((section) => section.title === "Needs you")).toBe(false);
-    const reviewing = index.sections.find((section) => section.title === "Approvals in review");
+    expect(leaves(index.sections).some((section) => section.title === "Needs you")).toBe(false);
+    const reviewing = leaves(index.sections).find(
+      (section) => section.title === "Approvals in review",
+    );
     if (reviewing?.kind !== "cards") throw new Error("missing peer gate");
     const card = reviewing.items[0]!;
     const payload = {
@@ -2260,7 +2414,7 @@ describe("the live cockpit", () => {
       endedAt: T0,
       activity: [{ at: T0, text: "completed", kind: "conclusion" }],
     });
-    expect(ended.sections.some((x) => x.title === "Activity")).toBe(true);
+    expect(leaves(ended.sections).some((x) => x.title === "Activity")).toBe(true);
   });
 
   test("Conversation omits unknown chips and absent links, falling back to its kept count", () => {
@@ -2287,17 +2441,21 @@ describe("the live cockpit", () => {
     expect(conclusion?.actions).toBeUndefined();
   });
 
-  test("agent segments tone nonzero states and hatch the open seats", () => {
-    const s = fixtures.twoBusy!;
-    expect(sections(s)[2]).toEqual({
-      kind: "segments",
-      title: "Agents · 3 of 5",
-      items: [
-        { label: "busy", n: 2, tone: "info" },
-        { label: "waiting", n: 1, tone: "caution" },
-        { label: "2 open seats", n: null },
-      ],
-    });
+  test("faces carry each agent's status and open seats close the crew", () => {
+    const faces = (s: SwarmSummary) => {
+      const head = sections(s)[0];
+      return (head?.kind === "cards" ? (head.items[0]?.fields?.[0]?.people ?? []) : []).map((p) => [
+        p.face,
+        p.status,
+      ]);
+    };
+    expect(faces(fixtures.twoBusy!)).toEqual([
+      ["L", "busy"],
+      ["W1", "busy"],
+      ["W2", "waiting"],
+      ["+", "open"],
+      ["+", "open"],
+    ]);
     const full = swarm("s3seg", {
       limits: { ...SIZE_PRESETS.medium, maxAgents: 3 },
       agents: [
@@ -2306,42 +2464,48 @@ describe("the live cockpit", () => {
         agent("s3seg", 2, { status: "failed" }),
       ],
     });
-    expect(sections(full)[2]).toMatchObject({
-      items: [
-        { label: "idle", n: 1, tone: "neutral" },
-        { label: "capped", n: 1, tone: "warn" },
-        { label: "failed", n: 1, tone: "error" },
-      ],
-    });
-    expect(sections(swarm("s0seg", { agents: [], turnsUsed: 0 }))[2]).toMatchObject({
-      items: [{ label: "5 open seats", n: null }],
-    });
+    expect(faces(full).map(([, st]) => st)).toEqual(["idle", "idle", "idle"]);
+    expect(faces(swarm("s0seg", { agents: [], turnsUsed: 0 }))).toEqual(
+      Array.from({ length: 5 }, () => ["+", "open"]),
+    );
   });
 
-  test("the budget always has Turns, Time and fresh Tokens with cached in the sub", () => {
-    const s = fixtures.twoBusy!;
+  test("the meters read turns and time against their ceilings, tokens and cost when set", () => {
+    const meters = (s: SwarmSummary, now?: Date) => {
+      const shape = sections(s, now)[1];
+      const bars = shape?.kind === "columns" ? shape.columns[1]?.sections[0] : undefined;
+      return bars?.kind === "bars" ? bars.items : [];
+    };
     const now = new Date("2026-09-22T14:21:00.000Z");
-    expect(sections(s, now)[3]).toMatchObject({
-      kind: "stats",
-      title: "Budget",
-      items: [
-        {
-          label: "Turns",
-          value: 11,
-          sub: "of 40 · pace over the last 5 min",
-          spark: [1, 2, 0],
-          delta: {
-            text: "29 left · no turn in 5 min",
-            direction: "flat",
-          },
-        },
-        { label: "Time", clock: { mode: "until" } },
-        { label: "Fresh tokens", value: "250", sub: "↑ 200 in · ↓ 50 out" },
+    const s = fixtures.twoBusy!;
+    expect(meters(s, now)).toEqual([
+      { label: "Turns", value: 11, total: 40, trailing: "11 / 40 · no turn in 5 min" },
+      {
+        label: "Time",
+        value: 21 * 60_000,
+        total: s.limits.wallClockMs,
+        trailing: `9 min left · ends ${hhmm("2026-09-22T14:30:00.000Z")}`,
+      },
+    ]);
+    expect(
+      meters({ ...s, spend: { maxTokens: 1_000, maxCostUsd: 10 } }, now).map((b) => [
+        b.label,
+        b.value,
+        b.total,
+        b.trailing,
+        b.tone,
+      ]),
+    ).toEqual([
+      ["Turns", 11, 40, "11 / 40 · no turn in 5 min", undefined],
+      [
+        "Time",
+        21 * 60_000,
+        s.limits.wallClockMs,
+        `9 min left · ends ${hhmm("2026-09-22T14:30:00.000Z")}`,
+        undefined,
       ],
-    });
-    expect(sections(fixtures.running!)[3]).toMatchObject({
-      items: [{}, {}, { label: "Fresh tokens", value: null, sub: "the provider reported none" }],
-    });
+      ["Fresh tokens", 250, 1_000, "250 / 1k", undefined],
+    ]);
   });
 
   test("the index uses its compose clock for the cockpit's turn forecast", () => {
@@ -2353,31 +2517,30 @@ describe("the live cockpit", () => {
     const now = new Date("2026-09-22T14:21:00.000Z");
     const view = buildIndex(state({ live: [s] }), now);
     board(INDEX_KEY, view);
-    const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
-    expect(budget?.kind === "stats" ? budget.items[0] : undefined).toMatchObject({
+    const meters = leaves(view.sections).find((x) => x.kind === "bars");
+    expect(meters?.kind === "bars" ? meters.items[0] : undefined).toEqual({
       label: "Turns",
-      sub: "of 40 · pace over the last 5 min",
-      delta: {
-        text: `8 left · out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
-        direction: "down",
-        tone: "warn",
-      },
+      value: 32,
+      total: 40,
+      trailing: `32 / 40 · out about ${hhmm("2026-09-22T14:26:00.000Z")}, before the clock`,
+      tone: "warn",
     });
   });
 
-  test("needs tone the head and health warnings tone the state row", () => {
+  test("needs tone the head and only health or a request speaks in the state row", () => {
     expect(sections(fixtures.onlyYou!)[0]).toMatchObject({
       items: [{ pill: { label: "needs you", tone: "caution" }, edge: "caution" }],
     });
-    expect(sections(fixtures.leadFailure!)[1]).toMatchObject({
-      items: [
-        { icon: "▤", text: "Task · Fix issue #27: README undercounts frontend-mix nodes" },
-        { glyph: "warn", text: "waiting for the lead's first turn · the lead's last turn failed" },
-      ],
+    expect(sections(fixtures.leadFailure!)[1]).toEqual({
+      kind: "rows",
+      items: [{ icon: "◉", glyph: "warn", text: "the lead's last turn failed" }],
     });
+    expect(
+      sections(fixtures.twoBusy!).some((x) => x.kind === "rows" && x.items[0]?.icon === "◉"),
+    ).toBe(false);
   });
 
-  test("the live cockpit and an ended board show the task, cut at 800 characters", () => {
+  test("an ended board shows the task, cut at 800 characters, and the cockpit leaves it to Details", () => {
     const taskRows = (view: CanvasBoardView["sections"]) =>
       leaves(view)
         .flatMap((section) => (section.kind === "rows" ? section.items : []))
@@ -2386,7 +2549,8 @@ describe("the live cockpit", () => {
       const s = swarm("s5task", { task });
       const ended = buildSwarmBoard({ ...s, status: "done", endedAt: T0 });
       board(swarmKey(s.id), ended);
-      return [taskRows(buildCockpit(s, [], { titled: true })), taskRows(ended.sections)];
+      expect(taskRows(buildCockpit(s, [], { titled: true }))).toEqual([]);
+      return [taskRows(ended.sections)];
     };
     for (const rows of surfaces("Fix the README count")) {
       expect(rows).toEqual([{ icon: "▤", text: "Task · Fix the README count" }]);
@@ -2462,14 +2626,22 @@ describe("Swarms boards", () => {
       const drawer = buildSwarmBoard(s, { now });
       board(INDEX_KEY, index);
       board(swarmKey(s.id), drawer);
-      for (const view of [index, drawer]) {
-        const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
-        const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
-        expect(tile?.delta).toEqual(delta);
-        expect(tile?.value).toBe(turnsUsed);
-        expect(tile?.sub).toBe("of 40 · pace over the last 5 min");
-        expect(tile?.tone).toBe(turnsUsed === 40 ? "warn" : undefined);
-      }
+      const budget = leaves(drawer.sections).find(
+        (x) => x.kind === "stats" && x.title === "Budget",
+      );
+      const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
+      expect(tile?.delta).toEqual(delta);
+      expect(tile?.value).toBe(turnsUsed);
+      expect(tile?.sub).toBe("of 40 · pace over the last 5 min");
+      expect(tile?.tone).toBe(turnsUsed === 40 ? "warn" : undefined);
+      const meters = leaves(index.sections).find((x) => x.kind === "bars");
+      expect(meters?.kind === "bars" ? meters.items[0] : undefined).toEqual({
+        label: "Turns",
+        value: turnsUsed,
+        total: 40,
+        trailing: `${turnsUsed} / 40 · ${delta.text.split(" · ").slice(1).join(" · ")}`,
+        ...(turnsUsed === 40 || ("tone" in delta && delta.tone === "warn") ? { tone: "warn" } : {}),
+      });
     }
   });
 
@@ -2485,16 +2657,20 @@ describe("Swarms boards", () => {
       const now = new Date("2026-09-22T14:06:30.000Z");
       const index = buildIndex(state({ live: [s] }), now);
       const drawer = buildSwarmBoard(s, { now });
-      for (const view of [index, drawer]) {
-        const budget = view.sections.find((x) => x.kind === "stats" && x.title === "Budget");
-        const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
-        expect(tile?.delta).toEqual({
-          text: `35 left · about 12 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
-          direction: "flat",
-          tone: "caution",
-        });
-        expect(tile?.spark).toEqual([0, 1, 1, 1, 1, 1, 0]);
-      }
+      const budget = leaves(drawer.sections).find(
+        (x) => x.kind === "stats" && x.title === "Budget",
+      );
+      const tile = budget?.kind === "stats" ? budget.items[0] : undefined;
+      expect(tile?.delta).toEqual({
+        text: `35 left · about 12 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+        direction: "flat",
+        tone: "caution",
+      });
+      expect(tile?.spark).toEqual([0, 1, 1, 1, 1, 1, 0]);
+      const meters = leaves(index.sections).find((x) => x.kind === "bars");
+      expect(meters?.kind === "bars" ? meters.items[0]?.trailing : undefined).toBe(
+        `5 / 40 · about 12 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+      );
     },
   );
 
@@ -2502,7 +2678,7 @@ describe("Swarms boards", () => {
     const s = { ...fixtures.done!, pace: [1, 3, 2, 0, 1] };
     const view = buildSwarmBoard(s, { now: new Date("2026-09-22T14:21:00.000Z") });
     board(swarmKey(s.id), view);
-    const result = view.sections.find((x) => x.kind === "stats" && x.title === "Result");
+    const result = leaves(view.sections).find((x) => x.kind === "stats" && x.title === "Result");
     const tile = result?.kind === "stats" ? result.items[0] : undefined;
     expect(tile).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: s.pace });
     expect(tile?.delta).toBeUndefined();
@@ -2549,10 +2725,27 @@ describe("Swarms boards", () => {
       view: "board" as const,
       sections: buildCockpit(s, needsYou(s), { titled: true, now, selectedAgentId }),
     };
-    for (const view of [index, perSwarm, cockpit]) {
+    for (const view of [index, cockpit]) {
+      board(swarmKey(s.id), view);
+      const flat = leaves(view.sections);
+      const meters = flat.find((section) => section.kind === "bars");
+      expect(meters?.kind === "bars" ? meters.items[0]?.trailing : undefined).toBe(
+        `3 / 20 · about 2 unused at ${hhmm("2026-09-22T14:30:00.000Z")}`,
+      );
+      const map = flat.find((section) => section.kind === "graph");
+      if (map?.kind !== "graph") throw new Error("missing Map");
+      expect(map.nodes.find((node) => node.id === selectedAgentId)?.selected).toBe(true);
+      expect(flat.find((section) => section.title === "Conversation")?.kind).toBe("rows");
+      expect(
+        flat.some(
+          (section) => section.kind === "actions" && section.items[0]?.type === "message-lead",
+        ),
+      ).toBe(true);
+    }
+    for (const view of [perSwarm]) {
       board(swarmKey(s.id), view);
       expect(view.sections.some((section) => section.kind === "columns")).toBe(false);
-      const budget = view.sections.find((section) => section.title === "Budget");
+      const budget = leaves(view.sections).find((section) => section.title === "Budget");
       expect(budget?.kind === "stats" ? budget.items[0] : undefined).toEqual({
         label: "Turns",
         value: 3,
@@ -2582,12 +2775,12 @@ describe("Swarms boards", () => {
     }
     const details = buildDetailsInspector(s);
     board(detailsKey(s.id), details);
-    const task = details.sections.find((section) => section.title === "Task and context");
+    const task = leaves(details.sections).find((section) => section.title === "Task and context");
     expect(task?.kind === "rows" ? task.items[0] : undefined).toMatchObject({
       text: "Task",
       detail: s.task,
     });
-    const setup = details.sections.find((section) => section.title === "Setup");
+    const setup = leaves(details.sections).find((section) => section.title === "Setup");
     if (setup?.kind !== "rows") throw new Error("missing Setup");
     expect(setup.items.map((row) => row.text)).toContain(
       "Wall-clock limit: 30 min · Turn timeout: 45 s · Idle nudge limit: 2",
@@ -2629,7 +2822,7 @@ describe("Swarms boards", () => {
     });
     const tenMinutesIn = new Date(Date.parse(T0) + 10 * 60_000);
     const statsOf = (v: CanvasBoardView) =>
-      v.sections.find((x) => x.kind === "stats" && x.title === "Budget");
+      leaves(v.sections).find((x) => x.kind === "stats" && x.title === "Budget");
     expect(JSON.stringify(statsOf(buildSwarmBoard(s)))).not.toContain('"Cost"');
     setPricer((_p, _m, t) => (t.inputTokens + (t.cacheWriteTokens ?? 0)) / 100);
     try {
@@ -2791,7 +2984,7 @@ describe("Swarms boards", () => {
 
   const cardsOf = (view: ReturnType<typeof buildIndex>) => {
     board(INDEX_KEY, view);
-    const cards = view.sections.find((s) => s.kind === "cards");
+    const cards = leaves(view.sections).find((s) => s.kind === "cards");
     return cards?.kind === "cards" ? cards.items : [];
   };
 
@@ -2814,7 +3007,7 @@ describe("Swarms boards", () => {
     ]);
     const head = view.sections[2];
     expect(head?.kind === "cards" ? head.items[0]?.title : "").toEndWith(" · s7k1p");
-    const folded = view.sections.find((s) => s.kind === "cards" && s.title === "Also live");
+    const folded = leaves(view.sections).find((s) => s.kind === "cards" && s.title === "Also live");
     expect(folded?.kind === "cards" ? folded.items.map((c) => c.title) : []).toEqual([
       "Fix issue #27: README undercounts frontend-mix nodes · s5c07",
       "Fix issue #27: README undercounts frontend-mix nodes · s9hjx",
@@ -2837,7 +3030,9 @@ describe("Swarms boards", () => {
       expect(items.find((x) => x.selected)?.payload).toEqual({ id: expanded.id });
       const head = view.sections[1];
       expect(head?.kind === "cards" ? head.items[0]?.title : "").toEndWith(` · ${expanded.id}`);
-      const folded = view.sections.find((x) => x.kind === "cards" && x.title === "Also live");
+      const folded = leaves(view.sections).find(
+        (x) => x.kind === "cards" && x.title === "Also live",
+      );
       expect(folded?.kind === "cards" ? folded.items : []).toHaveLength(1);
     }
     const single = buildIndex(state({ live: [live[0]!] }));
@@ -2895,18 +3090,23 @@ describe("Swarms boards", () => {
     expect(cards[11]?.fields?.[1]?.clock?.at).toBe("2026-09-22T14:11:00.000Z");
   });
 
-  test("folding and expanding a swarm preserves its state line", () => {
+  test("a folded swarm keeps its state line and the expanded one moves it onto the faces", () => {
     const live = [fixtures.running!, fixtures.twoBusy!];
     const foldedView = buildIndex(state({ live, selected: fixtures.running!.id }));
     const expandedView = buildIndex(state({ live, selected: fixtures.twoBusy!.id }));
     board(INDEX_KEY, foldedView);
     board(INDEX_KEY, expandedView);
-    const folded = foldedView.sections.find((x) => x.kind === "cards" && x.title === "Also live");
-    const row = expandedView.sections[2];
-    expect(folded?.kind === "cards" ? folded.items[0]?.fields?.[0]?.value : undefined).toBe(
-      row?.kind === "rows" ? row.items[1]?.text : undefined,
+    const folded = leaves(foldedView.sections).find(
+      (x) => x.kind === "cards" && x.title === "Also live",
     );
-    expect(row?.kind === "rows" ? row.items[1]?.text : "").toContain("@w2 waits with 1 message");
+    expect(folded?.kind === "cards" ? folded.items[0]?.fields?.[0]?.value : "").toContain(
+      "@w2 waits with 1 message",
+    );
+    const head = leaves(expandedView.sections).find(
+      (x) => x.kind === "cards" && x.items[0]?.fields?.[0]?.people,
+    );
+    const people = head?.kind === "cards" ? head.items[0]?.fields?.[0]?.people : undefined;
+    expect(people?.find((p) => p.name === "w2")?.hint).toBe("@w2 · 1 message waiting");
   });
 
   test("a connection request starts a stopped managed server and links the transcript", () => {
@@ -2931,7 +3131,7 @@ describe("Swarms boards", () => {
     expect(retrying?.actions?.map((a) => a.type)).toEqual(["select-swarm"]);
     const view = buildSwarmBoard(fixtures.gone!, { server: down });
     board(swarmKey("s4n4x"), view);
-    const request = view.sections.find((s) => s.kind === "cards");
+    const request = leaves(view.sections).find((s) => s.kind === "cards");
     expect(request?.kind === "cards" ? request.items[0]?.actions?.[0]?.type : "").toBe(
       "server-start",
     );
@@ -2995,7 +3195,7 @@ describe("Swarms boards", () => {
       state({ live: [fixtures.running!, fixtures.waiting!], selected: fixtures.running!.id }),
     );
     board(INDEX_KEY, view);
-    const folded = view.sections.find((s) => s.kind === "cards" && s.title === "Also live");
+    const folded = leaves(view.sections).find((s) => s.kind === "cards" && s.title === "Also live");
     const card = folded?.kind === "cards" ? folded.items[0] : undefined;
     expect(card?.pill).toEqual({ label: "running", tone: "info" });
     expect(card?.edge).toBeUndefined();
@@ -3068,7 +3268,7 @@ describe("Swarms boards", () => {
       }),
     );
     const view = buildIndex(state({ ended }), now);
-    const days = view.sections.filter((x) => x.kind === "rows" && x.title);
+    const days = leaves(view.sections).filter((x) => x.kind === "rows" && x.title);
     expect(days.map((x) => x.title)).toEqual(["Today", "Yesterday", dayHeading(ago(7), now)]);
     const today = days[0]?.kind === "rows" ? days[0].items : [];
     expect(today).toHaveLength(3);
@@ -3148,9 +3348,9 @@ describe("Swarms boards", () => {
     expect(causeTitle({ ...s, error: "provider offline" }, false)).toBe("Failed: provider offline");
     expect(endedRow(s).text).toEndWith(" · claude-haiku-4.5 can't take a thinking setting");
     const view = buildSwarmBoard(s);
-    const outcome = view.sections.find((x) => x.kind === "cards" && x.title === "Outcome");
+    const outcome = leaves(view.sections).find((x) => x.kind === "cards" && x.title === "Outcome");
     expect(JSON.stringify(outcome)).toContain("can't take a thinking setting");
-    const about = view.sections.find((x) => x.kind === "rows" && x.title === "About");
+    const about = leaves(view.sections).find((x) => x.kind === "rows" && x.title === "About");
     expect(JSON.stringify(about)).not.toContain("does not support reasoning effort");
     const health = JSON.stringify(buildDetailsInspector(s));
     expect(health).toContain(`the lead's last turn failed (2 in a row): ${refusal}`);
@@ -3218,7 +3418,7 @@ describe("Swarms boards", () => {
     const tiles = (s: SwarmSummary) => {
       const view = buildSwarmBoard(s, { now: new Date(T0) });
       board(swarmKey(id), view);
-      const result = view.sections.find((section) => section.kind === "stats");
+      const result = leaves(view.sections).find((section) => section.kind === "stats");
       if (result?.kind !== "stats") throw new Error("missing Result");
       expect(result.title).toBe("Result");
       return result.items;
@@ -3537,12 +3737,12 @@ describe("Swarms boards", () => {
     const now = new Date("2026-09-22T14:21:00.000Z");
     const view = buildSwarmBoard(fixtures.waiting!, { now });
     board(swarmKey(fixtures.waiting!.id), view);
-    expect(view.sections.some((x) => x.kind === "cards" && x.title?.startsWith("Agents"))).toBe(
-      false,
-    );
+    expect(
+      leaves(view.sections).some((x) => x.kind === "cards" && x.title?.startsWith("Agents")),
+    ).toBe(false);
     const map = leaves(view.sections).find((x) => x.kind === "graph");
     expect(map?.kind === "graph" ? map.nodes.length : 0).toBe(3);
-    const stats = view.sections.find((x) => x.kind === "stats");
+    const stats = leaves(view.sections).find((x) => x.kind === "stats");
     const tiles = stats?.kind === "stats" ? stats.items : [];
     expect(tiles[0]).toMatchObject({
       label: "Turns",
@@ -3565,7 +3765,7 @@ describe("Swarms boards", () => {
     const ended = buildSwarmBoard(fixtures.done!, {
       selectedAgentId: fixtures.done!.agents[1]!.id,
     });
-    const endedBench = ended.sections.find(
+    const endedBench = leaves(ended.sections).find(
       (x) => x.kind === "cards" && x.title?.startsWith("Agents"),
     );
     const cards = endedBench?.kind === "cards" ? endedBench.items : [];
@@ -3655,8 +3855,12 @@ ${"detail ".repeat(1000)}`,
     const items = JSON.parse(recent ?? "[]");
     expect(items).toHaveLength(12);
     expect(items[0]).toMatchObject({ text: "@lead turn 12 ok", trailing: "14:21" });
-    const index = JSON.stringify(buildIndex(state({ live: [s] })));
-    expect(index).toContain(`"text":"${hhmm(activity.at(-1)?.at)} @lead turn 12 ok"`);
+    const index = buildIndex(state({ live: [s] }));
+    const log = leaves(index.sections).find((x) => x.title === "Activity");
+    expect(log?.kind === "rows" ? log.items[0] : undefined).toMatchObject({
+      text: "@lead turn 12 ok",
+      trailing: "14:21",
+    });
   });
 
   test("live conclusion previews reserve forecast room without truncating the full record", () => {
@@ -3665,7 +3869,9 @@ ${"detail ".repeat(1000)}`,
     const preview = (s: SwarmSummary) => {
       const view = buildSwarmBoard(s);
       board(swarmKey(s.id), view);
-      const outcome = view.sections.find((x) => x.kind === "cards" && x.title === "Outcome");
+      const outcome = leaves(view.sections).find(
+        (x) => x.kind === "cards" && x.title === "Outcome",
+      );
       return outcome?.kind === "cards" ? outcome.items[0]?.fields?.[0]?.value : undefined;
     };
     expect(preview(s)).toBe(`${"c".repeat(1_000)}…`);
@@ -3735,7 +3941,7 @@ ${"detail ".repeat(1000)}`,
         now,
       );
       board(INDEX_KEY, view);
-      const produced = view.sections.find(
+      const produced = leaves(view.sections).find(
         (x) => x.kind === "rows" && x.title === "Produced so far",
       );
       expect(produced?.kind === "rows" ? produced.items.length : 0).toBe(12);
@@ -3744,7 +3950,7 @@ ${"detail ".repeat(1000)}`,
         Buffer.byteLength(
           JSON.stringify({
             ...view,
-            sections: view.sections.filter((section) => section.kind !== "timeline"),
+            sections: leaves(view.sections).filter((section) => section.kind !== "timeline"),
           }),
         ),
       ).toBeLessThan(48_000);
@@ -3767,7 +3973,7 @@ ${"detail ".repeat(1000)}`,
     };
     const single = buildIndex(state({ live: [artifacts], ended: many }), now);
     board(INDEX_KEY, single);
-    const inventory = single.sections.find(
+    const inventory = leaves(single.sections).find(
       (x) => x.kind === "rows" && x.title === "Produced so far",
     );
     expect(inventory?.kind === "rows" ? inventory.items.length : 0).toBe(14);
@@ -3777,7 +3983,7 @@ ${"detail ".repeat(1000)}`,
       Buffer.byteLength(
         JSON.stringify({
           ...single,
-          sections: single.sections.filter((section) => section.kind !== "timeline"),
+          sections: leaves(single.sections).filter((section) => section.kind !== "timeline"),
         }),
       ),
     ).toBeLessThan(48_000);
@@ -3788,7 +3994,7 @@ ${"detail ".repeat(1000)}`,
     console.info(
       `Map per-swarm board (12 agents, 200 turns): ${Buffer.byteLength(JSON.stringify(drawer))} bytes`,
     );
-    const produced = drawer.sections.find(
+    const produced = leaves(drawer.sections).find(
       (x) => x.kind === "rows" && x.title === "Produced so far",
     );
     expect(produced?.kind === "rows" ? produced.items.length : 0).toBe(14);
@@ -3799,7 +4005,7 @@ ${"detail ".repeat(1000)}`,
     );
     board(swarmKey(big.id), ended);
     expect(Buffer.byteLength(JSON.stringify(ended))).toBeLessThan(48_000);
-    const endedActivity = ended.sections.find((section) => section.title === "Activity");
+    const endedActivity = leaves(ended.sections).find((section) => section.title === "Activity");
     expect(endedActivity?.kind === "rows" ? endedActivity.items : []).toHaveLength(12);
   });
 });
@@ -3820,7 +4026,7 @@ describe("ended board contract", () => {
         };
         const view = buildSwarmBoard(s, { now });
         board(swarmKey(s.id), view);
-        const result = view.sections.find((section) => section.kind === "stats");
+        const result = leaves(view.sections).find((section) => section.kind === "stats");
         if (result?.kind !== "stats") throw new Error("missing stats");
         const pr = result.items.find((tile) => tile.label === "Pull requests");
         const verified = result.items.find((tile) => tile.label === "Runs verified");
@@ -3845,8 +4051,8 @@ describe("ended board contract", () => {
   test.each(Object.entries(endedFixtures))("%s composes the complete ended layout", (_name, s) => {
     const view = buildSwarmBoard(s, { now, launch: { ...oldLaunch, task: s.task } });
     board(swarmKey(s.id), view);
-    const produced = view.sections.find((section) => section.title === "Produced");
-    const activity = view.sections.find((section) => section.title === "Activity");
+    const produced = leaves(view.sections).find((section) => section.title === "Produced");
+    const activity = leaves(view.sections).find((section) => section.title === "Activity");
     expect(view.sections.map((section) => section.title ?? section.kind)).toEqual([
       "Outcome",
       "rows",
@@ -4012,7 +4218,7 @@ describe("ended board contract", () => {
 
 describe("the details", () => {
   const rowsTitled = (view: ReturnType<typeof buildSwarmBoard>, title: string) => {
-    const section = view.sections.find((x) => x.kind === "rows" && x.title === title);
+    const section = leaves(view.sections).find((x) => x.kind === "rows" && x.title === title);
     return section?.kind === "rows" ? section.items : [];
   };
 
@@ -4268,7 +4474,7 @@ describe("the details", () => {
     });
     const view = buildSwarmBoard(s);
     board(swarmKey(s.id), view);
-    const outcome = view.sections.find((x) => x.kind === "cards" && x.title === "Outcome");
+    const outcome = leaves(view.sections).find((x) => x.kind === "cards" && x.title === "Outcome");
     const cards = outcome?.kind === "cards" ? outcome.items : [];
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({
@@ -4356,9 +4562,15 @@ describe("the details", () => {
             { agent: "swarm", in: "↑ 4k", out: "↓ 1k", cached: "9k" },
           ],
         });
-        expect(spendTable(leaves(buildCockpit(s, [], { titled: false })))).toEqual(table);
+        const cockpitTable = spendTable(leaves(buildCockpit(s, [], { titled: false })));
+        expect(
+          cockpitTable?.kind === "table" ? cockpitTable.columns.map((c) => c.key) : [],
+        ).not.toContain("model");
+        expect(cockpitTable).toMatchObject({
+          rows: table?.kind === "table" ? table.rows.map(({ model, ...row }) => row) : [],
+        });
       } else {
-        expect(view.sections.some((x) => x.title === "Spend")).toBe(false);
+        expect(leaves(view.sections).some((x) => x.title === "Spend")).toBe(false);
         expect(buildRecord(s, new Date(T0))).toContain("Spend by agent");
         expect(buildRecord(s, new Date(T0))).toContain("4k fresh · 9k cached");
         expect(buildRecord(s, new Date(T0))).toContain("1k fresh · 0 cached");
@@ -4417,11 +4629,13 @@ describe("the details", () => {
         trailing: hhmm(at(1)),
       },
     ]);
-    const bench = view.sections.find((x) => x.kind === "cards" && x.title?.startsWith("Agents"));
+    const bench = leaves(view.sections).find(
+      (x) => x.kind === "cards" && x.title?.startsWith("Agents"),
+    );
     const cards = bench?.kind === "cards" ? bench.items : [];
     expect(cards[0]?.footnote).toBe(`last: spawned @w1: reads logs · ${hhmm(at(1))}`);
     expect(cards[1]?.footnote).toBe(`last: turn 1 ok · 42 s · 1 new · ${hhmm(at(2))}`);
-    const turns = view.sections.find((x) => x.kind === "stats");
+    const turns = leaves(view.sections).find((x) => x.kind === "stats");
     expect(turns?.kind === "stats" ? turns.items[0]?.spark : undefined).toEqual([1, 3, 2]);
   });
 
@@ -4483,7 +4697,7 @@ describe("the reading pane", () => {
     });
     const inspector = buildGateInspector(withFiles, withFiles.runs![0]!);
     board(gateKey(withFiles.id), inspector);
-    const files = inspector.sections.find((section) => section.title === "Files");
+    const files = leaves(inspector.sections).find((section) => section.title === "Files");
     if (files?.kind !== "cards") throw new Error("missing files");
     expect(files.items).toEqual([
       { title: "plan.md", prose: true, fields: [{ value: "## Steps\n\n1. Count the nodes." }] },
@@ -4802,7 +5016,7 @@ describe("publishing", () => {
       await Bun.sleep(10);
       const index = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
       if (index.view !== "board") throw new Error("expected board");
-      const strip = index.sections.find((section) => section.kind === "actions");
+      const strip = leaves(index.sections).find((section) => section.kind === "actions");
       expect(
         strip?.kind === "actions" ? strip.items.find((i) => i.selected)?.payload : undefined,
       ).toEqual({ id: "s2" });
@@ -4988,7 +5202,9 @@ describe("publishing", () => {
       await Bun.sleep(10);
       const index = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
       if (index.view !== "board") throw new Error("expected board");
-      const strip = index.sections.find((s) => s.kind === "actions" && s.title === "Live · 2");
+      const strip = leaves(index.sections).find(
+        (s) => s.kind === "actions" && s.title === "Live · 2",
+      );
       expect(
         strip?.kind === "actions" ? strip.items.find((i) => i.selected)?.payload : undefined,
       ).toEqual({ id: "s2" });
@@ -5335,7 +5551,9 @@ describe("publishing", () => {
     const selectedId = () => {
       const view = expectView(INDEX_KEY, "board")(sm.frames.get(INDEX_KEY)?.at(-1));
       if (view.view !== "board") throw new Error("expected index board");
-      const strip = view.sections.find((x) => x.kind === "actions" && x.title === "Live · 2");
+      const strip = leaves(view.sections).find(
+        (x) => x.kind === "actions" && x.title === "Live · 2",
+      );
       return strip?.kind === "actions" ? strip.items.find((x) => x.selected)?.payload : undefined;
     };
     try {
@@ -5659,7 +5877,7 @@ describe("the record page", () => {
   const nativeTimeline = (s: SwarmSummary) => {
     const view = buildIndex(state({ live: [s] }));
     board(INDEX_KEY, view);
-    const section = view.sections.find((item) => item.kind === "timeline");
+    const section = leaves(view.sections).find((item) => item.kind === "timeline");
     if (!section) throw new Error("missing native timeline");
     return section;
   };

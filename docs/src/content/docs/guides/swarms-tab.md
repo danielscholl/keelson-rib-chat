@@ -39,37 +39,44 @@ roster and stop control live in its cockpit, not in its request cards.
 
 One live swarm expands on the page as a cockpit. It runs in this order:
 
-1. The task and id, a lifecycle or **needs you** pill, and people dots.
-2. **Task**: the prompt's first line, with the text you started it with one
-   click away (its first 800 characters; **Details** has all of it). Then the
-   state line, described below.
+1. The task and id, a lifecycle or **needs you** pill, and the crew as faces.
+2. The state line, only when something needs a look (described below).
 3. Once the lead has concluded, the **Outcome** card: the conclusion, with
    **Open the report** when one exists. While a peer reviews a
    gate, its reviewing card appears here instead.
-4. An agent strip: **busy**, **waiting**, **idle**, **capped**, **failed**,
-   omitting zero counts. Open seats are hatched.
-5. **Budget** tiles: **Turns** used with a sparkline and a forecast
-   delta, with **of N · pace over the last 5 min** in the sub; **Time** as a ticking
-   time-left clock; **Fresh tokens** with **↑ in · ↓ out** and the token ceiling
-   in the sub; and **Cost** with the cost ceiling, cache hit and cached tokens,
-   when the host prices tokens. While live, Cost's delta is the spend rate per
-   minute and when it reaches the ceiling; past 80% of a ceiling the tile warns.
-   Before a turn, Fresh tokens says **none yet**; after turns without usage, it
-   says **the provider reported none**.
-6. **Timeline**: turns and event marks on lanes over time.
-7. **Map**: the agents and runs as a full-width graph.
-8. **Conversation** follows Map when recent messages exist: the
-   eight newest channel messages, then the count and **transcript ↗** link.
-9. **Message the lead**, expanded directly under Conversation for a running
-   swarm that has not concluded.
-10. Spend, Produced so far, and Activity.
-11. **Open the report** when one exists; **Timeline**; **Details**; and
+4. The shape block: the plan, seats and models beside the budget meters.
+5. **Timeline | Map** tabs.
+6. **Conversation | Spend | Activity** tabs.
+7. **Produced so far**.
+8. **Open the report** when one exists; **Timeline**; **Details**; and
    **Stop swarm…** last.
+
+Each agent is a face in its identity tone with its initial, two letters where
+first letters collide (**Le** and **La**). Busy faces pulse, waiting faces carry
+an amber dot, idle, capped and failed faces fade, the lead has a second ring,
+and open seats are dashed. A face's hover names what the agent is doing: its
+turn and start time, its queued messages, or its status and turn count.
+
+The shape block sets what the swarm is beside how far it has run. On the left:
+the plan (**Scout**, **Crew**, **Fleet**), seats in use of the plan's agents, and
+the models, lead first, then workers grouped by model with a count. On the
+right, meters against their ceilings: **Turns** (with the forecast's reading
+after the count), **Time** (minutes left and when it ends), **Fresh tokens**
+when a token ceiling is set, and **Cost** when the host prices tokens, split by
+kind in the Usage page's order (cache read, input, cache write, output) with its
+spend rate and cache hit. A meter warns past 80% of a ceiling or when the
+forecast runs out before the clock.
+
+Each tab carries a count or total. A group with one non-empty tab shows its
+sections without a strip. Conversation holds the eight newest channel messages,
+then the count and **transcript ↗** link, and **Message the lead**, expanded,
+for a running swarm that has not concluded. Spend on the cockpit leaves out the
+Model column, since the shape block names the models.
 
 ### Timeline
 
-Timeline is a native section between Budget and Map, on the live cockpit only,
-not the per-swarm drawer or ended board. It requires Keelson v0.120.0 or later.
+Timeline is a native section in the Timeline tab beside Map, on the live cockpit only,
+not the per-swarm drawer or ended board. It requires Keelson v0.124.0 or later.
 The operator's lane comes first, then agents in first-worked order, then runs.
 Turns use the agent's identity color, with hatching for timeouts or errors and
 open endpoints for unfinished work. Run bars use status colors.
@@ -309,6 +316,11 @@ durations, so they do not go stale between frames.
 | A conclusion | **concluded at 14:32; turns in flight finish**, or **the lead concluded** when no time was recorded |
 | Otherwise | The newest activity and its time, or **waiting for the lead's first turn** |
 | Health, appended | Socket drops, a channel fault, the lead's last failed turn, or idle nudges; these mark the row as a warning |
+
+On the expanded cockpit the line leaves out the busy and waiting clauses, which
+the faces show, and the **Otherwise** fallback, so it appears only for requests,
+gates, the conclusion, stopping and health warnings. Folded cards under **Also
+live** keep the full line.
 
 Busy and waiting agents each show at most three clauses, then a remaining
 count. The whole line is capped at 240 characters.

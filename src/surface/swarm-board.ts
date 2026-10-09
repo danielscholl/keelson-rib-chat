@@ -81,10 +81,12 @@ import {
 import { buildAgentEdges, buildTimelineModel } from "./record.ts";
 
 type Section = CanvasBoardView["sections"][number];
-type Leaf = Exclude<Section, { kind: "columns" }>;
+type Leaf = Exclude<Section, { kind: "columns" | "tabs" }>;
 type Card = Extract<Section, { kind: "cards" }>["items"][number];
 type Row = Extract<Section, { kind: "rows" }>["items"][number];
 type Stat = Extract<Section, { kind: "stats" }>["items"][number];
+type Bar = Extract<Section, { kind: "bars" }>["items"][number];
+type Person = NonNullable<NonNullable<Card["fields"]>[number]["people"]>[number];
 type Segment = Extract<NonNullable<Row["bar"]>, { segments: unknown }>["segments"][number];
 
 // The conclusion on the board is a preview; the reading pane has all of it.
@@ -345,6 +347,203 @@ function stats(s: SwarmSummary, now: Date): Leaf {
   return { kind: "stats", title: isLiveNow ? "Budget" : "Result", items };
 }
 
+// ---- The crew and its shape: who is on it, on which models, against which ceilings. ----
+
+// One letter, or two where first letters collide (lead and layers read Le and La).
+function initials(names: readonly string[]): string[] {
+  const letters = names.map((n) => n.replace(/[^a-z0-9]/gi, "") || n);
+  const first = letters.map((n) => n.charAt(0).toUpperCase());
+  return letters.map((n, i) =>
+    first.filter((f) => f === first[i]).length > 1
+      ? `${first[i]}${n.charAt(1).toLowerCase()}`
+      : (first[i] as string),
+  );
+}
+
+function agentHint(s: SwarmSummary, a: SwarmSummary["agents"][number]): string {
+  const at = `@${shortHandle(a.handle, s.id)}`;
+  if (!live(s)) return `${at} · ${plural(a.turns, "turn")}`;
+  if (a.status === "busy") {
+    const turn = [...(s.spans ?? [])].reverse().find((t) => t.agentId === a.id && !t.endedAt);
+    return `${at} · ${turn ? `turn ${turn.n} since ${hhmm(turn.startedAt)}` : "on a turn"}`;
+  }
+  if (a.status === "waiting") return `${at} · ${plural(a.queued ?? 0, "message")} waiting`;
+  return `${at} · ${a.status} · ${plural(a.turns, "turn")}`;
+}
+
+const FACE_STATUS: Record<AgentStatus, Person["status"]> = {
+  busy: "busy",
+  waiting: "waiting",
+  idle: "idle",
+  capped: "idle",
+  failed: "idle",
+};
+
+// Open seats past this many add nothing a count doesn't.
+const OPEN_FACES = 6;
+
+export function crewPeople(s: SwarmSummary): Person[] {
+  const names = s.agents.map((a) => shortHandle(a.handle, s.id));
+  const faces = initials(names);
+  const isLiveNow = live(s);
+  const people: Person[] = s.agents.map((a, i) => ({
+    name: names[i] as string,
+    ...(a.tone ? { tone: a.tone } : {}),
+    face: faces[i] as string,
+    ...(isLiveNow ? { status: FACE_STATUS[a.status] } : {}),
+    ...(a.lead ? { lead: true } : {}),
+    hint: agentHint(s, a),
+  }));
+  const open = isLiveNow ? Math.max(0, s.limits.maxAgents - s.agents.length) : 0;
+  for (let i = 0; i < Math.min(open, OPEN_FACES); i++) {
+    people.push({ name: "open seat", face: "+", status: "open" });
+  }
+  return people;
+}
+
+// The models in use, lead first, then workers by model with how many run each.
+function modelLines(s: SwarmSummary): { label: string; value: string }[] {
+  const fallback = "provider default";
+  const lead = s.agents.find((a) => a.lead);
+  const leadModel = lead?.servedModel ?? lead?.model ?? s.model ?? fallback;
+  const workers = s.agents.filter((a) => !a.lead);
+  if (workers.length === 0) {
+    const planned = s.workerModel ?? s.model ?? fallback;
+    return [
+      { label: "lead", value: leadModel },
+      ...(planned !== leadModel ? [{ label: "workers", value: planned }] : []),
+    ];
+  }
+  const counts = new Map<string, number>();
+  for (const a of workers) {
+    const m = a.servedModel ?? a.model ?? s.workerModel ?? s.model ?? fallback;
+    counts.set(m, (counts.get(m) ?? 0) + 1);
+  }
+  return [
+    { label: "lead", value: leadModel },
+    ...[...counts].map(([model, n]) => ({ label: "workers", value: `${model} · ${n}` })),
+  ];
+}
+
+function shapeCard(s: SwarmSummary): Card {
+  const seats = live(s)
+    ? `${s.agents.length} of ${s.limits.maxAgents} agents`
+    : plural(s.agents.length, "agent");
+  return {
+    title: sizeWord(s),
+    stacked: true,
+    fields: [{ value: seats }, ...modelLines(s)],
+  };
+}
+
+function turnsBar(s: SwarmSummary, now: Date): Bar {
+  if (s.factory) {
+    const f = s.factory;
+    return {
+      label: "Turns",
+      value: Math.min(f.sinceProgress, f.progressTurns),
+      total: f.progressTurns,
+      trailing: `${s.turnsUsed} · ${f.sinceProgress} of ${f.progressTurns} since work landed`,
+      ...(live(s) && f.sinceProgress >= f.progressTurns ? { tone: "warn" as const } : {}),
+    };
+  }
+  const max = s.limits.maxTurns;
+  const left = Math.max(0, max - s.turnsUsed);
+  const forecasting =
+    live(s) &&
+    s.conclusion === undefined &&
+    (left === 0 || now.getTime() - Date.parse(s.startedAt) >= FORECAST_AFTER_MS);
+  const delta = forecasting ? forecastDelta(forecast(s, now)) : undefined;
+  const reading = delta?.text.split(" · ").slice(1).join(" · ");
+  return {
+    label: "Turns",
+    value: s.turnsUsed,
+    total: max,
+    trailing: `${s.turnsUsed} / ${max}${reading ? ` · ${reading}` : ""}`,
+    ...((live(s) && left === 0) || delta?.tone === "warn" ? { tone: "warn" as const } : {}),
+  };
+}
+
+function timeBar(s: SwarmSummary, now: Date): Bar {
+  const wall = s.limits.wallClockMs;
+  if (!live(s)) {
+    const took = s.endedAt ? Date.parse(s.endedAt) - Date.parse(s.startedAt) : wall;
+    return {
+      label: "Time",
+      value: took,
+      total: wall,
+      trailing: `${span(s.startedAt, s.endedAt) || "0 s"} of ${minutes(wall)} min`,
+    };
+  }
+  const left = Math.max(0, Date.parse(endsAt(s)) - now.getTime());
+  return {
+    label: "Time",
+    value: wall - left,
+    total: wall,
+    trailing: `${Math.ceil(left / 60_000)} min left · ends ${hhmm(endsAt(s))}`,
+  };
+}
+
+function tokensBar(s: SwarmSummary): Bar[] {
+  const max = s.spend?.maxTokens ?? s.factory?.maxTokens;
+  if (max === undefined) return [];
+  const fresh = s.usage ? freshTokens(s.usage) : 0;
+  return [
+    {
+      label: "Fresh tokens",
+      value: fresh,
+      total: max,
+      trailing: `${tokenCount(fresh)} / ${tokenCount(max)}`,
+      ...(live(s) && fresh >= max * SPEND_WARN_AT ? { tone: "warn" as const } : {}),
+    },
+  ];
+}
+
+function costBar(s: SwarmSummary, now: Date): Bar[] {
+  const cost = swarmCost(s);
+  if (!cost || !s.usage) return [];
+  const max = s.spend?.maxCostUsd;
+  const rate = live(s) ? spendRate(s, now) : undefined;
+  const hit = cacheHit(s.usage);
+  const kinds = costKinds(s);
+  const segments = kinds ? kindSegments(kinds) : [];
+  return [
+    {
+      label: "Cost",
+      value: cost.usd,
+      total: max ?? cost.usd,
+      trailing: [
+        max !== undefined ? `${costText(cost)} / ${cents(max)}` : costText(cost),
+        ...(rate !== undefined ? [`${cents(rate)}/min`] : []),
+        ...(hit !== undefined ? [`${Math.round(hit * 100)}% cache hit`] : []),
+      ].join(" · "),
+      ...(segments.length > 0 ? { segments } : {}),
+      ...(live(s) && max !== undefined && cost.usd >= max * SPEND_WARN_AT
+        ? { tone: "warn" as const }
+        : {}),
+    },
+  ];
+}
+
+// What the swarm is beside how far it has run, so a swarm started by an agent explains itself.
+export function shapeBlock(s: SwarmSummary, now = new Date()): Section {
+  return {
+    kind: "columns",
+    columns: [
+      { weight: 5, sections: [{ kind: "cards", items: [shapeCard(s)] }] },
+      {
+        weight: 7,
+        sections: [
+          {
+            kind: "bars",
+            items: [turnsBar(s, now), timeBar(s, now), ...tokensBar(s), ...costBar(s, now)],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 // ---- Reaching the lead, reading the record, and stopping. ----
 
 export const openRecord = (s: SwarmSummary) => ({
@@ -532,7 +731,7 @@ function mapConversation(s: SwarmSummary, selectedAgentId?: string): Leaf[] {
 
 // ---- Spend: each agent's tokens and cost, then the swarm's cost by kind. ----
 
-function spend(s: SwarmSummary): Leaf[] {
+function spend(s: SwarmSummary, opts: { models: boolean } = { models: true }): Leaf[] {
   const spent = s.agents.filter((a) => a.usage && freshTokens(a.usage) > 0);
   const sum = spent.reduce<TokenTally | undefined>(
     (t, a) => addTokens(t, a.usage as TokenTally),
@@ -558,7 +757,9 @@ function spend(s: SwarmSummary): Leaf[] {
     const provider = many ? undefined : (a.usageByModel?.[0]?.provider ?? a.providerId);
     return {
       agent: shortHandle(a.handle, s.id),
-      model: provider ? { value: model, badges: [{ text: provider }] } : model,
+      ...(opts.models
+        ? { model: provider ? { value: model, badges: [{ text: provider }] } : model }
+        : {}),
       turns: a.turns,
       in: `↑ ${tokenCount(u.input)}`,
       out: `↓ ${tokenCount(u.output)}`,
@@ -570,7 +771,7 @@ function spend(s: SwarmSummary): Leaf[] {
   });
   const columns = [
     { key: "agent", label: "Agent" },
-    { key: "model", label: "Model" },
+    ...(opts.models ? [{ key: "model", label: "Model" }] : []),
     { key: "turns", label: "Turns" },
     { key: "in", label: "↑ In" },
     { key: "out", label: "↓ Out" },
@@ -588,7 +789,12 @@ function spend(s: SwarmSummary): Leaf[] {
         ...rows,
         {
           agent: "swarm",
-          model: models.length === 1 ? (models[0]?.model ?? "") : plural(models.length, "model"),
+          ...(opts.models
+            ? {
+                model:
+                  models.length === 1 ? (models[0]?.model ?? "") : plural(models.length, "model"),
+              }
+            : {}),
           turns: s.agents.reduce((n, a) => n + a.turns, 0),
           in: `↑ ${tokenCount(sum.input)}`,
           out: `↓ ${tokenCount(sum.output)}`,
@@ -604,7 +810,7 @@ function spend(s: SwarmSummary): Leaf[] {
 }
 
 // Where the dollars went: uncached input, cache writes, output, cache reads.
-function costByKind(s: SwarmSummary): Leaf[] {
+function costKinds(s: SwarmSummary) {
   const kinds = { input: 0, write: 0, output: 0, read: 0 };
   let priced = false;
   for (const row of byModel(s)) {
@@ -630,7 +836,22 @@ function costByKind(s: SwarmSummary): Leaf[] {
     kinds.output += out;
     kinds.read += read;
   }
-  if (!priced) return [];
+  return priced ? kinds : undefined;
+}
+
+// The Usage page's order and colors: cache read, input, cache write, output.
+function kindSegments(kinds: NonNullable<ReturnType<typeof costKinds>>): Segment[] {
+  return [
+    { label: `cache read ${usd(kinds.read)}`, n: kinds.read, tone: "ramp-1" as const },
+    { label: `input ${usd(kinds.input)}`, n: kinds.input, tone: "accent" as const },
+    { label: `cache write ${usd(kinds.write)}`, n: kinds.write, tone: "caution" as const },
+    { label: `output ${usd(kinds.output)}`, n: kinds.output, tone: "ok" as const },
+  ].filter((k) => k.n > 0);
+}
+
+function costByKind(s: SwarmSummary): Leaf[] {
+  const kinds = costKinds(s);
+  if (!kinds) return [];
   const total = kinds.read + kinds.input + kinds.write + kinds.output;
   const bar = (label: string, value: number) => ({
     label,
@@ -1075,18 +1296,6 @@ export function liveDetails(s: SwarmSummary, selectedAgentId?: string): Leaf[] {
   ];
 }
 
-function agentStrip(s: SwarmSummary): Leaf {
-  const statuses: AgentStatus[] = ["busy", "waiting", "idle", "capped", "failed"];
-  const items: Extract<Leaf, { kind: "segments" }>["items"] = [];
-  for (const status of statuses) {
-    const n = s.agents.filter((a) => a.status === status).length;
-    if (n > 0) items.push({ label: status, n, tone: AGENT_PILL[status].tone });
-  }
-  const open = Math.max(0, s.limits.maxAgents - s.agents.length);
-  if (live(s) && open > 0) items.push({ label: plural(open, "open seat"), n: null });
-  return { kind: "segments", title: `Agents · ${s.agents.length} of ${s.limits.maxAgents}`, items };
-}
-
 function nativeTimeline(s: SwarmSummary, now = new Date()): CanvasTimelineSection {
   const model = buildTimelineModel(s);
   const lanes = model.lanes.slice(0, 12).map(({ id, label, tone, group }) => ({
@@ -1169,17 +1378,56 @@ function taskRow(s: SwarmSummary): Row {
   };
 }
 
+type TabGroup = { label: string; badge?: string; sections: Leaf[] };
+
+// Groups with content behind a tab strip, or a lone group's sections as they are.
+// A tab's label names its first section, so that section drops the same title.
+function tabbed(groups: TabGroup[]): Section[] {
+  const full = groups.filter((g) => g.sections.length > 0);
+  if (full.length <= 1) return full[0]?.sections ?? [];
+  return [
+    {
+      kind: "tabs",
+      tabs: full.map(({ label, badge, sections: [first, ...rest] }) => ({
+        label,
+        ...(badge ? { badge } : {}),
+        sections: [
+          ...(first ? [first.title === label ? { ...first, title: undefined } : first] : []),
+          ...rest,
+        ],
+      })),
+    },
+  ];
+}
+
+function conversationTab(s: SwarmSummary): Leaf[] {
+  return [
+    ...conversation(s),
+    ...(s.status === "running" && s.conclusion === undefined
+      ? [
+          {
+            kind: "actions" as const,
+            wrap: true,
+            items: [{ ...messageLead(s), expanded: true }],
+          },
+        ]
+      : []),
+  ];
+}
+
 export function buildCockpit(
   s: SwarmSummary,
   needs: readonly Need[],
   opts: { server?: ServerLine; titled: boolean; now?: Date; selectedAgentId?: string },
 ): Section[] {
-  const people = s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone }));
-  const line = stateLine(s, needs, opts.server);
+  const now = opts.now ?? new Date();
+  const people = crewPeople(s);
+  const line = stateLine(s, needs, opts.server, { quiet: true });
   const items: Extract<Leaf, { kind: "actions" }>["items"] = [];
   if (s.report) items.push(openReport(s));
   items.push(openRecord(s), openDetails(s));
   if (s.status === "running") items.push(stopAction(s, true));
+  const cost = swarmCost(s);
   return [
     {
       kind: "cards",
@@ -1193,24 +1441,41 @@ export function buildCockpit(
         },
       ],
     },
-    {
-      kind: "rows",
-      items: [
-        taskRow(s),
-        { icon: "◉", text: line.text, ...(line.warn ? { glyph: "warn" as const } : {}) },
-      ],
-    },
+    ...(line.text
+      ? [
+          {
+            kind: "rows" as const,
+            items: [
+              { icon: "◉", text: line.text, ...(line.warn ? { glyph: "warn" as const } : {}) },
+            ],
+          },
+        ]
+      : []),
     ...(s.conclusion !== undefined ? outcome(s) : []),
     ...requests(s, needs, opts.server, false),
-    agentStrip(s),
-    {
-      kind: "stats",
-      title: "Budget",
-      items: [turnsTile(s, opts.now), timeTile(s), tokensTile(s), ...costTile(s, opts.now)],
-    },
-    ...(live(s) ? [nativeTimeline(s, opts.now)] : []),
-    ...mapConversation(s, opts.selectedAgentId),
-    ...liveDetails(s, opts.selectedAgentId),
+    shapeBlock(s, now),
+    ...tabbed([
+      { label: "Timeline", sections: live(s) ? [nativeTimeline(s, now)] : [] },
+      {
+        label: "Map",
+        badge: String(s.agents.length),
+        sections: [buildAgentMap(s, opts.selectedAgentId)],
+      },
+    ]),
+    ...tabbed([
+      {
+        label: "Conversation",
+        badge: String(s.messageCount ?? s.recent?.length ?? 0),
+        sections: conversationTab(s),
+      },
+      {
+        label: "Spend",
+        ...(cost ? { badge: costText(cost) } : {}),
+        sections: spend(s, { models: false }),
+      },
+      { label: "Activity", badge: String(s.activity?.length ?? 0), sections: activity(s) },
+    ]),
+    ...produced(s),
     { kind: "actions", wrap: true, items },
   ];
 }
