@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.27.1...v0.28.0) (2026-10-09)
+
+
+### Added
+
+* **swarms:** show the crew, models and budget meters on the live card ([#144](https://github.com/danielscholl/keelson-rib-swarm/issues/144)) ([cbde6a9](https://github.com/danielscholl/keelson-rib-swarm/commit/cbde6a98067ddea559ad6d064f1dca72f3345806))
+
 ## [0.27.1](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.27.0...v0.27.1) (2026-10-07)
 
 
