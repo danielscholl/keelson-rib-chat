@@ -259,7 +259,7 @@ describe("Swarm", () => {
       "s1",
     ]);
     expect(board).toContain("2 turns · 3k tokens");
-    expect(board).toContain('"value":"3k","sub":"↑ 2k in · ↓ 600 out"');
+    expect(board).toContain('"in":"↑ 2k","out":"↓ 600"');
   });
 
   test("a rerun names the swarm it repeats", async () => {

@@ -607,7 +607,7 @@ running, unless the lead has concluded. Spend on the cockpit leaves out the
 Model column, since the shape block names the models.
 
 Timeline is a native section in the Timeline tab beside Map, on the live cockpit only,
-not the per-swarm drawer or ended board. It requires Keelson v0.124.0 or later.
+not the per-swarm drawer or ended board. It requires Keelson v0.125.0 or later.
 The operator's lane comes first, then agents in first-worked order, then runs.
 Turns use the agent's identity color, with hatching for timeouts or errors and
 open endpoints for unfinished work. Run bars use status colors.
@@ -824,17 +824,18 @@ composes for MCP clients, live or ended. Live, it runs: the requests, the outcom
 report exists, a budget strip (turns with the same forecast delta, time, agents, fresh
 tokens with cached beside them), the same full-width Map, then Conversation
 and the eligible Message the lead composer, Timeline, Details and Stop,
-then Spend, Produced so far and Activity. Ended section order: Outcome, Result,
-actions, Agents, Produced when applicable, Activity when events exist,
-About, then the separate Ended swarms back-link.
-The ended Result orders Turns, Time, Fresh tokens, Cost when priced, Pull requests when
-eligible, then Runs verified only when runs exist. There is no Agents tile.
+then Spend, Produced so far and Activity. Ended, it reads like the live card: the Outcome; the shape block, with the
+crew as faces in its plan card and the meters stopped where the swarm ended;
+Result when the swarm opened pull requests, merged work or ran workflows (Pull
+requests when eligible, Merged for a local write swarm, then Runs verified only
+when runs exist); the actions; then Agents, Spend, Produced, Activity and About
+tabs, each shown only with content; then the separate Ended swarms back-link.
 Tokens is 0 when no turns ran; after positive turns without usage it is
 unavailable, not an invented zero. Cost is the list price the host's Usage page would
 show for the same tokens, priced on every read; a model without a price makes it a floor
 (≥) with the unpriced turns named. Ended rows add fresh tokens and cost in cents after the
 time, marked ≈ when the swarm was recorded before tallies were kept per model, and each
-day's heading carries that day's total. Under Result, Cost by kind splits the dollars into
+day's heading carries that day's total. In the Spend tab, Cost by kind splits the dollars into
 cache read, input, cache write and output, in the Usage page's order.
 The Pull requests tile appears when workflows were named, \`writeEnabled\`
 is true, a legacy writer has a worktree, or any run or writer PR exists.
@@ -854,28 +855,28 @@ offers Read the draft when a refused draft exists. A model that refuses a
 reasoning setting reads as <model> can't take a thinking setting. Retry with
 another model. Outcome has no channel field. The
 live details no longer repeat an agent bench. Sizes are named by plan
-everywhere, and the ended header chip names the plan, not the model. Ended
-boards keep, under Agents · N, proportional
+everywhere; an ended header has no chip, since the shape block names the plan. Ended
+boards keep, in the Agents tab, proportional
 identity-colored agent cards that select the same read-only inspector, without
-monospace/stacked cards or ghost seats. Spend stays on live boards and cockpits
+monospace/stacked cards or ghost seats. Spend shows on live boards, cockpits and ended boards
 once an agent has spent: a table of each agent's model and provider, ↑ in, ↓ out,
 cached tokens, cache hit, cost and share, a swarm row, then Cost by kind.
-For ended swarms, Spend by agent is on the record only, with fresh and cached
-tokens apart. Both lifecycles retain the produced inventory when applicable:
+The cockpit and ended board leave out the model column, which the shape block
+names. The record keeps Spend by agent, with fresh and cached tokens apart. Both lifecycles retain the produced inventory when applicable:
 Produced so far while live, Produced once ended.
 Ended Activity shows at most the newest 12 events, with actor, time and repeats,
 and no Read the full log row. Only live Activity adds Read the full log when
 earlier events exist; it opens the record's latest 200 retained events, not the
 reading pane. Timeline reaches Activity as well as the timeline and spend.
-Only ended boards keep About: times, health and one transcript link. About
+Only ended boards keep About: the task, times, health and one transcript link. About
 leaves out the cause the Outcome card already shows; Details keeps it.
 The transcript link is omitted when its address is unavailable.
 The back-link to Ended swarms is a separate row outside About.
-Each activity row carries its actor as a chip in the
+Each activity row carries its actor as a face in the
 agent's color, or you for the operator, and a turn is one row written when it
 ends, with its outcome, how long it took and what woke it. Each bench card's
-footnote names the agent's last event, and the Turns tile keeps its spark after
-the swarm ends. A note posted with Message the lead shows in the activity at
+footnote names the agent's last event, and the Turns meter stops where the swarm
+ended. A note posted with Message the lead shows in the activity at
 once.
 
 Produced so far (Produced once ended) is one shared inventory in the cockpit and per-swarm board.
