@@ -3371,7 +3371,9 @@ describe("Swarms boards", () => {
   test("the drawer spells out the size and names the models per role", () => {
     const view = buildSwarmBoard(fixtures.done!);
     expect(view.header?.status).toEqual({ label: "done", tone: "ok" });
-    expect(view.header?.chip).toBe("Crew · 11 turns · 29 min");
+    expect(view.header?.chip).toBeUndefined();
+    expect(JSON.stringify(view)).toContain('"title":"Crew"');
+    expect(JSON.stringify(view)).toContain('"trailing":"29 min of 30 min"');
     const text = JSON.stringify(view);
     const details = JSON.stringify(buildDetailsInspector(fixtures.done!));
     expect(details).toContain(
@@ -3641,7 +3643,8 @@ describe("Swarms boards", () => {
     const view = buildSwarmBoard(stopped);
     const text = JSON.stringify(view);
     expect(view.header?.status).toEqual({ label: "stopped", tone: "neutral" });
-    expect(view.header?.chip).toBe("Crew · 11 turns · 23 s");
+    expect(view.header?.chip).toBeUndefined();
+    expect(JSON.stringify(view)).toContain('"trailing":"23 s of 30 min"');
     expect(text).toContain('"title":"Stopped by you at 14:00"');
     expect(text).toContain('"value":"1 turn"');
     expect(text).not.toContain('"pill":{"label":"busy"');

@@ -1563,17 +1563,16 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
     : needs.length > 0
       ? { label: "needs you", tone: "caution" as const }
       : livePill(s);
-  const took = span(s.startedAt, s.endedAt);
   const chip = isLiveNow
     ? `${sizeWord(s)} · ${s.turnsUsed} of ${s.limits.maxTurns} turns · ${modelLabel(s)}`
-    : `${sizeWord(s)} · ${plural(s.turnsUsed, "turn")}${took ? ` · ${took}` : ""}`;
+    : undefined;
   const details = liveDetails(s, opts.selectedAgentId);
   return {
     view: "board",
     title: `${firstLine(s.task)} · ${s.id}`,
     header: {
       status: pill,
-      chip,
+      ...(chip ? { chip } : {}),
       ...(s.agents.length > 0
         ? { people: s.agents.map((a) => ({ name: shortHandle(a.handle, s.id), tone: a.tone })) }
         : {}),

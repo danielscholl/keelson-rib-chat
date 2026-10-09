@@ -855,7 +855,7 @@ offers Read the draft when a refused draft exists. A model that refuses a
 reasoning setting reads as <model> can't take a thinking setting. Retry with
 another model. Outcome has no channel field. The
 live details no longer repeat an agent bench. Sizes are named by plan
-everywhere, and the ended header chip names the plan, not the model. Ended
+everywhere; an ended header has no chip, since the shape block names the plan. Ended
 boards keep, in the Agents tab, proportional
 identity-colored agent cards that select the same read-only inspector, without
 monospace/stacked cards or ghost seats. Spend shows on live boards, cockpits and ended boards

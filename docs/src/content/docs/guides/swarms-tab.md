@@ -390,10 +390,10 @@ If that gate becomes quiet, its quiet request keeps **Read gate** while
 ## The board for ended swarms and MCP clients
 
 An ended row opens its board in the drawer. The per-swarm board still composes
-for MCP clients, live or ended. Its header carries the lifecycle pill, the
-plan (**Scout**, **Crew** or **Fleet**), the turns, and a
-dot per agent. Sizes are named by plan everywhere; the ended header chip does
-not name the model.
+for MCP clients, live or ended. Its header carries the lifecycle pill and a
+dot per agent; while live it adds a chip with the plan (**Scout**, **Crew** or
+**Fleet**), the turns and the models. Ended, the shape block names the plan
+instead.
 
 Live, the board runs in this order:
 
