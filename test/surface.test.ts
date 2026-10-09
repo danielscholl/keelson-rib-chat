@@ -2674,15 +2674,17 @@ describe("Swarms boards", () => {
     },
   );
 
-  test("an ended Turns tile keeps its spent count and spark but has no forecast", () => {
+  test("an ended Turns meter keeps its spent count but has no forecast", () => {
     const s = { ...fixtures.done!, pace: [1, 3, 2, 0, 1] };
     const view = buildSwarmBoard(s, { now: new Date("2026-09-22T14:21:00.000Z") });
     board(swarmKey(s.id), view);
-    const result = leaves(view.sections).find((x) => x.kind === "stats" && x.title === "Result");
-    const tile = result?.kind === "stats" ? result.items[0] : undefined;
-    expect(tile).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: s.pace });
-    expect(tile?.delta).toBeUndefined();
-    expect(tile).not.toHaveProperty("delta");
+    const meters = leaves(view.sections).find((x) => x.kind === "bars");
+    expect(meters?.kind === "bars" ? meters.items[0] : undefined).toEqual({
+      label: "Turns",
+      value: 11,
+      total: 40,
+      trailing: "11 / 40",
+    });
   });
 
   test("the three-of-twenty fixture preserves full-width spawn, wake and question edges and readable inspectors", () => {
@@ -2794,12 +2796,12 @@ describe("Swarms boards", () => {
     });
     expect(JSON.stringify(inspector)).not.toContain('"clock"');
     expect(JSON.stringify(inspector)).not.toContain('"type":"message-agent"');
-    const result = buildSwarmBoard(ended).sections.find((section) => section.title === "Result");
-    expect(result?.kind === "stats" ? result.items[0] : undefined).toEqual({
+    const meters = leaves(buildSwarmBoard(ended).sections).find((x) => x.kind === "bars");
+    expect(meters?.kind === "bars" ? meters.items[0] : undefined).toEqual({
       label: "Turns",
       value: 3,
-      sub: "of 20",
-      spark: [1, 1, 0, 1, 0],
+      total: 20,
+      trailing: "3 / 20",
     });
   });
 
@@ -2899,7 +2901,9 @@ describe("Swarms boards", () => {
         1_000,
     );
     try {
-      const byKind = buildSwarmBoard(priced).sections.find((x) => x.title === "Cost by kind");
+      const byKind = leaves(buildSwarmBoard(priced).sections).find(
+        (x) => x.title === "Cost by kind",
+      );
       expect(byKind).toMatchObject({
         kind: "bars",
         inline: true,
@@ -3408,41 +3412,32 @@ describe("Swarms boards", () => {
     expect(tile).toEqual({ label: "Pull requests", value: 2, sub: "1 with CI passing" });
   });
 
-  test("ended Result orders tiles and shows zero PRs only when the swarm could open them", () => {
+  test("ended meters stop where the swarm ended and Result shows zero PRs only when it could open them", () => {
     const id = "sresult";
     const base = swarm(id, {
       status: "done",
       endedAt: "2026-09-22T14:05:00.000Z",
       pace: [1, 2, 3],
     });
-    const tiles = (s: SwarmSummary) => {
+    const compose = (s: SwarmSummary) => {
       const view = buildSwarmBoard(s, { now: new Date(T0) });
       board(swarmKey(id), view);
+      const meters = leaves(view.sections).find((section) => section.kind === "bars");
       const result = leaves(view.sections).find((section) => section.kind === "stats");
-      if (result?.kind !== "stats") throw new Error("missing Result");
-      expect(result.title).toBe("Result");
-      return result.items;
+      return {
+        meters: meters?.kind === "bars" ? meters.items : [],
+        result: result?.kind === "stats" ? result.items : undefined,
+      };
     };
-    const chat = tiles(base);
-    expect(chat.map((tile) => tile.label)).toEqual(["Turns", "Time", "Fresh tokens"]);
-    expect(chat[0]).toEqual({ label: "Turns", value: 11, sub: "of 40", spark: [1, 2, 3] });
-    expect(chat[1]).toEqual({ label: "Time", value: "5 min", sub: "of 30 min" });
-    expect(chat[2]).toEqual({
-      label: "Fresh tokens",
-      value: null,
-      sub: "the provider reported none",
-    });
-    expect(tiles({ ...base, turnsUsed: 0 })[2]).toEqual({
-      label: "Fresh tokens",
-      value: 0,
-      sub: "none yet",
-    });
-    expect(tiles({ ...base, usage: { input: 200, output: 50, cached: 100 } })[2]).toEqual({
-      label: "Fresh tokens",
-      value: "250",
-      sub: "↑ 200 in · ↓ 50 out",
-    });
-    expect(tiles({ ...base, workflows: [], runs: [], prs: [], writeEnabled: false })).toEqual(chat);
+    const chat = compose(base);
+    expect(chat.meters).toEqual([
+      { label: "Turns", value: 11, total: 40, trailing: "11 / 40" },
+      { label: "Time", value: 5 * 60_000, total: 30 * 60_000, trailing: "5 min of 30 min" },
+    ]);
+    expect(chat.result).toBeUndefined();
+    expect(compose({ ...base, workflows: [], runs: [], prs: [], writeEnabled: false })).toEqual(
+      chat,
+    );
     for (const patch of [
       { writeEnabled: true },
       { workflows: ["fix-issue"] },
@@ -3455,29 +3450,17 @@ describe("Swarms boards", () => {
       { writeEnabled: true, runs: [] },
       { workflows: ["fix-issue"], runs: [] },
     ] satisfies Partial<SwarmSummary>[]) {
-      const result = tiles({ ...base, ...patch });
-      expect(result.map((tile) => tile.label)).toEqual([
-        "Turns",
-        "Time",
-        "Fresh tokens",
-        "Pull requests",
-      ]);
-      expect(result[3]).toEqual({ label: "Pull requests", value: 0 });
+      expect(compose({ ...base, ...patch }).result).toEqual([{ label: "Pull requests", value: 0 }]);
     }
-    const dispatch = tiles({
+    const dispatch = compose({
       ...base,
       workflows: ["fix-issue"],
       runs: [run("empty", { status: "succeeded", verified: true })],
-    });
-    expect(dispatch.map((tile) => tile.label)).toEqual([
-      "Turns",
-      "Time",
-      "Fresh tokens",
-      "Pull requests",
-      "Runs verified",
+    }).result;
+    expect(dispatch).toEqual([
+      { label: "Pull requests", value: 0 },
+      { label: "Runs verified", value: "1 of 1", tone: "ok" },
     ]);
-    expect(dispatch[3]).toEqual({ label: "Pull requests", value: 0 });
-    expect(dispatch[4]).toEqual({ label: "Runs verified", value: "1 of 1", tone: "ok" });
   });
 
   test("a factory swarm shows turns since work landed and its token ceiling", () => {
@@ -3538,13 +3521,7 @@ describe("Swarms boards", () => {
       (section) => section.kind === "stats",
     );
     if (result?.kind !== "stats") throw new Error("missing Result");
-    expect(result.items.map((tile) => tile.label)).toEqual([
-      "Turns",
-      "Time",
-      "Fresh tokens",
-      "Merged",
-    ]);
-    expect(result.items[3]).toEqual({ label: "Merged", value: 1 });
+    expect(result.items).toEqual([{ label: "Merged", value: 1 }]);
   });
 
   test("ended PR totals count distinct URLs and require every owner to explicitly pass", () => {
@@ -3565,9 +3542,6 @@ describe("Swarms boards", () => {
       );
       if (s.status !== "running" && s.status !== "stopping") {
         expect(items.map((item) => item.label)).toEqual([
-          "Turns",
-          "Time",
-          "Fresh tokens",
           ...(s.prs?.length || s.runs?.some((r) => r.prUrls.length) ? ["Pull requests"] : []),
           ...(s.runs?.length ? ["Runs verified"] : []),
         ]);
@@ -3673,11 +3647,9 @@ describe("Swarms boards", () => {
     expect(text).not.toContain('"pill":{"label":"busy"');
     expect(view.sections.map((x) => x.kind)).toEqual([
       "cards",
-      "rows",
-      "stats",
+      "columns",
       "actions",
-      "cards",
-      "rows",
+      "tabs",
       "rows",
     ]);
     const row = JSON.stringify(buildIndex({ live: [], starting: [], ended: [stopped] }));
@@ -4035,9 +4007,6 @@ describe("ended board contract", () => {
           expect(verified).toBeUndefined();
         } else {
           expect(result.items.map((tile) => tile.label)).toEqual([
-            "Turns",
-            "Time",
-            "Fresh tokens",
             "Pull requests",
             "Runs verified",
           ]);
@@ -4053,16 +4022,24 @@ describe("ended board contract", () => {
     board(swarmKey(s.id), view);
     const produced = leaves(view.sections).find((section) => section.title === "Produced");
     const activity = leaves(view.sections).find((section) => section.title === "Activity");
+    const extras = Boolean(s.writeEnabled || s.workflows?.length || s.runs?.length);
     expect(view.sections.map((section) => section.title ?? section.kind)).toEqual([
       "Outcome",
-      "rows",
-      "Result",
+      "columns",
+      ...(extras ? ["Result"] : []),
       "actions",
-      `Agents · ${s.agents.length}`,
-      ...(s.report || s.writeEnabled || s.workflows?.length ? ["Produced"] : []),
-      ...(s.activity?.length ? ["Activity"] : []),
-      "About",
+      "tabs",
       "rows",
+    ]);
+    const tabs = view.sections.find((section) => section.kind === "tabs");
+    if (tabs?.kind !== "tabs") throw new Error("missing tabs");
+    const spent = s.agents.some((a) => a.usage && a.usage.input + a.usage.output > 0);
+    expect(tabs.tabs.map((t) => [t.label, t.badge])).toEqual([
+      ["Agents", String(s.agents.length)],
+      ...(spent ? [["Spend", s.usage ? expect.any(String) : undefined]] : []),
+      ...(s.report || s.writeEnabled || s.workflows?.length ? [["Produced", undefined]] : []),
+      ...(s.activity?.length ? [["Activity", String(s.activity.length)]] : []),
+      ["About", undefined],
     ]);
     const outcome = view.sections[0];
     if (outcome?.kind !== "cards") throw new Error("missing Outcome");
@@ -4085,26 +4062,35 @@ describe("ended board contract", () => {
       expect(outcome.items[0]?.actions?.[0]?.label).toBe("Read the draft");
       expect(buildDoc(s, s.id)).toContain(s.draftConclusion!);
     }
-    expect(view.sections[1]).toEqual({
-      kind: "rows",
-      items: [{ icon: "▤", text: `Task · ${s.task.split("\n")[0]}`, detail: s.task }],
+    const aboutTab = tabs.tabs.at(-1)?.sections[0];
+    if (aboutTab?.kind !== "rows") throw new Error("missing About");
+    expect(aboutTab.items[0]).toEqual({
+      icon: "▤",
+      text: `Task · ${s.task.split("\n")[0]}`,
+      detail: s.task,
     });
-    const result = view.sections[2];
-    if (result?.kind !== "stats") throw new Error("missing Result");
-    expect(result.items.map((tile) => tile.label)).toEqual([
-      "Turns",
-      "Time",
-      "Fresh tokens",
-      ...(s.writeEnabled || s.workflows?.length ? ["Pull requests"] : []),
-      ...(s.runs?.length ? ["Runs verified"] : []),
-    ]);
-    expect(result.items[0]?.value).toBe(s.turnsUsed);
-    expect(result.items[0]?.delta).toBeUndefined();
-    expect(result.items[2]).toEqual(tokensTile(s));
-    const pr = result.items.find((tile) => tile.label === "Pull requests");
+    const shape = view.sections[1];
+    if (shape?.kind !== "columns") throw new Error("missing shape block");
+    const meters = shape.columns[1]?.sections[0];
+    expect(meters?.kind === "bars" ? meters.items[0] : undefined).toMatchObject({
+      label: "Turns",
+      value: s.turnsUsed,
+      total: s.limits.maxTurns,
+      trailing: `${s.turnsUsed} / ${s.limits.maxTurns}`,
+    });
+    const card = shape.columns[0]?.sections[0];
+    expect(
+      card?.kind === "cards" ? card.items[0]?.fields?.[0]?.people?.map((p) => p.status) : [],
+    ).toEqual(s.agents.map(() => undefined));
+    const result = view.sections.find((section) => section.kind === "stats");
+    if (extras && result?.kind !== "stats") throw new Error("missing Result");
+    const pr =
+      result?.kind === "stats"
+        ? result.items.find((tile) => tile.label === "Pull requests")
+        : undefined;
     if (s.runs?.length) {
       expect(pr).toEqual({ label: "Pull requests", value: 2, sub: "1 with CI passing" });
-      expect(result.items.at(-1)).toEqual({
+      expect(result?.kind === "stats" ? result.items.at(-1) : undefined).toEqual({
         label: "Runs verified",
         value: "1 of 2",
         tone: "warn",
@@ -4112,15 +4098,16 @@ describe("ended board contract", () => {
     } else if (s.writeEnabled || s.workflows?.length) {
       expect(pr).toEqual({ label: "Pull requests", value: 0 });
     } else expect(pr).toBeUndefined();
-    const verbs = view.sections[3];
+    const verbs = view.sections.find((section) => section.kind === "actions");
     if (verbs?.kind !== "actions") throw new Error("missing actions");
     expect(verbs.items.map((action) => action.label)).toEqual([
       s.status === "done" ? "Go deeper" : "Retry",
       "Timeline",
       "Details",
     ]);
-    const bench = view.sections[4];
+    const bench = tabs.tabs[0]?.sections[0];
     if (bench?.kind !== "cards") throw new Error("missing Agents");
+    expect(bench.title).toBeUndefined();
     expect(bench.columns).toBe(4);
     expect(bench.items).toHaveLength(s.agents.length);
     for (const [i, card] of bench.items.entries()) {
@@ -4158,10 +4145,9 @@ describe("ended board contract", () => {
         trailing: s.worktrees![0]!.reason,
       });
     }
-    const about = view.sections.at(-2);
-    if (about?.kind !== "rows") throw new Error("missing About");
-    expect(about.title).toBe("About");
-    expect(about.items.slice(1, -1)).toEqual(healthRows(s, { omitCause: !s.conclusion }));
+    const about = aboutTab;
+    expect(about.title).toBeUndefined();
+    expect(about.items.slice(2, -1)).toEqual(healthRows(s, { omitCause: !s.conclusion }));
     if (!s.conclusion) expect(JSON.stringify(about)).not.toContain(s.error!);
     expect(about.items.at(-1)).toEqual({ text: "transcript ↗", href: channelHref(s) });
     expect(view.sections.at(-1)).toEqual({
@@ -4171,6 +4157,7 @@ describe("ended board contract", () => {
     const frame = JSON.stringify(view);
     for (const removed of [
       '"title":"Spend"',
+      '"title":"Result","items":[{"label":"Turns"',
       "Read the full log",
       "Context destination sentinel.",
       "Effective limits:",
@@ -4199,7 +4186,7 @@ describe("ended board contract", () => {
     const s = { ...endedFixtures.conclusionOnly, clickclack: undefined };
     const view = buildSwarmBoard(s, { now });
     board(swarmKey(s.id), view);
-    const verbs = view.sections[3];
+    const verbs = view.sections.find((section) => section.kind === "actions");
     expect(verbs?.kind === "actions" ? verbs.items.map((action) => action.label) : []).toEqual([
       "Timeline",
       "Details",
@@ -4210,7 +4197,8 @@ describe("ended board contract", () => {
     expect(JSON.stringify(details)).toContain("Transcript link not recorded.");
     const empty = buildSwarmBoard({ ...s, agents: [] }, { now });
     board(swarmKey(s.id), empty);
-    expect(empty.sections[4]?.kind === "cards" ? empty.sections[4].items : []).toEqual([
+    const emptyBench = leaves(empty.sections).find((x) => x.title === "Agents");
+    expect(emptyBench?.kind === "cards" ? emptyBench.items : []).toEqual([
       { title: "No agents recorded" },
     ]);
   });
@@ -4434,11 +4422,12 @@ describe("the details", () => {
     },
   );
 
-  test("ended About contains only times, health and one transcript with navigation separate", () => {
+  test("ended About holds the task, times, health and one transcript with navigation separate", () => {
     for (const s of [fixtures.done!, { ...fixtures.done!, health: { socketDrops: 2 } }]) {
       const view = buildSwarmBoard(s);
       board(swarmKey(s.id), view);
-      const rows = rowsTitled(view, "About");
+      const [task, ...rows] = rowsTitled(view, "About");
+      expect(task?.text).toStartWith("Task · ");
       expect(rows[0]?.text).not.toContain("ClickClack");
       expect(rows[0]?.text).not.toContain("#swarm-");
       const transcript = {
@@ -4538,7 +4527,7 @@ describe("the details", () => {
   });
 
   test.each(["running", "stopping", "done", "stopped"] as const)(
-    "spend tables each agent's tokens and share only while live (%s)",
+    "spend tables each agent's tokens and share, live and ended (%s)",
     (status) => {
       const s = swarm("s8spd", {
         status,
@@ -4570,7 +4559,17 @@ describe("the details", () => {
           rows: table?.kind === "table" ? table.rows.map(({ model, ...row }) => row) : [],
         });
       } else {
-        expect(leaves(view.sections).some((x) => x.title === "Spend")).toBe(false);
+        const ended = spendTable(leaves(view.sections));
+        expect(ended?.kind === "table" ? ended.columns.map((c) => c.key) : []).not.toContain(
+          "model",
+        );
+        expect(ended).toMatchObject({
+          rows: [
+            { agent: "lead", in: "↑ 3k", out: "↓ 1k", cached: "9k", hit: "75%", share: "80%" },
+            { agent: "w1", in: "↑ 900", out: "↓ 100", cached: "0", hit: "", share: "20%" },
+            { agent: "swarm", in: "↑ 4k", out: "↓ 1k", cached: "9k" },
+          ],
+        });
         expect(buildRecord(s, new Date(T0))).toContain("Spend by agent");
         expect(buildRecord(s, new Date(T0))).toContain("4k fresh · 9k cached");
         expect(buildRecord(s, new Date(T0))).toContain("1k fresh · 0 cached");
@@ -4635,8 +4634,6 @@ describe("the details", () => {
     const cards = bench?.kind === "cards" ? bench.items : [];
     expect(cards[0]?.footnote).toBe(`last: spawned @w1: reads logs · ${hhmm(at(1))}`);
     expect(cards[1]?.footnote).toBe(`last: turn 1 ok · 42 s · 1 new · ${hhmm(at(2))}`);
-    const turns = leaves(view.sections).find((x) => x.kind === "stats");
-    expect(turns?.kind === "stats" ? turns.items[0]?.spark : undefined).toEqual([1, 3, 2]);
   });
 
   test("an answered approval names its reviewer and discloses the reason", () => {
@@ -6970,7 +6967,7 @@ describe("actions", () => {
       expect(sm.frames.get(agentKey("s9hjx"))?.at(-1)).toMatchObject({
         title: "Agent @w1 · s9hjx",
       });
-      const endedBench = buildSwarmBoard(fixtures.done!).sections.find(
+      const endedBench = leaves(buildSwarmBoard(fixtures.done!).sections).find(
         (section) => section.kind === "cards" && section.title?.startsWith("Agents"),
       );
       const cardAction = endedBench?.kind === "cards" ? endedBench.items[0]?.action : undefined;

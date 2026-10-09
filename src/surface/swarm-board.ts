@@ -429,14 +429,16 @@ function modelLines(s: SwarmSummary): { label: string; value: string }[] {
   ];
 }
 
-function shapeCard(s: SwarmSummary): Card {
+// An ended board has no head card, so its crew rides in the shape card.
+function shapeCard(s: SwarmSummary, crew: boolean): Card {
   const seats = live(s)
     ? `${s.agents.length} of ${s.limits.maxAgents} agents`
     : plural(s.agents.length, "agent");
+  const people = crew ? crewPeople(s) : [];
   return {
     title: sizeWord(s),
     stacked: true,
-    fields: [{ value: seats }, ...modelLines(s)],
+    fields: [...(people.length > 0 ? [{ people }] : []), { value: seats }, ...modelLines(s)],
   };
 }
 
@@ -530,11 +532,15 @@ function costBar(s: SwarmSummary, now: Date): Bar[] {
 }
 
 // What the swarm is beside how far it has run, so a swarm started by an agent explains itself.
-export function shapeBlock(s: SwarmSummary, now = new Date()): Section {
+export function shapeBlock(
+  s: SwarmSummary,
+  now = new Date(),
+  opts: { crew?: boolean } = {},
+): Section {
   return {
     kind: "columns",
     columns: [
-      { weight: 5, sections: [{ kind: "cards", items: [shapeCard(s)] }] },
+      { weight: 5, sections: [{ kind: "cards", items: [shapeCard(s, opts.crew === true)] }] },
       {
         weight: 7,
         sections: [
@@ -1481,13 +1487,70 @@ export function buildCockpit(
       },
       {
         label: "Spend",
-        ...(cost ? { badge: costText(cost) } : {}),
+        ...(cost
+          ? { badge: costText(cost) }
+          : s.usage
+            ? { badge: tokenCount(freshTokens(s.usage)) }
+            : {}),
         sections: spend(s, { models: false }),
       },
       { label: "Activity", badge: String(s.activity?.length ?? 0), sections: activity(s) },
     ]),
     ...produced(s),
     { kind: "actions", wrap: true, items },
+  ];
+}
+
+// What an ended swarm made beyond its spent budget: pull requests, merges, verified runs.
+function resultExtras(s: SwarmSummary): Leaf[] {
+  const result = stats(s, new Date());
+  if (result.kind !== "stats") return [];
+  const budget = new Set(["Turns", "Time", "Fresh tokens", "Cost"]);
+  const items = result.items.filter((x) => !budget.has(x.label));
+  return items.length > 0 ? [{ kind: "stats", title: "Result", items }] : [];
+}
+
+// The ended board in the live card's language: the outcome, the crew and its
+// spent budget, then the record behind tabs.
+function endedSections(s: SwarmSummary, now: Date, opts: BoardOptions): Section[] {
+  const benchLeaf = bench(s, opts.selectedAgentId);
+  const cost = swarmCost(s);
+  const aboutLeaf = about(s);
+  return [
+    ...outcome(s),
+    shapeBlock(s, now, { crew: true }),
+    ...resultExtras(s),
+    ...verbs(s, opts.launch),
+    ...tabbed([
+      {
+        label: "Agents",
+        badge: String(s.agents.length),
+        sections: [{ ...benchLeaf, title: undefined }],
+      },
+      {
+        label: "Spend",
+        ...(cost
+          ? { badge: costText(cost) }
+          : s.usage
+            ? { badge: tokenCount(freshTokens(s.usage)) }
+            : {}),
+        sections: spend(s, { models: false }),
+      },
+      { label: "Produced", sections: produced(s) },
+      { label: "Activity", badge: String(s.activity?.length ?? 0), sections: activity(s) },
+      {
+        label: "About",
+        sections: [
+          aboutLeaf.kind === "rows"
+            ? { ...aboutLeaf, title: undefined, items: [taskRow(s), ...aboutLeaf.items] }
+            : aboutLeaf,
+        ],
+      },
+    ]),
+    {
+      kind: "rows",
+      items: [{ icon: "←", text: "Ended swarms", action: { type: "history-open" } }],
+    },
   ];
 }
 
@@ -1525,14 +1588,7 @@ export function buildSwarmBoard(s: SwarmSummary, opts: BoardOptions = {}): Canva
           ...controls(s),
           ...details,
         ]
-      : [
-          ...outcome(s),
-          { kind: "rows", items: [taskRow(s)] },
-          stats(s, now),
-          ...costByKind(s),
-          ...verbs(s, opts.launch),
-          ...details,
-        ],
+      : endedSections(s, now, opts),
   };
 }
 

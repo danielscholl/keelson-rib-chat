@@ -391,7 +391,9 @@ describe("contributed docs", () => {
     expect(swarms).toContain("server line");
     expect(swarms).toContain("Manage");
     expect(swarms).toContain("at the side");
-    expect(swarms).toContain("Only ended boards keep About: times, health and one transcript link");
+    expect(swarms).toContain(
+      "Only ended boards keep About: the task, times, health and one transcript link",
+    );
     expect(swarms).toContain("Conversation");
     expect(swarms).toContain("eight newest channel messages, newest first");
     expect(swarms).toContain("newest 20");
@@ -697,16 +699,16 @@ describe("contributed docs", () => {
         "retention trimming and disposal release inspector keys",
         "times, health and one transcript link",
         "separate row outside About",
-        "Ended section order: Outcome, Result, actions, Agents, Produced when applicable, Activity when events exist, About, then the separate Ended swarms back-link.",
-        "The ended Result orders Turns, Time, Fresh tokens, Cost when priced, Pull requests when eligible, then Runs verified only when runs exist.",
+        "the meters stopped where the swarm ended",
+        "each shown only with content; then the separate Ended swarms back-link.",
+        "Pull requests when eligible, Merged for a local write swarm, then Runs verified only when runs exist",
         "a model without a price makes it a floor (≥) with the unpriced turns named",
-        "There is no Agents tile",
         "unavailable, not an invented zero",
         "The actions strip is Retry or Go deeper, Timeline, Details",
         "Retry and Go deeper are omitted when retained launch inputs are unavailable",
         "can't take a thinking setting. Retry with another model.",
         "Outcome has no channel field",
-        "For ended swarms, Spend by agent is on the record only, with fresh and cached tokens apart",
+        "Spend by agent, with fresh and cached tokens apart",
         "Ended Activity shows at most the newest 12 events, with actor, time and repeats, and no Read the full log row",
         "Only live Activity adds Read the full log when earlier events exist",
         "Timeline reaches Activity as well as the timeline and spend",

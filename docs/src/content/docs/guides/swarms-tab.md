@@ -401,8 +401,7 @@ Live, the board runs in this order:
 - the report, once the lead has published one
 - the budget strip: turns used with a sparkline of turns per minute and the
   same forecast delta while live, with **of N · pace over the last 5 min** in the
-  sub; an ended board keeps the sparkline, spread over the whole run, with
-  no delta and **of N** in the sub, where N is the total turn budget; time
+  sub; time
   left on a live clock; agents against the cap with how many are busy or
   waiting; and fresh tokens with cached tokens beside them; the two are
   never summed, because a cached token costs a fraction of a fresh one
@@ -416,19 +415,20 @@ Live, the board runs in this order:
   says where it went, and the note shows at once under Activity as
   **you posted in #swarm-<id>: …**
 
-Ended section order: Outcome, Result, actions, Agents, Produced when
-applicable, Activity when events exist, About, then the separate Ended swarms
-back-link.
-
-The ended Result orders Turns, Time, Fresh tokens, Cost when priced, Pull requests when
-eligible, then Runs verified only when runs exist. There is no Agents tile.
+Ended, the board reads like the live card. In order: the **Outcome**; the
+shape block, with the crew as faces in its plan card and the meters stopped
+where the swarm ended; **Result** when the swarm opened pull requests, merged
+work or ran workflows (Pull requests when eligible, Merged for a local write
+swarm, then Runs verified only when runs exist); the actions; then **Agents**,
+**Spend**, **Produced**, **Activity** and **About** tabs, each shown only with
+content; then the separate Ended swarms back-link.
 Tokens is 0 when no turns ran; after positive turns without usage it is
 unavailable, not an invented zero. Cost is the list price the host's Usage page
 would show for the same tokens, priced on every read; a model without a price
 makes it a floor (≥) with the unpriced turns named. Ended rows add fresh tokens
 and cost in cents after the time, marked ≈ when the swarm was recorded before
 tallies were kept per model, and each day's heading carries that day's total.
-Under Result, **Cost by kind** splits the dollars into cache read, input, cache
+In the Spend tab, **Cost by kind** splits the dollars into cache read, input, cache
 write and output, in the Usage page's order.
 
 The Pull requests tile appears when workflows were named, `writeEnabled`
@@ -457,14 +457,15 @@ setting. Retry with another model.** Outcome has no channel field.
 Live details do not repeat an agent bench. The remaining details depend on
 the lifecycle:
 
-- **Agents · N** (ended only): proportional identity-colored agent cards with
+- **Agents** (ended only, the first tab): proportional identity-colored agent cards with
   turns, role, tokens and the last event. They select the same read-only
   inspector, without monospace/stacked cards or ghost seats.
-- **Spend** (live boards and cockpits only), once an agent has spent: a table
-  of each agent's model and provider, ↑ in, ↓ out, cached tokens, cache hit,
+- **Spend**, once an agent has spent: a table
+  of each agent's model and provider (the cockpit and ended board leave the
+  model column to the shape block), ↑ in, ↓ out, cached tokens, cache hit,
   cost and share, with a swarm row, then **Cost by kind** split into input,
-  cache write, output and cache read. For ended swarms, Spend by agent is on
-  the record only, with fresh and cached tokens apart.
+  cache write, output and cache read. The record also keeps
+  Spend by agent, with fresh and cached tokens apart.
 - **Produced so far** while live, **Produced** once ended: reports,
   dispatched runs, writer draft PRs, and, once ended, kept worktrees, as
   described below
@@ -475,7 +476,7 @@ the lifecycle:
   Each row starts with who it is by: the agent's handle in its color, or
   **you**. A turn is one row, written when it ends: **turn 3 ok · 42 s · 2
   new**, or **nudged** or **run update** when no message woke it
-- **About** (ended only): times, health and one transcript link. About leaves
+- **About** (ended only): the task, times, health and one transcript link. About leaves
   out the cause the Outcome card already shows; Details keeps it. The back-link
   to Ended swarms is a separate row outside About. The transcript link is
   omitted when its address is unavailable.
