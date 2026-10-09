@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.28.0...v0.29.0) (2026-10-09)
+
+
+### Added
+
+* **swarms:** give the ended board the live card's look ([#146](https://github.com/danielscholl/keelson-rib-swarm/issues/146)) ([8c01f21](https://github.com/danielscholl/keelson-rib-swarm/commit/8c01f21854abad0d53338f7e11bb84c1519c09d0))
+
 ## [0.28.0](https://github.com/danielscholl/keelson-rib-swarm/compare/v0.27.1...v0.28.0) (2026-10-09)
 
 
