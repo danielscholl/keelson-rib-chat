@@ -607,7 +607,7 @@ running, unless the lead has concluded. Spend on the cockpit leaves out the
 Model column, since the shape block names the models.
 
 Timeline is a native section in the Timeline tab beside Map, on the live cockpit only,
-not the per-swarm drawer or ended board. It requires Keelson v0.124.0 or later.
+not the per-swarm drawer or ended board. It requires Keelson v0.125.0 or later.
 The operator's lane comes first, then agents in first-worked order, then runs.
 Turns use the agent's identity color, with hatching for timeouts or errors and
 open endpoints for unfinished work. Run bars use status colors.

@@ -9,12 +9,12 @@
       },
       "devDependencies": {
         "@biomejs/biome": "2.5.14",
-        "@keelson/shared": "https://github.com/danielscholl/keelson/releases/download/v0.124.0/keelson-shared.tgz",
+        "@keelson/shared": "https://github.com/danielscholl/keelson/releases/download/v0.125.0/keelson-shared.tgz",
         "@types/bun": "^1.1.14",
         "typescript": "^7.0.2",
       },
       "peerDependencies": {
-        "@keelson/shared": ">=0.124.0",
+        "@keelson/shared": ">=0.125.0",
       },
       "optionalPeers": [
         "@keelson/shared",
@@ -40,7 +40,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.14", "https://packagefeedproxy.microsoft.io/npm/@biomejs/cli-win32-x64/-/cli-win32-x64-2.5.14.tgz", { "os": "win32", "cpu": "x64" }, "sha512-oJWmBhoHsnhUKIke+0gXDX0mltJrWHA1UyHsrTlXwX0TL64ilVZAo+TYZm97baecV0esBdpzy3k96q+09JaZUQ=="],
 
-    "@keelson/shared": ["@keelson/shared@https://github.com/danielscholl/keelson/releases/download/v0.124.0/keelson-shared.tgz", { "dependencies": { "zod": "^4.4.3" } }, "sha512-nK5LBakouhW7GxWvSoxrPG0o8/O9xd0z8cENDiyHIQQwGR600hAjdBzSvcCNVpONLfASsmGNTNGpT7fgvxZO2Q=="],
+    "@keelson/shared": ["@keelson/shared@https://github.com/danielscholl/keelson/releases/download/v0.125.0/keelson-shared.tgz", { "dependencies": { "zod": "^4.4.3" } }, "sha512-RC8HluFPGJIKBKOkzJ/Ea9kpSLFpofGtxMnlG6hCBuCE3rBed14Ck75v10bAlmsUODC/ZkFeGzxIUEke4Wsdng=="],
 
     "@types/bun": ["@types/bun@1.4.2", "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/@types/bun/-/bun-1.4.2.tgz", { "dependencies": { "bun-types": "1.4.2" } }, "sha1-LmspxtSEaAufF35yJt8o+sStbZE="],
 

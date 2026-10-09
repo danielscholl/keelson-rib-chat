@@ -434,7 +434,7 @@ describe("contributed docs", () => {
         "native section in the Timeline tab beside Map",
         "on the live cockpit only",
         "not the per-swarm drawer or ended board",
-        "Keelson v0.124.0 or later",
+        "Keelson v0.125.0 or later",
         "operator's lane comes first, then agents in first-worked order, then runs",
         "agent's identity color",
         "hatching for timeouts or errors",
