@@ -382,9 +382,13 @@ const FACE_STATUS: Record<AgentStatus, Person["status"]> = {
 // Open seats past this many add nothing a count doesn't.
 const OPEN_FACES = 6;
 
+function agentFaces(s: SwarmSummary): string[] {
+  return initials(s.agents.map((a) => shortHandle(a.handle, s.id)));
+}
+
 export function crewPeople(s: SwarmSummary): Person[] {
   const names = s.agents.map((a) => shortHandle(a.handle, s.id));
-  const faces = initials(names);
+  const faces = agentFaces(s);
   const isLiveNow = live(s);
   const people: Person[] = s.agents.map((a, i) => ({
     name: names[i] as string,
@@ -975,9 +979,9 @@ function runRows(s: SwarmSummary, run: ChildRun): Row[] {
   return [row, ...answers];
 }
 
-function writerChip(s: SwarmSummary, handle: string): Row["chip"] {
+function writerPerson(s: SwarmSummary, handle: string): Row["person"] {
   const agent = s.agents.find((a) => a.handle === handle);
-  return actorChip(s, agent?.id) ?? { label: shortHandle(handle, s.id), tone: "neutral" };
+  return actorPerson(s, agent?.id) ?? { name: shortHandle(handle, s.id), tone: "neutral" };
 }
 
 function produced(s: SwarmSummary): Leaf[] {
@@ -1001,7 +1005,7 @@ function produced(s: SwarmSummary): Leaf[] {
       at: m.at,
       rows: [
         {
-          chip: writerChip(s, m.agent),
+          person: writerPerson(s, m.agent),
           text: m.branch,
           trailing: `merged into ${m.base} · ${m.commit.slice(0, 7)}`,
         },
@@ -1013,7 +1017,7 @@ function produced(s: SwarmSummary): Leaf[] {
       at: pr.at,
       rows: [
         {
-          chip: writerChip(s, pr.agent),
+          person: writerPerson(s, pr.agent),
           text: pr.branch,
           trailing: `draft ${prLabel(pr.url)} · CI ${pr.ci?.verdict ?? "not reported"}`,
           href: pr.url,
@@ -1032,7 +1036,7 @@ function produced(s: SwarmSummary): Leaf[] {
     for (const wt of s.worktrees ?? []) {
       const reason = firstLine(wt.reason, 90);
       items.push({
-        chip: writerChip(s, wt.agent),
+        person: writerPerson(s, wt.agent),
         text: wt.path,
         trailing: reason,
         ...(wt.reason.length > reason.length
@@ -1093,10 +1097,16 @@ function detailOf(text: string, budget: number): { detail?: string; cut?: string
 // ---- Activity, newest first, repeats counted. ----
 
 // Who an event is by, in the colors the bench gives them.
-function actorChip(s: SwarmSummary, actor: string | undefined): Row["chip"] {
-  if (actor === "operator") return { label: "you", tone: "neutral" };
-  const a = actor ? s.agents.find((x) => x.id === actor) : undefined;
-  return a ? { label: shortHandle(a.handle, s.id), tone: a.tone } : undefined;
+function actorPerson(s: SwarmSummary, actor: string | undefined): Row["person"] {
+  if (actor === "operator") return { name: "you", tone: "neutral", face: "Y" };
+  const i = actor ? s.agents.findIndex((x) => x.id === actor) : -1;
+  const a = s.agents[i];
+  if (!a) return undefined;
+  return {
+    name: shortHandle(a.handle, s.id),
+    ...(a.tone ? { tone: a.tone } : {}),
+    face: agentFaces(s)[i] as string,
+  };
 }
 
 function conversation(s: SwarmSummary): Leaf[] {
@@ -1109,10 +1119,10 @@ function conversation(s: SwarmSummary): Leaf[] {
       title: "Conversation",
       items: [
         ...entries.map((m): Row => {
-          const chip = actorChip(s, m.author);
+          const person = actorPerson(s, m.author);
           const href = threadHref(s, m.threadRootId ?? m.id);
           return {
-            ...(chip ? { chip } : {}),
+            ...(person ? { person } : {}),
             text: `${m.threadRootId ? "↳ " : ""}${messageLine(s.id, m.text)}`,
             trailing: hhmm(m.at),
             ...(href ? { href } : {}),
@@ -1139,10 +1149,10 @@ function activity(s: SwarmSummary): Leaf[] {
       title: "Activity",
       items: [
         ...entries.map((e) => {
-          const chip = actorChip(s, e.actor);
+          const person = actorPerson(s, e.actor);
           return {
-            ...(chip ? { chip } : {}),
-            text: `${firstLine(actorText(s.id, e.text, chip ? e.actor : undefined), 90)}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`,
+            ...(person ? { person } : {}),
+            text: `${firstLine(actorText(s.id, e.text, person ? e.actor : undefined), 90)}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`,
             trailing: hhmm(e.at),
           };
         }),
@@ -1298,12 +1308,13 @@ export function liveDetails(s: SwarmSummary, selectedAgentId?: string): Leaf[] {
 
 function nativeTimeline(s: SwarmSummary, now = new Date()): CanvasTimelineSection {
   const model = buildTimelineModel(s);
-  const lanes = model.lanes.slice(0, 12).map(({ id, label, tone, group }) => ({
-    id,
-    label,
-    tone,
-    ...(group ? { group } : {}),
-  }));
+  const faces = agentFaces(s);
+  const faceOf = (id: string) =>
+    id === "operator" ? "Y" : faces[s.agents.findIndex((a) => a.id === id)];
+  const lanes = model.lanes.slice(0, 12).map(({ id, label, tone, group }) => {
+    const face = faceOf(id);
+    return { id, label, ...(face ? { face } : {}), tone, ...(group ? { group } : {}) };
+  });
   const ids = new Set(lanes.map((lane) => lane.id));
   const spans = model.spans
     .filter((item) => ids.has(item.lane))

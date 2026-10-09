@@ -504,7 +504,7 @@ commit, not as PR rows or CI evidence. The lead describes them in its conclusion
 | Dispatched run | Purpose, branch, every PR, elapsed time, status, the start of an error, and the worktree/PR/CI evidence strip; clicking it opens the run beside the tab |
 | Gate answer | Reviewer, review link, decision, time, and reason under a disclosure, immediately under its run |
 | Writer PR | The writer's short handle in its identity color, branch, draft PR link, and observed CI, with detail under a disclosure |
-| Kept worktree | Recorded path and retention reason, with the writer's chip when available; not a claim about the current filesystem |
+| Kept worktree | Recorded path and retention reason, with the writer's face when available; not a claim about the current filesystem |
 
 While empty, the section names permitted workflows and eligible writers.
 Before its first writer, a write-enabled swarm says the lead may spawn

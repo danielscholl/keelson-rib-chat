@@ -2181,9 +2181,9 @@ describe("the live cockpit", () => {
         clock: { until: new Date(Date.parse(T0) + s.limits.wallClockMs).toISOString() },
       },
       lanes: [
-        { id: "operator", label: "you", tone: "neutral" },
-        { id: "stimeline-lead", label: "@lead", tone: "brand" },
-        { id: "stimeline-w1", label: "@w1", tone: "id-blue" },
+        { id: "operator", label: "you", face: "Y", tone: "neutral" },
+        { id: "stimeline-lead", label: "@lead", face: "L", tone: "brand" },
+        { id: "stimeline-w1", label: "@w1", face: "W", tone: "id-blue" },
         { id: s.runs![0]!.runId, label: "fix-issue rtimelin", tone: "info", group: "Runs" },
       ],
       spans: [
@@ -2360,12 +2360,12 @@ describe("the live cockpit", () => {
     const messages = s.recent!.slice(-CONVERSATION_SHOWN).reverse();
     for (const [i, m] of messages.entries()) {
       expect(conversation.items[i]).toEqual({
-        chip:
+        person:
           m.author === "operator"
-            ? { label: "you", tone: "neutral" }
+            ? { name: "you", tone: "neutral", face: "Y" }
             : m.author.endsWith("-w1")
-              ? { label: "w1", tone: "id-blue" }
-              : { label: "lead", tone: "brand" },
+              ? { name: "w1", tone: "id-blue", face: "W" }
+              : { name: "lead", tone: "brand", face: "L" },
         text: `${m.threadRootId ? "↳ " : ""}${messageLine(s.id, m.text)}`,
         trailing: hhmm(m.at),
         href: threadHref(s, m.threadRootId ?? m.id),
@@ -4139,7 +4139,7 @@ describe("ended board contract", () => {
       expect(activity.items).toHaveLength(12);
       expect(activity.items[0]?.trailing).toBe(hhmm(s.activity.at(-1)?.at));
       expect(activity.items[0]?.text).toEndWith("retained event 14 ×2");
-      expect(activity.items[0]?.chip?.label).toBe("w1");
+      expect(activity.items[0]?.person?.name).toBe("w1");
       expect(activity.items.every((row) => !row.action)).toBe(true);
     }
     if (s.report) expect(JSON.stringify(produced)).toContain('"type":"open-report"');
@@ -4335,7 +4335,7 @@ describe("the details", () => {
         action: { type: "open-report", payload: { id } },
       });
       expect(rows[1]).toEqual({
-        chip: { label: "w1", tone: "id-blue" },
+        person: { name: "w1", tone: "id-blue", face: "W" },
         text: "writer/branch",
         trailing: `draft PR #81 · CI ${verdict ?? "not reported"}`,
         href: "https://github.com/o/r/pull/81",
@@ -4344,7 +4344,7 @@ describe("the details", () => {
       const ended = buildSwarmBoard({ ...s, status: "done", endedAt: T0 });
       board(swarmKey(id), ended);
       expect(rowsTitled(ended, "Produced").at(-1)).toEqual({
-        chip: { label: "w1", tone: "id-blue" },
+        person: { name: "w1", tone: "id-blue", face: "W" },
         text: "/wt/kept",
         trailing: "2 commits not pushed",
       });
@@ -4362,7 +4362,7 @@ describe("the details", () => {
     });
     board(swarmKey(id), legacy);
     const rows = rowsTitled(legacy, "Produced");
-    expect(rows[1]?.chip).toEqual({ label: "w1", tone: "neutral" });
+    expect(rows[1]?.person).toEqual({ name: "w1", tone: "neutral" });
     expect(rows[1]?.detail).toHaveLength(4_000);
     expect(rows[2]?.detail).toHaveLength(4_000);
     expect(rows[2]?.action).toBeUndefined();
@@ -4614,17 +4614,17 @@ describe("the details", () => {
       { text: "@lead turn 3 ok", trailing: hhmm(at(5)) },
       { text: "swarm s7chp done", trailing: hhmm(at(4)) },
       {
-        chip: { label: "you", tone: "neutral" },
+        person: { name: "you", tone: "neutral", face: "Y" },
         text: "posted in #swarm-s7chp: keep going",
         trailing: hhmm(at(3)),
       },
       {
-        chip: { label: "w1", tone: "id-blue" },
+        person: { name: "w1", tone: "id-blue", face: "W" },
         text: "turn 1 ok · 42 s · 1 new",
         trailing: hhmm(at(2)),
       },
       {
-        chip: { label: "lead", tone: "brand" },
+        person: { name: "lead", tone: "brand", face: "L" },
         text: "spawned @w1: reads logs",
         trailing: hhmm(at(1)),
       },
@@ -6002,10 +6002,17 @@ describe("the record page", () => {
     expect(model.spans[4]).toMatchObject({ tone: "ok", to: at(15) });
     expect(model.marks.map((mark) => mark.glyph)).toEqual(["◇", "◆", "✓", "○", "○", "?", "▲", "●"]);
     for (const lane of model.lanes) expect(html).toContain(`>${esc(lane.label)}</text>`);
+    const faces: Record<string, string> = {
+      operator: "Y",
+      "s6rec-lead": "L",
+      "s6rec-w1": "W1",
+      "s6rec-w2": "W2",
+    };
     expect(native.lanes).toEqual(
       model.lanes.map(({ id, label, tone, group }) => ({
         id,
         label,
+        ...(faces[id] ? { face: faces[id] } : {}),
         tone,
         ...(group ? { group } : {}),
       })),
